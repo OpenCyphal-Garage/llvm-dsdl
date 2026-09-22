@@ -1278,6 +1278,80 @@ struct KeepDSDLAccessorsPass : public mlir::PassWrapper<KeepDSDLAccessorsPass, m
     }
 };
 
+/// @brief Replaces a null test the target cannot fail with a constant, and folds what that kills.
+struct FoldDSDLNullGuardsPass : public mlir::PassWrapper<FoldDSDLNullGuardsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    explicit FoldDSDLNullGuardsPass(const TargetNullability nullability)
+        : nullability_(nullability)
+    {
+    }
+
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-null-guards";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Replace a null test the target cannot fail with a constant";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        auto module = getOperation();
+
+        // The pointee says which argument a test is about: a body is handed the object it reads,
+        // the buffer it writes and the slot holding that buffer's size, and only the first is an
+        // object. The two answers are separate because a language can be handed a reference to one
+        // and a pointer to the other -- Go has a pointer receiver beside a slice.
+        llvm::SmallVector<mlir::func::FuncOp> touched;
+        module.walk([&](mlir::dsdl::IsNullOp op) {
+            const auto pointer  = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+            const bool isObject = mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee());
+            if (isObject ? nullability_.objectPointer : nullability_.rawPointer)
+            {
+                return;
+            }
+            mlir::OpBuilder builder(op);
+            auto            never = mlir::arith::ConstantIntOp::create(builder, op.getLoc(), 0, 1);
+            op.getResult().replaceAllUsesWith(never.getResult());
+            if (auto fn = op->getParentOfType<mlir::func::FuncOp>(); fn && !llvm::is_contained(touched, fn))
+            {
+                touched.push_back(fn);
+            }
+            op.erase();
+        });
+        if (touched.empty())
+        {
+            return;
+        }
+
+        // What the constant kills is an `or` chain that is now constant and a branch nothing takes,
+        // and the body of a plan sits in the arm that survives. Canonicalising here rather than
+        // leaving it to `--optimize-lowered-serdes` is what makes this stage complete on its own:
+        // that flag is off unless a caller asks for it, and a guard folded to a constant nobody
+        // removes is worse to read than the test it replaced.
+        mlir::RewritePatternSet cleanup(&getContext());
+        for (const mlir::RegisteredOperationName name : getContext().getRegisteredOperations())
+        {
+            name.getCanonicalizationPatterns(cleanup, &getContext());
+        }
+        const mlir::FrozenRewritePatternSet frozen(std::move(cleanup));
+        for (mlir::func::FuncOp fn : touched)
+        {
+            if (mlir::failed(mlir::applyPatternsGreedily(fn, frozen)))
+            {
+                fn.emitError("failed to canonicalise a body whose null guard was folded");
+                signalPassFailure();
+                return;
+            }
+        }
+    }
+
+private:
+    TargetNullability nullability_;
+};
+
 /// @brief Replaces a host-image section's field-wise body with one move.
 ///
 /// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
@@ -2012,6 +2086,11 @@ std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass()
     return std::make_unique<VerifyDSDLAliasLayoutPass>();
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(const TargetNullability nullability)
+{
+    return std::make_unique<FoldDSDLNullGuardsPass>(nullability);
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
 {
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
@@ -2029,14 +2108,22 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
-                                const bool           optimizeLoweredSerDes,
-                                const bool           targetObjectsAreByteImages,
-                                const bool           accessorsOnly)
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager&    pm,
+                                const bool              optimizeLoweredSerDes,
+                                const bool              targetObjectsAreByteImages,
+                                const bool              accessorsOnly,
+                                const TargetNullability nullability)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
     pm.addPass(createBuildDSDLPlanBodiesPass());
+    // Its own stage, under the target's capability, for the reason the host-image fold is: the
+    // three passes above produce one body per plan regardless of target, and that is the pipeline
+    // section 4 of DESIGN.md names.
+    if (!nullability.allNullable())
+    {
+        pm.addPass(createFoldDSDLNullGuardsPass(nullability));
+    }
     // Its own stage, under the target's capability. Folding inside the optimise stage would make
     // the fast path turn on a flag about simplification, which is a different question.
     if (targetObjectsAreByteImages)

@@ -95,6 +95,44 @@ void registerEmitDSDLRuntimePass();
 /// @brief Registers the LLVM lowering with the pass registry.
 void registerDSDLToLLVMPasses();
 
+/// @brief Which of a plan body's pointer arguments a target can present as null.
+///
+/// A body opens by testing the three it is handed, and answers `-2` when any is null. A target
+/// whose references cannot be null never reaches that answer, so the test is a constant and the
+/// guard is a branch nothing takes. Both default to the answer C gives, which is that any of them
+/// may be null, so a caller that says nothing keeps the guard.
+struct TargetNullability final
+{
+    /// @brief Whether the object a body serialises can arrive null.
+    ///
+    /// True for C and C++, which are handed a pointer. False for Rust, which is handed a reference.
+    /// Go, TypeScript and Python are handed an object that a caller may still omit, so it is true
+    /// for them as well.
+    bool objectPointer{true};
+
+    /// @brief Whether the buffer and the slot holding its size can arrive null.
+    ///
+    /// True only where they are pointers. Rust has a slice and a local, Go a slice, TypeScript and
+    /// Python a view and a local; none of those can be null.
+    bool rawPointer{true};
+
+    /// @brief Whether every argument is still nullable, so the guard has nothing to fold.
+    [[nodiscard]] constexpr bool allNullable() const
+    {
+        return objectPointer && rawPointer;
+    }
+};
+
+/// @brief Replaces a null test the target cannot fail with a constant, and folds what that kills.
+///
+/// Its own stage rather than an option on `build-dsdl-plan-bodies`, which produces one body per
+/// plan regardless of target and is the pipeline section 4 of DESIGN.md names. The fold is
+/// complete on its own: it canonicalises the bodies it changed rather than waiting for
+/// `--optimize-lowered-serdes`, which is off unless a caller asks for it.
+/// @param[in] nullability What the target can present as null.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nullability);
+
 /// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-verify-alias-layout`
 ///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a
 ///        deserialise function of dialect operations. A backend is a translation of that output
@@ -102,17 +140,18 @@ void registerDSDLToLLVMPasses();
 /// @param[in] pm Pass manager to extend.
 /// @param[in] optimizeLoweredSerDes Canonicalises the helpers and bodies once they are built, so every backend
 ///                                  translates the simplified functions.
-/// @param[in] pm Pass manager to extend.
-/// @param[in] optimizeLoweredSerDes Whether to canonicalise and CSE the bodies.
 /// @param[in] targetObjectsAreByteImages Whether this target's objects can be byte images of the
 ///            wire. True for the native backends; false where a structure has no layout to speak
 ///            of, as in TypeScript and Python.
 /// @param[in] accessorsOnly Whether to drop the bodies once they are built and keep the field
 ///                          accessors alone, which is what `--aliasable-only` emits.
+/// @param[in] nullability What the target can present as null, which decides whether the entry
+///                        guard survives.
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
                                 bool                 optimizeLoweredSerDes,
                                 bool                 targetObjectsAreByteImages = false,
-                                bool                 accessorsOnly              = false);
+                                bool                 accessorsOnly              = false,
+                                TargetNullability    nullability                = {});
 
 /// @brief Adds the canonicaliser and common-subexpression elimination, nested on every function.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.

@@ -2218,12 +2218,35 @@ int runDsdlc(int argc, char** argv)
             .isLittleEndian();
     const bool hostImageFolded = objectTarget && littleEndian;
 
+    // What the selected target can hand a body as null. A body opens by testing its three pointer
+    // arguments, and a target whose references cannot be null never reaches the answer that guard
+    // gives, so the test is a constant and the branch is one nothing takes.
+    //
+    // C and C++ are handed pointers and keep both. Rust is handed a reference, a slice and a local
+    // and keeps neither. Go, TypeScript and Python are handed an object a caller may omit, beside a
+    // buffer and a local that cannot be null. `mlir` keeps both, because what it prints is the
+    // neutral body every backend translates rather than any one target's reading of it.
+    llvmdsdl::TargetNullability nullability;
+    if (options.targetLanguage == "rust")
+    {
+        nullability = {false, false};
+    }
+    else if ((options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
+             (options.targetLanguage == "python"))
+    {
+        nullability = {true, false};
+    }
+
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
     // over the module they all receive.
     {
         logVerbose(1, "lowering serialisation plans to bodies");
         mlir::PassManager pm(&context);
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes, hostImageFolded, options.aliasableOnly);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm,
+                                             options.optimizeLoweredSerDes,
+                                             hostImageFolded,
+                                             options.aliasableOnly,
+                                             nullability);
         if (mlir::failed(pm.run(*mlirModule)))
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";

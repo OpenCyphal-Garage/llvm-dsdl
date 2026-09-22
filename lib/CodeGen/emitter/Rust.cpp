@@ -66,6 +66,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -652,6 +653,8 @@ public:
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
         accessor_            = Accessor::None;
+        cannotFail_          = everyReturnIsZero(fn);
+        deferredSize_        = {};
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -672,13 +675,31 @@ public:
         const bool serialize = *direction == "serialize";
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
         const bool lifetime = planOf(fn.getArgument(0)).lifetime;
-        w.open(serialize
-                   ? std::string{"pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"}
-                   : std::string{"pub fn deserialize(&mut self, buffer: &"} + (lifetime ? "'a " : "") +
-                         "[u8]) -> core::result::Result<usize, i8> {");
-        // The size a plan is handed by pointer, read at entry and written back at the end.
-        w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
-        return {"self", "buffer", "inout_buffer_size_bytes"};
+
+        // The size a plan is handed by pointer becomes a local, and how it is declared follows the
+        // body's own use of it. A body that reads the size it arrives with binds the slice's
+        // length; one that only writes a size back -- an empty definition writes zero without
+        // reading -- leaves the declaration to that write, since a binding nothing reads before
+        // overwriting is what `unused_assignments` reports and a bare `let` before it is what
+        // `needless_late_init` reports. Where the length goes, the buffer can be left unused, and
+        // Rust names an argument a body ignores with a leading underscore.
+        const SizeUse     size   = sizeUse(fn);
+        const bool        defer  = !size.read && size.writtenOnceAtEntry;
+        const std::string buffer = (defer && fn.getArgument(1).use_empty()) ? "_buffer" : "buffer";
+
+        w.open(serialize ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> core::result::Result<usize, i8> {"
+                         : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
+                               "[u8]) -> core::result::Result<usize, i8> {");
+        if (defer)
+        {
+            deferredSize_ = fn.getArgument(2);
+        }
+        else
+        {
+            w.line(std::string{"let "} + (size.written ? "mut " : "") + "inout_buffer_size_bytes: usize = " + buffer +
+                   ".len();");
+        }
+        return {"self", buffer, "inout_buffer_size_bytes"};
     }
 
     /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
@@ -843,15 +864,21 @@ public:
             w.line(expr.str() + returnCast_);
             return;
         }
+        // Where every return of the function is the constant zero the error arm is unreachable, and
+        // spelling the test anyway is the `0i8 == 0i8` that `eq_op` reports. The IR holds no
+        // comparison -- it returns the constant -- so the redundancy is this spelling's to avoid.
         if (accessor_ == Accessor::Setter)
         {
-            w.line("if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
+            w.line(cannotFail_ ? std::string{"Ok(())"}
+                               : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
             return;
         }
         // A body answers the runtime's error code; its Rust signature answers the size or the code.
         if (inBody_)
         {
-            w.line("if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" + expr.str() + ") }");
+            w.line(cannotFail_ ? std::string{"Ok(inout_buffer_size_bytes)"}
+                               : "if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" +
+                                     expr.str() + ") }");
             return;
         }
         w.line(expr.str());
@@ -1141,7 +1168,14 @@ public:
 
     void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
     {
-        w.line(names(op.getPointer()) + " = " + asSize(names(op.getValue())) + ";");
+        const std::string value = asSize(names(op.getValue()));
+        if (op.getPointer() == deferredSize_)
+        {
+            deferredSize_ = {};
+            w.line("let " + names(op.getPointer()) + ": usize = " + value + ";");
+            return;
+        }
+        w.line(names(op.getPointer()) + " = " + value + ";");
     }
 
     [[nodiscard]] std::string local(SourceWriter&         w,
@@ -1492,10 +1526,16 @@ private:
     }
 
     /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
+    ///
+    /// A load nobody consumes is not a read: the translator spells a load where its result is used,
+    /// so such a load reaches no line of Rust. A plan whose entry guard has folded away leaves one
+    /// behind, and counting it would bind a size the body never looks at.
     static bool isRead(const mlir::Value pointer)
     {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
+        return llvm::any_of(pointer.getUsers(), [](mlir::Operation* user) {
+            auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user);
+            return load && !load.getResult().use_empty();
+        });
     }
 
     /// @brief The Rust type the struct declares a scalar field or element as.
@@ -1657,6 +1697,63 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
+
+    /// @brief Whether the function being spelt returns the constant zero on every path.
+    mutable bool cannotFail_{false};
+
+    /// @brief The size argument whose local the body's own write is still to declare, if any.
+    mutable mlir::Value deferredSize_;
+
+    /// @brief Returns whether every return of @p fn answers a constant zero.
+    static bool everyReturnIsZero(mlir::func::FuncOp fn)
+    {
+        bool zero = true;
+        fn.walk([&](mlir::func::ReturnOp ret) {
+            if ((ret.getNumOperands() != 1) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
+            {
+                zero = false;
+            }
+        });
+        return zero;
+    }
+
+    /// @brief How a plan body uses the size it is handed by pointer.
+    struct SizeUse final
+    {
+        /// @brief Whether the body reads the size it arrives with.
+        bool read{};
+        /// @brief Whether the body writes a size back.
+        bool written{};
+        /// @brief Whether that write is a single one in the entry block, so it always happens.
+        bool writtenOnceAtEntry{};
+    };
+
+    /// @brief Returns how the plan body @p fn uses its size argument.
+    static SizeUse sizeUse(mlir::func::FuncOp fn)
+    {
+        const mlir::Value pointer = fn.getArgument(2);
+        SizeUse           out;
+        out.read = isRead(pointer);
+
+        unsigned         writes = 0;
+        mlir::Operation* write  = nullptr;
+        for (mlir::Operation* user : pointer.getUsers())
+        {
+            if (mlir::isa<mlir::dsdl::StoreScalarOp>(user))
+            {
+                ++writes;
+                write = user;
+            }
+            else if (!mlir::isa<mlir::dsdl::LoadScalarOp>(user))
+            {
+                // Anything else that holds the pointer may read through it.
+                out.read = true;
+            }
+        }
+        out.written            = writes > 0;
+        out.writtenOnceAtEntry = (writes == 1) && (write->getBlock() == &fn.front());
+        return out;
+    }
 };
 
 std::string rustConstType(const TypeExprAST& type)

@@ -274,18 +274,40 @@ findings this produces are the backlog, recorded as a baseline outside the gener
 later phases may only shrink.
 
 The naming was the half that was expected. With the Rust names fixed, rustc reports nothing over the
-regulated corpus and `cargo clippy -- -D warnings` reports 2,134 findings, none of them about a
-name. Around 1,700 share one cause: the plan opens each body by testing its pointer arguments
-against null, and a Rust `&self` or `&mut [u8]` cannot be null, so `dsdl.is_null` spells as `false`
-and the guard survives as `false || false`, a dead `if`, and an error path nothing can reach. The
-spelling folds the operand, and the constant arrives after `--optimize-lowered-serdes` has run, so
-nothing removes what the fold made dead. The remainder are a hand-written `Default` that
-`#[derive(Default)]` covers, and casts between one type and itself.
+regulated corpus, and `cargo clippy -- -D warnings` reported 2,134 findings, none of them about a
+name. Around 1,700 shared one cause: a plan opens each body by testing its pointer arguments against
+null, and a Rust `&self` or `&mut [u8]` cannot be null, so the guard survived as `false || false`, a
+dead `if`, and an error path nothing can reach.
 
-That is a defect of the lowering rather than of any backend, and it belongs where every backend
-inherits the fix: a plan whose target cannot present a null argument should not carry the guard. It
-is called out here because it is what pointing a real judge at the output found, and because the
-naming work is what made it visible.
+That was a defect of the lowering rather than of any backend, and the fix went where every backend
+inherits it. `dsdl-fold-null-guards` runs after `build-dsdl-plan-bodies` under a `TargetNullability`
+the driver derives from the target: Rust keeps neither test, Go, TypeScript and Python keep the one
+on the object a caller may omit, and C and C++ keep both. It canonicalises the bodies it changed
+rather than waiting for `--optimize-lowered-serdes`, which is off unless a caller asks for it, so a
+guard folded to a constant is never left where a reader would find it. The C and C++ output is
+unchanged byte for byte.
+
+Two findings survived the fold as spelling rather than lowering, and both were bodies whose plan
+cannot fail. Rust wrapped the plan's error code in `if err == 0i8 { Ok(..) } else { Err(err) }`
+against an error the fold had made the constant zero, and bound the slice's length to a size local
+that the body overwrote before reading. Neither shape is in the IR, so both are answered in the
+emitter: a function whose every return is a constant zero spells the success arm alone, and a body
+that never reads the size it is handed leaves the local's declaration to its own write.
+
+What remains is the backlog this phase exists to produce: 867 findings over the regulated corpus,
+none of them about a name and none of them errors.
+
+| count | lint | cause |
+|------:|------|-------|
+| 601 | `needless_late_init` | an `scf.if` result is declared and then assigned in both arms; Rust's `if` is an expression |
+| 158 | `unnecessary_cast` | a member or element load casts to the storage type even where the field already spells it |
+| 59 | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
+| 34 | `bool_comparison` | `x == false` rather than `!x` |
+| 15 | doc lists, boolean simplification, `div_ceil` | single sites |
+
+The last four are the emitter's own spellings. The first is the translator's: `structured` lowers an
+`scf.if` with results as a declaration and an assignment per arm, and a language whose `if` yields a
+value wants the expression form.
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
 nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that
