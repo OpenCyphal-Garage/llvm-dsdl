@@ -1,0 +1,65 @@
+# A Rust module reaches a composite by the short name its own module exports, so two definitions of
+# different namespaces can ask for one name and a module holding fields of both would import it
+# twice. The imports of a module are therefore allocated from a scope, and the scope holds what the
+# module declares itself as well as what it has already imported. Each case below is a shape the
+# regulated corpus does not contain: a clash is only reachable through a namespace the corpus has no
+# pair in, so the showroom found the first of them and review found the rest.
+
+# RUN: rm -rf %t && mkdir -p %t/shadow/root/foo %t/shadow/root/bar
+
+# ---------------------------------------------------------------------------------------------
+# An import against the module's own declaration.
+# ---------------------------------------------------------------------------------------------
+
+# `root.foo.Owner` holds a `root.bar.Owner`. Both project to `Owner`, and an import shares one
+# namespace with the `pub struct` beside it. The declaration keeps the name -- it is the type's
+# public API, and the import's name is private to the module -- so the import is what moves.
+# RUN: printf '@sealed\n' > %t/shadow/root/bar/Owner.1.0.dsdl
+# RUN: printf 'root.bar.Owner.1.0 inner\n@sealed\n' > %t/shadow/root/foo/Owner.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/shadow/root --rust-crate-name m --outdir %t/shadow/rust
+# RUN: cat %t/shadow/rust/src/root/foo/owner_1_0.rs | FileCheck %s --check-prefix=SHADOW
+# SHADOW: use crate::root::bar::owner_1_0::Owner as BarOwner;
+# SHADOW: pub struct Owner {
+# SHADOW:     pub inner: BarOwner,
+
+# ---------------------------------------------------------------------------------------------
+# More clashing imports than the namespace can tell apart.
+# ---------------------------------------------------------------------------------------------
+
+# A clash takes as much of its namespace as separates it, and a namespace of one component gives one
+# candidate. Three versions of one type reach `Foo`, then `NsFoo`, and then have nothing left to
+# qualify with, so an ordinal follows. It joins without a separator: an underscore before a digit is
+# what `non_camel_case_types` reports, and an alias is a type name.
+# RUN: mkdir -p %t/exhaust/ns
+# RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.2.0.dsdl
+# RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.3.0.dsdl
+# RUN: printf 'ns.Foo.1.0 a\nns.Foo.2.0 b\nns.Foo.3.0 c\n@sealed\n' > %t/exhaust/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust --all-type-versions %t/exhaust/ns --rust-crate-name m --outdir %t/exhaust/rust
+# RUN: cat %t/exhaust/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=EXHAUST
+# EXHAUST-DAG: use crate::ns::foo_1_0::Foo;
+# EXHAUST-DAG: use crate::ns::foo_2_0::Foo as NsFoo;
+# EXHAUST-DAG: use crate::ns::foo_3_0::Foo as Foo2;
+
+# ---------------------------------------------------------------------------------------------
+# A service whose own name is one of its sections'.
+# ---------------------------------------------------------------------------------------------
+
+# Rust reaches a service's sections through the definition's module, so the section alone is the
+# name and a service named `Request` declares one. The alias that says a service reached by its own
+# name means its request would declare that name a second time and stand for itself, so it is not
+# emitted; the service's own constants are.
+# RUN: mkdir -p %t/selfalias/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/selfalias/ns/Request.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust
+# RUN: cat %t/selfalias/rust/src/ns/request_1_0.rs | FileCheck %s --check-prefix=SELF
+# SELF-DAG: pub struct Request {
+# SELF-DAG: pub struct Response {
+# SELF-DAG: pub const REQUEST_HAS_FIXED_PORT_ID: bool = false;
+# SELF-NOT: pub type Request =
+
+# A service whose name is not a section's keeps the alias.
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/selfalias/ns/Query.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust2
+# RUN: cat %t/selfalias/rust2/src/ns/query_1_0.rs | FileCheck %s --check-prefix=ALIAS
+# ALIAS: pub type Query = Request;

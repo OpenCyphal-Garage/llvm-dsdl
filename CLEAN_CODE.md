@@ -143,7 +143,7 @@ Two consumers move onto the tree in the same change, or they drift from it:
 - `renderNamingManifest` reports the identifiers a backend writes. It must read the tree rather
   than recompute the projection, which is what makes it a report rather than a second opinion.
 - `Discovery` rejects two definitions whose generated type names or file stems collide, today by
-  calling `renderSectionTypeSuffix` itself. Renaming under the tree without moving the check makes
+  calling `renderSectionTypeName` itself. Renaming under the tree without moving the check makes
   it reject collisions that no longer exist and miss ones that do.
 
 ## One renderer, one declaration spelling per language

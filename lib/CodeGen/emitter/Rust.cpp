@@ -202,15 +202,33 @@ public:
     void beginModuleImports() const
     {
         importAliases_.clear();
+        moduleDeclarations_.clear();
+    }
+
+    /// @brief Reserves @p name for a type the module being rendered declares itself.
+    ///
+    /// An import shares one namespace with the module's own items, so a definition whose composite
+    /// has the same short name -- `foo.Owner` holding a `bar.Owner` -- would import `Owner` beside
+    /// `pub struct Owner`. Reserving the declarations before any import is allocated is what moves
+    /// the import instead of the declaration: the declaration's name is the type's public API, and
+    /// the import's is private to the module.
+    /// @param[in] name A type name the module declares.
+    void reserveDeclaration(const llvm::StringRef name) const
+    {
+        moduleDeclarations_.insert(name.str());
     }
 
     /// @brief Claims a local name for @p ref in the module being rendered, and answers it.
     ///
     /// Two composites of different namespaces can share a short name -- `angular_velocity::Vector3`
     /// and `velocity::Vector3` -- and a module that holds fields of both imports two `Vector3`.
-    /// The second takes as much of its namespace, from the nearest component outwards, as tells it
-    /// apart from the first. The namespace is Pascal-cased into the name rather than joined with an
-    /// underscore, since the alias is a type name like any other.
+    /// A clash takes as much of its namespace, from the nearest component outwards, as tells it
+    /// apart. The namespace is Pascal-cased into the name rather than joined with an underscore,
+    /// since the alias is a type name like any other.
+    ///
+    /// The namespace runs out before the candidates do: a module holding three versions of one
+    /// type of a one-component namespace asks for `Foo`, then `NsFoo`, and then has nothing left to
+    /// qualify with. An ordinal follows, so a name is always reached.
     std::string declareImport(const SemanticTypeRef& ref) const
     {
         const std::string path = rustTypePath(ref);
@@ -220,7 +238,8 @@ public:
             return found->second;
         }
         const auto taken = [this](const std::string& candidate) {
-            return llvm::any_of(importAliases_, [&](const auto& entry) { return entry.second == candidate; });
+            return moduleDeclarations_.contains(candidate) ||
+                   llvm::any_of(importAliases_, [&](const auto& entry) { return entry.second == candidate; });
         };
         std::string local = bare;
         for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
@@ -232,6 +251,12 @@ public:
                 qualified += codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, component);
             }
             local = qualified + bare;
+        }
+        // The ordinal joins without a separator: an underscore before a digit is what
+        // `non_camel_case_types` reports, and the alias is a type name.
+        for (unsigned ordinal = 2U; taken(local); ++ordinal)
+        {
+            local = bare + std::to_string(ordinal);
         }
         importAliases_[path] = local;
         return local;
@@ -275,6 +300,9 @@ private:
 
     /// @brief The local name each imported type path is spelled by, in the module being rendered.
     mutable std::map<std::string, std::string> importAliases_;
+
+    /// @brief The type names the module being rendered declares itself.
+    mutable std::set<std::string> moduleDeclarations_;
 };
 
 std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx);
@@ -2018,8 +2046,24 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto selfKey = definitionTypeKey(def.info);
 
-    // The imports below are this module's; what a previous module aliased says nothing here.
+    // The imports below are this module's; what a previous module aliased says nothing here. The
+    // module's own declarations are reserved first, so a composite whose short name meets one of
+    // them is the side that takes an alias.
     ctx.beginModuleImports();
+    {
+        const auto declaredBase = ctx.rustDeclaredTypeName(def);
+        ctx.reserveDeclaration(declaredBase);
+        ctx.reserveDeclaration(ctx.rustTypeName(def.info));
+        if (def.isService)
+        {
+            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
+            {
+                const auto sectionType = renderSectionTypeName(CodegenNamingLanguage::Rust, declaredBase, section);
+                ctx.reserveDeclaration(sectionType);
+                ctx.reserveDeclaration(renderDeclaredTypeName(sectionType, def.request.deprecated));
+            }
+        }
+    }
 
     for (const auto& depRef : deps)
     {
@@ -2118,15 +2162,23 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     out << "\n";
-    if (def.request.deprecated && options.emitDeprecationAttributes)
+    // The alias says that a service reached by its own name means its request. A service named
+    // `Request` already says it: the section carries that name, so the alias would declare the
+    // name a second time and stand for itself. The constants below are the service's own and are
+    // declared either way.
+    const std::string declaredReq = renderDeclaredTypeName(reqType, def.request.deprecated);
+    const bool        aliasNeeded = (baseType != reqType) && (baseType != declaredReq);
+    if (aliasNeeded)
     {
-        w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+        if (def.request.deprecated && options.emitDeprecationAttributes)
+        {
+            w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+        }
+        // The alias names the request, so it carries the request's lifetime when the request holds
+        // a view.
+        const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
+        w.line("pub type " + baseType + baseGenerics + " = " + declaredReq + baseGenerics + ";");
     }
-    // The alias names the request, so it carries the request's lifetime when the request holds a
-    // view.
-    const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
-    w.line("pub type " + baseType + baseGenerics + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) +
-           baseGenerics + ";");
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
     const auto baseConstPrefix =
