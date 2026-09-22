@@ -102,24 +102,24 @@
 # notice as its message, which rustc prints after "use of deprecated type alias".
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
 # RUST_DEP: #[derive(Clone, Debug, PartialEq)]
-# RUST_DEP-NEXT: pub struct dep_Retired_Request_ {
+# RUST_DEP-NEXT: pub struct Request_ {
 # RUST_DEP: #[deprecated(note = "dep.Retired.1.0 is marked @deprecated in its DSDL definition and is scheduled for removal; migrate to a newer version of this type.")]
-# RUST_DEP-NEXT: pub type dep_Retired_Request = dep_Retired_Request_;
-# RUST_DEP: impl Default for dep_Retired_Request_ {
-# RUST_DEP: impl dep_Retired_Request_ {
+# RUST_DEP-NEXT: pub type Request = Request_;
+# RUST_DEP: impl Default for Request_ {
+# RUST_DEP: impl Request_ {
 # RUST_DEP: IS_DEPRECATED: bool = true;
-# RUST_DEP: pub type dep_Retired_Response = dep_Retired_Response_;
+# RUST_DEP: pub type Response = Response_;
 # The service alias is deprecated the same way.
 # RUST_DEP: #[deprecated(note = "dep.Retired.1.0 is marked @deprecated
-# RUST_DEP-NEXT: pub type dep_Retired = dep_Retired_Request_;
+# RUST_DEP-NEXT: pub type Retired = Request_;
 # RUST_DEP_NEG-NOT: #![allow(deprecated)]
 
-# RUST_OK: pub struct dep_Current {
+# RUST_OK: pub struct Current {
 # RUST_OK: IS_DEPRECATED: bool = false;
 # RUST_OK_NEG-NOT: Deprecated:
 # RUST_OK_NEG-NOT: #[deprecated]
 # RUST_OK_NEG-NOT: #![allow(deprecated)]
-# RUST_OK_NEG-NOT: pub type dep_Current
+# RUST_OK_NEG-NOT: pub type Current
 
 # Go recognises a deprecation only from a doc-comment paragraph beginning exactly `Deprecated: `.
 # GO_DEP: _IS_DEPRECATED = true
@@ -178,5 +178,5 @@
 # RUST_NOATTR-NOT: #[deprecated]
 # RUST_NOATTR-NOT: #![allow(deprecated)]
 # RUST_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
-# RUST_NOATTR_DOC: pub type dep_Retired_Request = dep_Retired_Request_;
+# RUST_NOATTR_DOC: pub type Request = Request_;
 # RUST_NOATTR_DOC: IS_DEPRECATED: bool = true;

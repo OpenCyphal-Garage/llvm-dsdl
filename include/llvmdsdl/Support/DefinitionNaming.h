@@ -66,9 +66,30 @@ struct DefinitionNamePolicy final
 
     /// @brief Whether to re-project the whole composed name once it has been assembled.
     ///
-    /// Rust flattens the namespace into the identifier and then re-projects, so that the joined
+    /// A language that flattens the namespace into the identifier re-projects, so that the joined
     /// result is checked against the language a second time rather than only its parts.
     bool reprojectComposed{};
+
+    /// @brief Whether @ref TypeNameVersioning::Versioned puts the version in the type name.
+    ///
+    /// Rust reaches a definition through a module named for the definition and its version, so two
+    /// versions are already two paths and the name has nothing to add. The suffix would also be a
+    /// run of underscores in a position where `non_camel_case_types` reports one.
+    bool versionInTypeName{true};
+
+    /// @brief Whether a consumer can reach the generated type from this name and the namespace.
+    ///
+    /// The naming manifest reports the type name under this, and the naming golden pins it, so the
+    /// answer is stated once here rather than by each of them. It is true where the language carries
+    /// the namespace itself and the name is the definition's own: Rust in a module, Go, TypeScript
+    /// and Python in a per-namespace one.
+    ///
+    /// C is false because its namespace is joined into the identifier, so the namespace the manifest
+    /// reports beside the name would double it. C++ is false as it always has been, and the reason
+    /// once given for it -- that its emitter builds a namespace-qualified symbol of its own -- is not
+    /// what `cppTypeName` does. Whether C++ should report is a question for the phase that takes C++;
+    /// see `CLEAN_CODE.md`.
+    bool typeNameReachesTheType{true};
 };
 
 /// @brief Returns how @p language composes a definition's type name.
@@ -142,18 +163,30 @@ struct DefinitionNamePolicy final
                                                                               std::uint32_t         majorVersion,
                                                                               std::uint32_t         minorVersion);
 
-/// @brief Renders the suffix naming one section of a service's generated *type*.
+/// @brief Names the generated type of one section of a definition.
 ///
-/// A service emits a type per section, named after the service with a suffix. C separates with `__`
-/// because it has no namespaces and the doubled separator is what keeps the section apart from a
-/// sibling type whose DSDL name does end in `_Request`; every other language separates with a
-/// single underscore.
+/// A message is its own type and takes @p baseTypeName unchanged. A service declares a type per
+/// section, and where that type goes depends on what the language scopes it with. C, C++, Go,
+/// TypeScript and Python reach both sections through the name of the service, so the section is a
+/// suffix on it. Rust reaches them through the definition's own module, which names the service
+/// already, so the section alone is the name and `list_0_2::Request` is the whole path.
 ///
-/// This exists so the check that rejects such a collision computes the same name the emitter writes.
+/// This exists so that the emitter, the frontend's collision check and the naming manifest compose
+/// one answer rather than three.
 /// @param[in] language Naming language.
+/// @param[in] baseTypeName The definition's type name, from @ref renderDefinitionTypeName.
 /// @param[in] sectionName Section name: `request`, `response`, or empty for a message.
-/// @return The suffix, or an empty string for a message.
-[[nodiscard]] std::string renderSectionTypeSuffix(CodegenNamingLanguage language, llvm::StringRef sectionName);
+/// @return The section's type name.
+[[nodiscard]] std::string renderSectionTypeName(CodegenNamingLanguage language,
+                                                llvm::StringRef       baseTypeName,
+                                                llvm::StringRef       sectionName);
+
+/// @brief The prefix every helper symbol `build-dsdl-plan-bodies` synthesises begins with.
+///
+/// The pass appends the helper's kind, the schema symbol and a role suffix to reach a whole symbol.
+/// A backend that shortens the symbol for its own scope strips this from the front, so the pass that
+/// writes it and the backends that read it name it here rather than each spelling the literal.
+inline constexpr llvm::StringLiteral kPlanHelperSymbolPrefix{"llvmdsdl_plan_"};
 
 /// @brief Renders the linkage-symbol base for one definition.
 ///

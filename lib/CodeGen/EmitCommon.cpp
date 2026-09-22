@@ -175,6 +175,11 @@ std::string renderMakeRuleFromPreparedDeps(llvm::StringRef target, const std::ve
 
 }  // namespace
 
+std::string accessorSource(const llvm::StringRef kind, const llvm::StringRef field)
+{
+    return kind.str() + (field.starts_with("_") ? "" : "_") + field.str();
+}
+
 std::string definitionTypeKey(const DiscoveredDefinition& info)
 {
     return info.fullName + ":" + std::to_string(info.majorVersion) + ":" + std::to_string(info.minorVersion);

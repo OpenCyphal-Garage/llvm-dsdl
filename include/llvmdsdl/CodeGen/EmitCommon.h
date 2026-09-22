@@ -54,6 +54,17 @@ struct EmitWritePolicy final
 /// @return Key in the form `fullName:major:minor`.
 std::string definitionTypeKey(const DiscoveredDefinition& info);
 
+/// @brief The source name of a field's accessor: the kind and the field, joined by an underscore
+///        unless the field already starts with one.
+///
+/// A doubled underscore is reserved in C++ and is what `non_snake_case` reports in Rust, and the
+/// union tag reaches here as `_tag_`. Two fields can meet at one name, `foo` and `_foo`; the
+/// declaring scope is what keeps their accessors apart.
+/// @param[in] kind Accessor kind: `get` or `set`.
+/// @param[in] field The member's name in the target language.
+/// @return The accessor's source name, to be projected and declared by the caller.
+[[nodiscard]] std::string accessorSource(llvm::StringRef kind, llvm::StringRef field);
+
 /// @brief Result of narrowing a set of type keys to the newest version of each type.
 struct NewestVersionSelection final
 {

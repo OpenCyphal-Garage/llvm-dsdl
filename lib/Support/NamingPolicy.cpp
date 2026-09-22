@@ -281,27 +281,34 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     // A file name taken from the DSDL short name, untouched.
     static constexpr RolePolicy kVerbatim{CaseStyle::Preserve, false, false, false};
 
-    const bool cLike    = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
-    const bool rustLike = language == CodegenNamingLanguage::Rust;
-    const bool goLike   = language == CodegenNamingLanguage::Go;
+    const bool cLike  = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
+    const bool goLike = language == CodegenNamingLanguage::Go;
 
     switch (role)
     {
     case IdentifierRole::TypeName:
-        return (cLike || rustLike) ? kPreserve : kPascal;
+        // Rust takes the Pascal projection the other module-scoped languages take: its module
+        // carries the namespace, so the name is the DSDL short name alone and `non_camel_case_types`
+        // reports whatever is not cased.
+        return cLike ? kPreserve : kPascal;
     case IdentifierRole::FieldName:
     case IdentifierRole::FunctionName:
     case IdentifierRole::LocalName:
-        if (cLike || rustLike)
+        if (cLike)
         {
             return kPreserve;
         }
+        // `non_snake_case` covers a Rust field, method and local alike, so a DSDL member spelled
+        // `fooBar` is projected rather than carried through. Two members that fold onto one name
+        // are separated by the scope they are declared into, as they already are in the four
+        // languages that have always projected here.
         return goLike ? kPascal : kSnake;
     case IdentifierRole::ConstantName:
     case IdentifierRole::MacroName:
         return cLike ? kMacroToken : kUpperSnake;
     case IdentifierRole::NamespaceName:
-        return (cLike || rustLike) ? kPreserve : kSnake;
+        // A Rust namespace component is a module, which `non_snake_case` covers too.
+        return cLike ? kPreserve : kSnake;
     case IdentifierRole::FileStem:
         return cLike ? kVerbatim : kSnake;
     }
@@ -331,6 +338,40 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // A union option's `<OPTION>_OPTION_TAG` is not here because it is not a fixed name: it is
     // derived from an option's own DSDL name, and `makeSectionConstantScope` declares it into the
     // scope alongside the array metadata, which is derived the same way.
+    // The prelude names the generated Rust reaches without qualifying them. A definition's type name
+    // is a struct of the module the bodies are written into, so one of these would shadow what those
+    // bodies mean by it: `impl Default for Default` resolves the trait to the struct (E0404), and an
+    // empty definition is a unit struct, which takes the value namespace too, so `Ok(())` stops
+    // being the variant (E0618). The derive list is not here -- a derive macro is resolved in the
+    // macro namespace, where a struct of that name does not reach it.
+    static constexpr std::array<llvm::StringRef, 3> kRustPrelude = {"Default", "Ok", "Err"};
+
+    // What the generated crate root already answers to. A DSDL namespace component is a module of
+    // that root -- and reaches it now that the role projects to snake, as `dsdlRuntime` reaches
+    // `dsdl_runtime` -- so a component landing on one of these declares a name the root holds.
+    //
+    // The first two are the runtime's own modules, and a second `pub mod` of either is a crate
+    // rustc refuses. The last three are the crates the generated bodies reach by path: `alloc` is
+    // declared with `extern crate` under `no_std`, where a module beside it is E0260, and a module
+    // named `core` or `std` would answer for the paths those bodies are written in rather than for
+    // the crate they mean.
+    // A C++ namespace shares the global scope with whatever the standard headers declare there, and
+    // a namespace cannot share a name with a function. POSIX declares `index` in `<strings.h>`,
+    // which the generated headers reach through `<cstring>`, so `namespace index` is a redefinition.
+    //
+    // `std` is here for a reason a compiler does not give: [namespace.std] reserves it for the
+    // implementation, and a declaration added to it is undefined behaviour rather than a
+    // diagnostic. The adversarial gate compiles what it is given, so this is a member of the set
+    // that gate cannot find.
+    //
+    // This set grows by what the adversarial corpus finds on the platforms the gate runs, rather
+    // than by enumerating a standard library at a desk; see
+    // `test/integration/generate_naming_adversarial_corpus.py`.
+    static constexpr std::array<llvm::StringRef, 2> kCppGlobalNames = {"index", "std"};
+
+    static constexpr std::array<llvm::StringRef, 6> kRustCrateModules =
+        {"dsdl_runtime", "dsdl_runtime_semantic_wrappers", "lib", "alloc", "core", "std"};
+
     static constexpr std::array<llvm::StringRef, 12> kMetadata = {"FULL_NAME",
                                                                   "FULL_NAME_AND_VERSION",
                                                                   "IS_DEPRECATED",
@@ -403,6 +444,10 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         {
             return kCppMembers;
         }
+        if (role == IdentifierRole::NamespaceName)
+        {
+            return kCppGlobalNames;
+        }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Go:
@@ -416,7 +461,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Rust:
         // Constants share the inherent impl with the generated ones. Fields do not: fields and
-        // methods occupy separate namespaces.
+        // methods occupy separate namespaces. A type name competes with the prelude instead.
+        if (role == IdentifierRole::TypeName)
+        {
+            return kRustPrelude;
+        }
+        if (role == IdentifierRole::NamespaceName)
+        {
+            return kRustCrateModules;
+        }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Python:

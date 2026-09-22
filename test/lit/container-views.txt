@@ -158,11 +158,11 @@
 # RUN: %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_views/vendor/frame_1_0.rs | FileCheck %s --check-prefix=RUST
 # RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
-# RUST:     pub struct fixtures_views_vendor_Frame<'a> {
+# RUST:     pub struct Frame<'a> {
 # RUST:     pub pose: &'a [u8],
-# RUST:     impl<'a> Default for fixtures_views_vendor_Frame<'a> {
+# RUST:     impl<'a> Default for Frame<'a> {
 # RUST:     pose: &[],
-# RUST:     impl<'a> fixtures_views_vendor_Frame<'a> {
+# RUST:     impl<'a> Frame<'a> {
 # RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, i8> {
 # RUST:     self.pose = { let _len = core::cmp::min(
 # RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0

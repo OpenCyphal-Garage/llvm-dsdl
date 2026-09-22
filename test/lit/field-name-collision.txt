@@ -39,13 +39,14 @@
 # PY-DAG: C_BAR_BAZ = 1
 # PY-DAG: C_BAR_BAZ_2 = 2
 
-# Rust preserves raw field names (collision-free) but its constants fold like the others.
+# Rust folds field names and constants the way the other module-scoped languages do: `fooBar` and
+# `foo_bar` reach one identifier and the scope separates them.
 # RUN: %dsdlc --target-language rust %t/dsdl --outdir %t/rust --rust-crate-name cx
 # RUN: cat %t/rust/src/dsdl/cx/c_1_0.rs | FileCheck %s --check-prefix=RUST
 # RUST-DAG: pub const BAR_BAZ: u64 = 1;
 # RUST-DAG: pub const BAR_BAZ_2: u64 = 2;
-# RUST-DAG: pub fooBar: u8,
 # RUST-DAG: pub foo_bar: u8,
+# RUST-DAG: pub foo_bar_2: u8,
 
 # C preserves the raw DSDL names (already collision-free, distinct members).
 # RUN: %dsdlc --target-language c %t/dsdl --outdir %t/c

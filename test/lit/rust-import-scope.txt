@@ -1,0 +1,217 @@
+# The names a Rust module declares -- its imports and its accessors -- are allocated from scopes, so
+# two that project onto one identifier are separated rather than emitted twice. A module reaches a
+# composite by the short name its own module exports, and a union's accessors reach a synthetic tag
+# beside the options, and both are places where one identifier can be asked for twice.
+#
+# Every case below is a shape the regulated corpus does not contain: each needs a name pair the
+# corpus has no instance of. The showroom found the first; review found the rest.
+
+# RUN: rm -rf %t && mkdir -p %t/shadow/root/foo %t/shadow/root/bar
+
+# ---------------------------------------------------------------------------------------------
+# An import against the module's own declaration.
+# ---------------------------------------------------------------------------------------------
+
+# `root.foo.Owner` holds a `root.bar.Owner`. Both project to `Owner`, and an import shares one
+# namespace with the `pub struct` beside it. The declaration keeps the name -- it is the type's
+# public API, and the import's name is private to the module -- so the import is what moves.
+# RUN: printf '@sealed\n' > %t/shadow/root/bar/Owner.1.0.dsdl
+# RUN: printf 'root.bar.Owner.1.0 inner\n@sealed\n' > %t/shadow/root/foo/Owner.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/shadow/root --rust-crate-name m --outdir %t/shadow/rust
+# RUN: cat %t/shadow/rust/src/root/foo/owner_1_0.rs | FileCheck %s --check-prefix=SHADOW
+# SHADOW: use crate::root::bar::owner_1_0::Owner as BarOwner;
+# SHADOW: pub struct Owner {
+# SHADOW:     pub inner: BarOwner,
+
+# ---------------------------------------------------------------------------------------------
+# More clashing imports than the namespace can tell apart.
+# ---------------------------------------------------------------------------------------------
+
+# A clash takes as much of its namespace as separates it, and a namespace of one component gives one
+# candidate. Three versions of one type reach `Foo`, then `NsFoo`, and then have nothing left to
+# qualify with, so an ordinal follows. It joins without a separator: an underscore before a digit is
+# what `non_camel_case_types` reports, and an alias is a type name.
+# RUN: mkdir -p %t/exhaust/ns
+# RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.2.0.dsdl
+# RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.3.0.dsdl
+# RUN: printf 'ns.Foo.1.0 a\nns.Foo.2.0 b\nns.Foo.3.0 c\n@sealed\n' > %t/exhaust/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust --all-type-versions %t/exhaust/ns --rust-crate-name m --outdir %t/exhaust/rust
+# RUN: cat %t/exhaust/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=EXHAUST
+# EXHAUST-DAG: use crate::ns::foo_1_0::Foo;
+# EXHAUST-DAG: use crate::ns::foo_2_0::Foo as NsFoo;
+# EXHAUST-DAG: use crate::ns::foo_3_0::Foo as Foo2;
+
+# ---------------------------------------------------------------------------------------------
+# A service whose own name is one of its sections'.
+# ---------------------------------------------------------------------------------------------
+
+# Rust reaches a service's sections through the definition's module, so the section alone is the
+# name and a service named `Request` declares one. The alias that says a service reached by its own
+# name means its request would declare that name a second time and stand for itself, so it is not
+# emitted; the service's own constants are.
+# RUN: mkdir -p %t/selfalias/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/selfalias/ns/Request.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust
+# RUN: cat %t/selfalias/rust/src/ns/request_1_0.rs | FileCheck %s --check-prefix=SELF
+# SELF-DAG: pub struct Request {
+# SELF-DAG: pub struct Response {
+# SELF-DAG: pub const REQUEST_HAS_FIXED_PORT_ID: bool = false;
+# SELF-NOT: pub type Request =
+
+# A service whose name is not a section's keeps the alias.
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/selfalias/ns/Query.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust2
+# RUN: cat %t/selfalias/rust2/src/ns/query_1_0.rs | FileCheck %s --check-prefix=ALIAS
+# ALIAS: pub type Query = Request;
+
+# ---------------------------------------------------------------------------------------------
+# An ordinal on a name that already ends in an underscore.
+# ---------------------------------------------------------------------------------------------
+
+# A deprecated definition is imported by the name its implementation struct carries, which ends in
+# `_`, so an ordinal appended to it would read `Foo_2`. The candidate is composed from the raw parts
+# and projected once, so it reads `Foo2`, and the deprecation marker is re-applied after: `Foo2_`.
+# RUN: mkdir -p %t/depord/ns
+# RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.1.0.dsdl
+# RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.2.0.dsdl
+# RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.3.0.dsdl
+# RUN: printf 'ns.Foo.1.0 a\nns.Foo.2.0 b\nns.Foo.3.0 c\n@sealed\n' > %t/depord/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust --all-type-versions %t/depord/ns --rust-crate-name m --outdir %t/depord/rust
+# RUN: cat %t/depord/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=DEPORD
+# DEPORD-DAG: use crate::ns::foo_1_0::Foo_;
+# DEPORD-DAG: use crate::ns::foo_2_0::Foo_ as NsFoo_;
+# DEPORD-DAG: use crate::ns::foo_3_0::Foo_ as Foo2_;
+# DEPORD-NOT: as Foo_2;
+
+# ---------------------------------------------------------------------------------------------
+# A union option whose accessor composes onto the synthetic tag's.
+# ---------------------------------------------------------------------------------------------
+
+# The tag reaches the accessor scope as `_tag_` and an option named `tag_` reaches it as `tag_`;
+# with one separator absorbed by the leading underscore both would read `get_tag_`. The scope is
+# keyed with the separator unconditional, so the two are two names that the snake projection folds
+# onto one identifier. The tag is declared first and keeps its accessors; the option moves.
+# RUN: mkdir -p %t/tagclash/vendor
+# RUN: printf '@union\nuint32 tag_\nfloat32 real\n@sealed\n' > %t/tagclash/vendor/Clash.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/tagclash --rust-crate-name m --outdir %t/tagclash/rust
+# RUN: cat %t/tagclash/rust/src/tagclash/vendor/clash_1_0.rs | FileCheck %s --check-prefix=TAGCLASH
+# TAGCLASH-DAG: pub fn get_tag_(buffer: &[u8]) -> u8 {
+# TAGCLASH-DAG: pub fn set_tag_(buffer: &mut [u8], value: u8) -> core::result::Result<(), i8> {
+# TAGCLASH-DAG: pub fn get_tag_2(buffer: &[u8]) -> u32 {
+# TAGCLASH-DAG: pub fn set_tag_2(buffer: &mut [u8], value: u32) -> core::result::Result<(), i8> {
+
+# ---------------------------------------------------------------------------------------------
+# A service named after its response.
+# ---------------------------------------------------------------------------------------------
+
+# The alias stands for the request, so the guard covers the response too: a service named
+# `Response` declares that name as its response, and the alias would declare it again.
+# RUN: mkdir -p %t/rsp/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/rsp/ns/Response.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/rsp/ns --rust-crate-name m --outdir %t/rsp/rust
+# RUN: cat %t/rsp/rust/src/ns/response_1_0.rs | FileCheck %s --check-prefix=RSP
+# RSP-DAG: pub struct Request {
+# RSP-DAG: pub struct Response {
+# RSP-NOT: pub type Response =
+
+# ---------------------------------------------------------------------------------------------
+# A definition named after something the prelude provides.
+# ---------------------------------------------------------------------------------------------
+
+# A definition's type name is a struct of the module the bodies are written into, and those bodies
+# name three prelude items without qualifying them. `impl Default for Default` resolves the trait to
+# the struct, and an empty definition is a unit struct, which takes the value namespace too, so
+# `Ok(())` stops being the variant. The three are claimed, so the projection escapes them.
+# RUN: mkdir -p %t/prelude/ns
+# RUN: printf 'uint8 a\n@sealed\n' > %t/prelude/ns/Default.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/prelude/ns/Ok.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/prelude/ns/Err.1.0.dsdl
+# RUN: printf 'ns.Default.1.0 d\nns.Ok.1.0 o\nns.Err.1.0 e\n@sealed\n' > %t/prelude/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust
+# RUN: cat %t/prelude/rust/src/ns/default_1_0.rs | FileCheck %s --check-prefix=PRELUDE
+# PRELUDE: pub struct Default_ {
+# PRELUDE: impl Default for Default_ {
+# RUN: cat %t/prelude/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=PRELUDE_USE
+# PRELUDE_USE-DAG: use crate::ns::default_1_0::Default_;
+# PRELUDE_USE-DAG: use crate::ns::ok_1_0::Ok_;
+# PRELUDE_USE-DAG: use crate::ns::err_1_0::Err_;
+
+# A derive macro is resolved in the macro namespace, so a definition named `Clone` reaches the
+# derive list without shadowing it and is not claimed.
+# RUN: printf 'uint8 a\n@sealed\n' > %t/prelude/ns/Clone.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust2
+# RUN: cat %t/prelude/rust2/src/ns/clone_1_0.rs | FileCheck %s --check-prefix=DERIVE
+# DERIVE: #[derive(Clone, Debug, PartialEq)]
+# DERIVE-NEXT: pub struct Clone {
+
+# ---------------------------------------------------------------------------------------------
+# A namespace component the prelude claims.
+# ---------------------------------------------------------------------------------------------
+
+# A candidate is composed from the raw parts and projected once. Projecting a part on its own would
+# leave its separator in the alias: a namespace component named `default` is claimed for Rust type
+# names and contributes `Default_`, so a per-part composition reads `Default_Foo`. rustc accepts
+# that -- an import alias is not held to camel case -- and it is still not what a Rust type name
+# looks like, which is what this backend is held to.
+# RUN: mkdir -p %t/nsclaim/root/alpha %t/nsclaim/root/default %t/nsclaim/root/other
+# RUN: printf '@sealed\n' > %t/nsclaim/root/alpha/Foo.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/nsclaim/root/default/Foo.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/nsclaim/root/other/Foo.1.0.dsdl
+# RUN: printf 'root.alpha.Foo.1.0 a\nroot.default.Foo.1.0 b\nroot.other.Foo.1.0 c\n@sealed\n' > %t/nsclaim/root/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/nsclaim/root --rust-crate-name m --outdir %t/nsclaim/rust
+# RUN: cat %t/nsclaim/rust/src/root/holder_1_0.rs | FileCheck %s --check-prefix=NSCLAIM
+# NSCLAIM-DAG: use crate::root::alpha::foo_1_0::Foo;
+# NSCLAIM-DAG: use crate::root::default::foo_1_0::Foo as DefaultFoo;
+# NSCLAIM-DAG: use crate::root::other::foo_1_0::Foo as OtherFoo;
+# NSCLAIM-NOT: as Default_Foo;
+
+# ---------------------------------------------------------------------------------------------
+# A field whose name composes onto another field's accessor.
+# ---------------------------------------------------------------------------------------------
+
+# A Rust field and a method occupy separate namespaces, so a section holding fields `get_foo` and
+# `foo` keeps the field `get_foo` and the method `get_foo` both. Accessors are allocated from a
+# scope of their own for that reason: sharing the field scope renamed the method for a clash the
+# language does not have, and renamed the getter alone, since only the getter's name met the field's.
+# RUN: mkdir -p %t/accscope/vendor
+# RUN: printf 'uint8 get_foo\nuint8 foo\n@sealed\n' > %t/accscope/vendor/Acc.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/accscope --rust-crate-name m --outdir %t/accscope/rust
+# RUN: cat %t/accscope/rust/src/accscope/vendor/acc_1_0.rs | FileCheck %s --check-prefix=ACCSCOPE
+# ACCSCOPE-DAG: pub get_foo: u8,
+# ACCSCOPE-DAG: pub fn get_get_foo(buffer: &[u8]) -> u8 {
+# ACCSCOPE-DAG: pub fn get_foo(buffer: &[u8]) -> u8 {
+# ACCSCOPE-DAG: pub fn set_foo(buffer: &mut [u8], value: u8) -> core::result::Result<(), i8> {
+# ACCSCOPE-NOT: pub fn get_foo_2(
+
+# ---------------------------------------------------------------------------------------------
+# A namespace component that reaches a module the crate root declares.
+# ---------------------------------------------------------------------------------------------
+
+# The crate root declares its runtime modules for itself, and a namespace component reaches the
+# same place now that the role is snake: `dsdlRuntime` projects onto `dsdl_runtime`. A second
+# `pub mod` of one name is a crate rustc refuses, so the two are claimed and the namespace escapes.
+# RUN: mkdir -p %t/rootclash/dsdlRuntime
+# RUN: printf 'uint8 a\n@sealed\n' > %t/rootclash/dsdlRuntime/Foo.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/rootclash/dsdlRuntime --rust-crate-name m --outdir %t/rootclash/rust
+# RUN: cat %t/rootclash/rust/src/lib.rs | FileCheck %s --check-prefix=ROOTCLASH
+# ROOTCLASH: pub mod dsdl_runtime;
+# ROOTCLASH-NEXT: pub mod dsdl_runtime_;
+
+# ---------------------------------------------------------------------------------------------
+# A namespace component that is a crate the bodies reach by path.
+# ---------------------------------------------------------------------------------------------
+
+# `alloc` is declared with `extern crate` at the root under `no_std`, so a namespace component of
+# that name is a second root declaration and E0260. `core` and `std` are the crates the bodies are
+# written in terms of, and a module of either name would answer for those paths. All three are
+# claimed beside the runtime's own modules. The std profile compiles either way, which is why only
+# the no-std half of this could have found it.
+# RUN: mkdir -p %t/crates/alloc
+# RUN: printf 'uint8 a\n@sealed\n' > %t/crates/alloc/Foo.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/crates/alloc --rust-crate-name m --outdir %t/crates/rust
+# RUN: cat %t/crates/rust/src/lib.rs | FileCheck %s --check-prefix=CRATES
+# CRATES: extern crate alloc;
+# CRATES: pub mod dsdl_runtime;
+# CRATES-NEXT: pub mod alloc_;
+# CRATES-NOT: pub mod alloc;

@@ -46,9 +46,14 @@ namespace
 ///            which decides whether they are in reach of the module's own names. The emitters build
 ///            their scope from it, so the manifest has to as well or it reports a name that is not
 ///            the one written.
+/// @param[in] reportTypeName Whether the section's type name is the shared projection, and so is
+///            the whole answer rather than part of one. Reported because it does not follow from
+///            the definition's own: Rust reaches a section through the definition's module, so the
+///            name is the section word alone and a consumer cannot derive it from the type name.
 llvm::json::Object renderSection(const CodegenNamingLanguage language,
                                  const SemanticSection&      section,
-                                 const std::string&          sectionTypeName)
+                                 const std::string&          sectionTypeName,
+                                 const bool                  reportTypeName)
 {
     const NamingScope fieldScope = makeSectionFieldScope(language, section);
     const NamingScope constScope =
@@ -71,6 +76,10 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language,
     }
 
     llvm::json::Object out;
+    if (reportTypeName)
+    {
+        out["type_name"] = sectionTypeName;
+    }
     out["fields"]    = std::move(fields);
     out["constants"] = std::move(constants);
 
@@ -97,17 +106,6 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language,
     return out;
 }
 
-/// @brief True when @p language's generated type symbol is the shared short-name projection.
-///
-/// Go, TypeScript and Python name the type after the short name and version. C, C++ and Rust build a
-/// namespace-qualified symbol in their own emitters (`mangleSymbol`, `cppTypeName`, `rustTypeName`),
-/// for which the shared projection is only part of the answer, so the manifest omits the key.
-bool typeSymbolIsSharedProjection(const CodegenNamingLanguage language)
-{
-    return language == CodegenNamingLanguage::Go || language == CodegenNamingLanguage::TypeScript ||
-           language == CodegenNamingLanguage::Python;
-}
-
 /// @brief Renders one definition under one language.
 llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
                                     const SemanticDefinition&   def,
@@ -128,8 +126,10 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
                                                           def.info.minorVersion,
                                                           typeNameVersioning);
 
+    const bool reportType = definitionNamePolicy(language).typeNameReachesTheType;
+
     llvm::json::Object out;
-    if (typeSymbolIsSharedProjection(language))
+    if (reportType)
     {
         out["type_name"] = typeName;
     }
@@ -144,16 +144,19 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
     }
     if (def.isService)
     {
-        out["request"] = renderSection(language, def.request, typeName + renderSectionTypeSuffix(language, "request"));
+        out["request"] =
+            renderSection(language, def.request, renderSectionTypeName(language, typeName, "request"), reportType);
         if (def.response.has_value())
         {
-            out["response"] =
-                renderSection(language, *def.response, typeName + renderSectionTypeSuffix(language, "response"));
+            out["response"] = renderSection(language,
+                                            *def.response,
+                                            renderSectionTypeName(language, typeName, "response"),
+                                            reportType);
         }
     }
     else
     {
-        out["message"] = renderSection(language, def.request, typeName);
+        out["message"] = renderSection(language, def.request, typeName, reportType);
     }
     return out;
 }

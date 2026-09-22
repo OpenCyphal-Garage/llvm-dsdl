@@ -24,14 +24,14 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use uavcan_dsdl_generated::uavcan::metatransport::can::frame_0_2::uavcan_metatransport_can_Frame@V0_2@;
+use uavcan_dsdl_generated::uavcan::metatransport::can::frame_0_2::Frame;
 use uavcan_dsdl_generated::uavcan::node::execute_command_1_3::{
-    uavcan_node_ExecuteCommand@V1_3@_Request, uavcan_node_ExecuteCommand@V1_3@_Response,
+    Request as ExecuteCommandRequest, Response as ExecuteCommandResponse,
 };
-use uavcan_dsdl_generated::uavcan::node::health_1_0::uavcan_node_Health@V1_0@;
-use uavcan_dsdl_generated::uavcan::node::heartbeat_1_0::uavcan_node_Heartbeat@V1_0@;
-use uavcan_dsdl_generated::uavcan::node::port::list_1_0::uavcan_node_port_List@V1_0@;
-use uavcan_dsdl_generated::uavcan::primitive::scalar::integer8_1_0::uavcan_primitive_scalar_Integer8@V1_0@;
+use uavcan_dsdl_generated::uavcan::node::health_1_0::Health;
+use uavcan_dsdl_generated::uavcan::node::heartbeat_1_0::Heartbeat;
+use uavcan_dsdl_generated::uavcan::node::port::list_1_0::List;
+use uavcan_dsdl_generated::uavcan::primitive::scalar::integer8_1_0::Integer8;
 
 /// Deterministic xorshift64* PRNG so failures are reproducible.
 struct Rng(u64);
@@ -69,13 +69,13 @@ fn fuzz_one_input(data: &[u8]) {
     // tagged union, variable-length arrays, and the deep nested-delimited path.
     fuzz_types!(
         data,
-        uavcan_node_Heartbeat@V1_0@,
-        uavcan_node_Health@V1_0@,
-        uavcan_primitive_scalar_Integer8@V1_0@,
-        uavcan_metatransport_can_Frame@V0_2@,
-        uavcan_node_ExecuteCommand@V1_3@_Request,
-        uavcan_node_ExecuteCommand@V1_3@_Response,
-        uavcan_node_port_List@V1_0@,
+        Heartbeat,
+        Health,
+        Integer8,
+        Frame,
+        ExecuteCommandRequest,
+        ExecuteCommandResponse,
+        List,
     );
 }
 

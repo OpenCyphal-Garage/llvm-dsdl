@@ -15,21 +15,21 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use cyphal_yakut_demo_generated_rust::uavcan::node::health_1_0::uavcan_node_Health_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::node::heartbeat_1_0::uavcan_node_Heartbeat_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::node::mode_1_0::uavcan_node_Mode_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::primitive::array::natural16_1_0::uavcan_primitive_array_Natural16_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::primitive::array::natural32_1_0::uavcan_primitive_array_Natural32_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::primitive::string_1_0::uavcan_primitive_String_1_0;
+use cyphal_yakut_demo_generated_rust::uavcan::node::health_1_0::Health;
+use cyphal_yakut_demo_generated_rust::uavcan::node::heartbeat_1_0::Heartbeat;
+use cyphal_yakut_demo_generated_rust::uavcan::node::mode_1_0::Mode;
+use cyphal_yakut_demo_generated_rust::uavcan::primitive::array::natural16_1_0::Natural16;
+use cyphal_yakut_demo_generated_rust::uavcan::primitive::array::natural32_1_0::Natural32;
+use cyphal_yakut_demo_generated_rust::uavcan::primitive::string_1_0::String as PrimitiveString;
 use cyphal_yakut_demo_generated_rust::uavcan::register::access_1_0::{
-    uavcan_register_Access_1_0_Request, uavcan_register_Access_1_0_Response,
+    Request as AccessRequest, Response as AccessResponse,
 };
 use cyphal_yakut_demo_generated_rust::uavcan::register::list_1_0::{
-    uavcan_register_List_1_0_Request, uavcan_register_List_1_0_Response,
+    Request as ListRequest, Response as ListResponse,
 };
-use cyphal_yakut_demo_generated_rust::uavcan::register::name_1_0::uavcan_register_Name_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::register::value_1_0::uavcan_register_Value_1_0;
-use cyphal_yakut_demo_generated_rust::uavcan::time::synchronized_timestamp_1_0::uavcan_time_SynchronizedTimestamp_1_0;
+use cyphal_yakut_demo_generated_rust::uavcan::register::name_1_0::Name;
+use cyphal_yakut_demo_generated_rust::uavcan::register::value_1_0::Value;
+use cyphal_yakut_demo_generated_rust::uavcan::time::synchronized_timestamp_1_0::SynchronizedTimestamp;
 
 const SUBJECT_HEARTBEAT: u16 = 7509;
 const SERVICE_REGISTER_ACCESS: u16 = 384;
@@ -188,9 +188,9 @@ impl NodeApp {
                 self.options.node_id,
                 iface_cstr.as_ptr(),
                 SERVICE_REGISTER_ACCESS,
-                uavcan_register_Access_1_0_Request::EXTENT_BYTES,
+                AccessRequest::EXTENT_BYTES,
                 SERVICE_REGISTER_LIST,
-                uavcan_register_List_1_0_Request::EXTENT_BYTES,
+                ListRequest::EXTENT_BYTES,
                 TX_QUEUE_CAPACITY,
                 RX_DATAGRAM_CAPACITY,
             )
@@ -340,17 +340,17 @@ impl NodeApp {
             0
         };
 
-        let mut heartbeat = uavcan_node_Heartbeat_1_0::default();
+        let mut heartbeat = Heartbeat::default();
         heartbeat.uptime = cmp::min(uptime_seconds, u32::MAX as u64) as u32;
-        heartbeat.health = uavcan_node_Health_1_0 {
-            value: uavcan_node_Health_1_0::NOMINAL as u8,
+        heartbeat.health = Health {
+            value: Health::NOMINAL as u8,
         };
-        heartbeat.mode = uavcan_node_Mode_1_0 {
-            value: uavcan_node_Mode_1_0::OPERATIONAL as u8,
+        heartbeat.mode = Mode {
+            value: Mode::OPERATIONAL as u8,
         };
         heartbeat.vendor_specific_status_code = (self.heartbeat_counter & 0xFF) as u8;
 
-        let mut encoded = vec![0u8; uavcan_node_Heartbeat_1_0::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let mut encoded = vec![0u8; Heartbeat::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = heartbeat
             .serialize(&mut encoded)
             .map_err(|rc| format!("heartbeat serialisation failed: {}", rc))?;
@@ -413,25 +413,25 @@ impl NodeApp {
         transfer_id: u8,
         payload: &[u8],
     ) -> Result<(), String> {
-        let mut request = uavcan_register_List_1_0_Request::default();
+        let mut request = ListRequest::default();
         request
             .deserialize(payload)
             .map_err(|rc| format!("failed to deserialize register.List request: {}", rc))?;
 
-        let mut response = uavcan_register_List_1_0_Response::default();
+        let mut response = ListResponse::default();
         if (request.index as usize) < self.registers.len() {
-            response.name = uavcan_register_Name_1_0 {
+            response.name = Name {
                 name: self.registers[request.index as usize]
                     .name
                     .as_bytes()
                     .to_vec(),
             };
         } else {
-            response.name = uavcan_register_Name_1_0 { name: Vec::new() };
+            response.name = Name { name: Vec::new() };
         }
 
         let mut encoded =
-            vec![0u8; uavcan_register_List_1_0_Response::SERIALIZATION_BUFFER_SIZE_BYTES];
+            vec![0u8; ListResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = response
             .serialize(&mut encoded)
             .map_err(|rc| format!("failed to serialize register.List response: {}", rc))?;
@@ -446,15 +446,15 @@ impl NodeApp {
         transfer_id: u8,
         payload: &[u8],
     ) -> Result<(), String> {
-        let mut request = uavcan_register_Access_1_0_Request::default();
+        let mut request = AccessRequest::default();
         request
             .deserialize(payload)
             .map_err(|rc| format!("failed to deserialize register.Access request: {}", rc))?;
 
         let requested_name = String::from_utf8_lossy(&request.name.name).to_string();
-        let mut response = uavcan_register_Access_1_0_Response::default();
-        response.timestamp = uavcan_time_SynchronizedTimestamp_1_0 {
-            microsecond: uavcan_time_SynchronizedTimestamp_1_0::UNKNOWN,
+        let mut response = AccessResponse::default();
+        response.timestamp = SynchronizedTimestamp {
+            microsecond: SynchronizedTimestamp::UNKNOWN,
         };
 
         let mut refresh_heartbeat_period = false;
@@ -478,7 +478,7 @@ impl NodeApp {
         }
 
         let mut encoded =
-            vec![0u8; uavcan_register_Access_1_0_Response::SERIALIZATION_BUFFER_SIZE_BYTES];
+            vec![0u8; AccessResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = response
             .serialize(&mut encoded)
             .map_err(|rc| format!("failed to serialize register.Access response: {}", rc))?;
@@ -576,36 +576,36 @@ impl Drop for NodeApp {
     }
 }
 
-fn make_natural16_value(value: u16) -> uavcan_register_Value_1_0 {
-    let mut out = uavcan_register_Value_1_0::default();
+fn make_natural16_value(value: u16) -> Value {
+    let mut out = Value::default();
     out._tag_ = VALUE_TAG_NATURAL16;
-    out.natural16 = uavcan_primitive_array_Natural16_1_0 { value: vec![value] };
+    out.natural16 = Natural16 { value: vec![value] };
     out
 }
 
-fn make_natural32_value(value: u32) -> uavcan_register_Value_1_0 {
-    let mut out = uavcan_register_Value_1_0::default();
+fn make_natural32_value(value: u32) -> Value {
+    let mut out = Value::default();
     out._tag_ = VALUE_TAG_NATURAL32;
-    out.natural32 = uavcan_primitive_array_Natural32_1_0 { value: vec![value] };
+    out.natural32 = Natural32 { value: vec![value] };
     out
 }
 
-fn make_string_value(value: &str) -> uavcan_register_Value_1_0 {
-    let mut out = uavcan_register_Value_1_0::default();
+fn make_string_value(value: &str) -> Value {
+    let mut out = Value::default();
     out._tag_ = VALUE_TAG_STRING;
-    out.string = uavcan_primitive_String_1_0 {
+    out.string = PrimitiveString {
         value: value.as_bytes().to_vec(),
     };
     out
 }
 
-fn make_empty_value() -> uavcan_register_Value_1_0 {
-    let mut out = uavcan_register_Value_1_0::default();
+fn make_empty_value() -> Value {
+    let mut out = Value::default();
     out._tag_ = VALUE_TAG_EMPTY;
     out
 }
 
-fn export_register_value(entry: &RegisterEntry) -> uavcan_register_Value_1_0 {
+fn export_register_value(entry: &RegisterEntry) -> Value {
     match entry.kind {
         RegisterKind::Natural16 => make_natural16_value(entry.natural16),
         RegisterKind::Natural32 => make_natural32_value(entry.natural32),
@@ -613,7 +613,7 @@ fn export_register_value(entry: &RegisterEntry) -> uavcan_register_Value_1_0 {
     }
 }
 
-fn extract_single_unsigned(value: &uavcan_register_Value_1_0) -> Option<u64> {
+fn extract_single_unsigned(value: &Value) -> Option<u64> {
     match value._tag_ {
         VALUE_TAG_NATURAL8 => value.natural8.value.first().map(|v| *v as u64),
         VALUE_TAG_NATURAL16 => value.natural16.value.first().map(|v| *v as u64),
@@ -651,7 +651,7 @@ fn extract_single_unsigned(value: &uavcan_register_Value_1_0) -> Option<u64> {
     }
 }
 
-fn apply_register_write(entry: &mut RegisterEntry, value: &uavcan_register_Value_1_0) -> bool {
+fn apply_register_write(entry: &mut RegisterEntry, value: &Value) -> bool {
     if value._tag_ == VALUE_TAG_EMPTY {
         return false;
     }

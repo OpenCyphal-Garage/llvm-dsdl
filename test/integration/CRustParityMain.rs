@@ -14,18 +14,18 @@ use std::fmt::Write as _;
 use std::os::raw::c_int;
 
 use uavcan_dsdl_generated::dsdl_runtime;
-use uavcan_dsdl_generated::uavcan::metatransport::can::frame_0_2::uavcan_metatransport_can_Frame@V0_2@;
+use uavcan_dsdl_generated::uavcan::metatransport::can::frame_0_2::Frame;
 use uavcan_dsdl_generated::uavcan::node::execute_command_1_3::{
-    uavcan_node_ExecuteCommand@V1_3@_Request, uavcan_node_ExecuteCommand@V1_3@_Response,
+    Request as ExecuteCommandRequest, Response as ExecuteCommandResponse,
 };
-use uavcan_dsdl_generated::uavcan::node::heartbeat_1_0::uavcan_node_Heartbeat@V1_0@;
-use uavcan_dsdl_generated::uavcan::node::health_1_0::uavcan_node_Health@V1_0@;
-use uavcan_dsdl_generated::uavcan::node::port::list_1_0::uavcan_node_port_List@V1_0@;
-use uavcan_dsdl_generated::uavcan::node::port::subject_id_1_0::uavcan_node_port_SubjectID@V1_0@;
-use uavcan_dsdl_generated::uavcan::primitive::scalar::integer8_1_0::uavcan_primitive_scalar_Integer8@V1_0@;
-use uavcan_dsdl_generated::uavcan::primitive::scalar::real32_1_0::uavcan_primitive_scalar_Real32@V1_0@;
-use uavcan_dsdl_generated::uavcan::register::value_1_0::uavcan_register_Value@V1_0@;
-use uavcan_dsdl_generated::uavcan::time::synchronized_timestamp_1_0::uavcan_time_SynchronizedTimestamp@V1_0@;
+use uavcan_dsdl_generated::uavcan::node::heartbeat_1_0::Heartbeat;
+use uavcan_dsdl_generated::uavcan::node::health_1_0::Health;
+use uavcan_dsdl_generated::uavcan::node::port::list_1_0::List;
+use uavcan_dsdl_generated::uavcan::node::port::subject_id_1_0::SubjectID;
+use uavcan_dsdl_generated::uavcan::primitive::scalar::integer8_1_0::Integer8;
+use uavcan_dsdl_generated::uavcan::primitive::scalar::real32_1_0::Real32;
+use uavcan_dsdl_generated::uavcan::register::value_1_0::Value;
+use uavcan_dsdl_generated::uavcan::time::synchronized_timestamp_1_0::SynchronizedTimestamp;
 
 const MAX_IO_BUFFER: usize = 2048;
 
@@ -264,96 +264,96 @@ where
 }
 
 fn heartbeat_deserialize(
-    out: &mut uavcan_node_Heartbeat@V1_0@,
+    out: &mut Heartbeat,
     buffer: &[u8],
 ) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
-fn heartbeat_serialize(obj: &uavcan_node_Heartbeat@V1_0@, buffer: &mut [u8]) -> Result<usize, i8> {
+fn heartbeat_serialize(obj: &Heartbeat, buffer: &mut [u8]) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
-fn health_deserialize(out: &mut uavcan_node_Health@V1_0@, buffer: &[u8]) -> (i8, usize) {
+fn health_deserialize(out: &mut Health, buffer: &[u8]) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
-fn health_serialize(obj: &uavcan_node_Health@V1_0@, buffer: &mut [u8]) -> Result<usize, i8> {
+fn health_serialize(obj: &Health, buffer: &mut [u8]) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
 fn synchronized_timestamp_deserialize(
-    out: &mut uavcan_time_SynchronizedTimestamp@V1_0@,
+    out: &mut SynchronizedTimestamp,
     buffer: &[u8],
 ) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
 fn synchronized_timestamp_serialize(
-    obj: &uavcan_time_SynchronizedTimestamp@V1_0@,
+    obj: &SynchronizedTimestamp,
     buffer: &mut [u8],
 ) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
-fn integer8_deserialize(out: &mut uavcan_primitive_scalar_Integer8@V1_0@, buffer: &[u8]) -> (i8, usize) {
+fn integer8_deserialize(out: &mut Integer8, buffer: &[u8]) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
 fn integer8_serialize(
-    obj: &uavcan_primitive_scalar_Integer8@V1_0@,
+    obj: &Integer8,
     buffer: &mut [u8],
 ) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
 fn execute_request_deserialize(
-    out: &mut uavcan_node_ExecuteCommand@V1_3@_Request,
+    out: &mut ExecuteCommandRequest,
     buffer: &[u8],
 ) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
 fn execute_request_serialize(
-    obj: &uavcan_node_ExecuteCommand@V1_3@_Request,
+    obj: &ExecuteCommandRequest,
     buffer: &mut [u8],
 ) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
 fn execute_response_deserialize(
-    out: &mut uavcan_node_ExecuteCommand@V1_3@_Response,
+    out: &mut ExecuteCommandResponse,
     buffer: &[u8],
 ) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
 fn execute_response_serialize(
-    obj: &uavcan_node_ExecuteCommand@V1_3@_Response,
+    obj: &ExecuteCommandResponse,
     buffer: &mut [u8],
 ) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
 fn frame_deserialize(
-    out: &mut uavcan_metatransport_can_Frame@V0_2@,
+    out: &mut Frame,
     buffer: &[u8],
 ) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
 fn frame_serialize(
-    obj: &uavcan_metatransport_can_Frame@V0_2@,
+    obj: &Frame,
     buffer: &mut [u8],
 ) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
-fn value_deserialize(out: &mut uavcan_register_Value@V1_0@, buffer: &[u8]) -> (i8, usize) {
+fn value_deserialize(out: &mut Value, buffer: &[u8]) -> (i8, usize) {
     out.deserialize_with_consumed(buffer)
 }
 
-fn value_serialize(obj: &uavcan_register_Value@V1_0@, buffer: &mut [u8]) -> Result<usize, i8> {
+fn value_serialize(obj: &Value, buffer: &mut [u8]) -> Result<usize, i8> {
     obj.serialize(buffer)
 }
 
@@ -366,7 +366,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for heartbeat empty-input deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_Heartbeat@V1_0@::default();
+        let mut rust_obj = Heartbeat::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[]);
         if rust_rc != 0 {
             return Err(format!(
@@ -393,7 +393,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for frame bad-union-tag deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_metatransport_can_Frame@V0_2@::default();
+        let mut rust_obj = Frame::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[0xFFu8]);
         if rust_rc >= 0 {
             return Err(format!(
@@ -424,7 +424,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 input.as_ptr(),
                 input.len(),
                 c_output.as_mut_ptr(),
-                uavcan_node_ExecuteCommand@V1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES,
+                ExecuteCommandRequest::SERIALIZATION_BUFFER_SIZE_BYTES,
                 &mut c_result,
             )
         };
@@ -440,7 +440,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
 
-        let mut rust_obj = uavcan_node_ExecuteCommand@V1_3@_Request::default();
+        let mut rust_obj = ExecuteCommandRequest::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
         if rust_rc != 0 {
             return Err(format!(
@@ -456,7 +456,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
 
         let mut rust_output =
-            vec![0xA5u8; uavcan_node_ExecuteCommand@V1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES];
+            vec![0xA5u8; ExecuteCommandRequest::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_ser_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
             Err(rc) => {
@@ -565,14 +565,14 @@ fn run_directed_error_cases() -> Result<(), String> {
     truncated_image_roundtrip!(
         "Real32",
         "real32_truncated_image_roundtrip",
-        uavcan_primitive_scalar_Real32@V1_0@,
+        Real32,
         c_real32_roundtrip,
         [0x00u8, 0x00u8, 0x80u8]
     );
     truncated_image_roundtrip!(
         "Integer8",
         "integer8_empty_image_roundtrip",
-        uavcan_primitive_scalar_Integer8@V1_0@,
+        Integer8,
         c_integer8_roundtrip,
         []
     );
@@ -588,7 +588,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 input.as_ptr(),
                 input.len(),
                 c_output.as_mut_ptr(),
-                uavcan_node_ExecuteCommand@V1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES,
+                ExecuteCommandResponse::SERIALIZATION_BUFFER_SIZE_BYTES,
                 &mut c_result,
             )
         };
@@ -604,7 +604,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
 
-        let mut rust_obj = uavcan_node_ExecuteCommand@V1_3@_Response::default();
+        let mut rust_obj = ExecuteCommandResponse::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
         if rust_rc != 0 {
             return Err(format!(
@@ -620,7 +620,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
 
         let mut rust_output =
-            vec![0xA5u8; uavcan_node_ExecuteCommand@V1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES];
+            vec![0xA5u8; ExecuteCommandResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_ser_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
             Err(rc) => {
@@ -655,7 +655,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for execute-response bad-array-length deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_ExecuteCommand@V1_3@_Response::default();
+        let mut rust_obj = ExecuteCommandResponse::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[0x00u8, 0xFFu8]);
         if rust_rc >= 0 {
             return Err(format!(
@@ -684,7 +684,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for list bad-delimiter-header deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_port_List@V1_0@::default();
+        let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) =
             rust_obj.deserialize_with_consumed(&[0xFFu8, 0xFFu8, 0xFFu8, 0x7Fu8]);
         if rust_rc >= 0 {
@@ -714,7 +714,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for list nested bad-union-tag deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_port_List@V1_0@::default();
+        let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) =
             rust_obj.deserialize_with_consumed(&[0x01u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8]);
         if rust_rc >= 0 {
@@ -744,7 +744,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for list second-delimiter deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_port_List@V1_0@::default();
+        let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[
             0x00u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8, 0xFFu8, 0xFFu8, 0x7Fu8,
         ]);
@@ -776,7 +776,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for list second-section nested bad-union-tag deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_port_List@V1_0@::default();
+        let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[
             0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8,
         ]);
@@ -807,7 +807,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for list third-delimiter deserialize: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_node_port_List@V1_0@::default();
+        let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[
             0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8, 0xFFu8,
             0xFFu8, 0x7Fu8,
@@ -839,13 +839,13 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for list nested bad-array-length serialize: status={c_status}"
             ));
         }
-        let mut rust_buffer = vec![0u8; uavcan_node_port_List@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES];
-        let mut rust_obj = uavcan_node_port_List@V1_0@::default();
+        let mut rust_buffer = vec![0u8; List::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let mut rust_obj = List::default();
         rust_obj.publishers._tag_ = 1u8;
         rust_obj
             .publishers
             .sparse_list
-            .resize(256usize, uavcan_node_port_SubjectID@V1_0@::default());
+            .resize(256usize, SubjectID::default());
         let rust_rc = match rust_obj.serialize(&mut rust_buffer) {
             Ok(size) => {
                 return Err(format!(
@@ -874,8 +874,8 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_buffer =
-            vec![0u8; uavcan_metatransport_can_Frame@V0_2@::SERIALIZATION_BUFFER_SIZE_BYTES];
-        let rust_obj = uavcan_metatransport_can_Frame@V0_2@ {
+            vec![0u8; Frame::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let rust_obj = Frame {
             _tag_: 0xFFu8,
             ..Default::default()
         };
@@ -906,8 +906,8 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_buffer =
-            vec![0u8; uavcan_node_ExecuteCommand@V1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES];
-        let mut rust_obj = uavcan_node_ExecuteCommand@V1_3@_Response::default();
+            vec![0u8; ExecuteCommandResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let mut rust_obj = ExecuteCommandResponse::default();
         rust_obj.output.resize(47usize, 0u8);
         let rust_rc = match rust_obj.serialize(&mut rust_buffer) {
             Ok(size) => {
@@ -937,8 +937,8 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_buffer =
-            vec![0u8; uavcan_node_ExecuteCommand@V1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES];
-        let mut rust_obj = uavcan_node_ExecuteCommand@V1_3@_Request::default();
+            vec![0u8; ExecuteCommandRequest::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let mut rust_obj = ExecuteCommandRequest::default();
         rust_obj.parameter.resize(256usize, 0u8);
         let rust_rc = match rust_obj.serialize(&mut rust_buffer) {
             Ok(size) => {
@@ -969,10 +969,10 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
         let mut rust_buffer = vec![
             0u8;
-            uavcan_node_ExecuteCommand@V1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES
+            ExecuteCommandRequest::SERIALIZATION_BUFFER_SIZE_BYTES
                 .saturating_sub(1)
         ];
-        let rust_obj = uavcan_node_ExecuteCommand@V1_3@_Request::default();
+        let rust_obj = ExecuteCommandRequest::default();
         let rust_rc = match rust_obj.serialize(&mut rust_buffer) {
             Ok(size) => {
                 return Err(format!(
@@ -1001,8 +1001,8 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_buffer =
-            vec![0u8; uavcan_node_Heartbeat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES.saturating_sub(1)];
-        let rust_obj = uavcan_node_Heartbeat@V1_0@::default();
+            vec![0u8; Heartbeat::SERIALIZATION_BUFFER_SIZE_BYTES.saturating_sub(1)];
+        let rust_obj = Heartbeat::default();
         let rust_rc = match rust_obj.serialize(&mut rust_buffer) {
             Ok(size) => {
                 return Err(format!(
@@ -1028,7 +1028,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             c_health_saturated_serialize(
                 &mut c_result,
                 c_output.as_mut_ptr(),
-                uavcan_node_Health@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                Health::SERIALIZATION_BUFFER_SIZE_BYTES,
             )
         };
         if c_status != 0 {
@@ -1036,8 +1036,8 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for health saturated serialize: status={c_status}"
             ));
         }
-        let rust_obj = uavcan_node_Health@V1_0@ { value: 0xFFu8 };
-        let mut rust_output = vec![0u8; uavcan_node_Health@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES];
+        let rust_obj = Health { value: 0xFFu8 };
+        let mut rust_output = vec![0u8; Health::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
             Err(rc) => {
@@ -1071,7 +1071,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             c_synchronized_timestamp_truncated_serialize(
                 &mut c_result,
                 c_output.as_mut_ptr(),
-                uavcan_time_SynchronizedTimestamp@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                SynchronizedTimestamp::SERIALIZATION_BUFFER_SIZE_BYTES,
             )
         };
         if c_status != 0 {
@@ -1079,11 +1079,11 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for synchronized-timestamp truncated serialize: status={c_status}"
             ));
         }
-        let rust_obj = uavcan_time_SynchronizedTimestamp@V1_0@ {
+        let rust_obj = SynchronizedTimestamp {
             microsecond: 0xFEDC_BA98_7654_3210u64,
         };
         let mut rust_output =
-            vec![0u8; uavcan_time_SynchronizedTimestamp@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES];
+            vec![0u8; SynchronizedTimestamp::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
             Err(rc) => {
@@ -1123,7 +1123,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     input.as_ptr(),
                     input.len(),
                     c_output.as_mut_ptr(),
-                    uavcan_primitive_scalar_Integer8@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                    Integer8::SERIALIZATION_BUFFER_SIZE_BYTES,
                     &mut c_result,
                 )
             };
@@ -1132,7 +1132,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "C harness call failed for Integer8 signed roundtrip input={input_byte:#04X}: status={c_status}"
                 ));
             }
-            let mut rust_obj = uavcan_primitive_scalar_Integer8@V1_0@::default();
+            let mut rust_obj = Integer8::default();
             let (rust_des_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
             if rust_des_rc != c_result.deserialize_rc
                 || rust_consumed != c_result.deserialize_consumed
@@ -1147,7 +1147,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 ));
             }
             let mut rust_output =
-                vec![0u8; uavcan_primitive_scalar_Integer8@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES];
+                vec![0u8; Integer8::SERIALIZATION_BUFFER_SIZE_BYTES];
             let rust_size = match rust_obj.serialize(&mut rust_output) {
                 Ok(size) => size,
                 Err(rc) => {
@@ -1190,7 +1190,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 golden.as_ptr(),
                 golden.len(),
                 c_output.as_mut_ptr(),
-                uavcan_primitive_scalar_Real32@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+                Real32::SERIALIZATION_BUFFER_SIZE_BYTES,
                 &mut c_result,
             )
         };
@@ -1199,10 +1199,10 @@ fn run_directed_error_cases() -> Result<(), String> {
                 "C harness call failed for real32 signalling-NaN roundtrip: status={c_status}"
             ));
         }
-        let mut rust_obj = uavcan_primitive_scalar_Real32@V1_0@::default();
+        let mut rust_obj = Real32::default();
         let (rust_des_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&golden);
         let mut rust_output =
-            vec![0u8; uavcan_primitive_scalar_Real32@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES];
+            vec![0u8; Real32::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
             Err(rc) => {
@@ -1269,7 +1269,7 @@ fn main() {
     let result = run_case(
         "uavcan.node.Heartbeat.1.0",
         iterations,
-        uavcan_node_Heartbeat@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+        Heartbeat::SERIALIZATION_BUFFER_SIZE_BYTES,
         c_heartbeat_roundtrip,
         heartbeat_deserialize,
         heartbeat_serialize,
@@ -1280,7 +1280,7 @@ fn main() {
         run_case(
             "uavcan.node.ExecuteCommand.Request.1.3",
             iterations,
-            uavcan_node_ExecuteCommand@V1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES,
+            ExecuteCommandRequest::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_execute_command_request_roundtrip,
             execute_request_deserialize,
             execute_request_serialize,
@@ -1292,7 +1292,7 @@ fn main() {
         run_case(
             "uavcan.node.ExecuteCommand.Response.1.3",
             iterations,
-            uavcan_node_ExecuteCommand@V1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES,
+            ExecuteCommandResponse::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_execute_command_response_roundtrip,
             execute_response_deserialize,
             execute_response_serialize,
@@ -1304,7 +1304,7 @@ fn main() {
         run_case(
             "uavcan.metatransport.can.Frame.0.2",
             iterations,
-            uavcan_metatransport_can_Frame@V0_2@::SERIALIZATION_BUFFER_SIZE_BYTES,
+            Frame::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_frame_roundtrip,
             frame_deserialize,
             frame_serialize,
@@ -1316,7 +1316,7 @@ fn main() {
         run_case(
             "uavcan.register.Value.1.0",
             iterations,
-            uavcan_register_Value@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+            Value::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_value_roundtrip,
             value_deserialize,
             value_serialize,
@@ -1328,7 +1328,7 @@ fn main() {
         run_case(
             "uavcan.node.Health.1.0",
             iterations,
-            uavcan_node_Health@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+            Health::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_health_roundtrip,
             health_deserialize,
             health_serialize,
@@ -1340,7 +1340,7 @@ fn main() {
         run_case(
             "uavcan.time.SynchronizedTimestamp.1.0",
             iterations,
-            uavcan_time_SynchronizedTimestamp@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+            SynchronizedTimestamp::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_synchronized_timestamp_roundtrip,
             synchronized_timestamp_deserialize,
             synchronized_timestamp_serialize,
@@ -1352,7 +1352,7 @@ fn main() {
         run_case(
             "uavcan.primitive.scalar.Integer8.1.0",
             iterations,
-            uavcan_primitive_scalar_Integer8@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES,
+            Integer8::SERIALIZATION_BUFFER_SIZE_BYTES,
             c_integer8_roundtrip,
             integer8_deserialize,
             integer8_serialize,

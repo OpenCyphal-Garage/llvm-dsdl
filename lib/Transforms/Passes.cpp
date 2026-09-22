@@ -258,8 +258,8 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp              
         // that the plan says so.
         return mlir::success();
     }
-    const std::string funcName =
-        "llvmdsdl_plan_capacity_check__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
+    const std::string funcName = (kPlanHelperSymbolPrefix + "capacity_check__").str() + schemaSym.getValue().str() +
+                                 renderSectionSymbolSuffix(section);
     plan.setLoweredCapacityCheckHelperAttr(builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
@@ -323,8 +323,8 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp             
     const auto        schemaSym   = schema.getSymNameAttr();
     const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
-    const std::string funcName =
-        "llvmdsdl_plan_validate_union_tag__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
+    const std::string funcName = (kPlanHelperSymbolPrefix + "validate_union_tag__").str() + schemaSym.getValue().str() +
+                                 renderSectionSymbolSuffix(section);
     plan.setLoweredUnionTagValidateHelperAttr(builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
@@ -432,8 +432,9 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp             
         const std::int64_t stepIndex = *op.getStepIndex();
         const auto         castMode  = op.getCastMode();
 
-        const std::string symbolStem = "llvmdsdl_plan_scalar_unsigned__" + schemaSym.getValue().str() +
-                                       renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string symbolStem = (kPlanHelperSymbolPrefix + "scalar_unsigned__").str() +
+                                       schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
+                                       std::to_string(stepIndex);
         const std::string serName    = symbolStem + "__ser";
         const std::string deserName  = symbolStem + "__deser";
         op.setLoweredSerUnsignedHelperAttr(builder.getStringAttr(serName));
@@ -537,8 +538,9 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp               
         const std::int64_t stepIndex = *op.getStepIndex();
         const auto         castMode  = op.getCastMode();
 
-        const std::string symbolStem = "llvmdsdl_plan_scalar_signed__" + schemaSym.getValue().str() +
-                                       renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string symbolStem = (kPlanHelperSymbolPrefix + "scalar_signed__").str() +
+                                       schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
+                                       std::to_string(stepIndex);
         const std::string serName    = symbolStem + "__ser";
         const std::string deserName  = symbolStem + "__deser";
         op.setLoweredSerSignedHelperAttr(builder.getStringAttr(serName));
@@ -639,11 +641,11 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp                
         {
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
-        const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolStem = "llvmdsdl_plan_scalar_float__" + schemaSym.getValue().str() +
-                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        const std::string  serName    = symbolStem + "__ser";
-        const std::string  deserName  = symbolStem + "__deser";
+        const std::int64_t stepIndex = *op.getStepIndex();
+        const std::string symbolStem = (kPlanHelperSymbolPrefix + "scalar_float__").str() + schemaSym.getValue().str() +
+                                       renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string serName    = symbolStem + "__ser";
+        const std::string deserName  = symbolStem + "__deser";
         op.setLoweredSerFloatHelperAttr(builder.getStringAttr(serName));
         op.setLoweredDeserFloatHelperAttr(builder.getStringAttr(deserName));
 
@@ -736,8 +738,9 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp           
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
         const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolName = "llvmdsdl_plan_validate_array_length__" + schemaSym.getValue().str() +
-                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string  symbolName = (kPlanHelperSymbolPrefix + "validate_array_length__").str() +
+                                        schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
+                                        std::to_string(stepIndex);
         op.setLoweredArrayLengthValidateHelperAttr(builder.getStringAttr(symbolName));
 
         if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))
@@ -829,8 +832,9 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp               
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
         const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolStem = "llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
-                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string  symbolStem = (kPlanHelperSymbolPrefix + "array_length_prefix__").str() +
+                                        schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
+                                        std::to_string(stepIndex);
         const std::string  serName    = symbolStem + "__ser";
         const std::string  deserName  = symbolStem + "__deser";
         op.setLoweredSerArrayLengthPrefixHelperAttr(builder.getStringAttr(serName));
@@ -928,10 +932,10 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp                  modu
         return plan->emitOpError("invalid union tag width");
     }
 
-    const std::string symbolStem =
-        "llvmdsdl_plan_union_tag__" + schemaSym.getValue().str() + renderSectionSymbolSuffix(section);
-    const std::string serName   = symbolStem + "__ser";
-    const std::string deserName = symbolStem + "__deser";
+    const std::string symbolStem = (kPlanHelperSymbolPrefix + "union_tag__").str() + schemaSym.getValue().str() +
+                                   renderSectionSymbolSuffix(section);
+    const std::string serName    = symbolStem + "__ser";
+    const std::string deserName  = symbolStem + "__deser";
     plan.setLoweredSerUnionTagHelperAttr(builder.getStringAttr(serName));
     plan.setLoweredDeserUnionTagHelperAttr(builder.getStringAttr(deserName));
 
@@ -1041,8 +1045,9 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp       
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
         const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolName = "llvmdsdl_plan_validate_delimiter_header__" + schemaSym.getValue().str() +
-                                        renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string  symbolName = (kPlanHelperSymbolPrefix + "validate_delimiter_header__").str() +
+                                        schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
+                                        std::to_string(stepIndex);
         op.setLoweredDelimiterValidateHelperAttr(builder.getStringAttr(symbolName));
 
         if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))

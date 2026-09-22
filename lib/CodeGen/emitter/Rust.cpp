@@ -195,6 +195,93 @@ public:
         return rustTypeName(ref);
     }
 
+    /// @brief Forgets the imports of the module last rendered.
+    ///
+    /// A module's imports are its own: the same composite reached from two definitions may be
+    /// imported under one name in the first and an aliased one in the second.
+    void beginModuleImports() const
+    {
+        importAliases_.clear();
+        moduleDeclarations_.clear();
+    }
+
+    /// @brief Reserves @p name for a type the module being rendered declares itself.
+    ///
+    /// An import shares one namespace with the module's own items, so a definition whose composite
+    /// has the same short name -- `foo.Owner` holding a `bar.Owner` -- would import `Owner` beside
+    /// `pub struct Owner`. Reserving the declarations before any import is allocated is what moves
+    /// the import instead of the declaration: the declaration's name is the type's public API, and
+    /// the import's is private to the module.
+    /// @param[in] name A type name the module declares.
+    void reserveDeclaration(const llvm::StringRef name) const
+    {
+        moduleDeclarations_.insert(name.str());
+    }
+
+    /// @brief Claims a local name for @p ref in the module being rendered, and answers it.
+    ///
+    /// Two composites of different namespaces can share a short name -- `angular_velocity::Vector3`
+    /// and `velocity::Vector3` -- and a module that holds fields of both imports two `Vector3`.
+    /// A clash takes as much of its namespace, from the nearest component outwards, as tells it
+    /// apart. The namespace is Pascal-cased into the name rather than joined with an underscore,
+    /// since the alias is a type name like any other.
+    ///
+    /// The namespace runs out before the candidates do: a module holding three versions of one
+    /// type of a one-component namespace asks for `Foo`, then `NsFoo`, and then has nothing left to
+    /// qualify with. An ordinal follows, so a name is always reached.
+    std::string declareImport(const SemanticTypeRef& ref) const
+    {
+        const std::string path = rustTypePath(ref);
+        const std::string bare = rustDeclaredTypeName(ref);
+        if (const auto found = importAliases_.find(path); found != importAliases_.end())
+        {
+            return found->second;
+        }
+        const auto taken = [this](const std::string& candidate) {
+            return moduleDeclarations_.contains(candidate) ||
+                   llvm::any_of(importAliases_, [&](const auto& entry) { return entry.second == candidate; });
+        };
+        // A candidate is composed from the raw parts and projected once, so the projection decides
+        // the casing of the whole alias rather than of each part separately. Projecting a part on
+        // its own leaves its separator behind: a namespace component the prelude claims contributes
+        // `Default_`, and a deprecated dependency is imported by the name its implementation struct
+        // carries, which ends in `_`. Either way the alias reads `Default_Foo` or `Foo_2` -- legal,
+        // and not what a Rust type name looks like. The deprecation marker is re-applied after the
+        // projection, since it is a suffix the projection would fold away.
+        const auto* resolved   = find(ref);
+        const bool  deprecated = (resolved != nullptr) && resolved->request.deprecated;
+        const auto  compose    = [&](const std::string& raw) {
+            return renderDeclaredTypeName(codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                                                   IdentifierRole::TypeName,
+                                                                   raw),
+                                          deprecated);
+        };
+
+        std::string local = bare;
+        for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
+        {
+            std::string raw;
+            for (const auto& component : llvm::ArrayRef<std::string>(ref.namespaceComponents).take_back(depth))
+            {
+                raw += component + "_";
+            }
+            local = compose(raw + ref.shortName);
+        }
+        for (unsigned ordinal = 2U; taken(local); ++ordinal)
+        {
+            local = compose(ref.shortName + "_" + std::to_string(ordinal));
+        }
+        importAliases_[path] = local;
+        return local;
+    }
+
+    /// @brief The name the module being rendered spells @p ref by: its import's local name.
+    std::string rustLocalTypeName(const SemanticTypeRef& ref) const
+    {
+        const auto found = importAliases_.find(rustTypePath(ref));
+        return (found == importAliases_.end()) ? rustDeclaredTypeName(ref) : found->second;
+    }
+
     /// @brief The `use` path of the struct the definition @p ref names.
     std::string rustTypePath(const SemanticTypeRef& ref) const
     {
@@ -223,6 +310,12 @@ public:
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+
+    /// @brief The local name each imported type path is spelled by, in the module being rendered.
+    mutable std::map<std::string, std::string> importAliases_;
+
+    /// @brief The type names the module being rendered declares itself.
+    mutable std::set<std::string> moduleDeclarations_;
 };
 
 std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx);
@@ -246,7 +339,7 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustDeclaredTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
+            return ctx.rustLocalTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
         }
         return "u8";
     }
@@ -352,7 +445,7 @@ std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustDeclaredTypeName(*type.compositeType) + "::default()";
+            return ctx.rustLocalTypeName(*type.compositeType) + "::default()";
         }
         return "0";
     }
@@ -493,18 +586,62 @@ public:
             {
                 entry.poolClass[fieldName] = constName;
             }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
-            }
-            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
-            // of the option, and no field can be named `_tag_`.
+            // Accessors are allocated from a scope of their own, not from the one the fields are
+            // named in: a Rust field and a method occupy separate namespaces, so a section holding
+            // fields `get_foo` and `foo` keeps both the field `get_foo` and the method `get_foo`.
+            // Sharing one scope renamed the method for a clash the language does not have, and did
+            // it to the getter alone, since only the getter's name met the field's.
+            //
+            // A scope is keyed on the name handed to it, and the separator is therefore
+            // unconditional: `_tag_` and a field named `tag_` both compose `get_tag_` once a
+            // leading underscore absorbs the separator, and a scope cannot separate one key from
+            // itself. Keyed as `get__tag_` and `get_tag_` they are two names that the snake
+            // projection folds onto one identifier, which is the case a scope exists for. The tag
+            // is declared first, so a union whose options collide with nothing keeps the accessor
+            // names it has and the colliding option is the side that moves.
+            NamingScope accessorScope(CodegenNamingLanguage::Rust);
+            const auto  accessorKey = [](const llvm::StringRef kind, const llvm::StringRef member) {
+                return kind.str() + "_" + member.str();
+            };
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{"_tag_", tagSteps_.back().get()};
+                entry.members["_tag_"] =
+                    Member{"_tag_",
+                           tagSteps_.back().get(),
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", "_tag_")),
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", "_tag_"))};
+            }
+            for (mlir::dsdl::IOOp io : fields)
+            {
+                const std::string field = scope.get(IdentifierRole::FieldName, io.getName());
+                entry.members[io.getName()] =
+                    Member{field,
+                           io,
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", field)),
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", field))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
+        }
+
+        // A helper is a private item of the module the definition is generated into, and the module
+        // is named after the definition, so the schema component of the lowered symbol names what
+        // the module already says. Stripping it leaves what distinguishes one helper of this
+        // definition from another -- the kind it answers, the section it belongs to, and for a
+        // scalar the field's index and direction. The scope keeps two that strip onto one name
+        // apart, which is the same guarantee a field gets.
+        NamingScope helperScope(CodegenNamingLanguage::Rust);
+        for (mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
+        {
+            if (planBodyDirection(fn) || fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
+            const llvm::StringRef symbol = fn.getSymName();
+            helperNames_[symbol]         = helperScope.declare(IdentifierRole::FunctionName,
+                                                               renderScopeLocalHelperName(CodegenNamingLanguage::Rust,
+                                                                                          symbol,
+                                                                                          schema.getSymName()));
         }
     }
 
@@ -566,7 +703,7 @@ public:
             // The nested type's buffer, as a slice: its length is what the plan stores through the
             // size pointer, which a slice carries itself, so the store lands in a local nothing
             // reads, named so the compiler expects that.
-            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> &[u8] {");
             w.line("let mut _out_size: usize = 0;");
         }
         else if (getter)
@@ -579,11 +716,11 @@ public:
             {
                 returnCast_ = " as " + storage;
             }
-            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
+            w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
         }
         else
         {
-            w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8]" + index + ", value: " + storage +
+            w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage +
                    ") -> core::result::Result<(), i8> {");
         }
         w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
@@ -660,7 +797,14 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Rust spelling: a call to a helper this module does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
     }
 
     // Statements.
@@ -1266,6 +1410,14 @@ private:
     {
         std::string      rustName;
         mlir::dsdl::IOOp io;
+
+        /// @brief The names this member's accessors are declared under.
+        ///
+        /// Allocated from the section's own scope rather than composed at each use: a union's
+        /// synthetic tag reaches `accessorSource` as `_tag_` and an option named `tag_` reaches it
+        /// as `tag_`, and both compose `get_tag_`. Two accessors of one `impl` cannot share a name.
+        std::string getterName;
+        std::string setterName;
     };
 
     struct Plan final
@@ -1488,6 +1640,9 @@ private:
 
     mlir::SymbolTable     symbols_;
     llvm::StringMap<Plan> plans_;
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
+    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
     mutable std::size_t                              counter_{0};
@@ -1926,9 +2081,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line(generatedCommentLine("Rust backend"));
     w.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
            std::to_string(def.info.minorVersion));
-    w.line("#![allow(non_camel_case_types)]");
-    w.line("#![allow(non_snake_case)]");
-    w.line("#![allow(non_upper_case_globals)]");
     out << "\n";
 
     // An accessors-only file names no other type: a composite's getter answers its bytes.
@@ -1937,6 +2089,25 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                             : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const auto selfKey = definitionTypeKey(def.info);
+
+    // The imports below are this module's; what a previous module aliased says nothing here. The
+    // module's own declarations are reserved first, so a composite whose short name meets one of
+    // them is the side that takes an alias.
+    ctx.beginModuleImports();
+    {
+        const auto declaredBase = ctx.rustDeclaredTypeName(def);
+        ctx.reserveDeclaration(declaredBase);
+        ctx.reserveDeclaration(ctx.rustTypeName(def.info));
+        if (def.isService)
+        {
+            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
+            {
+                const auto sectionType = renderSectionTypeName(CodegenNamingLanguage::Rust, declaredBase, section);
+                ctx.reserveDeclaration(sectionType);
+                ctx.reserveDeclaration(renderDeclaredTypeName(sectionType, def.request.deprecated));
+            }
+        }
+    }
 
     for (const auto& depRef : deps)
     {
@@ -1954,9 +2125,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
 
         const auto typePath = ctx.rustTypePath(ref);
-        const auto rustType = ctx.rustTypeName(ref);
-        w.line("use " + typePath + ";");
-        (void) rustType;
+        const auto local    = ctx.declareImport(ref);
+        const auto exported = ctx.rustDeclaredTypeName(ref);
+        w.line("use " + typePath + ((local == exported) ? "" : " as " + local) + ";");
     }
     if (!deps.empty())
     {
@@ -1995,8 +2166,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Rust, "request");
-    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Rust, "response");
+    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::Rust, baseType, "request");
+    const auto respType = renderSectionTypeName(CodegenNamingLanguage::Rust, baseType, "response");
 
     if (auto err = emitSectionType(w,
                                    reqType,
@@ -2035,15 +2206,27 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     out << "\n";
-    if (def.request.deprecated && options.emitDeprecationAttributes)
+    // The alias says that a service reached by its own name means its request. A service named
+    // `Request` already says it: the section carries that name, so the alias would declare the
+    // name a second time and stand for itself. The constants below are the service's own and are
+    // declared either way.
+    // The guard covers both sections, not just the one the alias stands for: a service named
+    // `Response` declares that name as its response, and the alias would declare it again.
+    const std::string declaredReq  = renderDeclaredTypeName(reqType, def.request.deprecated);
+    const std::string declaredResp = renderDeclaredTypeName(respType, def.request.deprecated);
+    const bool        aliasNeeded =
+        (baseType != reqType) && (baseType != declaredReq) && (baseType != respType) && (baseType != declaredResp);
+    if (aliasNeeded)
     {
-        w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+        if (def.request.deprecated && options.emitDeprecationAttributes)
+        {
+            w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+        }
+        // The alias names the request, so it carries the request's lifetime when the request holds
+        // a view.
+        const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
+        w.line("pub type " + baseType + baseGenerics + " = " + declaredReq + baseGenerics + ";");
     }
-    // The alias names the request, so it carries the request's lifetime when the request holds a
-    // view.
-    const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
-    w.line("pub type " + baseType + baseGenerics + " = " + renderDeclaredTypeName(reqType, def.request.deprecated) +
-           baseGenerics + ";");
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
     const auto baseConstPrefix =
@@ -2240,9 +2423,6 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     SourceWriter       libW = makeRustWriter(lib);
     libW.line(generatedCommentLine("Rust backend crate root"));
     libW.line("#![cfg_attr(not(feature = \"std\"), no_std)]");
-    libW.line("#![allow(non_camel_case_types)]");
-    libW.line("#![allow(non_snake_case)]");
-    libW.line("#![allow(non_upper_case_globals)]");
     libW.line("#[cfg(not(feature = \"std\"))]");
     libW.line("extern crate alloc;");
     libW.line("pub mod dsdl_runtime;");

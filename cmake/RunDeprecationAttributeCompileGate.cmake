@@ -271,10 +271,10 @@ llvmdsdl_run_or_fail("dsdlc Rust generation with --no-deprecation-attributes"
 # User code naming a deprecated type: the section alias, and the service alias. Each is compiled
 # against the built crate with rustc, so the diagnostic text can be asserted.
 file(WRITE "${WORK_DIR}/rust_use_probe.rs"
-"pub fn probe() { let _ = deprecation_gate::uavcan::file::read_1_0::uavcan_file_Read_Request::default(); }
+"pub fn probe() { let _ = deprecation_gate::uavcan::file::read_1_0::Request::default(); }
 ")
 file(WRITE "${WORK_DIR}/rust_alias_probe.rs"
-"pub fn probe() { let _ = deprecation_gate::uavcan::file::read_1_0::uavcan_file_Read::default(); }
+"pub fn probe() { let _ = deprecation_gate::uavcan::file::read_1_0::Read::default(); }
 ")
 
 if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE STREQUAL "CARGO_EXECUTABLE-NOTFOUND")

@@ -25,13 +25,12 @@ namespace llvmdsdl
 
 const DefinitionNamePolicy& definitionNamePolicy(const CodegenNamingLanguage language)
 {
-    // C flattens the namespace into the identifier. Rust does the same and then re-checks the
-    // result. The other four let the language carry the namespace: C++ in a real namespace,
-    // Go/TypeScript/Python in a per-namespace module.
-    static constexpr DefinitionNamePolicy kC{"__", false};
-    static constexpr DefinitionNamePolicy kCpp{"", false};
-    static constexpr DefinitionNamePolicy kRust{"_", true};
-    static constexpr DefinitionNamePolicy kModuleScoped{"", false};
+    // C flattens the namespace into the identifier. The others let the language carry it: C++ in a
+    // real namespace, Rust in a per-definition module, Go/TypeScript/Python in a per-namespace one.
+    static constexpr DefinitionNamePolicy kC{"__", false, true, false};
+    static constexpr DefinitionNamePolicy kCpp{"", false, true, false};
+    static constexpr DefinitionNamePolicy kRust{"", false, false, true};
+    static constexpr DefinitionNamePolicy kModuleScoped{"", false, true, true};
 
     switch (language)
     {
@@ -76,7 +75,7 @@ std::string renderDefinitionTypeName(const CodegenNamingLanguage       language,
     }
     out += codegenProjectIdentifier(language, IdentifierRole::TypeName, shortName);
 
-    if (versioning == TypeNameVersioning::Versioned)
+    if ((versioning == TypeNameVersioning::Versioned) && policy.versionInTypeName)
     {
         out += "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
     }
@@ -93,8 +92,19 @@ std::string renderDefinitionFileStem(const CodegenNamingLanguage language,
                                      const std::uint32_t         majorVersion,
                                      const std::uint32_t         minorVersion)
 {
-    return codegenProjectIdentifier(language, IdentifierRole::FileStem, shortName) + "_" +
-           std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
+    // Projected as one name rather than a projected short name with the version appended. A short
+    // name that strops -- `Break`, which reaches Rust's keyword `break` -- gains a trailing `_`,
+    // and the separator after it made the `__` that `non_snake_case` reports in a module name. The
+    // composed name carries the version, so it is not the keyword and needs no escape.
+    //
+    // The two orders differ wherever the projected short name would end in an underscore, which is
+    // stropping and also a DSDL name that ends in one: `Break_` reaches `break_1_0` here and
+    // `break__1_0` the other way round. That is the same fold, and it is the point -- a stem is one
+    // identifier, so its separators normalise once. Two short names that fold onto one stem are a
+    // collision, which `Discovery` composes the same name to find.
+    const std::string composed =
+        shortName.str() + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
+    return codegenProjectIdentifier(language, IdentifierRole::FileStem, composed);
 }
 
 std::string renderIncludeGuard(const CodegenNamingLanguage language,
@@ -137,6 +147,10 @@ std::string renderDefinitionSymbolBase(const llvm::StringRef fullName,
     return out + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
 }
 
+namespace
+{
+
+/// @brief The suffix a language that scopes both sections under the service's name appends.
 std::string renderSectionTypeSuffix(const CodegenNamingLanguage language, const llvm::StringRef sectionName)
 {
     if ((sectionName != "request") && (sectionName != "response"))
@@ -145,6 +159,23 @@ std::string renderSectionTypeSuffix(const CodegenNamingLanguage language, const 
     }
     const llvm::StringRef separator = (language == CodegenNamingLanguage::C) ? "__" : "_";
     return separator.str() + ((sectionName == "request") ? "Request" : "Response");
+}
+
+}  // namespace
+
+std::string renderSectionTypeName(const CodegenNamingLanguage language,
+                                  const llvm::StringRef       baseTypeName,
+                                  const llvm::StringRef       sectionName)
+{
+    if ((sectionName != "request") && (sectionName != "response"))
+    {
+        return baseTypeName.str();
+    }
+    if (language == CodegenNamingLanguage::Rust)
+    {
+        return codegenProjectIdentifier(language, IdentifierRole::TypeName, sectionName);
+    }
+    return baseTypeName.str() + renderSectionTypeSuffix(language, sectionName);
 }
 
 std::string renderSectionSymbolSuffix(const llvm::StringRef sectionName)

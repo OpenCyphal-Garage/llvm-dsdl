@@ -309,6 +309,32 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;naming;release-blocking"
   )
 
+  # The generated-name adversarial gate. `Discovery` rejects two DSDL names reaching one generated
+  # identifier; this is the other class -- a DSDL name reaching an identifier a backend emits for
+  # every type. Its corpus is written rather than checked in, so a new axis is a name in a list.
+  add_test(
+    NAME llvmdsdl-naming-adversarial-gate
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DCORPUS_SCRIPT=${LLVMDSDL_SOURCE_DIR}/test/integration/generate_naming_adversarial_corpus.py
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/naming-adversarial-gate
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunNamingAdversarialGate.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-naming-adversarial-gate
+    PROPERTIES
+      LABELS "integration;naming;release-blocking"
+      TIMEOUT 1800
+  )
+
   add_test(
     NAME llvmdsdl-parity-matrix-coverage
     COMMAND

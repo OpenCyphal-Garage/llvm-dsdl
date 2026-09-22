@@ -352,14 +352,6 @@ bool isAutosarFlavor(const CppFlavor flavor)
 /// `i64` is spelled unsigned, which is what the wire arithmetic and the runtime primitives take;
 /// the few signed comparisons cast for the comparison alone. `i8` is spelled signed, as the
 /// runtime's error codes are.
-/// @brief The source name of a field's accessor: the kind and the field, joined by an underscore
-///        unless the field already starts with one, since a doubled underscore is reserved. Two
-///        fields can meet here, `foo` and `_foo`; the struct's scope keeps their accessors apart.
-std::string accessorSource(const llvm::StringRef kind, const llvm::StringRef field)
-{
-    return kind.str() + (field.starts_with("_") ? "" : "_") + field.str();
-}
-
 class CppSpelling final : public BodySpelling
 {
 public:
@@ -393,12 +385,10 @@ public:
         {
             Plan              entry;
             const std::string section = plan.getSection().value_or(llvm::StringRef{}).str();
-            entry.typeName =
-                baseTypeName +
-                (section.empty() ? std::string{} : renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, section));
-            entry.declaredName = renderDeclaredTypeName(entry.typeName, schema.getDeprecated());
-            entry.unionTagBits = plan.getUnionTagBits().value_or(0);
-            entry.hostImage    = plan.getHostImage();
+            entry.typeName            = renderSectionTypeName(CodegenNamingLanguage::Cpp, baseTypeName, section);
+            entry.declaredName        = renderDeclaredTypeName(entry.typeName, schema.getDeprecated());
+            entry.unionTagBits        = plan.getUnionTagBits().value_or(0);
+            entry.hostImage           = plan.getHostImage();
 
             // The struct declares its fields, then the array metadata, then the constants, into
             // one scope; the same declarations in the same order name the same identifiers.
@@ -2195,8 +2185,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
     {
         // A single underscore: C++ reserves any identifier containing `__`, and these name C++
         // structs. The C emitter keeps `__` for its own service section types, where it is legal.
-        const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "request");
-        const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::Cpp, "response");
+        const auto requestType  = renderSectionTypeName(CodegenNamingLanguage::Cpp, baseTypeName, "request");
+        const auto responseType = renderSectionTypeName(CodegenNamingLanguage::Cpp, baseTypeName, "response");
         // The service alias and its wrappers name the request struct, never the request's public
         // name, which is a deprecated alias when the service is.
         const auto        requestDeclared = renderDeclaredTypeName(requestType, def.request.deprecated);

@@ -7,8 +7,8 @@
 // The generated types derive PartialEq and Debug, so the whole field-by-field comparison the C
 // version spells out is one assert_eq! and a mismatch prints both values.
 
-use lanyard::lanyard::health::subsystem_report_1_0::lanyard_health_SubsystemReport_1_0;
-use lanyard::lanyard::health::system_health_1_0::lanyard_health_SystemHealth_1_0;
+use lanyard::lanyard::health::subsystem_report_1_0::SubsystemReport;
+use lanyard::lanyard::health::system_health_1_0::SystemHealth;
 
 const SUBSYSTEMS: [&str; 3] = ["gnss", "esc.3", "imu.0"];
 
@@ -22,7 +22,7 @@ fn main() {
     // payload, a value built that way compares unequal to the same value after a round trip even
     // though every field a reader can see is identical. Build from Default and the question does
     // not arise.
-    let mut original = lanyard_health_SystemHealth_1_0::default();
+    let mut original = SystemHealth::default();
 
     // Deliberately not the default value: a broken integration that serialised nothing and
     // deserialised nothing would round-trip a default struct and prove nothing.
@@ -30,7 +30,7 @@ fn main() {
     original.aggregate_health.value = 2; // CAUTION, on the standard four-level scale
 
     for (index, name) in SUBSYSTEMS.iter().enumerate() {
-        let mut report = lanyard_health_SubsystemReport_1_0::default();
+        let mut report = SubsystemReport::default();
         report.health.value = (index % 4) as u8;
         report.severity.value = (index % 8) as u8;
         report.fault_code = 0x1000 + index as u16;
@@ -40,12 +40,12 @@ fn main() {
         original.subsystem.push(report);
     }
 
-    let mut buffer = [0u8; lanyard_health_SystemHealth_1_0::SERIALIZATION_BUFFER_SIZE_BYTES];
+    let mut buffer = [0u8; SystemHealth::SERIALIZATION_BUFFER_SIZE_BYTES];
     let written = original
         .serialize(&mut buffer)
         .unwrap_or_else(|e| panic!("FAIL: serialize returned {e}"));
 
-    let mut restored = lanyard_health_SystemHealth_1_0::default();
+    let mut restored = SystemHealth::default();
     restored
         .deserialize(&buffer[..written])
         .unwrap_or_else(|e| panic!("FAIL: deserialize returned {e}"));

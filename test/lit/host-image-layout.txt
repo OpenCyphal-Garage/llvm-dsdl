@@ -64,9 +64,9 @@
 # CPP_PMR-NOT: _memory_resource{
 
 # RUST_NESTED:      #[repr(C)]
-# RUST_NESTED:      const _: () = assert!(core::mem::size_of::<fixtures_host_image_vendor_Nested>() == 12usize,
-# RUST_NESTED-NEXT: const _: () = assert!(core::mem::offset_of!(fixtures_host_image_vendor_Nested, inner) == 0usize,
-# RUST_NESTED-NEXT: const _: () = assert!(core::mem::offset_of!(fixtures_host_image_vendor_Nested, code) == 8usize,
+# RUST_NESTED:      const _: () = assert!(core::mem::size_of::<Nested>() == 12usize,
+# RUST_NESTED-NEXT: const _: () = assert!(core::mem::offset_of!(Nested, inner) == 0usize,
+# RUST_NESTED-NEXT: const _: () = assert!(core::mem::offset_of!(Nested, code) == 8usize,
 
 # GO_NESTED:      var _ = [1]struct{}{}[unsafe.Sizeof(Nested{})-12]
 # GO_NESTED-NEXT: var _ = [1]struct{}{}[unsafe.Offsetof(Nested{}.Inner)-0]

@@ -2144,8 +2144,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto packageName        = packageNameFromPath(currentPackagePath);
     const auto imports            = computeImportAliases(def, ctx);
     const auto baseType           = ctx.goTypeName(def.info);
-    const auto reqType            = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "request");
-    const auto respType           = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Go, "response");
+    const auto reqType            = renderSectionTypeName(CodegenNamingLanguage::Go, baseType, "request");
+    const auto respType           = renderSectionTypeName(CodegenNamingLanguage::Go, baseType, "response");
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
                          reqType);

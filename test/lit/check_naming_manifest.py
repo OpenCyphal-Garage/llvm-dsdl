@@ -55,9 +55,29 @@ def main() -> int:
     if constants.get("FULL_NAME") != "FULL_NAME_":
         failures.append(f"expected FULL_NAME to be reported as FULL_NAME_, got {constants.get('FULL_NAME')!r}")
 
+    # The stem is projected from the versioned name, so the keyword `break` is not what the escape
+    # sees and nothing is escaped. The manifest reports the file on disk, which is what a build
+    # integration references.
+    # Rust names a type after its short name and lets its module carry the namespace, so the
+    # manifest reports the type name for it as it does for the other three module-scoped languages.
+    rust = languages.get("rust", {})
+    case_folds = rust.get("fixtures_naming.naming.CaseFolds.1.0", {})
+    if case_folds.get("type_name") != "CaseFolds":
+        failures.append(
+            f"expected the rust type name for CaseFolds to be reported as CaseFolds, "
+            f"got {case_folds.get('type_name')!r}"
+        )
+
+    # A section's name does not follow from the definition's in Rust -- the module carries the
+    # service, so the section word alone is the name -- so it is reported on the section too.
+    svc = rust.get("fixtures_naming.naming.Call.1.0", {})
+    got = (svc.get("request", {}).get("type_name"), svc.get("response", {}).get("type_name"))
+    if got != ("Request", "Response"):
+        failures.append(f"expected the rust section type names to be Request/Response, got {got!r}")
+
     brk = go.get("fixtures_naming.naming.Break.1.0", {})
-    if brk.get("file_stem") != "break__1_0":
-        failures.append(f"expected Break to take the stem break__1_0, got {brk.get('file_stem')!r}")
+    if brk.get("file_stem") != "break_1_0":
+        failures.append(f"expected Break to take the stem break_1_0, got {brk.get('file_stem')!r}")
 
     # A union option's tag is the one fact about it that cannot be read off the generated type, so
     # the manifest is the only place a build integration can get it. Both halves are checked: the

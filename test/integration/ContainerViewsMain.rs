@@ -9,10 +9,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-use llvmdsdl_generated::fixtures_aliasable::vendor::pose_1_0::fixtures_aliasable_vendor_Pose as Pose;
-use llvmdsdl_generated::fixtures_aliasable::vendor::vec3_1_0::fixtures_aliasable_vendor_Vec3 as Vec3;
-use llvmdsdl_generated::fixtures_views::vendor::frame_1_0::fixtures_views_vendor_Frame as Frame;
-use llvmdsdl_generated::fixtures_views::vendor::track_1_0::fixtures_views_vendor_Track as Track;
+use llvmdsdl_generated::fixtures_aliasable::vendor::pose_1_0::Pose as Pose;
+use llvmdsdl_generated::fixtures_aliasable::vendor::vec3_1_0::Vec3 as Vec3;
+use llvmdsdl_generated::fixtures_views::vendor::frame_1_0::Frame as Frame;
+use llvmdsdl_generated::fixtures_views::vendor::track_1_0::Track as Track;
 fn main() {
     let mut failures = 0;
     let mut check = |what: &str, ok: bool| { println!("  {:<44} {}", what, if ok { "ok" } else { "FAILED" }); if !ok { failures += 1; } };

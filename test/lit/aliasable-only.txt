@@ -49,7 +49,7 @@
 # Rust: a unit struct, no layout attribute, no Default, no import of the nested type.
 # RUN: cat %t/rust/src/fixtures_aliasable/vendor/vec3_1_0.rs | FileCheck %s --check-prefix=RUST_VEC3
 # RUST_VEC3-NOT: #[repr(C)]
-# RUST_VEC3: pub struct fixtures_aliasable_vendor_Vec3;
+# RUST_VEC3: pub struct Vec3;
 # RUST_VEC3-NOT: impl Default
 # RUST_VEC3-NOT: pub fn serialize
 # RUST_VEC3: pub fn get_x(buffer: &[u8]) -> f32 {

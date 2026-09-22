@@ -36,6 +36,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
@@ -56,7 +57,8 @@ using llvmdsdl::CaseStyle;
 using llvmdsdl::IdentifierRole;
 using llvmdsdl::isReservedIdentifier;
 using llvmdsdl::renderVersionedFileStem;
-using llvmdsdl::renderVersionedTypeName;
+using llvmdsdl::renderDefinitionTypeName;
+using llvmdsdl::TypeNameVersioning;
 
 struct LanguageEntry
 {
@@ -84,6 +86,11 @@ constexpr std::array<LanguageEntry, 6> kLanguages = {{
 const std::vector<std::string>& corpus()
 {
     static const std::vector<std::string> names = {
+        // Claimed by the generated Rust, which names these three without qualifying them: a struct
+        // of one of these names shadows what its own bodies mean by it.
+        "Default",
+        "Ok",
+        "Err",
         // Keywords reachable through a snake_case projection, spread across the targets.
         "break",
         "Break",
@@ -281,7 +288,10 @@ std::string applyFileStem(const CodegenNamingLanguage language, const std::strin
 }
 std::string applyTypeName(const CodegenNamingLanguage language, const std::string& name)
 {
-    return renderVersionedTypeName(language, name, 1, 0);
+    // Composed the way the emitters compose it, which is what decides whether the version is part
+    // of the name: Rust reaches a definition through a module named for it and its version, so its
+    // type name carries neither.
+    return renderDefinitionTypeName(language, {}, name, 1, 0, TypeNameVersioning::Versioned);
 }
 
 /// @brief True when @p language's backend derives output file names from the shared projection.
@@ -296,18 +306,6 @@ bool usesSharedFileStem(const CodegenNamingLanguage language)
            language == CodegenNamingLanguage::TypeScript || language == CodegenNamingLanguage::Python;
 }
 
-/// @brief True when @p language's backend derives the generated type name from the shared
-///        projection: PascalCase short name plus version.
-///
-/// Go (`goTypeName`), TypeScript and Python (`renderVersionedTypeName`). C, C++ and Rust build a
-/// namespace-qualified symbol instead (emitter/C.cpp `mangleSymbol`, emitter/Cpp.cpp `cppTypeName`,
-/// emitter/Rust.cpp `rustTypeName`), which cannot collide across namespaces.
-bool usesSharedTypeName(const CodegenNamingLanguage language)
-{
-    return language == CodegenNamingLanguage::Go || language == CodegenNamingLanguage::TypeScript ||
-           language == CodegenNamingLanguage::Python;
-}
-
 /// @brief Whether @p projection describes what @p language's backend emits.
 bool projectionApplies(const std::string& projection, const CodegenNamingLanguage language)
 {
@@ -317,7 +315,7 @@ bool projectionApplies(const std::string& projection, const CodegenNamingLanguag
     }
     if (projection == "type_name")
     {
-        return usesSharedTypeName(language);
+        return definitionNamePolicy(language).typeNameReachesTheType;
     }
     return true;
 }
@@ -344,10 +342,13 @@ void appendHeader(std::ostringstream& out)
         << "# reachable  whether the source name can appear in a conformant DSDL definition (charset\n"
         << "#            plus DSDL v1.0 section 3.2.5). Rows marked 'no' pin defensive behavior that\n"
         << "#            the compiler never reaches, but the language server and library callers do.\n"
-        << "# file_stem  and type_name come from DefinitionPathProjection and are shown for version\n"
-        << "#            1.0. They read '-' for a backend that derives that name elsewhere: C and C++\n"
-        << "#            name headers after the raw DSDL short name, and C, C++ and Rust build\n"
-        << "#            namespace-qualified type symbols.\n";
+        << "# file_stem  and type_name are shown for version 1.0 and read '-' for a backend that\n"
+        << "#            derives that name elsewhere. C and C++ name headers after the raw DSDL\n"
+        << "#            short name, so neither reports a stem; both flatten the namespace into the\n"
+        << "#            type name, so neither reports one either. Rust, Go, TypeScript and Python\n"
+        << "#            name a type after its short name and let a module carry the namespace, and\n"
+        << "#            report both. `DefinitionNamePolicy::typeNameReachesTheType` is the answer\n"
+        << "#            this column and the naming manifest both read.\n";
 }
 
 void appendProjections(std::ostringstream& out)

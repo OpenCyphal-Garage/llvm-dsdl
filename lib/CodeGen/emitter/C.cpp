@@ -835,8 +835,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 
     if (def.isService)
     {
-        const auto requestType  = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
-        const auto responseType = baseTypeName + renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
+        const auto requestType  = renderSectionTypeName(CodegenNamingLanguage::C, baseTypeName, "request");
+        const auto responseType = renderSectionTypeName(CodegenNamingLanguage::C, baseTypeName, "response");
 
         for (const auto& line : renderServiceAliasIdentityMacros(baseTypeName,
                                                                  def.info.fullName,
