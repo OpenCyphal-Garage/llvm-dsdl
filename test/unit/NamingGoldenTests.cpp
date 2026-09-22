@@ -306,19 +306,6 @@ bool usesSharedFileStem(const CodegenNamingLanguage language)
            language == CodegenNamingLanguage::TypeScript || language == CodegenNamingLanguage::Python;
 }
 
-/// @brief True when @p language's backend derives the generated type name from the shared
-///        projection: PascalCase short name plus version.
-///
-/// Rust, Go, TypeScript and Python all name a type from the short name and let a module carry the
-/// namespace. C and C++ flatten the namespace into the identifier instead (emitter/C.cpp
-/// `mangleSymbol`, emitter/Cpp.cpp `cppTypeName`), so two of their type names cannot collide across
-/// namespaces and the column would say nothing about them.
-bool usesSharedTypeName(const CodegenNamingLanguage language)
-{
-    return language == CodegenNamingLanguage::Rust || language == CodegenNamingLanguage::Go ||
-           language == CodegenNamingLanguage::TypeScript || language == CodegenNamingLanguage::Python;
-}
-
 /// @brief Whether @p projection describes what @p language's backend emits.
 bool projectionApplies(const std::string& projection, const CodegenNamingLanguage language)
 {
@@ -328,7 +315,7 @@ bool projectionApplies(const std::string& projection, const CodegenNamingLanguag
     }
     if (projection == "type_name")
     {
-        return usesSharedTypeName(language);
+        return definitionNamePolicy(language).typeNameReachesTheType;
     }
     return true;
 }

@@ -346,11 +346,20 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // macro namespace, where a struct of that name does not reach it.
     static constexpr std::array<llvm::StringRef, 3> kRustPrelude = {"Default", "Ok", "Err"};
 
-    // The modules the generated crate root declares for itself. A DSDL namespace component reaches
-    // the same place -- `dsdlRuntime` projects onto `dsdl_runtime` now that the role is snake -- and
-    // a second `pub mod` of one name is a crate rustc refuses.
-    static constexpr std::array<llvm::StringRef, 2> kRustCrateModules = {"dsdl_runtime",
-                                                                         "dsdl_runtime_semantic_wrappers"};
+    // What the generated crate root already answers to. A DSDL namespace component is a module of
+    // that root -- and reaches it now that the role projects to snake, as `dsdlRuntime` reaches
+    // `dsdl_runtime` -- so a component landing on one of these declares a name the root holds.
+    //
+    // The first two are the runtime's own modules, and a second `pub mod` of either is a crate
+    // rustc refuses. The last three are the crates the generated bodies reach by path: `alloc` is
+    // declared with `extern crate` under `no_std`, where a module beside it is E0260, and a module
+    // named `core` or `std` would answer for the paths those bodies are written in rather than for
+    // the crate they mean.
+    static constexpr std::array<llvm::StringRef, 5> kRustCrateModules = {"dsdl_runtime",
+                                                                         "dsdl_runtime_semantic_wrappers",
+                                                                         "alloc",
+                                                                         "core",
+                                                                         "std"};
 
     static constexpr std::array<llvm::StringRef, 12> kMetadata = {"FULL_NAME",
                                                                   "FULL_NAME_AND_VERSION",

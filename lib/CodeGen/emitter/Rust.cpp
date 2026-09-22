@@ -261,8 +261,7 @@ public:
         for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
         {
             std::string raw;
-            for (const auto& component :
-                 llvm::ArrayRef<std::string>(ref.namespaceComponents).take_back(static_cast<std::size_t>(depth)))
+            for (const auto& component : llvm::ArrayRef<std::string>(ref.namespaceComponents).take_back(depth))
             {
                 raw += component + "_";
             }

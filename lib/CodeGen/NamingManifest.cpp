@@ -106,18 +106,6 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language,
     return out;
 }
 
-/// @brief True when @p language's generated type symbol is the shared short-name projection.
-///
-/// Rust, Go, TypeScript and Python name the type after the short name and let a module carry the
-/// namespace, so the projection is the whole answer. C and C++ build a namespace-qualified symbol in
-/// their own emitters (`mangleSymbol`, `cppTypeName`), for which the projection is only part of the
-/// answer, so the manifest omits the key rather than report half a name.
-bool typeSymbolIsSharedProjection(const CodegenNamingLanguage language)
-{
-    return language == CodegenNamingLanguage::Rust || language == CodegenNamingLanguage::Go ||
-           language == CodegenNamingLanguage::TypeScript || language == CodegenNamingLanguage::Python;
-}
-
 /// @brief Renders one definition under one language.
 llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
                                     const SemanticDefinition&   def,
@@ -138,7 +126,7 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
                                                           def.info.minorVersion,
                                                           typeNameVersioning);
 
-    const bool reportType = typeSymbolIsSharedProjection(language);
+    const bool reportType = definitionNamePolicy(language).typeNameReachesTheType;
 
     llvm::json::Object out;
     if (reportType)

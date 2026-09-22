@@ -27,10 +27,10 @@ const DefinitionNamePolicy& definitionNamePolicy(const CodegenNamingLanguage lan
 {
     // C flattens the namespace into the identifier. The others let the language carry it: C++ in a
     // real namespace, Rust in a per-definition module, Go/TypeScript/Python in a per-namespace one.
-    static constexpr DefinitionNamePolicy kC{"__", false, true};
-    static constexpr DefinitionNamePolicy kCpp{"", false, true};
-    static constexpr DefinitionNamePolicy kRust{"", false, false};
-    static constexpr DefinitionNamePolicy kModuleScoped{"", false, true};
+    static constexpr DefinitionNamePolicy kC{"__", false, true, false};
+    static constexpr DefinitionNamePolicy kCpp{"", false, true, false};
+    static constexpr DefinitionNamePolicy kRust{"", false, false, true};
+    static constexpr DefinitionNamePolicy kModuleScoped{"", false, true, true};
 
     switch (language)
     {

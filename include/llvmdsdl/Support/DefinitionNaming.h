@@ -76,6 +76,20 @@ struct DefinitionNamePolicy final
     /// versions are already two paths and the name has nothing to add. The suffix would also be a
     /// run of underscores in a position where `non_camel_case_types` reports one.
     bool versionInTypeName{true};
+
+    /// @brief Whether a consumer can reach the generated type from this name and the namespace.
+    ///
+    /// The naming manifest reports the type name under this, and the naming golden pins it, so the
+    /// answer is stated once here rather than by each of them. It is true where the language carries
+    /// the namespace itself and the name is the definition's own: Rust in a module, Go, TypeScript
+    /// and Python in a per-namespace one.
+    ///
+    /// C is false because its namespace is joined into the identifier, so the namespace the manifest
+    /// reports beside the name would double it. C++ is false as it always has been, and the reason
+    /// once given for it -- that its emitter builds a namespace-qualified symbol of its own -- is not
+    /// what `cppTypeName` does. Whether C++ should report is a question for the phase that takes C++;
+    /// see `CLEAN_CODE.md`.
+    bool typeNameReachesTheType{true};
 };
 
 /// @brief Returns how @p language composes a definition's type name.

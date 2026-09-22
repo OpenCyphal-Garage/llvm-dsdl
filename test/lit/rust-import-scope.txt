@@ -197,3 +197,21 @@
 # RUN: cat %t/rootclash/rust/src/lib.rs | FileCheck %s --check-prefix=ROOTCLASH
 # ROOTCLASH: pub mod dsdl_runtime;
 # ROOTCLASH-NEXT: pub mod dsdl_runtime_;
+
+# ---------------------------------------------------------------------------------------------
+# A namespace component that is a crate the bodies reach by path.
+# ---------------------------------------------------------------------------------------------
+
+# `alloc` is declared with `extern crate` at the root under `no_std`, so a namespace component of
+# that name is a second root declaration and E0260. `core` and `std` are the crates the bodies are
+# written in terms of, and a module of either name would answer for those paths. All three are
+# claimed beside the runtime's own modules. The std profile compiles either way, which is why only
+# the no-std half of this could have found it.
+# RUN: mkdir -p %t/crates/alloc
+# RUN: printf 'uint8 a\n@sealed\n' > %t/crates/alloc/Foo.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/crates/alloc --rust-crate-name m --outdir %t/crates/rust
+# RUN: cat %t/crates/rust/src/lib.rs | FileCheck %s --check-prefix=CRATES
+# CRATES: extern crate alloc;
+# CRATES: pub mod dsdl_runtime;
+# CRATES-NEXT: pub mod alloc_;
+# CRATES-NOT: pub mod alloc;
