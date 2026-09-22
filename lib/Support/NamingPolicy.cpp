@@ -364,11 +364,8 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // `test/integration/generate_naming_adversarial_corpus.py`.
     static constexpr std::array<llvm::StringRef, 1> kCppGlobalNames = {"index"};
 
-    static constexpr std::array<llvm::StringRef, 5> kRustCrateModules = {"dsdl_runtime",
-                                                                         "dsdl_runtime_semantic_wrappers",
-                                                                         "alloc",
-                                                                         "core",
-                                                                         "std"};
+    static constexpr std::array<llvm::StringRef, 6> kRustCrateModules =
+        {"dsdl_runtime", "dsdl_runtime_semantic_wrappers", "lib", "alloc", "core", "std"};
 
     static constexpr std::array<llvm::StringRef, 12> kMetadata = {"FULL_NAME",
                                                                   "FULL_NAME_AND_VERSION",

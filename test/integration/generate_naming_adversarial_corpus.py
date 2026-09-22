@@ -83,7 +83,7 @@ KEYWORD_TYPES = [
 # Namespace components that reach a name the generated root already declares: the Rust crate root
 # carries `extern crate alloc` under no_std and declares its runtime modules, and the bodies of
 # every language are written in terms of paths rooted at these.
-ROOT_NAMESPACES = ["alloc", "core", "std", "dsdlRuntime", "dsdlGen", "index"]
+ROOT_NAMESPACES = ["alloc", "core", "std", "lib", "dsdlRuntime", "dsdlGen", "index"]
 
 # Names the backends emit beside a section's own, as constants or as members.
 CLAIMED_MEMBERS = [
@@ -134,6 +134,41 @@ def emit_root_namespaces(root: pathlib.Path) -> None:
     """A namespace component that reaches a name the generated root declares."""
     for component in ROOT_NAMESPACES:
         write(root / component / "Held.1.0.dsdl", f"uint8 value\n{SEALED}")
+
+
+def emit_self_shadow(root: pathlib.Path) -> None:
+    """A definition whose own name is its dependency's.
+
+    An import shares one namespace with the items the module declares, so the two meet. The
+    declaration is the type's public API and keeps the name; the import is what moves.
+
+    Off by default, because TypeScript does not survive it: `projectCompositeImports` allocates no
+    local name for an import, so the module imports `Owner`, `makeOwner` and the two body functions
+    beside its own, and tsc answers TS2440. Rust reached the same shape and was given an import
+    scope; TypeScript has none yet. `--include-self-shadow` is the reproduction, and turning it on
+    is the first step of giving TypeScript one.
+    """
+    write(root / "adv" / "shadow" / "inner" / "Owner.1.0.dsdl", f"uint8 value\n{SEALED}")
+    write(
+        root / "adv" / "shadow" / "outer" / "Owner.1.0.dsdl",
+        f"adv.shadow.inner.Owner.1.0 inner\n{SEALED}",
+    )
+
+
+def emit_claimed_namespaces(root: pathlib.Path) -> None:
+    """A namespace component that is itself a name the type role claims.
+
+    A candidate alias is composed from the namespace and the short name, so a component that the
+    projection escapes on its own would put its separator in the middle of the alias. `alpha` sorts
+    first and takes the bare name, which leaves the other two to be qualified.
+    """
+    for component in ("alpha", "default", "err"):
+        write(root / "adv" / "nsclaim" / component / "Shared.1.0.dsdl", f"uint8 value\n{SEALED}")
+    fields = "\n".join(
+        f"adv.nsclaim.{component}.Shared.1.0 f_{component}"
+        for component in ("alpha", "default", "err")
+    )
+    write(root / "adv" / "nsclaim" / "Holder.1.0.dsdl", f"{fields}\n{SEALED}")
 
 
 def emit_cross_namespace(root: pathlib.Path) -> None:
@@ -207,6 +242,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--outdir", required=True, type=pathlib.Path)
     parser.add_argument(
+        "--include-self-shadow",
+        action="store_true",
+        help="add the axis where a definition's own name is its dependency's, which TypeScript "
+        "does not yet survive",
+    )
+    parser.add_argument(
         "--no-version-multiplicity",
         action="store_true",
         help="leave out the axes that need several versions of one definition at once, which only "
@@ -223,6 +264,9 @@ def main() -> int:
     emit_keywords(root)
     emit_root_namespaces(root)
     emit_cross_namespace(root)
+    emit_claimed_namespaces(root)
+    if args.include_self_shadow:
+        emit_self_shadow(root)
     emit_members(root)
     emit_sections(root)
     emit_deprecated(root)

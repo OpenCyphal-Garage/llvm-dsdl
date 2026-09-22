@@ -313,6 +313,17 @@ removed from generated C and C++ in #24 for the same reason the three Rust `#![a
 removed here: a suppression moves a build-policy decision into source the consumer compiles, and
 hides whatever else lands inside it.
 
+## Known uncovered
+
+**TypeScript does not survive a definition whose own name is its dependency's.**
+`adv.shadow.outer.Owner` holding an `adv.shadow.inner.Owner` imports `Owner`, `makeOwner` and the
+two body functions beside the ones it declares, and tsc answers `TS2440`. `projectCompositeImports`
+allocates no local name for an import, so TypeScript has no import scope at all -- the thing Rust
+was given in this branch. The axis is in the adversarial corpus behind `--include-self-shadow`,
+which is the reproduction; the gate leaves it off, so the gap is stated rather than gated.
+
+Giving TypeScript an import scope is the first piece of its own phase.
+
 ## Decisions
 
 The standard is that the output is unsurprising to an engineer who knows the language. Where a

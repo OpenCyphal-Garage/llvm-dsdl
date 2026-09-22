@@ -374,8 +374,10 @@ Two things about that pass are worth stating, because both were wrong in the fir
   repeat there is unreachable rather than merely unlikely.
 
 It runs after parsing rather than during discovery, because whether a definition is a service is a
-parse result. The section suffix comes from `renderSectionTypeSuffix`, the call the emitters use, so
-the check cannot compute a name different from the one written.
+parse result. The section's name comes from `renderSectionTypeName`, the call the emitters use, so
+the check cannot compute a name different from the one written. That call is also where a language
+decides whether a section is named after the service at all: Rust reaches a section through the
+definition's module, so the section word alone is the name.
 
 ### 6.1 Macros stay unique by construction
 
