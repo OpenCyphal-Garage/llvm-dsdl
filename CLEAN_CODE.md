@@ -228,7 +228,15 @@ does not. Helpers stay module-private and take camelCase names.
 
 Each phase is one change, with a gate that fails against the tree before the phase is written.
 
-**1 — The judges.** The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
+Rust landed first, in #41, ahead of the mechanism phases rather than after them. That was not the
+order below and it earned something: phase 3's gate is that the surface tree reproduces today's
+output byte for byte, and today's output is now idiomatic Rust rather than the flat names. A tree
+that reproduces `list_0_2::Request` is tested against the shape it exists to produce; one that
+reproduced `uavcan_file_List_Request` would only have been tested against the shape it replaces.
+
+**1 — The judges.** *Rust's half landed in #41; three languages still have no style judge.*
+
+The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
 runs `cargo check`, `RunUavcanGoBuild` runs `go test ./...`, `RunUavcanTsTypecheck` runs `tsc`, and
 the C and C++ generation lanes compile under `-Werror`. What none of them judges is idiom, because
 a compiler accepts an un-idiomatic name by design. Python has no lane of either kind.
@@ -253,6 +261,12 @@ beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` r
 `readability-identifier-naming` over the generated C and C++. Of those, the `ts26.4.3` toolshed image
 carries `clang-tidy` and `cargo-clippy`; `staticcheck`, `ruff` and a TypeScript-capable `eslint` are
 not in it, so each needs pinned provisioning or an image bump before its lane can run in CI.
+
+Those three are what remains of this phase, and they gate the phases after it rather than decorate
+them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and
+the six of them that earlier fixes in that same branch created were each caught by a judge rather
+than by inspection. Go, Python and TypeScript have no such judge installed, so running their phases
+first would mean discovering their defects in review, which is the cost this phase exists to avoid.
 
 A presence or byte-parity gate ratchets in the shape it finds, so no existing gate can report this
 class of defect; that is why the phases below come after this one rather than before it. The
@@ -297,11 +311,35 @@ stresses it most.
 Nothing in phases 2 to 10 touches a plan body. The wire is fixed by the round-trip, parity and
 cross-language equivalence lanes throughout, and a phase that moves a wire byte has failed.
 
+## The adversarial corpus
+
+`Discovery` rejects a corpus in which two DSDL names reach one generated identifier. The class that
+went ungated is the other one: a DSDL name reaching an identifier a backend emits for every type --
+a trait its bodies name unqualified, a module its crate root declares, a global the standard headers
+put beside a namespace, an accessor composed from another field, a union's synthetic tag. Reaching
+it needs a name pair the regulated corpus has no instance of, so those defects arrived one at a time
+through review.
+
+`test/integration/generate_naming_adversarial_corpus.py` writes that corpus rather than checking it
+in, so an axis is a name in a list, and `RunNamingAdversarialGate.cmake` hands each backend's output
+to that language's own compiler. It found three defects on the days it was written, two of them in
+backends the Rust work never touched: `namespace index` against POSIX's `index()` in C++, `lib`
+against the crate root's own file in Rust, and TypeScript's missing import scope.
+
+Its boundary is worth stating, because it is not obvious from the outside. The gate compiles, so it
+finds what a compiler diagnoses and nothing else. `namespace std` compiles: [namespace.std] makes a
+declaration added to it undefined behaviour rather than a diagnostic, so the corpus carried a `std`
+root namespace and reported nothing. A rule the language states and no compiler enforces needs an
+assertion on the name emitted, which is what `naming-stropping.txt` carries for that one. Compile
+gates and text assertions are two halves, not alternatives.
+
 ## Acceptance
 
 | gate | phases | holds |
 |---|---|---|
 | each language's own compiler and linter, at maximum strictness, over the regulated corpus | 1, then 5–10 | the output is accepted by the tools that judge that language |
+| the adversarial corpus, compiled in every backend | 1 onwards | a generated name does not meet another generated name |
+| the name emitted, asserted in lit | 1 onwards | a rule no compiler enforces still holds |
 | byte-diff of all seven targets before and after | 3, 4 | a mechanism change changes no output |
 | emission sites in the declaration half | 4 | the shape is stated once, the syntax six times |
 | round-trip, the C↔language parity lanes, cross-language equivalence | all | the wire is unchanged |
