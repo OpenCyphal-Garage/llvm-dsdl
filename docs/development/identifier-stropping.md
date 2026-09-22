@@ -496,9 +496,12 @@ is worse than no switch.
   symbol without reimplementing the projection, and gives the language server its hover text. Targets
   that emit no source report every language at once.
 
-  `file_stem` is exact for every backend. `type_name` is reported only for Go, TypeScript and Python; C, C++
-  and Rust build namespace-qualified symbols in their own emitters, for which the shared projection is
-  only part of the answer, so the manifest omits the key rather than report half a name.
+  `file_stem` is exact for every backend. `type_name` is reported for Rust, Go, TypeScript and
+  Python, which name a type after its short name and let a module carry the namespace, and on each
+  section as well as the definition: Rust reaches a section through the definition's module, so the
+  name is the section word alone and does not follow from the definition's. C and C++ build
+  namespace-qualified symbols in their own emitters, for which the shared projection is only part of
+  the answer, so the manifest omits the key rather than report half a name.
 
 - **Hover** groups languages by the identifier they produce — ``emits as `count` (c, cpp, rust, ts,
   python) · `Count` (go)`` — rather than printing six rows, five of which agree.
