@@ -15,12 +15,7 @@ export const DSDL_WIRE_FLAT_REASON = "nested-not-flat";
 
 function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: bigint): number {
   const v0 = 96n > p0;
-  let v1: number;
-  if (v0) {
-    v1 = -3;
-  } else {
-    v1 = 0;
-  }
+  const v1 = v0 ? -3 : 0;
   return v1;
 }
 
@@ -28,12 +23,7 @@ function mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelim
   const v0 = p0 < 0n;
   const v1 = p0 > p1;
   const v2 = v0 || v1;
-  let v3: number;
-  if (v2) {
-    v3 = -12;
-  } else {
-    v3 = 0;
-  }
+  const v3 = v2 ? -12 : 0;
   return v3;
 }
 

@@ -18,10 +18,7 @@ DSDL_WIRE_FLAT_REASON = "sub-byte-field"
 
 def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(p0: int) -> int:
     v0 = 80 > p0
-    if v0:
-        v1 = -3
-    else:
-        v1 = 0
+    v1 = (-3 if v0 else 0)
     return v1
 
 def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(p0: int) -> int:
@@ -60,10 +57,7 @@ def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0:
     v2 = not (index_holds)
     v3 = v0 or v1
     v4 = v3 or v2
-    if v4:
-        v5 = -10
-    else:
-        v5 = 0
+    v5 = (-10 if v4 else 0)
     return v5
 
 def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(p0: int) -> int:

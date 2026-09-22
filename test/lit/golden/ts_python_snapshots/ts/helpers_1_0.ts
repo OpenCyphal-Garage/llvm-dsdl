@@ -13,12 +13,7 @@ export const DSDL_WIRE_FLAT_REASON = "sub-byte-field";
 
 function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(p0: bigint): number {
   const v0 = 80n > p0;
-  let v1: number;
-  if (v0) {
-    v1 = -3;
-  } else {
-    v1 = 0;
-  }
+  const v1 = v0 ? -3 : 0;
   return v1;
 }
 
@@ -64,12 +59,7 @@ function mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__
   const v2 = !(indexHolds);
   const v3 = v0 || v1;
   const v4 = v3 || v2;
-  let v5: number;
-  if (v4) {
-    v5 = -10;
-  } else {
-    v5 = 0;
-  }
+  const v5 = v4 ? -10 : 0;
   return v5;
 }
 

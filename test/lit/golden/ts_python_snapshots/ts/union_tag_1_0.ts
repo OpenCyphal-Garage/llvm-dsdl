@@ -13,12 +13,7 @@ export const DSDL_WIRE_FLAT_REASON = "union-type";
 
 function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: bigint): number {
   const v0 = 24n > p0;
-  let v1: number;
-  if (v0) {
-    v1 = -3;
-  } else {
-    v1 = 0;
-  }
+  const v1 = v0 ? -3 : 0;
   return v1;
 }
 
@@ -27,12 +22,7 @@ function mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(p0:
   const v1 = false || v0;
   const v2 = p0 === 1n;
   const v3 = v1 || v2;
-  let v4: number;
-  if (v3) {
-    v4 = 0;
-  } else {
-    v4 = -11;
-  }
+  const v4 = v3 ? 0 : -11;
   return v4;
 }
 

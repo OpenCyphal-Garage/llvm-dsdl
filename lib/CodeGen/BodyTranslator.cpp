@@ -614,10 +614,36 @@ private:
         return spelling_.logicalNot((*this)(condition));
     }
 
-    /// @brief Whether @p region holds nothing but its terminator, so spelling it writes no line.
-    static bool isEmptyArm(mlir::Region& region)
+    /// @brief Gives every constant of @p region the spelling its uses will read it by.
+    void nameConstants(mlir::Region& region)
     {
-        return region.empty() || region.front().without_terminator().empty();
+        if (region.empty())
+        {
+            return;
+        }
+        for (mlir::Operation& op : region.front().without_terminator())
+        {
+            if (auto value = mlir::dyn_cast<mlir::arith::ConstantOp>(op))
+            {
+                names_[value.getResult()] = spelling_.constant(mlir::cast<mlir::TypedAttr>(value.getValue()));
+            }
+        }
+    }
+
+    /// @brief Whether spelling @p region writes no line.
+    ///
+    /// A constant is spelled where it is used, so an arm holding nothing but the constants it
+    /// yields writes as little as one holding nothing at all. Values defined in a region cannot be
+    /// read outside it, so there is nothing else such an arm can be there to do.
+    static bool spellsNothing(mlir::Region& region)
+    {
+        if (region.empty())
+        {
+            return true;
+        }
+        return llvm::all_of(region.front().without_terminator(), [](mlir::Operation& op) {
+            return op.hasTrait<mlir::OpTrait::ConstantLike>();
+        });
     }
 
     llvm::Error structured(mlir::scf::IfOp op)
@@ -627,8 +653,8 @@ private:
         // regions are empty but the operation is not dead while the condition is computed. The
         // shapes are answered before the arms are spelt -- both empty is no statement at all, and
         // an empty first arm is the condition negated.
-        const bool emptyThen = isEmptyArm(op.getThenRegion());
-        const bool emptyElse = isEmptyArm(op.getElseRegion());
+        const bool emptyThen = spellsNothing(op.getThenRegion());
+        const bool emptyElse = spellsNothing(op.getElseRegion());
         if ((op.getNumResults() == 0) && emptyThen && emptyElse)
         {
             return llvm::Error::success();
@@ -641,6 +667,40 @@ private:
                 return err;
             }
             spelling_.closeBlock(w_);
+            return llvm::Error::success();
+        }
+
+        // An `scf.if` whose arms hold nothing but their yields chooses between values rather than
+        // branching between statements, and every language here has an expression for that. The
+        // values it yields are computed before the branch, so choosing between them evaluates
+        // nothing the branch would have skipped. Spelling the branch instead reaches the declare-
+        // then-assign-in-each-arm that clippy calls a needless late initialisation and ruff an
+        // if-else block that wanted an if-expression.
+        if ((op.getNumResults() > 0) && emptyThen && emptyElse && !op.getElseRegion().empty())
+        {
+            auto ifTrue  = mlir::cast<mlir::scf::YieldOp>(op.getThenRegion().front().getTerminator());
+            auto ifFalse = mlir::cast<mlir::scf::YieldOp>(op.getElseRegion().front().getTerminator());
+
+            // The constants an arm yields are declared inside it, so they are named here: the arms
+            // themselves are never walked.
+            nameConstants(op.getThenRegion());
+            nameConstants(op.getElseRegion());
+            const std::string condition = (*this)(op.getCondition());
+            for (const auto [index, result] : llvm::enumerate(op.getResults()))
+            {
+                if (result.use_empty())
+                {
+                    continue;
+                }
+                const std::string name = nameFor(result);
+                spelling_.declareSelect(w_,
+                                        result.getType(),
+                                        name,
+                                        condition,
+                                        (*this)(ifTrue.getOperand(index)),
+                                        (*this)(ifFalse.getOperand(index)));
+                names_[result] = name;
+            }
             return llvm::Error::success();
         }
 

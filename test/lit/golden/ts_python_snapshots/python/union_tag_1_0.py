@@ -18,10 +18,7 @@ DSDL_WIRE_FLAT_REASON = "union-type"
 
 def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: int) -> int:
     v0 = 24 > p0
-    if v0:
-        v1 = -3
-    else:
-        v1 = 0
+    v1 = (-3 if v0 else 0)
     return v1
 
 def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(p0: int) -> int:
@@ -29,10 +26,7 @@ def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(p0: int)
     v1 = False or v0
     v2 = p0 == 1
     v3 = v1 or v2
-    if v3:
-        v4 = 0
-    else:
-        v4 = -11
+    v4 = (0 if v3 else -11)
     return v4
 
 def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(p0: int) -> int:
