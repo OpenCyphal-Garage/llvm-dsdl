@@ -252,11 +252,14 @@ public:
             }
             local = qualified + bare;
         }
-        // The ordinal joins without a separator: an underscore before a digit is what
-        // `non_camel_case_types` reports, and the alias is a type name.
+        // The ordinal is projected rather than appended. A deprecated dependency is imported by the
+        // name its implementation struct carries, which ends in `_`, and `Foo_2` is what
+        // `non_camel_case_types` reports; the projection answers `Foo2`.
         for (unsigned ordinal = 2U; taken(local); ++ordinal)
         {
-            local = bare + std::to_string(ordinal);
+            local = codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                             IdentifierRole::TypeName,
+                                             bare + std::to_string(ordinal));
         }
         importAliases_[path] = local;
         return local;
@@ -573,16 +576,36 @@ public:
             {
                 entry.poolClass[fieldName] = constName;
             }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
-            }
-            // The union's tag, reached by its accessors as a member is: the wire holds it ahead
-            // of the option, and no field can be named `_tag_`.
+            // An accessor's name is allocated from the scope the members are named in, so a field
+            // whose accessor composes onto another's is moved rather than emitted twice.
+            //
+            // The scope is keyed on the name handed to it, and the separator is therefore
+            // unconditional: `_tag_` and a field named `tag_` both compose `get_tag_` once a
+            // leading underscore absorbs the separator, and the scope cannot separate one key from
+            // itself. Keyed as `get__tag_` and `get_tag_` they are two names that the snake
+            // projection folds onto one identifier, which is the case the scope exists for. The
+            // tag is declared first, so a union whose options collide with nothing keeps the
+            // accessor names it has and the colliding option is the side that moves.
+            const auto accessorKey = [](const llvm::StringRef kind, const llvm::StringRef member) {
+                return kind.str() + "_" + member.str();
+            };
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{"_tag_", tagSteps_.back().get()};
+                entry.members["_tag_"] =
+                    Member{"_tag_",
+                           tagSteps_.back().get(),
+                           scope.declare(IdentifierRole::FunctionName, accessorKey("get", "_tag_")),
+                           scope.declare(IdentifierRole::FunctionName, accessorKey("set", "_tag_"))};
+            }
+            for (mlir::dsdl::IOOp io : fields)
+            {
+                const std::string field = scope.get(IdentifierRole::FieldName, io.getName());
+                entry.members[io.getName()] =
+                    Member{field,
+                           io,
+                           scope.declare(IdentifierRole::FunctionName, accessorKey("get", field)),
+                           scope.declare(IdentifierRole::FunctionName, accessorKey("set", field))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -666,7 +689,7 @@ public:
             // The nested type's buffer, as a slice: its length is what the plan stores through the
             // size pointer, which a slice carries itself, so the store lands in a local nothing
             // reads, named so the compiler expects that.
-            w.open("pub fn " + accessorSource("get", member.rustName) + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> &[u8] {");
             w.line("let mut _out_size: usize = 0;");
         }
         else if (getter)
@@ -679,13 +702,12 @@ public:
             {
                 returnCast_ = " as " + storage;
             }
-            w.open("pub fn " + accessorSource("get", member.rustName) + "(buffer: &[u8]" + index + ") -> " + storage +
-                   " {");
+            w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
         }
         else
         {
-            w.open("pub fn " + accessorSource("set", member.rustName) + "(buffer: &mut [u8]" + index +
-                   ", value: " + storage + ") -> core::result::Result<(), i8> {");
+            w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage +
+                   ") -> core::result::Result<(), i8> {");
         }
         w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
         std::vector<std::string> parameters{"buffer", "_buffer_size_bytes"};
@@ -1374,6 +1396,14 @@ private:
     {
         std::string      rustName;
         mlir::dsdl::IOOp io;
+
+        /// @brief The names this member's accessors are declared under.
+        ///
+        /// Allocated from the section's own scope rather than composed at each use: a union's
+        /// synthetic tag reaches `accessorSource` as `_tag_` and an option named `tag_` reaches it
+        /// as `tag_`, and both compose `get_tag_`. Two accessors of one `impl` cannot share a name.
+        std::string getterName;
+        std::string setterName;
     };
 
     struct Plan final
@@ -2166,8 +2196,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // `Request` already says it: the section carries that name, so the alias would declare the
     // name a second time and stand for itself. The constants below are the service's own and are
     // declared either way.
-    const std::string declaredReq = renderDeclaredTypeName(reqType, def.request.deprecated);
-    const bool        aliasNeeded = (baseType != reqType) && (baseType != declaredReq);
+    // The guard covers both sections, not just the one the alias stands for: a service named
+    // `Response` declares that name as its response, and the alias would declare it again.
+    const std::string declaredReq  = renderDeclaredTypeName(reqType, def.request.deprecated);
+    const std::string declaredResp = renderDeclaredTypeName(respType, def.request.deprecated);
+    const bool        aliasNeeded =
+        (baseType != reqType) && (baseType != declaredReq) && (baseType != respType) && (baseType != declaredResp);
     if (aliasNeeded)
     {
         if (def.request.deprecated && options.emitDeprecationAttributes)

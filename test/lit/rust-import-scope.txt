@@ -1,9 +1,10 @@
-# A Rust module reaches a composite by the short name its own module exports, so two definitions of
-# different namespaces can ask for one name and a module holding fields of both would import it
-# twice. The imports of a module are therefore allocated from a scope, and the scope holds what the
-# module declares itself as well as what it has already imported. Each case below is a shape the
-# regulated corpus does not contain: a clash is only reachable through a namespace the corpus has no
-# pair in, so the showroom found the first of them and review found the rest.
+# The names a Rust module declares -- its imports and its accessors -- are allocated from scopes, so
+# two that project onto one identifier are separated rather than emitted twice. A module reaches a
+# composite by the short name its own module exports, and a union's accessors reach a synthetic tag
+# beside the options, and both are places where one identifier can be asked for twice.
+#
+# Every case below is a shape the regulated corpus does not contain: each needs a name pair the
+# corpus has no instance of. The showroom found the first; review found the rest.
 
 # RUN: rm -rf %t && mkdir -p %t/shadow/root/foo %t/shadow/root/bar
 
@@ -63,3 +64,53 @@
 # RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust2
 # RUN: cat %t/selfalias/rust2/src/ns/query_1_0.rs | FileCheck %s --check-prefix=ALIAS
 # ALIAS: pub type Query = Request;
+
+# ---------------------------------------------------------------------------------------------
+# An ordinal on a name that already ends in an underscore.
+# ---------------------------------------------------------------------------------------------
+
+# A deprecated definition is imported by the name its implementation struct carries, which ends in
+# `_`, so an ordinal appended to it would read `Foo_2` -- an underscore before a digit, which
+# `non_camel_case_types` reports. The candidate is projected as a type name, so it reads `Foo2`.
+# RUN: mkdir -p %t/depord/ns
+# RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.1.0.dsdl
+# RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.2.0.dsdl
+# RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.3.0.dsdl
+# RUN: printf 'ns.Foo.1.0 a\nns.Foo.2.0 b\nns.Foo.3.0 c\n@sealed\n' > %t/depord/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust --all-type-versions %t/depord/ns --rust-crate-name m --outdir %t/depord/rust
+# RUN: cat %t/depord/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=DEPORD
+# DEPORD-DAG: use crate::ns::foo_1_0::Foo_;
+# DEPORD-DAG: use crate::ns::foo_2_0::Foo_ as NsFoo_;
+# DEPORD-DAG: use crate::ns::foo_3_0::Foo_ as Foo2;
+# DEPORD-NOT: as Foo_2;
+
+# ---------------------------------------------------------------------------------------------
+# A union option whose accessor composes onto the synthetic tag's.
+# ---------------------------------------------------------------------------------------------
+
+# The tag reaches the accessor scope as `_tag_` and an option named `tag_` reaches it as `tag_`;
+# with one separator absorbed by the leading underscore both would read `get_tag_`. The scope is
+# keyed with the separator unconditional, so the two are two names that the snake projection folds
+# onto one identifier. The tag is declared first and keeps its accessors; the option moves.
+# RUN: mkdir -p %t/tagclash/vendor
+# RUN: printf '@union\nuint32 tag_\nfloat32 real\n@sealed\n' > %t/tagclash/vendor/Clash.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/tagclash --rust-crate-name m --outdir %t/tagclash/rust
+# RUN: cat %t/tagclash/rust/src/tagclash/vendor/clash_1_0.rs | FileCheck %s --check-prefix=TAGCLASH
+# TAGCLASH-DAG: pub fn get_tag_(buffer: &[u8]) -> u8 {
+# TAGCLASH-DAG: pub fn set_tag_(buffer: &mut [u8], value: u8) -> core::result::Result<(), i8> {
+# TAGCLASH-DAG: pub fn get_tag_2(buffer: &[u8]) -> u32 {
+# TAGCLASH-DAG: pub fn set_tag_2(buffer: &mut [u8], value: u32) -> core::result::Result<(), i8> {
+
+# ---------------------------------------------------------------------------------------------
+# A service named after its response.
+# ---------------------------------------------------------------------------------------------
+
+# The alias stands for the request, so the guard covers the response too: a service named
+# `Response` declares that name as its response, and the alias would declare it again.
+# RUN: mkdir -p %t/rsp/ns
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/rsp/ns/Response.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/rsp/ns --rust-crate-name m --outdir %t/rsp/rust
+# RUN: cat %t/rsp/rust/src/ns/response_1_0.rs | FileCheck %s --check-prefix=RSP
+# RSP-DAG: pub struct Request {
+# RSP-DAG: pub struct Response {
+# RSP-NOT: pub type Response =
