@@ -186,6 +186,107 @@ void declareConstantRegion(NamingScope& scope, const SemanticSection& section, c
 
 }  // namespace
 
+/// @brief Names one of a definition's package-level constants from @p parts.
+///
+/// A Go constant is exported and CamelCase, and the package holds a whole DSDL namespace, so the
+/// name carries the type it belongs to: `RecordFullName`, `RecordFooBarOptionTag`.
+///
+/// Each part is projected on its own and the results are joined, because the case of a part is
+/// what says how to read it. `FULL_NAME` has no lower case, so it is a screaming-snake token of
+/// two words and means `FullName`; `VSLAMPoseUpdate` has its own capitals and they are the
+/// author's. Joining first would put the type name's lower case into the token's and leave
+/// `FULL_NAME` standing as it was written.
+/// @param[in] parts The name's parts, outermost first.
+/// @return The constant's name.
+std::string goConstantName(const std::vector<llvm::StringRef>& parts)
+{
+    std::string out;
+    for (const llvm::StringRef part : parts)
+    {
+        // The first part is the type's own name, which the caller has already projected. Taking it
+        // as it stands is what keeps a constant spelled like the type it belongs to: under
+        // versioned names that is `SystemHealth_1_0`, and folding its separators away would leave
+        // `SystemHealth10`, where 1.23 and 12.3 of one type reach one name.
+        if (out.empty())
+        {
+            out = part.str();
+            continue;
+        }
+        std::string projected =
+            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, part);
+        // A part that begins with a digit is escaped with a leading underscore, which is for the
+        // start of an identifier. Anywhere else the digit already follows a letter.
+        if (!projected.empty() && (projected.front() == '_'))
+        {
+            projected.erase(projected.begin());
+        }
+        out += projected;
+    }
+    return out;
+}
+
+/// @brief What distinguishes one of a section's constants from its siblings.
+///
+/// The parts as DSDL wrote them, which is what a scope keys on: `barBaz` and `bar_baz` are two
+/// constants and `CBarBaz` is one name, so keying on the name would lose the collision the scope
+/// exists to repair.
+/// @param[in] parts The name's parts, outermost first.
+/// @return The key.
+std::string goConstantKey(const std::vector<llvm::StringRef>& parts)
+{
+    std::string out;
+    for (const llvm::StringRef part : parts)
+    {
+        out += part.str() + "\x1f";
+    }
+    return out;
+}
+
+/// @brief What distinguishes one of the generated constants from a DSDL one of the same name.
+///
+/// A definition may declare a constant named `FULL_NAME`, which is the case the claim exists for,
+/// and the two are not one name the scope should answer twice.
+/// @param[in] typeName The section's Go type name.
+/// @param[in] token What this constant says about the type.
+/// @return The key.
+std::string goGeneratedConstantKey(const llvm::StringRef typeName, const llvm::StringRef token)
+{
+    return "\x1egenerated\x1e" + goConstantKey({typeName, token});
+}
+
+/// @brief The scope a section's package-level constants are declared into.
+///
+/// The generated names are declared before any DSDL one, so a DSDL constant that folds onto one of
+/// them is the side that moves.
+/// @param[in] section The section whose constants these are.
+/// @param[in] typeName The section's Go type name.
+/// @return The scope.
+NamingScope makeGoConstantScope(const SemanticSection& section, const llvm::StringRef typeName)
+{
+    NamingScope scope(CodegenNamingLanguage::Go);
+    const auto  claim = [&scope](const std::vector<llvm::StringRef>& parts) {
+        (void) scope.declare(IdentifierRole::ConstantName, goConstantKey(parts), goConstantName(parts));
+    };
+    for (const llvm::StringRef token : codegenGeneratedConstantTokens())
+    {
+        (void) scope.declare(IdentifierRole::ConstantName,
+                             goGeneratedConstantKey(typeName, token),
+                             goConstantName({typeName, token}));
+    }
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            claim({typeName, field.name, "OPTION_TAG"});
+        }
+    }
+    for (const auto& c : section.constants)
+    {
+        claim({typeName, c.name});
+    }
+    return scope;
+}
+
 std::string arrayMetadataName(const CodegenNamingLanguage language,
                               const llvm::StringRef       fieldName,
                               const ArrayMetadataKind     kind)

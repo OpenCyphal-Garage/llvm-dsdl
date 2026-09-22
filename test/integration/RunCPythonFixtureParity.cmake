@@ -199,8 +199,8 @@ import importlib
 pkg = "@PY_PACKAGE@"
 svc_mod = importlib.import_module(f"{pkg}.demo.demo_service_1_0")
 Inner_1_0 = importlib.import_module(f"{pkg}.demo.inner_1_0").Inner_1_0
-Req = svc_mod.DemoService_1_0_Request
-Resp = svc_mod.DemoService_1_0_Response
+Req = svc_mod.DemoService_1_0Request
+Resp = svc_mod.DemoService_1_0Response
 
 req_obj = Req(req_id=7, req_vals=[0x1234, 0xABCD])
 req_bytes = req_obj.serialize()

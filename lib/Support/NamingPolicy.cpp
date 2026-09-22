@@ -23,6 +23,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 #include <string>
+#include <set>
 #include <vector>
 #include <cstddef>
 #include <optional>
@@ -252,6 +253,111 @@ std::string normalizePascalCase(llvm::StringRef name)
     return out;
 }
 
+/// @brief The words Go writes in full capitals wherever one appears in a name.
+///
+/// staticcheck's `ST1003` checks a name against this list, so the list is its, not a choice made
+/// here. A word not on it is recased as an ordinary one.
+bool isGoInitialism(const std::string& word)
+{
+    static const std::set<std::string> kInitialisms = {
+        "ACL",  "AMQP", "API",  "ASCII", "CPU",  "CSS", "DB",  "DNS",  "EOF",  "GID",  "GUID",
+        "HTML", "HTTP", "HTTPS", "ID",   "IP",   "JSON", "LHS", "QPS", "RAM",  "RHS",  "RPC",
+        "RTP",  "SIP",  "SLA",  "SMTP",  "SQL",  "SSH", "TCP", "TLS", "TTL",  "UDP",  "UI",
+        "UID",  "URI",  "URL",  "UTF8",  "UUID", "VM",  "XML", "XMPP", "XSRF", "XSS"};
+    return kInitialisms.count(word) > 0;
+}
+
+/// @brief Splits @p name into words at separators and at case boundaries.
+///
+/// A run of capitals is one word until a lowercase follows it, where the last capital of the run
+/// begins the next word instead: `IDList` is `ID` and `List`, not `IDL` and `ist`.
+std::vector<std::string> splitWords(llvm::StringRef name)
+{
+    std::vector<std::string> words;
+    std::string              current;
+    const auto               flush = [&words, &current]() {
+        if (!current.empty())
+        {
+            words.push_back(current);
+            current.clear();
+        }
+    };
+    for (std::size_t i = 0; i < name.size(); ++i)
+    {
+        const auto c = static_cast<unsigned char>(name[i]);
+        if (!std::isalnum(c))
+        {
+            flush();
+            continue;
+        }
+        if (!current.empty())
+        {
+            const auto previous = static_cast<unsigned char>(current.back());
+            const bool ascends  = !std::isupper(previous) && std::isupper(c);
+            const bool descends = std::isupper(previous) && std::islower(c) && (current.size() > 1);
+            if (ascends)
+            {
+                flush();
+            }
+            else if (descends)
+            {
+                // The capital that begins this word was taken as part of the run before it.
+                const char carried = current.back();
+                current.pop_back();
+                flush();
+                current.push_back(carried);
+            }
+        }
+        current.push_back(static_cast<char>(c));
+    }
+    flush();
+    return words;
+}
+
+std::string normalizeGoName(llvm::StringRef name, const bool exported)
+{
+    // A source with no lower case is a DSDL constant's SCREAMING_SNAKE, and every word of it is
+    // recased: `FULL_NAME` means two words rather than an acronym. A source that has lower case
+    // somewhere has its own capitals, and they are the author's -- `VSLAMPoseUpdate` is not for
+    // this to reinterpret -- so only the first letter of each word is touched.
+    const bool recase = llvm::none_of(name, [](const char c) {
+        return std::islower(static_cast<unsigned char>(c)) != 0;
+    });
+
+    std::string out;
+    for (const std::string& word : splitWords(name))
+    {
+        if (out.empty() && !exported)
+        {
+            // Go says unexported with the case of the first letter, and lowers the whole of a
+            // leading initialism rather than only its head.
+            for (const char c : word)
+            {
+                out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            }
+            continue;
+        }
+        std::string upper;
+        upper.reserve(word.size());
+        for (const char c : word)
+        {
+            upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+        if (isGoInitialism(upper))
+        {
+            out += upper;
+            continue;
+        }
+        out.push_back(upper.front());
+        for (std::size_t i = 1; i < word.size(); ++i)
+        {
+            out.push_back(recase ? static_cast<char>(std::tolower(static_cast<unsigned char>(word[i])))
+                                 : word[i]);
+        }
+    }
+    return out;
+}
+
 std::string normalizeCamelCase(llvm::StringRef name)
 {
     // The Pascal projection with its first letter lowered. A name that begins with a run of
@@ -288,6 +394,8 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     static constexpr RolePolicy kSnake{CaseStyle::Snake, true, true, false};
     static constexpr RolePolicy kPascal{CaseStyle::Pascal, true, true, false};
     static constexpr RolePolicy kCamel{CaseStyle::Camel, true, true, false};
+    static constexpr RolePolicy kGoExported{CaseStyle::GoExported, true, true, false};
+    static constexpr RolePolicy kGoUnexported{CaseStyle::GoUnexported, true, true, false};
     static constexpr RolePolicy kUpperSnake{CaseStyle::Snake, true, true, true};
 
     // A preprocessor token: escaped and upper-cased, never stropped against keywords.
@@ -313,10 +421,13 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
         {
             return kPreserve;
         }
-        return (goLike || (language == CodegenNamingLanguage::TypeScript)) ? kCamel : kSnake;
+        if (goLike)
+        {
+            return kGoUnexported;
+        }
+        return (language == CodegenNamingLanguage::TypeScript) ? kCamel : kSnake;
     case IdentifierRole::FieldName:
     case IdentifierRole::FunctionName:
-    case IdentifierRole::LocalName:
         if (cLike)
         {
             return kPreserve;
@@ -325,8 +436,22 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
         // `fooBar` is projected rather than carried through. Two members that fold onto one name
         // are separated by the scope they are declared into, as they already are in the four
         // languages that have always projected here.
-        return goLike ? kPascal : kSnake;
+        return goLike ? kGoExported : kSnake;
+    case IdentifierRole::LocalName:
+        if (cLike)
+        {
+            return kPreserve;
+        }
+        // A Go local is not part of anything's surface, so it is cased the way Go says that.
+        return goLike ? kGoUnexported : kSnake;
     case IdentifierRole::ConstantName:
+        // Go names a constant as it names anything else exported, so `SEVERITY_TRACE` is
+        // `SeverityTrace`. The other four upper-case it, which is what each of them does.
+        if (cLike)
+        {
+            return kMacroToken;
+        }
+        return goLike ? kGoExported : kUpperSnake;
     case IdentifierRole::MacroName:
         return cLike ? kMacroToken : kUpperSnake;
     case IdentifierRole::NamespaceName:
@@ -474,14 +599,11 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Go:
-        // A struct field and a method may not share a name; constants take the same type prefix as
-        // the generated ones.
-        if (role == IdentifierRole::FieldName)
-        {
-            return kGoMethods;
-        }
-        return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
-                                                      : llvm::ArrayRef<llvm::StringRef>(kNone);
+        // A struct field and a method may not share a name. A Go constant carries the type it
+        // belongs to, so none of these tokens is a name on its own and the claim is on the composed
+        // one, which the scope that declares it reserves.
+        return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kGoMethods)
+                                                   : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Rust:
         // Constants share the inherent impl with the generated ones. Fields do not: fields and
         // methods occupy separate namespaces. A type name competes with the prelude instead.
@@ -606,6 +728,12 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
     case CaseStyle::Camel:
         out = normalizeCamelCase(name);
         break;
+    case CaseStyle::GoExported:
+        out = normalizeGoName(name, true);
+        break;
+    case CaseStyle::GoUnexported:
+        out = normalizeGoName(name, false);
+        break;
     }
 
     bool escaped = false;
@@ -694,6 +822,21 @@ LanguageNamingPolicy::LanguageNamingPolicy(const CodegenNamingLanguage language)
 const RolePolicy& LanguageNamingPolicy::roleFor(const IdentifierRole role) const
 {
     return rolePolicy(language_, role);
+}
+
+llvm::ArrayRef<llvm::StringRef> codegenGeneratedConstantTokens()
+{
+    return runtimeOwnedNames(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName);
+}
+
+std::string codegenToGoExportedIdentifier(const llvm::StringRef name)
+{
+    return codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, name);
+}
+
+std::string codegenToGoUnexportedIdentifier(const llvm::StringRef name)
+{
+    return codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::LocalName, name);
 }
 
 llvm::ArrayRef<llvm::StringRef> LanguageNamingPolicy::runtimeOwned(const IdentifierRole role) const
@@ -812,6 +955,13 @@ std::string NamingScope::keyOf(const IdentifierRole role, const llvm::StringRef 
 
 std::string NamingScope::declare(const IdentifierRole role, const llvm::StringRef sourceName)
 {
+    return declare(role, sourceName, codegenProjectIdentifier(language_, role, sourceName));
+}
+
+std::string NamingScope::declare(const IdentifierRole  role,
+                                 const llvm::StringRef sourceName,
+                                 const llvm::StringRef candidate)
+{
     const std::string key = keyOf(role, sourceName);
     const auto        it  = assigned_.find(key);
     if (it != assigned_.end())
@@ -819,22 +969,28 @@ std::string NamingScope::declare(const IdentifierRole role, const llvm::StringRe
         return it->second;
     }
 
-    const std::string base = codegenProjectIdentifier(language_, role, sourceName);
+    const std::string base = candidate.str();
     // `_` joins the ordinal to the base, except where the base already ends in one. Doubling it
     // would put the result in a namespace C and C++ reserve -- `break_` is what the keyword strop
     // makes of `break`, and `break__2` is an identifier the standard says is not the program's to
     // define. Nothing downstream repairs that: the reserved-namespace encoder runs inside the
     // projection, before this suffix exists.
-    const std::string join      = base.empty() || (base.back() != '_') ? "_" : "";
-    std::string       candidate = base;
-    unsigned          suffix    = 2;
-    while (!used_.insert(candidate).second)
+    //
+    // Go joins with nothing: its names carry no underscore at all, and one here is what `ST1003`
+    // reports whatever put it there.
+    const CaseStyle   style = rolePolicy(language_, role).caseStyle;
+    const bool        goName = (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported);
+    const std::string join =
+        goName ? "" : ((base.empty() || (base.back() != '_')) ? "_" : "");
+    std::string taken  = base;
+    unsigned    suffix = 2;
+    while (!used_.insert(taken).second)
     {
-        candidate = base + join + std::to_string(suffix);
+        taken = base + join + std::to_string(suffix);
         ++suffix;
     }
-    assigned_[key] = candidate;
-    return candidate;
+    assigned_[key] = taken;
+    return taken;
 }
 
 std::string NamingScope::get(const IdentifierRole role, const llvm::StringRef sourceName) const

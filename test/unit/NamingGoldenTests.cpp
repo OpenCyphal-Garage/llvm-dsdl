@@ -489,6 +489,10 @@ const char* caseStyleName(const CaseStyle style)
         return "pascal";
     case CaseStyle::Camel:
         return "camel";
+    case CaseStyle::GoExported:
+        return "go-exported";
+    case CaseStyle::GoUnexported:
+        return "go-unexported";
     }
     return "?";
 }

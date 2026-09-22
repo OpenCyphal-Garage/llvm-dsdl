@@ -99,20 +99,20 @@ assert heartbeat_rt.vendor_specific_status_code == heartbeat.vendor_specific_sta
 print("uavcan-python-runtime message-roundtrip-ok")
 
 # Service request/response roundtrip.
-execute_req = ExecuteCommandMod.ExecuteCommand_1_3_Request(
-    command=ExecuteCommandMod.EXECUTE_COMMAND_1_3_REQUEST_COMMAND_IDENTIFY,
+execute_req = ExecuteCommandMod.ExecuteCommand_1_3Request(
+    command=ExecuteCommandMod.EXECUTE_COMMAND_1_3REQUEST_COMMAND_IDENTIFY,
     parameter=[ord(c) for c in "blink"],
 )
-execute_req_rt = roundtrip(execute_req, ExecuteCommandMod.ExecuteCommand_1_3_Request)
+execute_req_rt = roundtrip(execute_req, ExecuteCommandMod.ExecuteCommand_1_3Request)
 assert execute_req_rt.command == execute_req.command
 assert execute_req_rt.parameter == execute_req.parameter
 print("uavcan-python-runtime service-request-roundtrip-ok")
 
-execute_resp = ExecuteCommandMod.ExecuteCommand_1_3_Response(
-    status=ExecuteCommandMod.EXECUTE_COMMAND_1_3_RESPONSE_STATUS_SUCCESS,
+execute_resp = ExecuteCommandMod.ExecuteCommand_1_3Response(
+    status=ExecuteCommandMod.EXECUTE_COMMAND_1_3RESPONSE_STATUS_SUCCESS,
     output=[1, 2, 3, 4],
 )
-execute_resp_rt = roundtrip(execute_resp, ExecuteCommandMod.ExecuteCommand_1_3_Response)
+execute_resp_rt = roundtrip(execute_resp, ExecuteCommandMod.ExecuteCommand_1_3Response)
 assert execute_resp_rt.status == execute_resp.status
 assert execute_resp_rt.output == execute_resp.output
 print("uavcan-python-runtime service-response-roundtrip-ok")
@@ -153,14 +153,14 @@ print("uavcan-python-runtime invalid-union-tag-ok")
 # Negative path: array length violations fail.
 oversized_req_failed = False
 try:
-    ExecuteCommandMod.ExecuteCommand_1_3_Request(command=1, parameter=[0] * 256).serialize()
+    ExecuteCommandMod.ExecuteCommand_1_3Request(command=1, parameter=[0] * 256).serialize()
 except ValueError:
     oversized_req_failed = True
 assert oversized_req_failed
 
 oversized_resp_failed = False
 try:
-    ExecuteCommandMod.ExecuteCommand_1_3_Response(status=0, output=list(range(47))).serialize()
+    ExecuteCommandMod.ExecuteCommand_1_3Response(status=0, output=list(range(47))).serialize()
 except ValueError:
     oversized_resp_failed = True
 assert oversized_resp_failed

@@ -323,13 +323,39 @@ reach a helper by a symbol that carries the whole definition and are unchanged.
 Three generation gates asserted the old symbol by name. A presence gate ratchets in the shape it
 finds, which is what this phase exists to notice.
 
+Go's names then went the way Rust's had. `SEVERITY_TRACE` is not a Go constant; `SeverityTrace`
+is. Three roles moved to a casing of Go's own -- a constant, a field and an exported function to
+`GoExported`, a local and a helper to `GoUnexported` -- and both recase each word of a source that
+has no lower case, leave the capitals of one that does, and upper-case the words `ST1003` calls
+initialisms. `FULL_NAME` means `FullName`; `VSLAMPoseUpdate` is the author's and stays; `unique_id`
+is `UniqueID`. A Go name carries no underscore, so a scope's ordinal joins with nothing there:
+`FooBar`, `FooBar2`.
+
+A Go constant carries the type it belongs to, so the parts are projected apart and joined -- the
+type verbatim, since it is already the type's name and folding its separators would put 1.23 and
+12.3 of one definition on one constant. The scope keys on the DSDL parts rather than the composed
+name, because `barBaz` and `bar_baz` are two constants and `CBarBaz` is one name, and the generated
+tokens are keyed apart from the DSDL ones, because a definition may declare a constant called
+`FULL_NAME` and the claim exists for exactly that. The naming manifest builds the same scope, so
+what it reports is what is written.
+
+A service section joins with nothing in Go, TypeScript and Python: `GetInfoRequest`. An underscore
+inside a PascalCase name is what `ST1003` and `N801` report and what `naming-convention` rejects.
+
+| language | judge | before the sweep | now |
+|----------|-------|-----------------:|----:|
+| Rust | clippy | 867 | 607 |
+| Go | staticcheck | 3,241 | 462 |
+| Python | ruff | 4,188 | 1,762 |
+| TypeScript | eslint | 1,810 | 548 |
+| | | **10,106** | **3,379** |
+
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
-| 2,049 | Go | `ST1003` | `SEVERITY_TRACE` where Go writes `SeverityTrace` |
 | 998 | Python | `E501` | long lines |
-| 715 | TypeScript | `naming-convention` | `_bound0_` locals, and `GetInfo_Request` where TypeScript writes `GetInfoRequest` |
+| 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
 | 198 | Python | `F401` | unused imports |
@@ -339,6 +365,7 @@ What is left is per-language.
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 88 | Go, Python | `SA4006`/`F841` | an accessor binds a size the language's signature does not return |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
+| 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
 nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that

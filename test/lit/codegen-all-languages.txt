@@ -147,8 +147,8 @@
 # GO_SUMMARY: command: go
 # GO_SUMMARY: files generated:
 # GO_MODULE: module demo/generated/smoke
-# GO_TYPE: const WIDGET_WIRE_FLAT = true
-# GO_TYPE: const WIDGET_HOST_IMAGE = false
+# GO_TYPE: const WidgetWireFlat = true
+# GO_TYPE: const WidgetHostImage = false
 
 # TS_PORTABLE_SUMMARY: Run summary:
 # TS_PORTABLE_SUMMARY: command: ts

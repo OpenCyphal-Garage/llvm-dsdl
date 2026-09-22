@@ -870,9 +870,9 @@ function runSvcRequestRandom(iterations: number): number {
   const state = { value: 0x27182818 >>> 0 };
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterations; ++i) {
-    const value: @ts_svc_module@.Svc_1_0_Request = { x: prngNext(state) & 0xffff };
-    const bytes = @ts_svc_module@.serializeSvc_1_0_Request(value);
-    const decoded = @ts_svc_module@.deserializeSvc_1_0_Request(bytes);
+    const value: @ts_svc_module@.Svc_1_0Request = { x: prngNext(state) & 0xffff };
+    const bytes = @ts_svc_module@.serializeSvc_1_0Request(value);
+    const decoded = @ts_svc_module@.deserializeSvc_1_0Request(bytes);
     if (decoded.value.x !== value.x || decoded.consumed !== bytes.length) {
       throw new Error("svc request random mismatch");
     }
@@ -888,9 +888,9 @@ function runSvcResponseRandom(iterations: number): number {
   const state = { value: 0x11223344 >>> 0 };
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterations; ++i) {
-    const value: @ts_svc_module@.Svc_1_0_Response = { y: prngNext(state) & 0xff };
-    const bytes = @ts_svc_module@.serializeSvc_1_0_Response(value);
-    const decoded = @ts_svc_module@.deserializeSvc_1_0_Response(bytes);
+    const value: @ts_svc_module@.Svc_1_0Response = { y: prngNext(state) & 0xff };
+    const bytes = @ts_svc_module@.serializeSvc_1_0Response(value);
+    const decoded = @ts_svc_module@.deserializeSvc_1_0Response(bytes);
     if (decoded.value.y !== value.y || decoded.consumed !== bytes.length) {
       throw new Error("svc response random mismatch");
     }
@@ -916,9 +916,9 @@ function runScalarTruncatedInput(): number {
 }
 
 function runSvcRequestTruncatedInput(): number {
-  const full = @ts_svc_module@.serializeSvc_1_0_Request({ x: 0x4567 });
+  const full = @ts_svc_module@.serializeSvc_1_0Request({ x: 0x4567 });
   const short = full.subarray(0, 1);
-  const decoded = @ts_svc_module@.deserializeSvc_1_0_Request(short);
+  const decoded = @ts_svc_module@.deserializeSvc_1_0Request(short);
   if (decoded.value.x !== 0x67 || decoded.consumed !== 1) {
     throw new Error("svc request truncated mismatch");
   }

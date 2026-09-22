@@ -80,9 +80,9 @@ func prefix32AcceptsCapacity() {
 	switch {
 	case rc != dsdlruntime.DSDL_RUNTIME_SUCCESS:
 		outcome("FAIL", "prefix32_accepts_capacity", capacity, fmt.Sprintf("rc = %d, want success", rc))
-	case consumed != prefixguard.PREFIX32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES:
+	case consumed != prefixguard.Prefix32@V1_0@SerializationBufferSizeBytes:
 		outcome("FAIL", "prefix32_accepts_capacity", capacity, fmt.Sprintf("consumed %d bytes, want %d",
-			consumed, prefixguard.PREFIX32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES))
+			consumed, prefixguard.Prefix32@V1_0@SerializationBufferSizeBytes))
 	case len(obj.Payload) != capacity:
 		outcome("FAIL", "prefix32_accepts_capacity", capacity, fmt.Sprintf("payload holds %d elements, want %d",
 			len(obj.Payload), capacity))

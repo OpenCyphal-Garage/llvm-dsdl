@@ -46,7 +46,7 @@ func main() {
 		original.Subsystem = append(original.Subsystem, report)
 	}
 
-	buffer := make([]byte, health.SYSTEM_HEALTH_1_0_SERIALIZATION_BUFFER_SIZE_BYTES)
+	buffer := make([]byte, health.SystemHealth_1_0SerializationBufferSizeBytes)
 	rc, written := original.Serialize(buffer)
 	if rc != 0 {
 		fail("serialize returned %d", rc)

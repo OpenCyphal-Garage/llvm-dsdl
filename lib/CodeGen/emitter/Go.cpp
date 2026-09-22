@@ -682,7 +682,11 @@ public:
                                         const llvm::StringRef member,
                                         const std::size_t     ordinal) const override
     {
-        return camelValueName(role, member, ordinal);
+        // The snake rendering, projected as Go names a local: the same fold as every other
+        // language's, with Go's initialisms and its case.
+        return codegenProjectIdentifier(CodegenNamingLanguage::Go,
+                                        IdentifierRole::LocalName,
+                                        snakeValueName(role, member, ordinal));
     }
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
@@ -1862,48 +1866,44 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             mlir::ModuleOp                            module,
                             PlanBodyLookups&                          lookups)
 {
-    const auto typeConstPrefix =
-        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
-    w.line("const " + typeConstPrefix + "_FULL_NAME = \"" + metadata.fullName + "\"");
-    w.line("const " + typeConstPrefix + "_IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
+    const NamingScope constScope = makeGoConstantScope(section, typeName);
+    const auto        named       = [&constScope](const std::vector<llvm::StringRef>& parts) {
+        return constScope.get(IdentifierRole::ConstantName, goConstantKey(parts));
+    };
+    const auto meta = [&constScope, &typeName](const llvm::StringRef token) {
+        return constScope.get(IdentifierRole::ConstantName, goGeneratedConstantKey(typeName, token));
+    };
+    w.line("const " + meta("FULL_NAME") + " = \"" + metadata.fullName + "\"");
+    w.line("const " + meta("IS_DEPRECATED") + " = " + std::string(metadata.deprecated ? "true" : "false"));
+    w.line("const " + meta("FULL_NAME_AND_VERSION") + " = \"" + metadata.fullName + "." +
            std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"");
-    w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(metadata.extentBytes));
-    w.line("const " + typeConstPrefix +
-           "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + typeConstPrefix + "_WIRE_FLAT = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\"");
-    w.line("const " + typeConstPrefix + "_HOST_IMAGE = " + std::string(metadata.hostImage.holds ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\"");
+    w.line("const " + meta("EXTENT_BYTES") + " = " + std::to_string(metadata.extentBytes));
+    w.line("const " + meta("SERIALIZATION_BUFFER_SIZE_BYTES") + " = " +
+           std::to_string(metadata.serializationBufferSizeBytes));
+    w.line("const " + meta("WIRE_FLAT") + " = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
+    w.line("const " + meta("WIRE_FLAT_REASON") + " = \"" + metadata.wireFlat.reason + "\"");
+    w.line("const " + meta("HOST_IMAGE") + " = " + std::string(metadata.hostImage.holds ? "true" : "false"));
+    w.line("const " + meta("HOST_IMAGE_REASON") + " = \"" + metadata.hostImage.reason + "\"");
 
     if (metadata.declaresPortId)
     {
-        w.line("const " + typeConstPrefix +
-               "_HAS_FIXED_PORT_ID = " + std::string(metadata.fixedPortId ? "true" : "false"));
+        w.line("const " + meta("HAS_FIXED_PORT_ID") + " = " +
+               std::string(metadata.fixedPortId ? "true" : "false"));
         if (metadata.fixedPortId)
         {
-            w.line("const " + typeConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId));
+            w.line("const " + meta("FIXED_PORT_ID") + " = " + std::to_string(*metadata.fixedPortId));
         }
     }
     if (metadata.isUnion)
     {
-        w.line("const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()));
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
+        w.line("const " + meta("UNION_OPTION_COUNT") + " = " + std::to_string(metadata.unionOptions.size()));
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("const " + typeConstPrefix + "_" +
-                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Go, option.name)) +
-                   " " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
+            w.line("const " + named({typeName, option.name, "OPTION_TAG"}) + " " +
+                   unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
         }
     }
 
-    std::vector<std::string> constNames;
-    constNames.reserve(section.constants.size());
-    for (const auto& c : section.constants)
-    {
-        constNames.push_back(c.name);
-    }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
     for (const auto& c : section.constants)
     {
         // gofmt separates a documented declaration from whatever precedes it, so a doc
@@ -1913,8 +1913,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
             w.blank();
         }
         emitAttachedDocGo(w, c.doc);
-        w.line("const " + typeConstPrefix + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
-               goConstValue(c.type, c.value));
+        w.line("const " + named({typeName, c.name}) + " = " + goConstValue(c.type, c.value));
     }
     w.blank();
 
@@ -2267,14 +2266,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
         w.blank();
-        const auto baseConstPrefix =
-            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
         // The service-ID belongs to the service, and this alias is how the service is named.
-        w.line("const " + baseConstPrefix +
-               "_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "true" : "false"));
+        w.line("const " + goConstantName({baseType, "HAS_FIXED_PORT_ID"}) + " = " +
+               std::string(def.info.fixedPortId ? "true" : "false"));
         if (def.info.fixedPortId)
         {
-            w.line("const " + baseConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
+            w.line("const " + goConstantName({baseType, "FIXED_PORT_ID"}) + " = " +
+                   std::to_string(*def.info.fixedPortId));
         }
     }
 

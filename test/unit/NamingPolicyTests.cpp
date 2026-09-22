@@ -126,8 +126,8 @@ bool runNamingRoleTests()
             const bool goLike = language == CodegenNamingLanguage::Go;
 
             // Fields: C and C++ keep the DSDL spelling (emitter/C.cpp and emitter/Cpp.cpp call
-            // codegenSanitizeIdentifier); Go exports PascalCase (emitter/Go.cpp toExportedIdent);
-            // Rust, TypeScript and Python fold to snake_case.
+            // codegenSanitizeIdentifier); Go exports it the way Go exports anything, initialisms
+            // included; Rust, TypeScript and Python fold to snake_case.
             std::string fieldOracle = codegenToSnakeCaseIdentifier(language, name);
             if (cLike)
             {
@@ -135,16 +135,35 @@ bool runNamingRoleTests()
             }
             else if (goLike)
             {
-                fieldOracle = codegenToPascalCaseIdentifier(language, name);
+                fieldOracle = llvmdsdl::codegenToGoExportedIdentifier(name);
             }
             ok = expectRole(language, IdentifierRole::FieldName, name, fieldOracle, "the field call site") && ok;
+            ok = expectRole(language, IdentifierRole::FunctionName, name, fieldOracle, "the function call site") && ok;
 
-            // Constants: C and C++ build macro tokens, the other four use the shared UPPER_SNAKE
+            // Locals: Go alone distinguishes one from a field, because Go says in the name whether
+            // something is exported.
+            const std::string localOracle = goLike ? llvmdsdl::codegenToGoUnexportedIdentifier(name) : fieldOracle;
+            ok = expectRole(language, IdentifierRole::LocalName, name, localOracle, "the local call site") && ok;
+
+            // Constants: C and C++ build macro tokens, Go names one as it names anything exported
+            // (emitter/Go.cpp goConstantName), and the other three use the shared UPPER_SNAKE
             // constant scope (NamingScope at the ConstantName role).
-            const std::string constOracle =
-                cLike ? emitterMacroToken(name) : codegenToUpperSnakeCaseIdentifier(language, name);
+            std::string constOracle = codegenToUpperSnakeCaseIdentifier(language, name);
+            if (cLike)
+            {
+                constOracle = emitterMacroToken(name);
+            }
+            else if (goLike)
+            {
+                constOracle = llvmdsdl::codegenToGoExportedIdentifier(name);
+            }
             ok = expectRole(language, IdentifierRole::ConstantName, name, constOracle, "the constant call site") && ok;
-            ok = expectRole(language, IdentifierRole::MacroName, name, constOracle, "the macro call site") && ok;
+
+            // A macro token stays UPPER_SNAKE in every language that has no macros, so the role
+            // keeps one answer whatever a caller reaches for it with.
+            const std::string macroOracle =
+                cLike ? emitterMacroToken(name) : codegenToUpperSnakeCaseIdentifier(language, name);
+            ok = expectRole(language, IdentifierRole::MacroName, name, macroOracle, "the macro call site") && ok;
 
             // Namespaces: C/C++/Rust sanitize each component, Go/TypeScript/Python snake_case it
             // (emitter/Go.cpp packagePathFromComponents, renderNamespaceRelativePath).
@@ -212,7 +231,6 @@ bool runNamingClaimedNameTests()
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "FULL_NAME", "FULL_NAME_"},
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "serialize", "serialize_"},
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "deserialize", "deserialize_"},
-        {CodegenNamingLanguage::Go, IdentifierRole::ConstantName, "full_name", "FULL_NAME_"},
         {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "serialize", "Serialize_"},
         {CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, "host_image_reason", "HOST_IMAGE_REASON_"},
         {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
@@ -230,6 +248,10 @@ bool runNamingClaimedNameTests()
         {CodegenNamingLanguage::C, IdentifierRole::MacroName, "union_option_count_", "UNION_OPTION_COUNT__"},
         // A C macro token is not an identifier in the language namespace, so keywords are left alone.
         {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "break", "BREAK"},
+        // A Go constant carries the type it belongs to, so `full_name` is not a name the generated
+        // ones can be reached by and nothing escapes it here. What reserves the composed name is
+        // the scope in emitter/Go.cpp that declares it.
+        {CodegenNamingLanguage::Go, IdentifierRole::ConstantName, "full_name", "FullName"},
     }};
 
     bool ok = true;
@@ -451,11 +473,12 @@ bool runNamingScopeTests()
     bool ok = true;
 
     // Three names that fold together in Go must come back as three identifiers, in declaration order.
+    // The ordinal joins with nothing: a Go name carries no underscore wherever it came from.
     NamingScope       goScope(CodegenNamingLanguage::Go);
     const std::string first  = goScope.declare(IdentifierRole::FieldName, "fooBar");
     const std::string second = goScope.declare(IdentifierRole::FieldName, "foo_bar");
     const std::string third  = goScope.declare(IdentifierRole::FieldName, "FooBar");
-    if (first != "FooBar" || second != "FooBar_2" || third != "FooBar_3")
+    if (first != "FooBar" || second != "FooBar2" || third != "FooBar3")
     {
         std::cerr << "scope allocation mismatch: " << first << ", " << second << ", " << third << "\n";
         ok = false;
@@ -473,7 +496,7 @@ bool runNamingScopeTests()
     // claims for *every* type are policy instead, and are covered by runNamingClaimedNameTests.
     static constexpr std::array<llvm::StringRef, 1> kReserved = {"Extra"};
     NamingScope                                     reservedScope(CodegenNamingLanguage::Go, kReserved);
-    if (reservedScope.declare(IdentifierRole::FieldName, "extra") != "Extra_2")
+    if (reservedScope.declare(IdentifierRole::FieldName, "extra") != "Extra2")
     {
         std::cerr << "scope did not escape a field colliding with a scope-reserved name\n";
         ok = false;
@@ -482,7 +505,7 @@ bool runNamingScopeTests()
     // Two roles in one scope share the pool: a Go field and a Go method cannot both be `Value`.
     NamingScope sharedScope(CodegenNamingLanguage::Go);
     if (sharedScope.declare(IdentifierRole::FieldName, "value") != "Value" ||
-        sharedScope.declare(IdentifierRole::FunctionName, "value") != "Value_2")
+        sharedScope.declare(IdentifierRole::FunctionName, "value") != "Value2")
     {
         std::cerr << "roles in one scope did not share the identifier pool\n";
         ok = false;

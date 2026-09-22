@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "llvm/ADT/StringRef.h"
 
@@ -101,6 +102,46 @@ enum class ArrayMetadataKind : std::uint8_t
 ///            one the emitter built, and the names it reads back are then names nothing writes --
 ///            a silent wrong answer rather than a missing one.
 /// @return A scope with every constant declared.
+/// @brief Names one of a Go definition's package-level constants from @p parts.
+///
+/// A Go constant is exported and CamelCase, and the package holds a whole DSDL namespace, so the
+/// name carries the type it belongs to: `RecordFullName`, `RecordFooBarOptionTag`.
+///
+/// Each part is projected on its own and the results are joined, because the case of a part is what
+/// says how to read it. `FULL_NAME` has no lower case, so it is a screaming-snake token of two words
+/// and means `FullName`; `VSLAMPoseUpdate` has its own capitals and they are the author's.
+/// @param[in] parts The name's parts, outermost first.
+/// @return The constant's name.
+[[nodiscard]] std::string goConstantName(const std::vector<llvm::StringRef>& parts);
+
+/// @brief What @ref makeGoConstantScope keys one of a section's constants by.
+///
+/// The parts as DSDL wrote them: `barBaz` and `bar_baz` are two constants and `CBarBaz` is one
+/// name, so keying on the name would lose the collision the scope exists to repair.
+/// @param[in] parts The name's parts, outermost first.
+/// @return The key.
+[[nodiscard]] std::string goConstantKey(const std::vector<llvm::StringRef>& parts);
+
+/// @brief What @ref makeGoConstantScope keys one of the generated constants by.
+///
+/// A definition may declare a constant named `FULL_NAME`, which is the case the claim exists for,
+/// and the two are not one name the scope should answer twice.
+/// @param[in] typeName The section's Go type name.
+/// @param[in] token What this constant says about the type.
+/// @return The key.
+[[nodiscard]] std::string goGeneratedConstantKey(llvm::StringRef typeName, llvm::StringRef token);
+
+/// @brief The scope a Go section's package-level constants are declared into.
+///
+/// The generated names are declared before any DSDL one, so a DSDL constant that folds onto one of
+/// them is the side that moves. Read it with @ref goConstantKey or @ref goGeneratedConstantKey; the
+/// emitter and the naming manifest both build it, and a caller that composes the name some other
+/// way reports one nothing writes.
+/// @param[in] section The section whose constants these are.
+/// @param[in] typeName The section's Go type name.
+/// @return The scope.
+[[nodiscard]] NamingScope makeGoConstantScope(const SemanticSection& section, llvm::StringRef typeName);
+
 [[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage  language,
                                                    const SemanticSection& section,
                                                    llvm::StringRef        typeConstantPrefix);

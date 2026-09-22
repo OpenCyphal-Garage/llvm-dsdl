@@ -32,9 +32,9 @@
 
 # RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module kv
 # RUN: cat %t/go/dsdl/kv/k_1_0.go | FileCheck %s --check-prefix=GO
-# GO-DAG: const K_MASK = 18446744073709551615
-# GO-DAG: const K_FLOOR = -9223372036854775808
-# GO-DAG: const K_HALF = 2.0
+# GO-DAG: const KMask = 18446744073709551615
+# GO-DAG: const KFloor = -9223372036854775808
+# GO-DAG: const KHalf = 2.0
 
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
 # RUN: cat %t/py/dsdl_gen/dsdl/kv/k_1_0.py | FileCheck %s --check-prefix=PY

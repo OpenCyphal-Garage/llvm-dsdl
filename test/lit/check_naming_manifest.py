@@ -52,8 +52,12 @@ def main() -> int:
     constants = claimed.get("message", {}).get("constants", {})
     if fields.get("serialize") != "Serialize_":
         failures.append(f"expected the field 'serialize' to be reported as Serialize_, got {fields.get('serialize')!r}")
-    if constants.get("FULL_NAME") != "FULL_NAME_":
-        failures.append(f"expected FULL_NAME to be reported as FULL_NAME_, got {constants.get('FULL_NAME')!r}")
+    # A Go constant carries the type it belongs to, so the manifest reports the whole name rather
+    # than a token a consumer joins to a prefix.
+    if constants.get("FULL_NAME") != "ClaimedFullName2":
+        failures.append(
+            f"expected FULL_NAME to be reported as ClaimedFullName2, got {constants.get('FULL_NAME')!r}"
+        )
 
     # The stem is projected from the versioned name, so the keyword `break` is not what the escape
     # sees and nothing is escaped. The manifest reports the file on disk, which is what a build
@@ -89,9 +93,9 @@ def main() -> int:
         failures.append("expected OptionTags to report union_options")
     else:
         expected_options = {
-            "fooBar": {"name": "FOO_BAR_OPTION_TAG", "tag": 0},
-            "foo_bar": {"name": "FOO_BAR_OPTION_TAG_2", "tag": 1},
-            "other": {"name": "OTHER_OPTION_TAG", "tag": 2},
+            "fooBar": {"name": "OptionTagsFooBarOptionTag", "tag": 0},
+            "foo_bar": {"name": "OptionTagsFooBarOptionTag2", "tag": 1},
+            "other": {"name": "OptionTagsOtherOptionTag", "tag": 2},
         }
         if options != expected_options:
             failures.append(f"union_options for OptionTags is {options!r}, expected {expected_options!r}")

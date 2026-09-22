@@ -151,13 +151,32 @@ namespace
 {
 
 /// @brief The suffix a language that scopes both sections under the service's name appends.
+///
+/// Go, TypeScript and Python join the two parts with nothing between them: each of them writes a
+/// type name in PascalCase, and an underscore inside one is what `ST1003` and `N801` report and
+/// what `naming-convention` rejects. C separates with `__`, which is the separator it flattens a
+/// whole namespace with; C++ keeps the single underscore it has always had.
 std::string renderSectionTypeSuffix(const CodegenNamingLanguage language, const llvm::StringRef sectionName)
 {
     if ((sectionName != "request") && (sectionName != "response"))
     {
         return "";
     }
-    const llvm::StringRef separator = (language == CodegenNamingLanguage::C) ? "__" : "_";
+    const auto separator = [language]() -> llvm::StringRef {
+        switch (language)
+        {
+        case CodegenNamingLanguage::C:
+            return "__";
+        case CodegenNamingLanguage::Cpp:
+            return "_";
+        case CodegenNamingLanguage::Go:
+        case CodegenNamingLanguage::TypeScript:
+        case CodegenNamingLanguage::Python:
+        case CodegenNamingLanguage::Rust:
+            return "";
+        }
+        return "_";
+    }();
     return separator.str() + ((sectionName == "request") ? "Request" : "Response");
 }
 
