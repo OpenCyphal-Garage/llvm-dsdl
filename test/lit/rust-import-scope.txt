@@ -165,3 +165,35 @@
 # NSCLAIM-DAG: use crate::root::default::foo_1_0::Foo as DefaultFoo;
 # NSCLAIM-DAG: use crate::root::other::foo_1_0::Foo as OtherFoo;
 # NSCLAIM-NOT: as Default_Foo;
+
+# ---------------------------------------------------------------------------------------------
+# A field whose name composes onto another field's accessor.
+# ---------------------------------------------------------------------------------------------
+
+# A Rust field and a method occupy separate namespaces, so a section holding fields `get_foo` and
+# `foo` keeps the field `get_foo` and the method `get_foo` both. Accessors are allocated from a
+# scope of their own for that reason: sharing the field scope renamed the method for a clash the
+# language does not have, and renamed the getter alone, since only the getter's name met the field's.
+# RUN: mkdir -p %t/accscope/vendor
+# RUN: printf 'uint8 get_foo\nuint8 foo\n@sealed\n' > %t/accscope/vendor/Acc.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/accscope --rust-crate-name m --outdir %t/accscope/rust
+# RUN: cat %t/accscope/rust/src/accscope/vendor/acc_1_0.rs | FileCheck %s --check-prefix=ACCSCOPE
+# ACCSCOPE-DAG: pub get_foo: u8,
+# ACCSCOPE-DAG: pub fn get_get_foo(buffer: &[u8]) -> u8 {
+# ACCSCOPE-DAG: pub fn get_foo(buffer: &[u8]) -> u8 {
+# ACCSCOPE-DAG: pub fn set_foo(buffer: &mut [u8], value: u8) -> core::result::Result<(), i8> {
+# ACCSCOPE-NOT: pub fn get_foo_2(
+
+# ---------------------------------------------------------------------------------------------
+# A namespace component that reaches a module the crate root declares.
+# ---------------------------------------------------------------------------------------------
+
+# The crate root declares its runtime modules for itself, and a namespace component reaches the
+# same place now that the role is snake: `dsdlRuntime` projects onto `dsdl_runtime`. A second
+# `pub mod` of one name is a crate rustc refuses, so the two are claimed and the namespace escapes.
+# RUN: mkdir -p %t/rootclash/dsdlRuntime
+# RUN: printf 'uint8 a\n@sealed\n' > %t/rootclash/dsdlRuntime/Foo.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/rootclash/dsdlRuntime --rust-crate-name m --outdir %t/rootclash/rust
+# RUN: cat %t/rootclash/rust/src/lib.rs | FileCheck %s --check-prefix=ROOTCLASH
+# ROOTCLASH: pub mod dsdl_runtime;
+# ROOTCLASH-NEXT: pub mod dsdl_runtime_;

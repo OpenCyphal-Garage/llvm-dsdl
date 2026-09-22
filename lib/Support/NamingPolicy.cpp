@@ -346,6 +346,12 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // macro namespace, where a struct of that name does not reach it.
     static constexpr std::array<llvm::StringRef, 3> kRustPrelude = {"Default", "Ok", "Err"};
 
+    // The modules the generated crate root declares for itself. A DSDL namespace component reaches
+    // the same place -- `dsdlRuntime` projects onto `dsdl_runtime` now that the role is snake -- and
+    // a second `pub mod` of one name is a crate rustc refuses.
+    static constexpr std::array<llvm::StringRef, 2> kRustCrateModules = {"dsdl_runtime",
+                                                                         "dsdl_runtime_semantic_wrappers"};
+
     static constexpr std::array<llvm::StringRef, 12> kMetadata = {"FULL_NAME",
                                                                   "FULL_NAME_AND_VERSION",
                                                                   "IS_DEPRECATED",
@@ -435,6 +441,10 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         if (role == IdentifierRole::TypeName)
         {
             return kRustPrelude;
+        }
+        if (role == IdentifierRole::NamespaceName)
+        {
+            return kRustCrateModules;
         }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);

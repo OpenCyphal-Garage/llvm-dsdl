@@ -587,17 +587,21 @@ public:
             {
                 entry.poolClass[fieldName] = constName;
             }
-            // An accessor's name is allocated from the scope the members are named in, so a field
-            // whose accessor composes onto another's is moved rather than emitted twice.
+            // Accessors are allocated from a scope of their own, not from the one the fields are
+            // named in: a Rust field and a method occupy separate namespaces, so a section holding
+            // fields `get_foo` and `foo` keeps both the field `get_foo` and the method `get_foo`.
+            // Sharing one scope renamed the method for a clash the language does not have, and did
+            // it to the getter alone, since only the getter's name met the field's.
             //
-            // The scope is keyed on the name handed to it, and the separator is therefore
+            // A scope is keyed on the name handed to it, and the separator is therefore
             // unconditional: `_tag_` and a field named `tag_` both compose `get_tag_` once a
-            // leading underscore absorbs the separator, and the scope cannot separate one key from
+            // leading underscore absorbs the separator, and a scope cannot separate one key from
             // itself. Keyed as `get__tag_` and `get_tag_` they are two names that the snake
-            // projection folds onto one identifier, which is the case the scope exists for. The
-            // tag is declared first, so a union whose options collide with nothing keeps the
-            // accessor names it has and the colliding option is the side that moves.
-            const auto accessorKey = [](const llvm::StringRef kind, const llvm::StringRef member) {
+            // projection folds onto one identifier, which is the case a scope exists for. The tag
+            // is declared first, so a union whose options collide with nothing keeps the accessor
+            // names it has and the colliding option is the side that moves.
+            NamingScope accessorScope(CodegenNamingLanguage::Rust);
+            const auto  accessorKey = [](const llvm::StringRef kind, const llvm::StringRef member) {
                 return kind.str() + "_" + member.str();
             };
             if (plan.getIsUnion())
@@ -606,8 +610,8 @@ public:
                 entry.members["_tag_"] =
                     Member{"_tag_",
                            tagSteps_.back().get(),
-                           scope.declare(IdentifierRole::FunctionName, accessorKey("get", "_tag_")),
-                           scope.declare(IdentifierRole::FunctionName, accessorKey("set", "_tag_"))};
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", "_tag_")),
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", "_tag_"))};
             }
             for (mlir::dsdl::IOOp io : fields)
             {
@@ -615,8 +619,8 @@ public:
                 entry.members[io.getName()] =
                     Member{field,
                            io,
-                           scope.declare(IdentifierRole::FunctionName, accessorKey("get", field)),
-                           scope.declare(IdentifierRole::FunctionName, accessorKey("set", field))};
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", field)),
+                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", field))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
