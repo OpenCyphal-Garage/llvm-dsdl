@@ -355,6 +355,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // declared with `extern crate` under `no_std`, where a module beside it is E0260, and a module
     // named `core` or `std` would answer for the paths those bodies are written in rather than for
     // the crate they mean.
+    // A C++ namespace shares the global scope with whatever the standard headers declare there, and
+    // a namespace cannot share a name with a function. POSIX declares `index` in `<strings.h>`,
+    // which the generated headers reach through `<cstring>`, so `namespace index` is a redefinition.
+    //
+    // This set grows by what the adversarial corpus finds on the platforms the gate runs, rather
+    // than by enumerating a standard library at a desk; see
+    // `test/integration/generate_naming_adversarial_corpus.py`.
+    static constexpr std::array<llvm::StringRef, 1> kCppGlobalNames = {"index"};
+
     static constexpr std::array<llvm::StringRef, 5> kRustCrateModules = {"dsdl_runtime",
                                                                          "dsdl_runtime_semantic_wrappers",
                                                                          "alloc",
@@ -432,6 +441,10 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         if (role == IdentifierRole::FieldName)
         {
             return kCppMembers;
+        }
+        if (role == IdentifierRole::NamespaceName)
+        {
+            return kCppGlobalNames;
         }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
