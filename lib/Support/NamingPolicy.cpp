@@ -252,6 +252,19 @@ std::string normalizePascalCase(llvm::StringRef name)
     return out;
 }
 
+std::string normalizeCamelCase(llvm::StringRef name)
+{
+    // The Pascal projection with its first letter lowered. A name that begins with a run of
+    // capitals keeps the rest of the run, so `IDList` reaches `iDList` rather than `idList`: the
+    // run is the source's own casing and nothing here can tell an initialism from a word.
+    std::string out = normalizePascalCase(name);
+    if (!out.empty())
+    {
+        out[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[0])));
+    }
+    return out;
+}
+
 }  // namespace
 
 namespace
@@ -274,6 +287,7 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     static constexpr RolePolicy kPreserve{CaseStyle::Preserve, true, true, false};
     static constexpr RolePolicy kSnake{CaseStyle::Snake, true, true, false};
     static constexpr RolePolicy kPascal{CaseStyle::Pascal, true, true, false};
+    static constexpr RolePolicy kCamel{CaseStyle::Camel, true, true, false};
     static constexpr RolePolicy kUpperSnake{CaseStyle::Snake, true, true, true};
 
     // A preprocessor token: escaped and upper-cased, never stropped against keywords.
@@ -291,6 +305,15 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
         // carries the namespace, so the name is the DSDL short name alone and `non_camel_case_types`
         // reports whatever is not cased.
         return cLike ? kPreserve : kPascal;
+    case IdentifierRole::InternalFunctionName:
+        // Go and TypeScript name a function in camelCase; Go's lower first letter is also what
+        // keeps it out of the package's surface. C and C++ reach their helpers by a symbol that
+        // carries the whole definition, so there is nothing here for them to case.
+        if (cLike)
+        {
+            return kPreserve;
+        }
+        return (goLike || (language == CodegenNamingLanguage::TypeScript)) ? kCamel : kSnake;
     case IdentifierRole::FieldName:
     case IdentifierRole::FunctionName:
     case IdentifierRole::LocalName:
@@ -579,6 +602,9 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
         break;
     case CaseStyle::Pascal:
         out = normalizePascalCase(name);
+        break;
+    case CaseStyle::Camel:
+        out = normalizeCamelCase(name);
         break;
     }
 

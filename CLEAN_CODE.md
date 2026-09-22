@@ -294,20 +294,51 @@ that the body overwrote before reading. Neither shape is in the IR, so both are 
 emitter: a function whose every return is a constant zero spells the success arm alone, and a body
 that never reads the size it is handed leaves the local's declaration to its own write.
 
-What remains is the backlog this phase exists to produce: 867 findings over the regulated corpus,
-none of them about a name and none of them errors.
+With the other three judges installed beside it, the backlog this phase exists to produce came to
+10,106 findings over the regulated corpus. Fixing what the four of them agreed on took it to 5,499,
+and every one of those fixes was in a single place:
 
-| count | lint | cause |
-|------:|------|-------|
-| 601 | `needless_late_init` | an `scf.if` result is declared and then assigned in both arms; Rust's `if` is an expression |
-| 158 | `unnecessary_cast` | a member or element load casts to the storage type even where the field already spells it |
-| 59 | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
-| 34 | `bool_comparison` | `x == false` rather than `!x` |
-| 15 | doc lists, boolean simplification, `div_ceil` | single sites |
+| where | what it was | what it is |
+|-------|-------------|------------|
+| `lower-dsdl-exec` | `cmpi eq %held, false` | `xori %held, true`, which every language spells with its own negation |
+| `lower-dsdl-exec` | a tag chain seeded with `false` | a chain beginning at the first option |
+| `dsdl-fold-null-guards` | reads the fold orphaned, which a canonicaliser keeps | swept to a fixed point, so no arm arrives empty |
+| `BodyTranslator` | an `scf.if` of values spelled as a branch | the select it is |
+| `BodyTranslator` | a null test negated by wrapping its text | `isNotNull`, which each language spells as its own test |
+| `EmitCommon` | `isRead`, in four copies, three of them stale | `plansReadOfSize` |
+| `HelperBindingNaming` | one lowered symbol per helper, in four languages | a name the scope holding it reaches it by |
+| `Ts.cpp` | `interface X {}`, which any non-nullish value satisfies | `Record<string, never>` |
 
-The last four are the emitter's own spellings. The first is the translator's: `structured` lowers an
-`scf.if` with results as a declaration and an assignment per arm, and a language whose `if` yields a
-value wants the expression form.
+The helper naming was the largest of them. A definition's 658 lowered helper symbols reached the
+output verbatim -- `mlir_llvmdsdl_plan_capacity_check__uavcan_diagnostic_Record_1_1` -- which was
+every one of Python's `N802` findings and three fifths of its over-long lines. Rust had already
+answered it: a helper is private to the scope the definition is generated into, so the schema
+component of the symbol names what that scope already says. `renderSchemaHelperNames` is that answer
+for all four. Rust, TypeScript and Python each give a definition a module of its own, so the scope
+covers one definition and the name is what distinguishes one helper from its siblings:
+`capacity_check`, `capacityCheck`, `_capacity_check`. A Go package holds a whole DSDL namespace, so
+the scope is the package's and the name carries the definition: `recordCapacityCheck`. C and C++
+reach a helper by a symbol that carries the whole definition and are unchanged.
+
+Three generation gates asserted the old symbol by name. A presence gate ratchets in the shape it
+finds, which is what this phase exists to notice.
+
+What is left is per-language.
+
+| count | language | lint | cause |
+|------:|----------|------|-------|
+| 2,049 | Go | `ST1003` | `SEVERITY_TRACE` where Go writes `SeverityTrace` |
+| 998 | Python | `E501` | long lines |
+| 715 | TypeScript | `naming-convention` | `_bound0_` locals, and `GetInfo_Request` where TypeScript writes `GetInfoRequest` |
+| 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
+| 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
+| 198 | Python | `F401` | unused imports |
+| 181 | Python | `UP037` | quoted annotations |
+| 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
+| 164 | Python | `SIM108` | the remaining branch-not-expression sites |
+| 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
+| 88 | Go, Python | `SA4006`/`F841` | an accessor binds a size the language's signature does not return |
+| 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
 nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that

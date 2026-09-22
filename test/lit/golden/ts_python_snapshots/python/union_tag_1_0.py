@@ -16,41 +16,41 @@ DSDL_HAS_FIXED_PORT_ID = False
 DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "union-type"
 
-def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: int) -> int:
+def _capacity_check(p0: int) -> int:
     v0 = 24 > p0
     v1 = (-3 if v0 else 0)
     return v1
 
-def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(p0: int) -> int:
+def _validate_union_tag(p0: int) -> int:
     v0 = p0 == 0
     v1 = p0 == 1
     v2 = v0 or v1
     v3 = (0 if v2 else -11)
     return v3
 
-def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(p0: int) -> int:
+def _scalar_unsigned_0_ser(p0: int) -> int:
     v0 = p0 > 255
     v1 = (255 if v0 else p0)
     return v1
 
-def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(p0: int) -> int:
+def _scalar_unsigned_0_deser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
-def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(p0: int) -> int:
+def _scalar_unsigned_1_ser(p0: int) -> int:
     v0 = p0 > 65535
     v1 = (65535 if v0 else p0)
     return v1
 
-def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(p0: int) -> int:
+def _scalar_unsigned_1_deser(p0: int) -> int:
     v0 = p0 & 65535
     return v0
 
-def mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(p0: int) -> int:
+def _union_tag_ser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
-def mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(p0: int) -> int:
+def _union_tag_deser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
@@ -82,10 +82,10 @@ class UnionTag:
         else:
             size = inout_buffer_size_bytes
             v0 = size * 8
-            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(v0)
+            err_2 = _capacity_check(v0)
             tag = int(self._tag)
-            tag_2 = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser(tag)
-            err_3 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag_2)
+            tag_2 = _union_tag_ser(tag)
+            err_3 = _validate_union_tag(tag_2)
             v1 = err_2 == 0
             v2 = (err_3 if v1 else err_2)
             v3 = v2 == 0
@@ -100,7 +100,7 @@ class UnionTag:
                 v6 = err_4 == 0
                 if v6:
                     first_value = int(self.first)
-                    value = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(first_value)
+                    value = _scalar_unsigned_0_ser(first_value)
                     err_8 = dsdl_runtime.write_unsigned(buffer, 8, 8, value, False)
                     err_7 = err_8
                 else:
@@ -114,7 +114,7 @@ class UnionTag:
                 v9 = err_4 == 0
                 if v9:
                     second_value = int(self.second)
-                    value_2 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__ser(second_value)
+                    value_2 = _scalar_unsigned_1_ser(second_value)
                     err_11 = dsdl_runtime.write_unsigned(buffer, 8, 16, value_2, False)
                     err_10 = err_11
                 else:
@@ -138,8 +138,8 @@ class UnionTag:
         else:
             size = inout_buffer_size_bytes
             value = dsdl_runtime.read_unsigned(buffer, 0, 8)
-            tag = mlir_llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser(value)
-            err_2 = mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(tag)
+            tag = _union_tag_deser(value)
+            err_2 = _validate_union_tag(tag)
             v0 = err_2 == 0
             if v0:
                 self._tag = tag
@@ -151,13 +151,13 @@ class UnionTag:
             v2 = (16 if v1 else 8)
             if v1:
                 value_2 = dsdl_runtime.read_unsigned(buffer, 8, 8)
-                value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__deser(value_2)
+                value_3 = _scalar_unsigned_0_deser(value_2)
                 self.first = value_3
             v3 = tag == 1
             v4 = (24 if v3 else v2)
             if v3:
                 value_4 = dsdl_runtime.read_unsigned(buffer, 8, 16)
-                value_5 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__1__deser(value_4)
+                value_5 = _scalar_unsigned_1_deser(value_4)
                 self.second = value_5
             v5 = v4 + 7
             v6 = v5 // 8

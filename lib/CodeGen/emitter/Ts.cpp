@@ -541,6 +541,9 @@ public:
         : symbols_(module)
         , typeNameOf_(std::move(typeNameOf))
     {
+        // A helper is a function of the definition's own module, which is not exported, so the
+        // schema component of the lowered symbol names what the module already says.
+        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::TypeScript, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -681,7 +684,14 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::TypeScript, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("TypeScript spelling: a call to a helper this module does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
     }
 
     // Statements.
@@ -1645,6 +1655,13 @@ private:
     {
         return "_" + std::string(stem) + std::to_string(fresh_++) + "_";
     }
+
+    /// @brief The scope the module's helper names are declared into, which keeps two that project
+    ///        onto one name apart.
+    NamingScope helperScope_{CodegenNamingLanguage::TypeScript};
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
+    llvm::StringMap<std::string> helperNames_;
 
     mlir::SymbolTable     symbols_;
     TypeNameResolver      typeNameOf_;

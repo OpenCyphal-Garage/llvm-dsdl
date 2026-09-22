@@ -622,9 +622,12 @@ public:
     using TypeNameResolver =
         std::function<std::string(llvm::StringRef fullName, std::uint32_t major, std::uint32_t minor)>;
 
-    PythonSpelling(mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
+    PythonSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
         : typeNameOf_(std::move(typeNameOf))
     {
+        // A helper is a module-level function of the definition's own module, so the schema
+        // component of the lowered symbol names what the module already says.
+        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::Python, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -787,7 +790,14 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Python, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Python spelling: a call to a helper this module does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
     }
 
     // Statements.
@@ -1702,6 +1712,13 @@ private:
 
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
+
+    /// @brief The scope the module's helper names are declared into, which keeps two that project
+    ///        onto one name apart.
+    NamingScope helperScope_{CodegenNamingLanguage::Python};
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
+    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -1932,7 +1949,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.blank();
 
     // The spelling names a nested type as this file does.
-    const PythonSpelling                 spelling(schema,
+    const PythonSpelling                 spelling(module,
+                                                  schema,
                                                   [&ctx](const llvm::StringRef fullName,
                                                          const std::uint32_t   major,
                                                          const std::uint32_t   minor) {

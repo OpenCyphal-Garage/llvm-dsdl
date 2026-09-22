@@ -740,7 +740,25 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Go spelling: a call to a helper this package does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
+    }
+
+    /// @brief Takes the names this definition's helpers were declared under.
+    ///
+    /// A Go package holds a whole DSDL namespace, so the scope that allocated them is the package's
+    /// and outlives this spelling. The type name is not known when the spelling is built, so the
+    /// names arrive here rather than in the constructor.
+    /// @param[in] names Each helper's lowered symbol, under its declared name.
+    void setHelperNames(llvm::StringMap<std::string> names)
+    {
+        helperNames_ = std::move(names);
     }
 
     /// @brief Names the Go type each plan's bodies are methods of.
@@ -1666,6 +1684,9 @@ private:
     }
 
     llvm::StringMap<Plan> plans_;
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the package declares it as.
+    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -2099,7 +2120,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const std::string&        moduleName,
                                                  mlir::ModuleOp            module,
-                                                 PlanBodyLookups&          lookups)
+                                                 PlanBodyLookups&          lookups,
+                                                 NamingScope&              packageScope)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -2159,6 +2181,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                          reqType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "response"),
                          respType);
+
+    // A helper is private to the package, which holds a whole DSDL namespace, so its name carries
+    // the definition's type: the package's scope is what proves two of them cannot meet.
+    spelling.setHelperNames(
+        renderSchemaHelperNames(CodegenNamingLanguage::Go, module, schema, packageScope, baseType));
 
     // The declarations and bodies first: whether the runtime is imported depends on whether a
     // body calls it, and Go rejects an import nothing uses.
@@ -2444,6 +2471,10 @@ llvm::Error emit(const SemanticModule& semantic,
     const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
 
     PlanBodyLookups lookups(module);
+
+    // One scope per package, since that is the scope a Go helper is declared into: two definitions
+    // of one DSDL namespace are two files of one package.
+    std::map<std::string, NamingScope> packageScopes;
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -2458,7 +2489,12 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
-        auto file = renderDefinitionFile(def, ctx, options.moduleName, module, lookups);
+        auto file = renderDefinitionFile(def,
+                                         ctx,
+                                         options.moduleName,
+                                         module,
+                                         lookups,
+                                         packageScopes.try_emplace(dirRel, CodegenNamingLanguage::Go).first->second);
         if (!file)
         {
             return file.takeError();

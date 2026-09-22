@@ -69,6 +69,14 @@ enum class IdentifierRole
     /// @brief A generated free function or method name.
     FunctionName,
 
+    /// @brief A generated function that only the definition's own code calls.
+    ///
+    /// Separate from @ref FunctionName because two of these languages say in the name itself that a
+    /// function is not part of the package's surface: Go by the case of its first letter, Python by
+    /// a leading underscore. Rust and TypeScript say it by leaving off `pub` and `export`, and
+    /// spell the name as they would any other.
+    InternalFunctionName,
+
     /// @brief A local or parameter inside a generated body.
     LocalName,
 
@@ -93,6 +101,9 @@ enum class CaseStyle
 
     /// @brief Fold to PascalCase.
     Pascal,
+
+    /// @brief Fold to camelCase.
+    Camel,
 };
 
 /// @brief How one role is named in one language.

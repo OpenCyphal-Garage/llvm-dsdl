@@ -555,6 +555,12 @@ public:
     RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const std::set<std::string>& lifetimeSections)
         : symbols_(module)
     {
+        // A helper is a private item of the module the definition is generated into, and the module
+        // is named after the definition, so the schema component of the lowered symbol names what
+        // the module already says. Stripping it leaves what distinguishes one helper of this
+        // definition from another -- the kind it answers, the section it belongs to, and for a
+        // scalar the field's index and direction.
+        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::Rust, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -623,26 +629,6 @@ public:
                            accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", field))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
-        }
-
-        // A helper is a private item of the module the definition is generated into, and the module
-        // is named after the definition, so the schema component of the lowered symbol names what
-        // the module already says. Stripping it leaves what distinguishes one helper of this
-        // definition from another -- the kind it answers, the section it belongs to, and for a
-        // scalar the field's index and direction. The scope keeps two that strip onto one name
-        // apart, which is the same guarantee a field gets.
-        NamingScope helperScope(CodegenNamingLanguage::Rust);
-        for (mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
-        {
-            if (planBodyDirection(fn) || fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            const llvm::StringRef symbol = fn.getSymName();
-            helperNames_[symbol]         = helperScope.declare(IdentifierRole::FunctionName,
-                                                               renderScopeLocalHelperName(CodegenNamingLanguage::Rust,
-                                                                                          symbol,
-                                                                                          schema.getSymName()));
         }
     }
 
@@ -1677,6 +1663,10 @@ private:
 
     mlir::SymbolTable     symbols_;
     llvm::StringMap<Plan> plans_;
+
+    /// @brief The scope the module's helper names are declared into, which keeps two that project
+    ///        onto one name apart.
+    NamingScope helperScope_{CodegenNamingLanguage::Rust};
 
     /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
     llvm::StringMap<std::string> helperNames_;

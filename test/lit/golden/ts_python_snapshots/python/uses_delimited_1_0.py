@@ -17,12 +17,12 @@ DSDL_HAS_FIXED_PORT_ID = False
 DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "nested-not-flat"
 
-def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: int) -> int:
+def _capacity_check(p0: int) -> int:
     v0 = 96 > p0
     v1 = (-3 if v0 else 0)
     return v1
 
-def mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(p0: int, p1: int) -> int:
+def _validate_delimiter_header_1(p0: int, p1: int) -> int:
     v0 = p0 < 0
     v1 = p0 > p1
     v2 = v0 or v1
@@ -55,7 +55,7 @@ class UsesDelimited:
         else:
             size = inout_buffer_size_bytes
             v0 = size * 8
-            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v0)
+            err_2 = _capacity_check(v0)
             v1 = err_2 == 0
             if v1:
                 v2 = size - 4
@@ -69,7 +69,7 @@ class UsesDelimited:
                         nested_err = _result1_
                     else:
                         nested_err = 0
-                    err_5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(1, v2)
+                    err_5 = _validate_delimiter_header_1(1, v2)
                     v4 = nested_err == 0
                     v5 = (err_5 if v4 else nested_err)
                     v6 = v5 == 0
@@ -105,7 +105,7 @@ class UsesDelimited:
             v1 = (4 if v0 else size)
             v2 = size - v1
             nested_size = value
-            err_2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v2)
+            err_2 = _validate_delimiter_header_1(value, v2)
             v3 = err_2 == 0
             if v3:
                 nested_buf = buffer[min(v1, len(buffer)):]

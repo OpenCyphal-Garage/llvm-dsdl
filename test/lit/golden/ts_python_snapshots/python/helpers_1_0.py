@@ -16,27 +16,27 @@ DSDL_HAS_FIXED_PORT_ID = False
 DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "sub-byte-field"
 
-def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(p0: int) -> int:
+def _capacity_check(p0: int) -> int:
     v0 = 80 > p0
     v1 = (-3 if v0 else 0)
     return v1
 
-def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(p0: int) -> int:
+def _scalar_unsigned_2_ser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
-def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(p0: int) -> int:
+def _scalar_unsigned_2_deser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
-def mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(p0: int) -> int:
+def _scalar_signed_0_ser(p0: int) -> int:
     v0 = p0 < -4096
     v1 = p0 > 4095
     v2 = (-4096 if v0 else p0)
     v3 = (4095 if v1 else v2)
     return v3
 
-def mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(p0: int) -> int:
+def _scalar_signed_0_deser(p0: int) -> int:
     v0 = p0 & 8191
     v1 = v0 & 4096
     v2 = v1 != 0
@@ -44,13 +44,13 @@ def mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(p0: 
     v4 = (v3 if v2 else v0)
     return v4
 
-def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(p0: float) -> float:
+def _scalar_float_1_ser(p0: float) -> float:
     return p0
 
-def mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(p0: float) -> float:
+def _scalar_float_1_deser(p0: float) -> float:
     return p0
 
-def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0: int) -> int:
+def _validate_array_length_2(p0: int) -> int:
     v0 = p0 < 0
     v1 = p0 > 5
     index_holds = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
@@ -60,11 +60,11 @@ def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0:
     v5 = (-10 if v4 else 0)
     return v5
 
-def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(p0: int) -> int:
+def _array_length_prefix_2_ser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
-def mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(p0: int) -> int:
+def _array_length_prefix_2_deser(p0: int) -> int:
     v0 = p0 & 255
     return v0
 
@@ -96,11 +96,11 @@ class Helpers:
         else:
             size = inout_buffer_size_bytes
             v0 = size * 8
-            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_Helpers_1_0(v0)
+            err_2 = _capacity_check(v0)
             v1 = err_2 == 0
             if v1:
                 a_value = int(self.a)
-                value = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__ser(a_value)
+                value = _scalar_signed_0_ser(a_value)
                 err_4 = dsdl_runtime.write_signed(buffer, 0, 13, value, False)
                 err_3 = err_4
             else:
@@ -108,7 +108,7 @@ class Helpers:
             v2 = err_3 == 0
             if v2:
                 b_value = float(self.b)
-                value_2 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__ser(b_value)
+                value_2 = _scalar_float_1_ser(b_value)
                 err_6 = dsdl_runtime.write_float(buffer, 13, 16, value_2)
                 err_5 = err_6
             else:
@@ -116,10 +116,10 @@ class Helpers:
             v3 = err_5 == 0
             if v3:
                 c_count = len(self.c)
-                err_8 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(c_count)
+                err_8 = _validate_array_length_2(c_count)
                 v4 = err_8 == 0
                 if v4:
-                    count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__ser(c_count)
+                    count = _array_length_prefix_2_ser(c_count)
                     err_10 = dsdl_runtime.write_unsigned(buffer, 29, 8, count, False)
                     v5 = c_count
                     err_11 = err_10
@@ -130,7 +130,7 @@ class Helpers:
                         v9 = err_11 == 0
                         if v9:
                             c_value = int(self.c[v6])
-                            value_3 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__ser(c_value)
+                            value_3 = _scalar_unsigned_2_ser(c_value)
                             err_13 = dsdl_runtime.write_unsigned(buffer, v8, 8, value_3, False)
                             err_12 = err_13
                         else:
@@ -173,14 +173,14 @@ class Helpers:
         else:
             size = inout_buffer_size_bytes
             value = dsdl_runtime.read_signed(buffer, 0, 13)
-            value_2 = mlir_llvmdsdl_plan_scalar_signed__fixtures_vendor_Helpers_1_0__0__deser(value)
+            value_2 = _scalar_signed_0_deser(value)
             self.a = value_2
             value_3 = dsdl_runtime.read_float(buffer, 13, 16)
-            value_4 = mlir_llvmdsdl_plan_scalar_float__fixtures_vendor_Helpers_1_0__1__deser(value_3)
+            value_4 = _scalar_float_1_deser(value_3)
             self.b = value_4
             value_5 = dsdl_runtime.read_unsigned(buffer, 29, 8)
-            count = mlir_llvmdsdl_plan_array_length_prefix__fixtures_vendor_Helpers_1_0__2__deser(value_5)
-            err_2 = mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(count)
+            count = _array_length_prefix_2_deser(value_5)
+            err_2 = _validate_array_length_2(count)
             v0 = err_2 == 0
             if v0:
                 self.c = [0] * count
@@ -190,7 +190,7 @@ class Helpers:
                     v4 = v3 * 8
                     v5 = v4 + 37
                     value_6 = dsdl_runtime.read_unsigned(buffer, v5, 8)
-                    value_7 = mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(value_6)
+                    value_7 = _scalar_unsigned_2_deser(value_6)
                     self.c[v3] = value_7
                 v6 = count * 8
                 v7 = v6 + 37

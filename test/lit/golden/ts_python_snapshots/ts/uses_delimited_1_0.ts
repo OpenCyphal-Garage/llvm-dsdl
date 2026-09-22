@@ -13,13 +13,13 @@ export const DSDL_HAS_FIXED_PORT_ID = false;
 export const DSDL_WIRE_FLAT = false;
 export const DSDL_WIRE_FLAT_REASON = "nested-not-flat";
 
-function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: bigint): number {
+function capacityCheck(p0: bigint): number {
   const v0 = 96n > p0;
   const v1 = v0 ? -3 : 0;
   return v1;
 }
 
-function mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(p0: bigint, p1: bigint): number {
+function validateDelimiterHeader1(p0: bigint, p1: bigint): number {
   const v0 = p0 < 0n;
   const v1 = p0 > p1;
   const v2 = v0 || v1;
@@ -46,7 +46,7 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
   } else {
     const size = BigInt(inoutBufferSizeBytes);
     const v0 = size * 8n;
-    const err2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v0);
+    const err2 = capacityCheck(v0);
     const v1 = err2 === 0;
     let err3: number;
     if (v1) {
@@ -64,7 +64,7 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
         } else {
           nestedErr = 0;
         }
-        const err5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(1n, v2);
+        const err5 = validateDelimiterHeader1(1n, v2);
         const v4 = nestedErr === 0;
         const v5 = v4 ? err5 : nestedErr;
         const v6 = v5 === 0;
@@ -110,7 +110,7 @@ export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Ar
     const v1 = v0 ? 4n : size;
     const v2 = size - v1;
     const nestedSize = Number(value);
-    const err2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v2);
+    const err2 = validateDelimiterHeader1(value, v2);
     const v3 = err2 === 0;
     let offset: bigint;
     let err3: number;
