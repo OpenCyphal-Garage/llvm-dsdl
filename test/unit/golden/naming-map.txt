@@ -9,10 +9,13 @@
 # reachable  whether the source name can appear in a conformant DSDL definition (charset
 #            plus DSDL v1.0 section 3.2.5). Rows marked 'no' pin defensive behavior that
 #            the compiler never reaches, but the language server and library callers do.
-# file_stem  and type_name come from DefinitionPathProjection and are shown for version
-#            1.0. They read '-' for a backend that derives that name elsewhere: C and C++
-#            name headers after the raw DSDL short name, and C, C++ and Rust build
-#            namespace-qualified type symbols.
+# file_stem  and type_name are shown for version 1.0 and read '-' for a backend that
+#            derives that name elsewhere. C and C++ name headers after the raw DSDL
+#            short name, so neither reports a stem; both flatten the namespace into the
+#            type name, so neither reports one either. Rust, Go, TypeScript and Python
+#            name a type after its short name and let a module carry the namespace, and
+#            report both. `DefinitionNamePolicy::typeNameReachesTheType` is the answer
+#            this column and the naming manifest both read.
 
 == projections ==
 

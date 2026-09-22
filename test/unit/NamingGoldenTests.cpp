@@ -342,10 +342,13 @@ void appendHeader(std::ostringstream& out)
         << "# reachable  whether the source name can appear in a conformant DSDL definition (charset\n"
         << "#            plus DSDL v1.0 section 3.2.5). Rows marked 'no' pin defensive behavior that\n"
         << "#            the compiler never reaches, but the language server and library callers do.\n"
-        << "# file_stem  and type_name come from DefinitionPathProjection and are shown for version\n"
-        << "#            1.0. They read '-' for a backend that derives that name elsewhere: C and C++\n"
-        << "#            name headers after the raw DSDL short name, and C, C++ and Rust build\n"
-        << "#            namespace-qualified type symbols.\n";
+        << "# file_stem  and type_name are shown for version 1.0 and read '-' for a backend that\n"
+        << "#            derives that name elsewhere. C and C++ name headers after the raw DSDL\n"
+        << "#            short name, so neither reports a stem; both flatten the namespace into the\n"
+        << "#            type name, so neither reports one either. Rust, Go, TypeScript and Python\n"
+        << "#            name a type after its short name and let a module carry the namespace, and\n"
+        << "#            report both. `DefinitionNamePolicy::typeNameReachesTheType` is the answer\n"
+        << "#            this column and the naming manifest both read.\n";
 }
 
 void appendProjections(std::ostringstream& out)
