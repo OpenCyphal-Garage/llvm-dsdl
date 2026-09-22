@@ -241,25 +241,36 @@ public:
             return moduleDeclarations_.contains(candidate) ||
                    llvm::any_of(importAliases_, [&](const auto& entry) { return entry.second == candidate; });
         };
+        // A candidate is composed from the raw parts and projected once, so the projection decides
+        // the casing of the whole alias rather than of each part separately. Projecting a part on
+        // its own leaves its separator behind: a namespace component the prelude claims contributes
+        // `Default_`, and a deprecated dependency is imported by the name its implementation struct
+        // carries, which ends in `_`. Either way the alias reads `Default_Foo` or `Foo_2` -- legal,
+        // and not what a Rust type name looks like. The deprecation marker is re-applied after the
+        // projection, since it is a suffix the projection would fold away.
+        const auto* resolved   = find(ref);
+        const bool  deprecated = (resolved != nullptr) && resolved->request.deprecated;
+        const auto  compose    = [&](const std::string& raw) {
+            return renderDeclaredTypeName(codegenProjectIdentifier(CodegenNamingLanguage::Rust,
+                                                                   IdentifierRole::TypeName,
+                                                                   raw),
+                                          deprecated);
+        };
+
         std::string local = bare;
         for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
         {
-            std::string qualified;
+            std::string raw;
             for (const auto& component :
                  llvm::ArrayRef<std::string>(ref.namespaceComponents).take_back(static_cast<std::size_t>(depth)))
             {
-                qualified += codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, component);
+                raw += component + "_";
             }
-            local = qualified + bare;
+            local = compose(raw + ref.shortName);
         }
-        // The ordinal is projected rather than appended. A deprecated dependency is imported by the
-        // name its implementation struct carries, which ends in `_`, and `Foo_2` is what
-        // `non_camel_case_types` reports; the projection answers `Foo2`.
         for (unsigned ordinal = 2U; taken(local); ++ordinal)
         {
-            local = codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                             IdentifierRole::TypeName,
-                                             bare + std::to_string(ordinal));
+            local = compose(ref.shortName + "_" + std::to_string(ordinal));
         }
         importAliases_[path] = local;
         return local;

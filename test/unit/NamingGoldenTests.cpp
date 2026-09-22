@@ -58,7 +58,6 @@ using llvmdsdl::IdentifierRole;
 using llvmdsdl::isReservedIdentifier;
 using llvmdsdl::renderVersionedFileStem;
 using llvmdsdl::renderDefinitionTypeName;
-using llvmdsdl::renderVersionedTypeName;
 using llvmdsdl::TypeNameVersioning;
 
 struct LanguageEntry

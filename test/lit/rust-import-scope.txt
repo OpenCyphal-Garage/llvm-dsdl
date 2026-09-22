@@ -70,8 +70,8 @@
 # ---------------------------------------------------------------------------------------------
 
 # A deprecated definition is imported by the name its implementation struct carries, which ends in
-# `_`, so an ordinal appended to it would read `Foo_2` -- an underscore before a digit, which
-# `non_camel_case_types` reports. The candidate is projected as a type name, so it reads `Foo2`.
+# `_`, so an ordinal appended to it would read `Foo_2`. The candidate is composed from the raw parts
+# and projected once, so it reads `Foo2`, and the deprecation marker is re-applied after: `Foo2_`.
 # RUN: mkdir -p %t/depord/ns
 # RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.1.0.dsdl
 # RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.2.0.dsdl
@@ -81,7 +81,7 @@
 # RUN: cat %t/depord/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=DEPORD
 # DEPORD-DAG: use crate::ns::foo_1_0::Foo_;
 # DEPORD-DAG: use crate::ns::foo_2_0::Foo_ as NsFoo_;
-# DEPORD-DAG: use crate::ns::foo_3_0::Foo_ as Foo2;
+# DEPORD-DAG: use crate::ns::foo_3_0::Foo_ as Foo2_;
 # DEPORD-NOT: as Foo_2;
 
 # ---------------------------------------------------------------------------------------------
@@ -144,3 +144,24 @@
 # RUN: cat %t/prelude/rust2/src/ns/clone_1_0.rs | FileCheck %s --check-prefix=DERIVE
 # DERIVE: #[derive(Clone, Debug, PartialEq)]
 # DERIVE-NEXT: pub struct Clone {
+
+# ---------------------------------------------------------------------------------------------
+# A namespace component the prelude claims.
+# ---------------------------------------------------------------------------------------------
+
+# A candidate is composed from the raw parts and projected once. Projecting a part on its own would
+# leave its separator in the alias: a namespace component named `default` is claimed for Rust type
+# names and contributes `Default_`, so a per-part composition reads `Default_Foo`. rustc accepts
+# that -- an import alias is not held to camel case -- and it is still not what a Rust type name
+# looks like, which is what this backend is held to.
+# RUN: mkdir -p %t/nsclaim/root/alpha %t/nsclaim/root/default %t/nsclaim/root/other
+# RUN: printf '@sealed\n' > %t/nsclaim/root/alpha/Foo.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/nsclaim/root/default/Foo.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/nsclaim/root/other/Foo.1.0.dsdl
+# RUN: printf 'root.alpha.Foo.1.0 a\nroot.default.Foo.1.0 b\nroot.other.Foo.1.0 c\n@sealed\n' > %t/nsclaim/root/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/nsclaim/root --rust-crate-name m --outdir %t/nsclaim/rust
+# RUN: cat %t/nsclaim/rust/src/root/holder_1_0.rs | FileCheck %s --check-prefix=NSCLAIM
+# NSCLAIM-DAG: use crate::root::alpha::foo_1_0::Foo;
+# NSCLAIM-DAG: use crate::root::default::foo_1_0::Foo as DefaultFoo;
+# NSCLAIM-DAG: use crate::root::other::foo_1_0::Foo as OtherFoo;
+# NSCLAIM-NOT: as Default_Foo;
