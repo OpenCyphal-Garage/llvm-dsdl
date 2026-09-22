@@ -19,11 +19,10 @@ function mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: big
 
 function mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(p0: bigint): number {
   const v0 = p0 === 0n;
-  const v1 = false || v0;
-  const v2 = p0 === 1n;
-  const v3 = v1 || v2;
-  const v4 = v3 ? 0 : -11;
-  return v4;
+  const v1 = p0 === 1n;
+  const v2 = v0 || v1;
+  const v3 = v2 ? 0 : -11;
+  return v3;
 }
 
 function mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(p0: bigint): bigint {

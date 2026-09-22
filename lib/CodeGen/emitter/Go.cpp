@@ -1386,7 +1386,7 @@ public:
         const std::string buffer    = names(op.getBuffer());
         const std::string size      = names(op.getSize());
         const std::string bound     = fresh("bound");
-        const std::string used      = isRead(op.getSize()) ? fresh("used") : "_";
+        const std::string used      = plansReadOfSize(op.getSize()) ? fresh("used") : "_";
         w.line(bound + " := dsdlruntime.ChooseMin(" + size + ", len(" + buffer + "))");
         w.line((name.empty() ? "_" : name.str()) + ", " + used + (name.empty() && used == "_" ? " = " : " := ") +
                names(op.getObject()) + (serialize ? ".Serialize(" : ".Deserialize(") + buffer + "[:" + bound + "])");
@@ -1446,13 +1446,6 @@ private:
                               const ValueNames&     names) const
     {
         return memberAccess(object, member, names) + "[" + asInt(index) + "]";
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
     }
 
     /// @brief The container expression and element base of the bool array @p address names.

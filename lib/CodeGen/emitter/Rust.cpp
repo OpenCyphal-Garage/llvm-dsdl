@@ -1195,7 +1195,7 @@ public:
     {
         // The size a nested call is handed bounds the slice it gets; it is written back only
         // where the plan reads the answer.
-        w.line(std::string("let ") + (isRead(op.getAddress()) ? "mut " : "") + name.str() +
+        w.line(std::string("let ") + (plansReadOfSize(op.getAddress()) ? "mut " : "") + name.str() +
                ": usize = " + asSize(names(op.getInit())) + ";");
         return name.str();
     }
@@ -1444,7 +1444,7 @@ public:
         const std::string size      = names(op.getSize());
         const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
                                       (serialize ? "&mut " : "&") + buffer + "[.._len] }";
-        const std::string used = isRead(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
+        const std::string used = plansReadOfSize(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
         return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
                used + " Err(_code) => _code }";
     }
@@ -1533,19 +1533,6 @@ private:
         }
         return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
                               asSize(names(element.getIndex())));
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    ///
-    /// A load nobody consumes is not a read: the translator spells a load where its result is used,
-    /// so such a load reaches no line of Rust. A plan whose entry guard has folded away leaves one
-    /// behind, and counting it would bind a size the body never looks at.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(), [](mlir::Operation* user) {
-            auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user);
-            return load && !load.getResult().use_empty();
-        });
     }
 
     /// @brief The Rust type the struct declares a scalar field or element as.
@@ -1743,7 +1730,7 @@ private:
     {
         const mlir::Value pointer = fn.getArgument(2);
         SizeUse           out;
-        out.read = isRead(pointer);
+        out.read = plansReadOfSize(pointer);
 
         unsigned         writes = 0;
         mlir::Operation* write  = nullptr;

@@ -51,7 +51,7 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
     let err3: number;
     if (v1) {
       const v2 = size - 4n;
-      let nestedSize = Number(v2);
+      const nestedSize = Number(v2);
       const v3 = err2 === 0;
       let err4: number;
       if (v3) {
@@ -109,7 +109,7 @@ export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Ar
     const v0 = size > 4n;
     const v1 = v0 ? 4n : size;
     const v2 = size - v1;
-    let nestedSize = Number(value);
+    const nestedSize = Number(value);
     const err2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v2);
     const v3 = err2 === 0;
     let offset: bigint;

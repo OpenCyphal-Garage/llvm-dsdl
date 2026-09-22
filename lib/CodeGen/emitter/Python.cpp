@@ -1361,7 +1361,7 @@ public:
         const std::string size      = names(op.getSize());
         const std::string bound     = fresh("bound");
         const std::string result    = fresh("result");
-        const bool        read      = isRead(op.getSize());
+        const bool        read      = plansReadOfSize(op.getSize());
         line(w, bound + " = min(" + size + ", len(" + buffer + "))");
         line(w,
              result + " = " + names(op.getObject()) + "." + (serialize ? serializeInto() : deserializeFrom()) + "(" +
@@ -1454,13 +1454,6 @@ private:
                               const ValueNames&     names) const
     {
         return memberAccess(object, member, names) + "[" + index + "]";
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
     }
 
     /// @brief The container expression and element base of the bool array @p address names.

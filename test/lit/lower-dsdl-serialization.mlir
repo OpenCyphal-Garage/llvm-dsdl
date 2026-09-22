@@ -43,10 +43,10 @@ module {
 // CHECK: %[[SEL:[^ ]+]] = scf.if %[[CMP]] -> (i8)
 // CHECK: return %[[SEL]] : i8
 // CHECK: func.func @llvmdsdl_plan_validate_union_tag__test_Widget_1_0(%[[TAG:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_origin = "lower-dsdl-exec", llvmdsdl.schema_sym = "test_Widget_1_0", llvmdsdl.union_tag_validate
+// The chain of option tests begins at the first option, so a union of one is one comparison.
 // CHECK: %[[OPT:[^ ]+]] = arith.constant 3 : i64
 // CHECK: %[[EQ:[^ ]+]] = arith.cmpi eq, %[[TAG]], %[[OPT]] : i64
-// CHECK: %[[MASK:[^ ]+]] = arith.ori %[[ANY:[^ ]+]], %[[EQ]] : i1
-// CHECK: %[[TAGSEL:[^ ]+]] = scf.if %[[MASK]] -> (i8)
+// CHECK: %[[TAGSEL:[^ ]+]] = scf.if %[[EQ]] -> (i8)
 // CHECK: return %[[TAGSEL]] : i8
 // CHECK: func.func @llvmdsdl_plan_scalar_unsigned__test_Widget_1_0__1__ser(%[[VAL:[^:]+]]: i64) -> i64 attributes {llvmdsdl.scalar_unsigned_helper
 // CHECK: %[[CM:[^ ]+]] = arith.cmpi ugt, %[[VAL]], %[[MASK63:[^ ]+]] : i64

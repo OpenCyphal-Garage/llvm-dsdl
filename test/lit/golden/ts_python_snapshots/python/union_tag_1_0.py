@@ -23,11 +23,10 @@ def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UnionTag_1_0(p0: int) -> 
 
 def mlir_llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(p0: int) -> int:
     v0 = p0 == 0
-    v1 = False or v0
-    v2 = p0 == 1
-    v3 = v1 or v2
-    v4 = (0 if v3 else -11)
-    return v4
+    v1 = p0 == 1
+    v2 = v0 or v1
+    v3 = (0 if v2 else -11)
+    return v3
 
 def mlir_llvmdsdl_plan_scalar_unsigned__fixtures_vendor_UnionTag_1_0__0__ser(p0: int) -> int:
     v0 = p0 > 255

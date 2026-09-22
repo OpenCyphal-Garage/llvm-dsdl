@@ -16,6 +16,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/IR/DSDLOps.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Error.h"
@@ -27,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <map>
 #include <set>
@@ -174,6 +176,14 @@ std::string renderMakeRuleFromPreparedDeps(llvm::StringRef target, const std::ve
 }
 
 }  // namespace
+
+bool plansReadOfSize(const mlir::Value pointer)
+{
+    return llvm::any_of(pointer.getUsers(), [](mlir::Operation* user) {
+        auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user);
+        return load && !load.getResult().use_empty();
+    });
+}
 
 std::string accessorSource(const llvm::StringRef kind, const llvm::StringRef field)
 {

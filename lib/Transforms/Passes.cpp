@@ -367,12 +367,19 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp             
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
     mlir::Value const tagValue = entry->getArgument(0);
-    mlir::Value       anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
+
+    // The chain begins at the first option rather than at false, so that no target spells the
+    // `false || tag == 0` that seeding it would leave in front of every union's tag check.
+    mlir::Value anyMatch;
     for (const std::int64_t option : optionIndexes)
     {
         auto optConst = mlir::arith::ConstantIntOp::create(builder, loc, option, 64).getResult();
-        auto match    = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
-        anyMatch      = mlir::arith::OrIOp::create(builder, loc, anyMatch, match);
+        auto match = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
+        anyMatch   = anyMatch ? mlir::arith::OrIOp::create(builder, loc, anyMatch, match).getResult() : match.getResult();
+    }
+    if (!anyMatch)
+    {
+        anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
     }
 
     auto status = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, anyMatch, true);
