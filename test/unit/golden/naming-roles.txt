@@ -74,6 +74,24 @@ python   MacroName      snake     yes     yes    yes
 
 source                language TypeName               FieldName              ConstantName           NamespaceName          FileStem               MacroName
 --------------------------------------------------------------------------------------------------------------------------------------------------
+Default               c        Default                Default                DEFAULT                Default                Default                DEFAULT
+Default               cpp      Default                Default                DEFAULT                Default                Default                DEFAULT
+Default               rust     Default_               default                DEFAULT                default                default                DEFAULT
+Default               go       Default                Default                DEFAULT_               default_               default_               DEFAULT_
+Default               ts       Default                default_               DEFAULT_               default_               default_               DEFAULT_
+Default               python   Default                default                DEFAULT                default                default                DEFAULT
+Ok                    c        Ok                     Ok                     OK                     Ok                     Ok                     OK
+Ok                    cpp      Ok                     Ok                     OK                     Ok                     Ok                     OK
+Ok                    rust     Ok_                    ok                     OK                     ok                     ok                     OK
+Ok                    go       Ok                     Ok                     OK                     ok                     ok                     OK
+Ok                    ts       Ok                     ok                     OK                     ok                     ok                     OK
+Ok                    python   Ok                     ok                     OK                     ok                     ok                     OK
+Err                   c        Err                    Err                    ERR                    Err                    Err                    ERR
+Err                   cpp      Err                    Err                    ERR                    Err                    Err                    ERR
+Err                   rust     Err_                   err                    ERR                    err                    err                    ERR
+Err                   go       Err                    Err                    ERR                    err                    err                    ERR
+Err                   ts       Err                    err                    ERR                    err                    err                    ERR
+Err                   python   Err                    err                    ERR                    err                    err                    ERR
 break                 c        break_                 break_                 BREAK                  break_                 break                  BREAK
 break                 cpp      break_                 break_                 BREAK                  break_                 break                  BREAK
 break                 rust     Break                  break_                 BREAK_                 break_                 break_                 BREAK_

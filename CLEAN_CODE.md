@@ -338,6 +338,12 @@ classes do not survive the frameworks and serialisation paths TypeScript runs in
 **Rust and Go take their languages' conventions**, including the error types, in the same phase as
 the naming. Both change every consumer call site once; splitting them changes it twice.
 
+**`renderSectionTypeSuffix` leaves the installed headers.** `renderSectionTypeName` replaced it at
+every call site, and the removed function answers `_Request` where Rust now names the section alone.
+Keeping it exported would preserve a call that returns a name no backend emits, so a caller whose
+assumption no longer holds gets a compile error rather than a wrong answer. The break is within what
+the roadmap sanctions before beta-1.
+
 **A file stem is projected from the versioned name, in every language.** `Break.1.0` strops against
 Rust's `break` and gained a trailing `_`, and the separator before the version made the `__` that
 `non_snake_case` reports in a module name. Composing first means the keyword check never sees the

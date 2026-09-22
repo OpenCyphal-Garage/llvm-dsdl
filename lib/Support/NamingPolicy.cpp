@@ -338,6 +338,14 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
     // A union option's `<OPTION>_OPTION_TAG` is not here because it is not a fixed name: it is
     // derived from an option's own DSDL name, and `makeSectionConstantScope` declares it into the
     // scope alongside the array metadata, which is derived the same way.
+    // The prelude names the generated Rust reaches without qualifying them. A definition's type name
+    // is a struct of the module the bodies are written into, so one of these would shadow what those
+    // bodies mean by it: `impl Default for Default` resolves the trait to the struct (E0404), and an
+    // empty definition is a unit struct, which takes the value namespace too, so `Ok(())` stops
+    // being the variant (E0618). The derive list is not here -- a derive macro is resolved in the
+    // macro namespace, where a struct of that name does not reach it.
+    static constexpr std::array<llvm::StringRef, 3> kRustPrelude = {"Default", "Ok", "Err"};
+
     static constexpr std::array<llvm::StringRef, 12> kMetadata = {"FULL_NAME",
                                                                   "FULL_NAME_AND_VERSION",
                                                                   "IS_DEPRECATED",
@@ -423,7 +431,11 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Rust:
         // Constants share the inherent impl with the generated ones. Fields do not: fields and
-        // methods occupy separate namespaces.
+        // methods occupy separate namespaces. A type name competes with the prelude instead.
+        if (role == IdentifierRole::TypeName)
+        {
+            return kRustPrelude;
+        }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case CodegenNamingLanguage::Python:

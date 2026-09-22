@@ -36,6 +36,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
@@ -56,7 +57,9 @@ using llvmdsdl::CaseStyle;
 using llvmdsdl::IdentifierRole;
 using llvmdsdl::isReservedIdentifier;
 using llvmdsdl::renderVersionedFileStem;
+using llvmdsdl::renderDefinitionTypeName;
 using llvmdsdl::renderVersionedTypeName;
+using llvmdsdl::TypeNameVersioning;
 
 struct LanguageEntry
 {
@@ -84,6 +87,11 @@ constexpr std::array<LanguageEntry, 6> kLanguages = {{
 const std::vector<std::string>& corpus()
 {
     static const std::vector<std::string> names = {
+        // Claimed by the generated Rust, which names these three without qualifying them: a struct
+        // of one of these names shadows what its own bodies mean by it.
+        "Default",
+        "Ok",
+        "Err",
         // Keywords reachable through a snake_case projection, spread across the targets.
         "break",
         "Break",
@@ -281,7 +289,10 @@ std::string applyFileStem(const CodegenNamingLanguage language, const std::strin
 }
 std::string applyTypeName(const CodegenNamingLanguage language, const std::string& name)
 {
-    return renderVersionedTypeName(language, name, 1, 0);
+    // Composed the way the emitters compose it, which is what decides whether the version is part
+    // of the name: Rust reaches a definition through a module named for it and its version, so its
+    // type name carries neither.
+    return renderDefinitionTypeName(language, {}, name, 1, 0, TypeNameVersioning::Versioned);
 }
 
 /// @brief True when @p language's backend derives output file names from the shared projection.
@@ -299,13 +310,14 @@ bool usesSharedFileStem(const CodegenNamingLanguage language)
 /// @brief True when @p language's backend derives the generated type name from the shared
 ///        projection: PascalCase short name plus version.
 ///
-/// Go (`goTypeName`), TypeScript and Python (`renderVersionedTypeName`). C, C++ and Rust build a
-/// namespace-qualified symbol instead (emitter/C.cpp `mangleSymbol`, emitter/Cpp.cpp `cppTypeName`,
-/// emitter/Rust.cpp `rustTypeName`), which cannot collide across namespaces.
+/// Rust, Go, TypeScript and Python all name a type from the short name and let a module carry the
+/// namespace. C and C++ flatten the namespace into the identifier instead (emitter/C.cpp
+/// `mangleSymbol`, emitter/Cpp.cpp `cppTypeName`), so two of their type names cannot collide across
+/// namespaces and the column would say nothing about them.
 bool usesSharedTypeName(const CodegenNamingLanguage language)
 {
-    return language == CodegenNamingLanguage::Go || language == CodegenNamingLanguage::TypeScript ||
-           language == CodegenNamingLanguage::Python;
+    return language == CodegenNamingLanguage::Rust || language == CodegenNamingLanguage::Go ||
+           language == CodegenNamingLanguage::TypeScript || language == CodegenNamingLanguage::Python;
 }
 
 /// @brief Whether @p projection describes what @p language's backend emits.
