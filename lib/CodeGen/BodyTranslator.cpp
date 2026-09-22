@@ -46,6 +46,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
@@ -600,8 +601,49 @@ private:
         return llvm::Error::success();
     }
 
+    /// @brief The negation of the boolean @p condition.
+    ///
+    /// A null test carries its own opposite, so it is asked for rather than wrapped: negating the
+    /// text reaches `not (x is None)` where `x is not None` is what Python means by it.
+    std::string negated(const mlir::Value condition)
+    {
+        if (auto test = condition.getDefiningOp<mlir::dsdl::IsNullOp>())
+        {
+            return spelling_.isNotNull(test, *this);
+        }
+        return spelling_.logicalNot((*this)(condition));
+    }
+
+    /// @brief Whether @p region holds nothing but its terminator, so spelling it writes no line.
+    static bool isEmptyArm(mlir::Region& region)
+    {
+        return region.empty() || region.front().without_terminator().empty();
+    }
+
     llvm::Error structured(mlir::scf::IfOp op)
     {
+        // An arm that yields nothing and holds nothing reaches a `{ }` that every linter here
+        // reports as an empty branch, and MLIR keeps such an `scf.if` rather than folding it: its
+        // regions are empty but the operation is not dead while the condition is computed. The
+        // shapes are answered before the arms are spelt -- both empty is no statement at all, and
+        // an empty first arm is the condition negated.
+        const bool emptyThen = isEmptyArm(op.getThenRegion());
+        const bool emptyElse = isEmptyArm(op.getElseRegion());
+        if ((op.getNumResults() == 0) && emptyThen && emptyElse)
+        {
+            return llvm::Error::success();
+        }
+        if ((op.getNumResults() == 0) && emptyThen)
+        {
+            spelling_.openIf(w_, negated(op.getCondition()));
+            if (auto err = block(op.getElseRegion().front(), {}, {}))
+            {
+                return err;
+            }
+            spelling_.closeBlock(w_);
+            return llvm::Error::success();
+        }
+
         std::vector<std::string> results;
         results.reserve(op.getNumResults());
         for (const mlir::Value result : op.getResults())
@@ -613,7 +655,9 @@ private:
         {
             return err;
         }
-        if (!op.getElseRegion().empty())
+        // An else arm carrying only a yield still assigns the results, so it is skipped only where
+        // there are none.
+        if (!op.getElseRegion().empty() && (!emptyElse || (op.getNumResults() > 0)))
         {
             spelling_.openElse(w_);
             if (auto err = block(op.getElseRegion().front(), results, {}))
@@ -737,7 +781,17 @@ private:
             .Case<mlir::arith::RemSIOp>([&](auto) -> void { binary(op, BinaryOperator::RemS); })
             .Case<mlir::arith::AndIOp>([&](auto) -> void { binary(op, BinaryOperator::And); })
             .Case<mlir::arith::OrIOp>([&](auto) -> void { binary(op, BinaryOperator::Or); })
-            .Case<mlir::arith::XOrIOp>([&](auto) -> void { binary(op, BinaryOperator::Xor); })
+            .Case<mlir::arith::XOrIOp>([&](mlir::arith::XOrIOp exclusive) -> void {
+                // A xor of a boolean against true is a negation, both as the lowering writes it and
+                // as the canonicaliser rewrites a test against false. The constant sits on the
+                // right, where a commutative operation's canonicalisation puts it.
+                if (exclusive.getType().isInteger(1) && mlir::matchPattern(exclusive.getRhs(), mlir::m_One()))
+                {
+                    define(exclusive.getResult(), negated(exclusive.getLhs()), true);
+                    return;
+                }
+                binary(op, BinaryOperator::Xor);
+            })
             .Case<mlir::arith::ShLIOp>([&](auto) -> void { binary(op, BinaryOperator::ShiftLeft); })
             .Case<mlir::arith::ShRUIOp>([&](auto) -> void { binary(op, BinaryOperator::ShiftRightU); })
             .Case<mlir::arith::ShRSIOp>([&](auto) -> void { binary(op, BinaryOperator::ShiftRightS); })

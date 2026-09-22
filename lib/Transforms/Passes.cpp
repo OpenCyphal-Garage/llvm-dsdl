@@ -771,9 +771,9 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp           
         auto isNegative = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
         auto tooLarge   = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
         // A length the target's index type cannot hold is rejected on that target.
-        auto held       = mlir::dsdl::IndexHoldsOp::create(builder, loc, builder.getI1Type(), length);
-        auto falseConst = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1);
-        auto unheld     = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, held, falseConst);
+        auto held      = mlir::dsdl::IndexHoldsOp::create(builder, loc, builder.getI1Type(), length);
+        auto trueConst = mlir::arith::ConstantIntOp::create(builder, loc, 1, 1);
+        auto unheld    = mlir::arith::XOrIOp::create(builder, loc, held, trueConst);
         auto outOfRange = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
         auto invalid    = mlir::arith::OrIOp::create(builder, loc, outOfRange, unheld);
         auto status     = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, invalid, true);
@@ -1344,6 +1344,36 @@ struct FoldDSDLNullGuardsPass : public mlir::PassWrapper<FoldDSDLNullGuardsPass,
                 fn.emitError("failed to canonicalise a body whose null guard was folded");
                 signalPassFailure();
                 return;
+            }
+            eraseUnusedLoads(fn);
+        }
+    }
+
+    /// @brief Erases the reads of @p fn whose results nothing consumes.
+    ///
+    /// A read is not memory-effect-free, so the canonicaliser keeps one whose result the fold has
+    /// just orphaned. What it leaves is a value no backend spells and, where the read was the whole
+    /// of an arm, a branch with nothing in it. A plan reads only through a pointer it has already
+    /// established, so the read has no effect beyond the value nothing now wants. Erasing one can
+    /// orphan the read that addressed it, so this runs to a fixed point.
+    static void eraseUnusedLoads(mlir::func::FuncOp fn)
+    {
+        bool erasedAny = true;
+        while (erasedAny)
+        {
+            erasedAny = false;
+            llvm::SmallVector<mlir::Operation*> dead;
+            fn.walk([&](mlir::Operation* op) {
+                if (mlir::isa<mlir::dsdl::LoadScalarOp, mlir::dsdl::LoadMemberOp, mlir::dsdl::LoadElementOp>(op) &&
+                    op->use_empty())
+                {
+                    dead.push_back(op);
+                }
+            });
+            for (mlir::Operation* op : dead)
+            {
+                op->erase();
+                erasedAny = true;
             }
         }
     }

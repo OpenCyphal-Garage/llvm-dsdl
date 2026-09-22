@@ -737,6 +737,11 @@ public:
         return (signedForm || isNarrow(type)) ? "static_cast<" + typeName(type) + ">" + expression : expression;
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "!(" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -824,6 +829,11 @@ public:
     [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
         return mlir::isa<mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp, mlir::dsdl::BufferAtOp>(op);
+    }
+
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        return "(" + names(op.getPointer()) + " != nullptr)";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override

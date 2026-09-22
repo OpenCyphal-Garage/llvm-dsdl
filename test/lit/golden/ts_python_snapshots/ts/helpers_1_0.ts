@@ -61,7 +61,7 @@ function mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__
   const v0 = p0 < 0n;
   const v1 = p0 > 5n;
   const indexHolds = (p0 >= 0n && p0 <= 4294967295n);
-  const v2 = indexHolds === false;
+  const v2 = !(indexHolds);
   const v3 = v0 || v1;
   const v4 = v3 || v2;
   let v5: number;

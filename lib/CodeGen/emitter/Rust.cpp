@@ -1039,6 +1039,11 @@ public:
         return recast ? "(" + expression + ") as " + typeName(type) : expression;
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "!(" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -1136,6 +1141,11 @@ public:
     {
         // A reference, a slice and a local are never null.
         return "false";
+    }
+
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return "true";
     }
 
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override

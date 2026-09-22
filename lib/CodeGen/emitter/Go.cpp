@@ -1012,6 +1012,11 @@ public:
         return recast ? typeName(type) + "(" + expression + ")" : expression;
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "!(" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -1094,6 +1099,16 @@ public:
         // itself.
         const std::string value = names(op.getValue());
         return "(uint64(int(" + value + ")) == " + value + ")";
+    }
+
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " != nil";
+        }
+        return "true";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override

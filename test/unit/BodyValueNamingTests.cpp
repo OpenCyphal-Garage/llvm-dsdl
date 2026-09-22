@@ -191,7 +191,15 @@ public:
     {
         return false;
     }
+    [[nodiscard]] std::string logicalNot(llvm::StringRef /*expr*/) const override
+    {
+        return {};
+    }
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return {};
+    }
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp /*op*/, const ValueNames& /*names*/) const override
     {
         return {};
     }

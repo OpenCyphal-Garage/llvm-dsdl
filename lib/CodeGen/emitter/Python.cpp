@@ -1011,6 +1011,11 @@ public:
         return lhs.str() + " " + operatorToken(op) + " " + rhs.str();
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "not (" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -1077,6 +1082,16 @@ public:
         // An int holds every count; a list holds at most sys.maxsize elements.
         const std::string value = names(op.getValue());
         return "(-sys.maxsize - 1 <= " + value + " <= sys.maxsize)";
+    }
+
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " is not None";
+        }
+        return "True";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override

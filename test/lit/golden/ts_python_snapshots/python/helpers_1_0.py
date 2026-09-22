@@ -57,7 +57,7 @@ def mlir_llvmdsdl_plan_validate_array_length__fixtures_vendor_Helpers_1_0__2(p0:
     v0 = p0 < 0
     v1 = p0 > 5
     index_holds = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
-    v2 = index_holds == False
+    v2 = not (index_holds)
     v3 = v0 or v1
     v4 = v3 or v2
     if v4:
