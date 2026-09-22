@@ -9,8 +9,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-use aliasable_only_generated::fixtures_aliasable::vendor::pose_1_0::fixtures_aliasable_vendor_Pose as Pose;
-use aliasable_only_generated::fixtures_aliasable::vendor::vec3_1_0::fixtures_aliasable_vendor_Vec3 as Vec3;
+use aliasable_only_generated::fixtures_aliasable::vendor::pose_1_0::Pose as Pose;
+use aliasable_only_generated::fixtures_aliasable::vendor::vec3_1_0::Vec3 as Vec3;
 
 fn main() {
     let mut buffer = [0u8; 24];

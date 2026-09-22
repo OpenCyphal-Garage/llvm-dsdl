@@ -1962,7 +1962,7 @@ int runDsdlc(int argc, char** argv)
                     const llvmdsdl::NamingScope fieldScope =
                         llvmdsdl::makeSectionFieldScope(language.language, section);
                     const std::string sectionTypeName =
-                        typeName + llvmdsdl::renderSectionTypeSuffix(language.language, sectionName);
+                        llvmdsdl::renderSectionTypeName(language.language, typeName, sectionName);
                     const llvmdsdl::NamingScope constScope =
                         llvmdsdl::makeSectionConstantScope(language.language,
                                                            section,

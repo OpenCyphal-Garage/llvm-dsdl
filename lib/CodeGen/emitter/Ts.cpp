@@ -2066,8 +2066,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     const auto baseType = ctx.typeName(def.info);
-    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::TypeScript, "request");
-    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::TypeScript, "response");
+    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::TypeScript, baseType, "request");
+    const auto respType = renderSectionTypeName(CodegenNamingLanguage::TypeScript, baseType, "response");
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
                          reqType);

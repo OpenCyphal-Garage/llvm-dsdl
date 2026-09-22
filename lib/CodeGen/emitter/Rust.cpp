@@ -195,6 +195,55 @@ public:
         return rustTypeName(ref);
     }
 
+    /// @brief Forgets the imports of the module last rendered.
+    ///
+    /// A module's imports are its own: the same composite reached from two definitions may be
+    /// imported under one name in the first and an aliased one in the second.
+    void beginModuleImports() const
+    {
+        importAliases_.clear();
+    }
+
+    /// @brief Claims a local name for @p ref in the module being rendered, and answers it.
+    ///
+    /// Two composites of different namespaces can share a short name -- `angular_velocity::Vector3`
+    /// and `velocity::Vector3` -- and a module that holds fields of both imports two `Vector3`.
+    /// The second takes as much of its namespace, from the nearest component outwards, as tells it
+    /// apart from the first. The namespace is Pascal-cased into the name rather than joined with an
+    /// underscore, since the alias is a type name like any other.
+    std::string declareImport(const SemanticTypeRef& ref) const
+    {
+        const std::string path = rustTypePath(ref);
+        const std::string bare = rustDeclaredTypeName(ref);
+        if (const auto found = importAliases_.find(path); found != importAliases_.end())
+        {
+            return found->second;
+        }
+        const auto taken = [this](const std::string& candidate) {
+            return llvm::any_of(importAliases_, [&](const auto& entry) { return entry.second == candidate; });
+        };
+        std::string local = bare;
+        for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
+        {
+            std::string qualified;
+            for (const auto& component :
+                 llvm::ArrayRef<std::string>(ref.namespaceComponents).take_back(static_cast<std::size_t>(depth)))
+            {
+                qualified += codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::TypeName, component);
+            }
+            local = qualified + bare;
+        }
+        importAliases_[path] = local;
+        return local;
+    }
+
+    /// @brief The name the module being rendered spells @p ref by: its import's local name.
+    std::string rustLocalTypeName(const SemanticTypeRef& ref) const
+    {
+        const auto found = importAliases_.find(rustTypePath(ref));
+        return (found == importAliases_.end()) ? rustDeclaredTypeName(ref) : found->second;
+    }
+
     /// @brief The `use` path of the struct the definition @p ref names.
     std::string rustTypePath(const SemanticTypeRef& ref) const
     {
@@ -223,6 +272,9 @@ public:
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+
+    /// @brief The local name each imported type path is spelled by, in the module being rendered.
+    mutable std::map<std::string, std::string> importAliases_;
 };
 
 std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx);
@@ -246,7 +298,7 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustDeclaredTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
+            return ctx.rustLocalTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
         }
         return "u8";
     }
@@ -352,7 +404,7 @@ std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustDeclaredTypeName(*type.compositeType) + "::default()";
+            return ctx.rustLocalTypeName(*type.compositeType) + "::default()";
         }
         return "0";
     }
@@ -506,6 +558,26 @@ public:
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
+
+        // A helper is a private item of the module the definition is generated into, and the module
+        // is named after the definition, so the schema component of the lowered symbol names what
+        // the module already says. Stripping it leaves what distinguishes one helper of this
+        // definition from another -- the kind it answers, the section it belongs to, and for a
+        // scalar the field's index and direction. The scope keeps two that strip onto one name
+        // apart, which is the same guarantee a field gets.
+        NamingScope helperScope(CodegenNamingLanguage::Rust);
+        for (mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
+        {
+            if (planBodyDirection(fn) || fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                continue;
+            }
+            const llvm::StringRef symbol = fn.getSymName();
+            helperNames_[symbol]         = helperScope.declare(IdentifierRole::FunctionName,
+                                                               renderScopeLocalHelperName(CodegenNamingLanguage::Rust,
+                                                                                          symbol,
+                                                                                          schema.getSymName()));
+        }
     }
 
     // Functions.
@@ -566,7 +638,7 @@ public:
             // The nested type's buffer, as a slice: its length is what the plan stores through the
             // size pointer, which a slice carries itself, so the store lands in a local nothing
             // reads, named so the compiler expects that.
-            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            w.open("pub fn " + accessorSource("get", member.rustName) + "(buffer: &[u8]" + index + ") -> &[u8] {");
             w.line("let mut _out_size: usize = 0;");
         }
         else if (getter)
@@ -579,12 +651,13 @@ public:
             {
                 returnCast_ = " as " + storage;
             }
-            w.open("pub fn get_" + member.rustName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
+            w.open("pub fn " + accessorSource("get", member.rustName) + "(buffer: &[u8]" + index + ") -> " + storage +
+                   " {");
         }
         else
         {
-            w.open("pub fn set_" + member.rustName + "(buffer: &mut [u8]" + index + ", value: " + storage +
-                   ") -> core::result::Result<(), i8> {");
+            w.open("pub fn " + accessorSource("set", member.rustName) + "(buffer: &mut [u8]" + index +
+                   ", value: " + storage + ") -> core::result::Result<(), i8> {");
         }
         w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
         std::vector<std::string> parameters{"buffer", "_buffer_size_bytes"};
@@ -660,7 +733,14 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Rust, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Rust spelling: a call to a helper this module does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
     }
 
     // Statements.
@@ -1488,6 +1568,9 @@ private:
 
     mlir::SymbolTable     symbols_;
     llvm::StringMap<Plan> plans_;
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
+    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
     mutable std::size_t                              counter_{0};
@@ -1926,9 +2009,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.line(generatedCommentLine("Rust backend"));
     w.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
            std::to_string(def.info.minorVersion));
-    w.line("#![allow(non_camel_case_types)]");
-    w.line("#![allow(non_snake_case)]");
-    w.line("#![allow(non_upper_case_globals)]");
     out << "\n";
 
     // An accessors-only file names no other type: a composite's getter answers its bytes.
@@ -1937,6 +2017,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                             : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const auto selfKey = definitionTypeKey(def.info);
+
+    // The imports below are this module's; what a previous module aliased says nothing here.
+    ctx.beginModuleImports();
 
     for (const auto& depRef : deps)
     {
@@ -1954,9 +2037,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
 
         const auto typePath = ctx.rustTypePath(ref);
-        const auto rustType = ctx.rustTypeName(ref);
-        w.line("use " + typePath + ";");
-        (void) rustType;
+        const auto local    = ctx.declareImport(ref);
+        const auto exported = ctx.rustDeclaredTypeName(ref);
+        w.line("use " + typePath + ((local == exported) ? "" : " as " + local) + ";");
     }
     if (!deps.empty())
     {
@@ -1995,8 +2078,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Rust, "request");
-    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Rust, "response");
+    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::Rust, baseType, "request");
+    const auto respType = renderSectionTypeName(CodegenNamingLanguage::Rust, baseType, "response");
 
     if (auto err = emitSectionType(w,
                                    reqType,
@@ -2240,9 +2323,6 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     SourceWriter       libW = makeRustWriter(lib);
     libW.line(generatedCommentLine("Rust backend crate root"));
     libW.line("#![cfg_attr(not(feature = \"std\"), no_std)]");
-    libW.line("#![allow(non_camel_case_types)]");
-    libW.line("#![allow(non_snake_case)]");
-    libW.line("#![allow(non_upper_case_globals)]");
     libW.line("#[cfg(not(feature = \"std\"))]");
     libW.line("extern crate alloc;");
     libW.line("pub mod dsdl_runtime;");

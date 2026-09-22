@@ -2010,8 +2010,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "request");
-    const auto respType = baseType + renderSectionTypeSuffix(CodegenNamingLanguage::Python, "response");
+    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::Python, baseType, "request");
+    const auto respType = renderSectionTypeName(CodegenNamingLanguage::Python, baseType, "response");
     if (auto err = emitSection(w,
                                reqType,
                                def.request,

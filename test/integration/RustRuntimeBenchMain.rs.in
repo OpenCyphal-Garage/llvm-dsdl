@@ -1,4 +1,4 @@
-use llvmdsdl_runtime_bench::benchrust::payload_1_0::benchrust_Payload_1_0;
+use llvmdsdl_runtime_bench::benchrust::payload_1_0::Payload;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -67,8 +67,8 @@ fn throughput_mib_per_sec(payload_bytes: u64, elapsed_sec: f64) -> f64 {
     }
 }
 
-fn make_payload(seed: u64, payload_len: usize) -> benchrust_Payload_1_0 {
-    let mut value = benchrust_Payload_1_0::default();
+fn make_payload(seed: u64, payload_len: usize) -> Payload {
+    let mut value = Payload::default();
     value.bytes.clear();
     value.bytes.reserve(payload_len);
     for index in 0..payload_len {
@@ -84,7 +84,7 @@ fn make_payload(seed: u64, payload_len: usize) -> benchrust_Payload_1_0 {
 
 fn run_encode(iterations: u64, payload_len: usize) -> OperationMetrics {
     let value = make_payload(0x51, payload_len);
-    let mut buffer = vec![0u8; benchrust_Payload_1_0::SERIALIZATION_BUFFER_SIZE_BYTES];
+    let mut buffer = vec![0u8; Payload::SERIALIZATION_BUFFER_SIZE_BYTES];
     let mut payload_bytes: u64 = 0;
     let mut checksum = CHECKSUM_SEED;
 
@@ -119,7 +119,7 @@ fn run_decode(iterations: u64, payload_len: usize) -> OperationMetrics {
 
     let start = Instant::now();
     for iter in 0..iterations {
-        let (decoded, used) = benchrust_Payload_1_0::from_bytes(&sample_bytes)
+        let (decoded, used) = Payload::from_bytes(&sample_bytes)
             .expect("deserialize benchmark payload");
         assert_eq!(used, expected_used);
         payload_bytes = payload_bytes.saturating_add(used as u64);

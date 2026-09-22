@@ -144,11 +144,11 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
     }
     if (def.isService)
     {
-        out["request"] = renderSection(language, def.request, typeName + renderSectionTypeSuffix(language, "request"));
+        out["request"] = renderSection(language, def.request, renderSectionTypeName(language, typeName, "request"));
         if (def.response.has_value())
         {
             out["response"] =
-                renderSection(language, *def.response, typeName + renderSectionTypeSuffix(language, "response"));
+                renderSection(language, *def.response, renderSectionTypeName(language, typeName, "response"));
         }
     }
     else

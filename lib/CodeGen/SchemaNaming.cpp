@@ -79,11 +79,11 @@ void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, con
         {
             if (*section == "request")
             {
-                sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "request");
+                sectionTypeName = renderSectionTypeName(CodegenNamingLanguage::C, sectionTypeName, "request");
             }
             else if (*section == "response")
             {
-                sectionTypeName += renderSectionTypeSuffix(CodegenNamingLanguage::C, "response");
+                sectionTypeName = renderSectionTypeName(CodegenNamingLanguage::C, sectionTypeName, "response");
             }
         }
         plan.setCTypeNameAttr(mlir::StringAttr::get(context, sectionTypeName));

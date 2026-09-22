@@ -20,12 +20,12 @@
 
 # RUN: %dsdlc --target-language rust %S/fixtures_naming --rust-crate-name naming_freeze --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/rust/src/fixtures_naming/naming/keywords_1_0.rs | FileCheck %s --check-prefix=RUST_KEYWORDS
-# RUN: test -f %t/rust/src/fixtures_naming/naming/break__1_0.rs
+# RUN: test -f %t/rust/src/fixtures_naming/naming/break_1_0.rs
 
 # RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/go 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/go/fixtures_naming/naming/keywords_1_0.go | FileCheck %s --check-prefix=GO_KEYWORDS
 # RUN: cat %t/go/fixtures_naming/naming/case_folds_1_0.go | FileCheck %s --check-prefix=GO_FOLDS
-# RUN: test -f %t/go/fixtures_naming/naming/break__1_0.go
+# RUN: test -f %t/go/fixtures_naming/naming/break_1_0.go
 # RUN: cat %t/go/fixtures_naming/naming/constants_1_0.go | FileCheck %s --check-prefix=GO_CONSTANTS
 # A namespace component that is a Go keyword is escaped in both the directory and the package clause.
 # RUN: cat %t/go/fixtures_naming/naming/map_/nested_1_0.go | FileCheck %s --check-prefix=GO_NAMESPACE
@@ -34,12 +34,12 @@
 # RUN: cat %t/ts/fixtures_naming/naming/keywords_1_0.ts | FileCheck %s --check-prefix=TS_KEYWORDS
 # RUN: cat %t/ts/fixtures_naming/naming/case_folds_1_0.ts | FileCheck %s --check-prefix=TS_FOLDS
 # RUN: cat %t/ts/fixtures_naming/naming/underscores_1_0.ts | FileCheck %s --check-prefix=TS_UNDERSCORES
-# RUN: test -f %t/ts/fixtures_naming/naming/break__1_0.ts
+# RUN: test -f %t/ts/fixtures_naming/naming/break_1_0.ts
 
 # RUN: %dsdlc --target-language python %S/fixtures_naming --py-package naming_freeze --outdir %t/py 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/keywords_1_0.py | FileCheck %s --check-prefix=PY_KEYWORDS
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/case_folds_1_0.py | FileCheck %s --check-prefix=PY_FOLDS
-# RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/break__1_0.py
+# RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/break_1_0.py
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/constants_1_0.py | FileCheck %s --check-prefix=PY_CONSTANTS
 # `map` is not a Python keyword, so the same namespace component that Go had to escape is left alone.
 # RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/map/nested_1_0.py
@@ -207,8 +207,8 @@
 # RUN: printf 'uint8 c\n@sealed\n' > %t/collide/root/ns/Break.1.0.dsdl
 # RUN: printf 'uint8 d\n@sealed\n' > %t/collide/root/ns/Break_.1.0.dsdl
 
-# The keyword escape makes both stems `break__1_0`; unchecked, the second type would silently
-# overwrite the first.
+# Both stems reach `break_1_0` -- the snake projection folds `Break_`'s trailing underscore into
+# the separator before the version; unchecked, the second type would silently overwrite the first.
 # RUN: not %dsdlc --target-language go %t/collide/root --go-module x --outdir %t/collide/go 2>&1 | FileCheck %s --check-prefix=STEM_COLLIDE
 # STEM_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
 
@@ -223,19 +223,21 @@
 # RUN: not %dsdlc --target-language ast %t/collide/root 2>&1 | FileCheck %s --check-prefix=AST_COLLIDE
 # AST_COLLIDE: error: type name collision in generated output: {{.*}} for target languages 'rust', 'go', 'ts', 'python'
 
-# The other half of the pair: `_foo` and `foo_` take two different files but one type name, because
-# the stem projection keeps underscores and the type-name projection drops them. Go puts one
-# directory in one package, so unchecked this produces a package that would not compile.
+# The other half of the pair: `_foo` and `foo_` reach one stem and one type name. The stem is
+# projected from the versioned name, so `foo_`'s trailing underscore folds into the separator and
+# `_foo`'s leading one is dropped; both land on `foo_1_0`. Go puts one directory in one package, so
+# unchecked this produces a package that would not compile. The file-name half is reported and the
+# type-name half is not, which is the role loop declining to say the same thing twice.
 # RUN: rm -rf %t/typecollide && mkdir -p %t/typecollide/root/ns
 # RUN: printf 'uint8 a\n@sealed\n' > %t/typecollide/root/ns/_foo.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/typecollide/root/ns/foo_.1.0.dsdl
 # RUN: not %dsdlc --target-language go %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
-# TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same generated type name for target language 'go'
+# TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
 
-# The same pair under an AST dump reports the three backends whose type names collide --
-# C, C++ and Rust build namespace-qualified symbols and are unaffected.
+# The same pair under an AST dump reports the four backends it affects -- C and C++ name a header
+# after the raw DSDL short name, which keeps the two apart.
 # RUN: not %dsdlc --target-language ast %t/typecollide/root 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE_AST
-# TYPE_COLLIDE_AST: error: {{.*}} map to the same generated type name for target languages 'go', 'ts', 'python'
+# TYPE_COLLIDE_AST: error: {{.*}} map to the same output file name for target languages 'rust', 'go', 'ts', 'python'
 
 # ---------------------------------------------------------------------------------------------
 # Names the generated code already claims. Claimed.1.0 names its constants after every
@@ -366,11 +368,14 @@
 # The naming manifest and the path-level rename note.
 # ---------------------------------------------------------------------------------------------
 
-# A path-level rename is reported without being asked for; a rename inside a file is not.
+# A path-level rename is reported without being asked for; a rename inside a file is not. A stem is
+# projected from the versioned name, so `Break` reaches `break_1_0` without escaping and takes no
+# note: the fold to lower case is what every stem gets, and reporting it would bury the escapes.
 # RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/note 2>&1 | FileCheck %s --check-prefix=RENAME_NOTE
-# RENAME_NOTE-DAG: note: 'Break' is emitted as 'break_' for target language 'go'
 # RENAME_NOTE-DAG: note: 'map' is emitted as 'map_' for target language 'go'
 # RENAME_NOTE-NOT: note: 'break' is emitted as
+# RENAME_NOTE-NOT: note: 'Break' is emitted as
+# RENAME_NOTE-NOT: note: 'Break_1_0' is emitted as
 
 # The manifest reports the identifiers the backend writes, so the stems it names are the
 # files on disk. An analysis target reports every language at once.
@@ -420,8 +425,9 @@
 # CPP_UNION: static constexpr std::size_t UNION_OPTION_COUNT = 2U;
 # GO_UNION: Tag_ uint16
 # GO_UNION: Tag uint8
-# A Rust struct field and an associated const are separate namespaces, so neither has to move.
-# RUST_UNION: pub UNION_OPTION_COUNT: u8,
+# A Rust struct field and an associated const are separate namespaces, so neither has to move: the
+# field takes the snake projection every Rust field takes, and the const keeps the claimed name.
+# RUST_UNION: pub union_option_count: u8,
 # RUST_UNION: pub const UNION_OPTION_COUNT: usize = 2;
 
 # The two array constants C and C++ derive from a field name are allocated from the same scope as the

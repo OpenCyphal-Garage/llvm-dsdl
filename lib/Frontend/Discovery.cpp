@@ -378,7 +378,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
             }
             for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
             {
-                const std::string sectionName = base + renderSectionTypeSuffix(language.language, section);
+                const std::string sectionName = renderSectionTypeName(language.language, base, section);
                 record(language, scope, sectionName, TypeNameOrigin{info.fullName, section.str(), info.filePath});
                 if (declaredApart)
                 {
@@ -483,11 +483,18 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                     namespacePath += projected.identifier;
                     namespacePath.push_back('/');
                 }
-                const auto projectedName = codegenProjectIdentifierDetailed(language, role, def.shortName);
+                // A file stem is projected from the versioned name, which is how
+                // `renderDefinitionFileStem` writes it: a short name that strops gains a trailing
+                // `_`, and a separator after it would double. The check has to key on what the
+                // emitter writes, so it composes the same name rather than the short one.
+                const std::string source        = (role == IdentifierRole::FileStem)
+                                                      ? (def.shortName + "_" + std::to_string(def.majorVersion) + "_" +
+                                                         std::to_string(def.minorVersion))
+                                                      : def.shortName;
+                const auto        projectedName = codegenProjectIdentifierDetailed(language, role, source);
                 if (projectedName.escaped && role == IdentifierRole::FileStem)
                 {
-                    renameNotes.emplace(std::string(languageName) + ":" + def.shortName + ":" +
-                                        projectedName.identifier);
+                    renameNotes.emplace(std::string(languageName) + ":" + source + ":" + projectedName.identifier);
                 }
                 std::string key;
                 key.append(languageName)

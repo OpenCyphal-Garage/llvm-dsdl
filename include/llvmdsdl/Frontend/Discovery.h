@@ -67,7 +67,7 @@ llvm::ArrayRef<OutputLanguage> allOutputLanguages();
 /// every definition its own module, so the repeat is unreachable and is not reported.
 ///
 /// The check runs after parsing because that is where a definition is known to be a service, and it
-/// composes the section name with @ref renderSectionTypeSuffix, the same call the emitters use.
+/// composes the section name with @ref renderSectionTypeName, the same call the emitters use.
 ///
 /// @param[in] definitions Parsed definitions to check.
 /// @param[in] outputLanguages Languages whose output names are checked; empty disables the check.

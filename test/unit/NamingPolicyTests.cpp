@@ -122,15 +122,14 @@ bool runNamingRoleTests()
     {
         for (const auto language : kAllLanguages)
         {
-            const bool cLike    = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
-            const bool rustLike = language == CodegenNamingLanguage::Rust;
-            const bool goLike   = language == CodegenNamingLanguage::Go;
+            const bool cLike  = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
+            const bool goLike = language == CodegenNamingLanguage::Go;
 
-            // Fields: C/C++/Rust keep the DSDL spelling (emitter/C.cpp, emitter/Cpp.cpp, emitter/Rust.cpp
-            // all call codegenSanitizeIdentifier); Go exports PascalCase (emitter/Go.cpp
-            // toExportedIdent); TypeScript and Python fold to snake_case.
+            // Fields: C and C++ keep the DSDL spelling (emitter/C.cpp and emitter/Cpp.cpp call
+            // codegenSanitizeIdentifier); Go exports PascalCase (emitter/Go.cpp toExportedIdent);
+            // Rust, TypeScript and Python fold to snake_case.
             std::string fieldOracle = codegenToSnakeCaseIdentifier(language, name);
-            if (cLike || rustLike)
+            if (cLike)
             {
                 fieldOracle = codegenSanitizeIdentifier(language, name);
             }
@@ -149,8 +148,8 @@ bool runNamingRoleTests()
 
             // Namespaces: C/C++/Rust sanitize each component, Go/TypeScript/Python snake_case it
             // (emitter/Go.cpp packagePathFromComponents, renderNamespaceRelativePath).
-            const std::string nsOracle = (cLike || rustLike) ? codegenSanitizeIdentifier(language, name)
-                                                             : codegenToSnakeCaseIdentifier(language, name);
+            const std::string nsOracle =
+                cLike ? codegenSanitizeIdentifier(language, name) : codegenToSnakeCaseIdentifier(language, name);
             ok = expectRole(language, IdentifierRole::NamespaceName, name, nsOracle, "the namespace call site") && ok;
 
             // File stems: C and C++ use the DSDL short name untouched (headerFileName), the other
@@ -276,7 +275,7 @@ bool runNamingReservedNamespaceTests()
         {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
         // No other language reserves a namespace of this kind.
         {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "__bar", "Bar"},
-        {CodegenNamingLanguage::Rust, IdentifierRole::FieldName, "__bar", "__bar"},
+        {CodegenNamingLanguage::Rust, IdentifierRole::FieldName, "__bar", "bar"},
         {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "__bar", "bar"},
     }};
 

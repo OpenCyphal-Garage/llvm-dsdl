@@ -18,8 +18,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use prefixguard_generated::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
-use prefixguard_generated::prefixguard::prefix32_1_0::prefixguard_Prefix32@V1_0@;
-use prefixguard_generated::prefixguard::prefix64_1_0::prefixguard_Prefix64@V1_0@;
+use prefixguard_generated::prefixguard::prefix32_1_0::Prefix32;
+use prefixguard_generated::prefixguard::prefix64_1_0::Prefix64;
 
 const BAD_ARRAY_LENGTH: i8 = -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
 
@@ -62,7 +62,7 @@ fn expect_rejected(result: Result<usize, i8>, len_after: usize) -> Verdict {
 }
 
 fn prefix32_rejects_above_capacity(prefix: u32) -> Outcome {
-    let mut obj = prefixguard_Prefix32@V1_0@::default();
+    let mut obj = Prefix32::default();
     let result = obj.deserialize(&with_prefix(u64::from(prefix), 4, 0));
     Outcome {
         case: "prefix32_rejects_above_capacity",
@@ -73,9 +73,9 @@ fn prefix32_rejects_above_capacity(prefix: u32) -> Outcome {
 
 fn prefix32_accepts_capacity() -> Outcome {
     const CAPACITY: usize = 65536;
-    let mut obj = prefixguard_Prefix32@V1_0@::default();
+    let mut obj = Prefix32::default();
     let buffer = with_prefix(CAPACITY as u64, 4, CAPACITY);
-    let want_consumed = prefixguard_Prefix32@V1_0@::SERIALIZATION_BUFFER_SIZE_BYTES;
+    let want_consumed = Prefix32::SERIALIZATION_BUFFER_SIZE_BYTES;
     let verdict = match obj.deserialize(&buffer) {
         Ok(consumed) if consumed != want_consumed => {
             Verdict::Failed(format!("consumed {consumed} bytes, want {want_consumed}"))
@@ -95,7 +95,7 @@ fn prefix32_accepts_capacity() -> Outcome {
 }
 
 fn prefix64_rejects_above_capacity(prefix: u64) -> Outcome {
-    let mut obj = prefixguard_Prefix64@V1_0@::default();
+    let mut obj = Prefix64::default();
     let result = obj.deserialize(&with_prefix(prefix, 8, 0));
     Outcome {
         case: "prefix64_rejects_above_capacity",
@@ -115,7 +115,7 @@ fn prefix64_rejects_beyond_index(prefix: u64) -> Outcome {
             verdict: Verdict::Skipped("usize holds every length Prefix64 allows"),
         };
     }
-    let mut obj = prefixguard_Prefix64@V1_0@::default();
+    let mut obj = Prefix64::default();
     let result = obj.deserialize(&with_prefix(prefix, 8, 0));
     Outcome {
         case,
@@ -125,7 +125,7 @@ fn prefix64_rejects_beyond_index(prefix: u64) -> Outcome {
 }
 
 fn prefix64_accepts_small_length() -> Outcome {
-    let mut obj = prefixguard_Prefix64@V1_0@::default();
+    let mut obj = Prefix64::default();
     let mut buffer = with_prefix(3, 8, 1);
     buffer[8] = 0x05;
     let want = [true, false, true];

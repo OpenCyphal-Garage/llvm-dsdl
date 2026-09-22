@@ -50,8 +50,8 @@
 # RUST_MESSAGE: pub const HAS_FIXED_PORT_ID: bool = true;
 # RUST_MESSAGE: pub const FIXED_PORT_ID: u16 = 1234;
 
-# RUST_SERVICE: pub const FIXTURES_UNREGULATED_PORTED_CALL_HAS_FIXED_PORT_ID: bool = true;
-# RUST_SERVICE: pub const FIXTURES_UNREGULATED_PORTED_CALL_FIXED_PORT_ID: u16 = 200;
+# RUST_SERVICE: pub const PORTED_CALL_HAS_FIXED_PORT_ID: bool = true;
+# RUST_SERVICE: pub const PORTED_CALL_FIXED_PORT_ID: u16 = 200;
 
 # Python and TypeScript declare the definition's facts at module scope, so a service's pair is
 # already the service's and needs no alias.

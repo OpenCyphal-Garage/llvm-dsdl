@@ -329,9 +329,11 @@ which is legal in C and must match what the C emitter defines.
 ## 6. Collision detection
 
 `Discovery` asks the engine for the `FileStem` and `TypeName` identifiers each selected backend will
-use and keys on both. Keying on one is not enough: the stem folds to snake_case and keeps
-underscores, the type name folds to PascalCase and drops them, so `_foo` and `foo_` take two files
-and one type name — which does not compile in Go, where one directory is one package.
+use and keys on both, because a language projects the two differently and a pair can meet under
+either. A stem folds to snake_case and carries the version; a type name folds to PascalCase and, in
+C and C++, is preserved verbatim while the stem is too. So `_foo` and `foo_` reach one file and one
+type name in the four module-scoped languages — which does not compile in Go, where one directory is
+one package — and stay apart in C and C++, which name a header after the raw short name.
 
 The two collision classes are treated differently, and the difference is principled:
 
@@ -450,10 +452,15 @@ on the Python backend instead.
 Renames that change a path are announced without being asked for; renames inside a generated file are
 not.
 
-The asymmetry is about what the user can see. A field that became `map_` is visible in the same
-header they are reading to call it. A type file that became `break__1_0.go` is invisible until a build
-rule expecting `break_1_0.go` fails, and by then the message is a missing-file error with no mention
-of naming.
+The asymmetry is about what the user can see. A field that became `break_` is visible in the same
+header they are reading to call it. A namespace directory that became `map_` is invisible until a
+build rule expecting `map` fails, and by then the message is a missing-file error with no mention of
+naming.
+
+A namespace component is the only path the note now has to report. A file stem is projected from the
+versioned name, so the keyword check sees `break_1_0` rather than `break` and nothing strops; a DSDL
+type name is `[A-Za-z_][A-Za-z0-9_]*`, so neither the leading-digit repair nor the character escape
+can fire on one either.
 
 An in-scope collision repair (§6) is announced despite living inside a generated file, and the line
 between the two is predictability rather than location. `map_` follows from `map` and the rules; the

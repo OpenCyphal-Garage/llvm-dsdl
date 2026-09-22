@@ -20,97 +20,97 @@ source                reach  language sanitize               snake              
 ---------------------------------------------------------------------------------------------------------------------------------------------------------
 break                 yes    c        break_                 break_                 Break                  BREAK_                 -                      -
 break                 yes    cpp      break_                 break_                 Break                  BREAK_                 -                      -
-break                 yes    rust     break_                 break_                 Break                  BREAK_                 break__1_0             -
-break                 yes    go       break_                 break_                 Break                  BREAK_                 break__1_0             Break_1_0
-break                 yes    ts       break_                 break_                 Break                  BREAK_                 break__1_0             Break_1_0
-break                 yes    python   break_                 break_                 Break                  BREAK_                 break__1_0             Break_1_0
+break                 yes    rust     break_                 break_                 Break                  BREAK_                 break_1_0              -
+break                 yes    go       break_                 break_                 Break                  BREAK_                 break_1_0              Break_1_0
+break                 yes    ts       break_                 break_                 Break                  BREAK_                 break_1_0              Break_1_0
+break                 yes    python   break_                 break_                 Break                  BREAK_                 break_1_0              Break_1_0
 Break                 yes    c        Break                  break_                 Break                  BREAK_                 -                      -
 Break                 yes    cpp      Break                  break_                 Break                  BREAK_                 -                      -
-Break                 yes    rust     Break                  break_                 Break                  BREAK_                 break__1_0             -
-Break                 yes    go       Break                  break_                 Break                  BREAK_                 break__1_0             Break_1_0
-Break                 yes    ts       Break                  break_                 Break                  BREAK_                 break__1_0             Break_1_0
-Break                 yes    python   Break                  break_                 Break                  BREAK_                 break__1_0             Break_1_0
+Break                 yes    rust     Break                  break_                 Break                  BREAK_                 break_1_0              -
+Break                 yes    go       Break                  break_                 Break                  BREAK_                 break_1_0              Break_1_0
+Break                 yes    ts       Break                  break_                 Break                  BREAK_                 break_1_0              Break_1_0
+Break                 yes    python   Break                  break_                 Break                  BREAK_                 break_1_0              Break_1_0
 Break_                yes    c        Break_                 break_                 Break                  BREAK_                 -                      -
 Break_                yes    cpp      Break_                 break_                 Break                  BREAK_                 -                      -
-Break_                yes    rust     Break_                 break_                 Break                  BREAK_                 break__1_0             -
-Break_                yes    go       Break_                 break_                 Break                  BREAK_                 break__1_0             Break_1_0
-Break_                yes    ts       Break_                 break_                 Break                  BREAK_                 break__1_0             Break_1_0
-Break_                yes    python   Break_                 break_                 Break                  BREAK_                 break__1_0             Break_1_0
+Break_                yes    rust     Break_                 break_                 Break                  BREAK_                 break_1_0              -
+Break_                yes    go       Break_                 break_                 Break                  BREAK_                 break_1_0              Break_1_0
+Break_                yes    ts       Break_                 break_                 Break                  BREAK_                 break_1_0              Break_1_0
+Break_                yes    python   Break_                 break_                 Break                  BREAK_                 break_1_0              Break_1_0
 map                   yes    c        map                    map                    Map                    MAP                    -                      -
 map                   yes    cpp      map                    map                    Map                    MAP                    -                      -
 map                   yes    rust     map                    map                    Map                    MAP                    map_1_0                -
-map                   yes    go       map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
+map                   yes    go       map_                   map_                   Map                    MAP_                   map_1_0                Map_1_0
 map                   yes    ts       map                    map                    Map                    MAP                    map_1_0                Map_1_0
 map                   yes    python   map                    map                    Map                    MAP                    map_1_0                Map_1_0
 Map_                  yes    c        Map_                   map_                   Map                    MAP_                   -                      -
 Map_                  yes    cpp      Map_                   map_                   Map                    MAP_                   -                      -
-Map_                  yes    rust     Map_                   map_                   Map                    MAP_                   map__1_0               -
-Map_                  yes    go       Map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
-Map_                  yes    ts       Map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
-Map_                  yes    python   Map_                   map_                   Map                    MAP_                   map__1_0               Map_1_0
+Map_                  yes    rust     Map_                   map_                   Map                    MAP_                   map_1_0                -
+Map_                  yes    go       Map_                   map_                   Map                    MAP_                   map_1_0                Map_1_0
+Map_                  yes    ts       Map_                   map_                   Map                    MAP_                   map_1_0                Map_1_0
+Map_                  yes    python   Map_                   map_                   Map                    MAP_                   map_1_0                Map_1_0
 class                 yes    c        class_                 class_                 Class                  CLASS_                 -                      -
 class                 yes    cpp      class_                 class_                 Class                  CLASS_                 -                      -
 class                 yes    rust     class                  class                  Class                  CLASS                  class_1_0              -
 class                 yes    go       class                  class                  Class                  CLASS                  class_1_0              Class_1_0
-class                 yes    ts       class_                 class_                 Class                  CLASS_                 class__1_0             Class_1_0
-class                 yes    python   class_                 class_                 Class                  CLASS_                 class__1_0             Class_1_0
+class                 yes    ts       class_                 class_                 Class                  CLASS_                 class_1_0              Class_1_0
+class                 yes    python   class_                 class_                 Class                  CLASS_                 class_1_0              Class_1_0
 Class_                yes    c        Class_                 class_                 Class                  CLASS_                 -                      -
 Class_                yes    cpp      Class_                 class_                 Class                  CLASS_                 -                      -
-Class_                yes    rust     Class_                 class_                 Class                  CLASS_                 class__1_0             -
-Class_                yes    go       Class_                 class_                 Class                  CLASS_                 class__1_0             Class_1_0
-Class_                yes    ts       Class_                 class_                 Class                  CLASS_                 class__1_0             Class_1_0
-Class_                yes    python   Class_                 class_                 Class                  CLASS_                 class__1_0             Class_1_0
+Class_                yes    rust     Class_                 class_                 Class                  CLASS_                 class_1_0              -
+Class_                yes    go       Class_                 class_                 Class                  CLASS_                 class_1_0              Class_1_0
+Class_                yes    ts       Class_                 class_                 Class                  CLASS_                 class_1_0              Class_1_0
+Class_                yes    python   Class_                 class_                 Class                  CLASS_                 class_1_0              Class_1_0
 match                 yes    c        match                  match                  Match                  MATCH                  -                      -
 match                 yes    cpp      match                  match                  Match                  MATCH                  -                      -
-match                 yes    rust     match_                 match_                 Match                  MATCH_                 match__1_0             -
+match                 yes    rust     match_                 match_                 Match                  MATCH_                 match_1_0              -
 match                 yes    go       match                  match                  Match                  MATCH                  match_1_0              Match_1_0
 match                 yes    ts       match                  match                  Match                  MATCH                  match_1_0              Match_1_0
-match                 yes    python   match_                 match_                 Match                  MATCH_                 match__1_0             Match_1_0
+match                 yes    python   match_                 match_                 Match                  MATCH_                 match_1_0              Match_1_0
 Match_                yes    c        Match_                 match_                 Match                  MATCH_                 -                      -
 Match_                yes    cpp      Match_                 match_                 Match                  MATCH_                 -                      -
-Match_                yes    rust     Match_                 match_                 Match                  MATCH_                 match__1_0             -
-Match_                yes    go       Match_                 match_                 Match                  MATCH_                 match__1_0             Match_1_0
-Match_                yes    ts       Match_                 match_                 Match                  MATCH_                 match__1_0             Match_1_0
-Match_                yes    python   Match_                 match_                 Match                  MATCH_                 match__1_0             Match_1_0
+Match_                yes    rust     Match_                 match_                 Match                  MATCH_                 match_1_0              -
+Match_                yes    go       Match_                 match_                 Match                  MATCH_                 match_1_0              Match_1_0
+Match_                yes    ts       Match_                 match_                 Match                  MATCH_                 match_1_0              Match_1_0
+Match_                yes    python   Match_                 match_                 Match                  MATCH_                 match_1_0              Match_1_0
 def                   yes    c        def                    def                    Def                    DEF                    -                      -
 def                   yes    cpp      def                    def                    Def                    DEF                    -                      -
 def                   yes    rust     def                    def                    Def                    DEF                    def_1_0                -
 def                   yes    go       def                    def                    Def                    DEF                    def_1_0                Def_1_0
 def                   yes    ts       def                    def                    Def                    DEF                    def_1_0                Def_1_0
-def                   yes    python   def_                   def_                   Def                    DEF_                   def__1_0               Def_1_0
+def                   yes    python   def_                   def_                   Def                    DEF_                   def_1_0                Def_1_0
 func                  yes    c        func                   func                   Func                   FUNC                   -                      -
 func                  yes    cpp      func                   func                   Func                   FUNC                   -                      -
 func                  yes    rust     func                   func                   Func                   FUNC                   func_1_0               -
-func                  yes    go       func_                  func_                  Func                   FUNC_                  func__1_0              Func_1_0
+func                  yes    go       func_                  func_                  Func                   FUNC_                  func_1_0               Func_1_0
 func                  yes    ts       func                   func                   Func                   FUNC                   func_1_0               Func_1_0
 func                  yes    python   func                   func                   Func                   FUNC                   func_1_0               Func_1_0
 interface             yes    c        interface              interface              Interface              INTERFACE              -                      -
 interface             yes    cpp      interface              interface              Interface              INTERFACE              -                      -
 interface             yes    rust     interface              interface              Interface              INTERFACE              interface_1_0          -
-interface             yes    go       interface_             interface_             Interface              INTERFACE_             interface__1_0         Interface_1_0
-interface             yes    ts       interface_             interface_             Interface              INTERFACE_             interface__1_0         Interface_1_0
+interface             yes    go       interface_             interface_             Interface              INTERFACE_             interface_1_0          Interface_1_0
+interface             yes    ts       interface_             interface_             Interface              INTERFACE_             interface_1_0          Interface_1_0
 interface             yes    python   interface              interface              Interface              INTERFACE              interface_1_0          Interface_1_0
 let                   yes    c        let                    let                    Let                    LET                    -                      -
 let                   yes    cpp      let                    let                    Let                    LET                    -                      -
-let                   yes    rust     let_                   let_                   Let                    LET_                   let__1_0               -
+let                   yes    rust     let_                   let_                   Let                    LET_                   let_1_0                -
 let                   yes    go       let                    let                    Let                    LET                    let_1_0                Let_1_0
-let                   yes    ts       let_                   let_                   Let                    LET_                   let__1_0               Let_1_0
+let                   yes    ts       let_                   let_                   Let                    LET_                   let_1_0                Let_1_0
 let                   yes    python   let                    let                    Let                    LET                    let_1_0                Let_1_0
 mut                   yes    c        mut                    mut                    Mut                    MUT                    -                      -
 mut                   yes    cpp      mut                    mut                    Mut                    MUT                    -                      -
-mut                   yes    rust     mut_                   mut_                   Mut                    MUT_                   mut__1_0               -
+mut                   yes    rust     mut_                   mut_                   Mut                    MUT_                   mut_1_0                -
 mut                   yes    go       mut                    mut                    Mut                    MUT                    mut_1_0                Mut_1_0
 mut                   yes    ts       mut                    mut                    Mut                    MUT                    mut_1_0                Mut_1_0
 mut                   yes    python   mut                    mut                    Mut                    MUT                    mut_1_0                Mut_1_0
 pub                   yes    c        pub                    pub                    Pub                    PUB                    -                      -
 pub                   yes    cpp      pub                    pub                    Pub                    PUB                    -                      -
-pub                   yes    rust     pub_                   pub_                   Pub                    PUB_                   pub__1_0               -
+pub                   yes    rust     pub_                   pub_                   Pub                    PUB_                   pub_1_0                -
 pub                   yes    go       pub                    pub                    Pub                    PUB                    pub_1_0                Pub_1_0
 pub                   yes    ts       pub                    pub                    Pub                    PUB                    pub_1_0                Pub_1_0
 pub                   yes    python   pub                    pub                    Pub                    PUB                    pub_1_0                Pub_1_0
 use                   yes    c        use                    use                    Use                    USE                    -                      -
 use                   yes    cpp      use                    use                    Use                    USE                    -                      -
-use                   yes    rust     use_                   use_                   Use                    USE_                   use__1_0               -
+use                   yes    rust     use_                   use_                   Use                    USE_                   use_1_0                -
 use                   yes    go       use                    use                    Use                    USE                    use_1_0                Use_1_0
 use                   yes    ts       use                    use                    Use                    USE                    use_1_0                Use_1_0
 use                   yes    python   use                    use                    Use                    USE                    use_1_0                Use_1_0
@@ -118,13 +118,13 @@ string                yes    c        string                 string             
 string                yes    cpp      string                 string                 String                 STRING                 -                      -
 string                yes    rust     string                 string                 String                 STRING                 string_1_0             -
 string                yes    go       string                 string                 String                 STRING                 string_1_0             String_1_0
-string                yes    ts       string_                string_                String                 STRING_                string__1_0            String_1_0
+string                yes    ts       string_                string_                String                 STRING_                string_1_0             String_1_0
 string                yes    python   string                 string                 String                 STRING                 string_1_0             String_1_0
 null                  yes    c        null                   null                   Null                   NULL                   -                      -
 null                  yes    cpp      null                   null                   Null                   NULL                   -                      -
 null                  yes    rust     null                   null                   Null                   NULL                   null_1_0               -
 null                  yes    go       null                   null                   Null                   NULL                   null_1_0               Null_1_0
-null                  yes    ts       null_                  null_                  Null                   NULL_                  null__1_0              Null_1_0
+null                  yes    ts       null_                  null_                  Null                   NULL_                  null_1_0               Null_1_0
 null                  yes    python   null                   null                   Null                   NULL                   null_1_0               Null_1_0
 None                  yes    c        None                   none                   None                   NONE                   -                      -
 None                  yes    cpp      None                   none                   None                   NONE                   -                      -
@@ -135,51 +135,51 @@ None                  yes    python   None_                  none               
 range                 yes    c        range                  range                  Range                  RANGE                  -                      -
 range                 yes    cpp      range                  range                  Range                  RANGE                  -                      -
 range                 yes    rust     range                  range                  Range                  RANGE                  range_1_0              -
-range                 yes    go       range_                 range_                 Range                  RANGE_                 range__1_0             Range_1_0
+range                 yes    go       range_                 range_                 Range                  RANGE_                 range_1_0              Range_1_0
 range                 yes    ts       range                  range                  Range                  RANGE                  range_1_0              Range_1_0
 range                 yes    python   range                  range                  Range                  RANGE                  range_1_0              Range_1_0
 defer                 yes    c        defer                  defer                  Defer                  DEFER                  -                      -
 defer                 yes    cpp      defer                  defer                  Defer                  DEFER                  -                      -
 defer                 yes    rust     defer                  defer                  Defer                  DEFER                  defer_1_0              -
-defer                 yes    go       defer_                 defer_                 Defer                  DEFER_                 defer__1_0             Defer_1_0
+defer                 yes    go       defer_                 defer_                 Defer                  DEFER_                 defer_1_0              Defer_1_0
 defer                 yes    ts       defer                  defer                  Defer                  DEFER                  defer_1_0              Defer_1_0
 defer                 yes    python   defer                  defer                  Defer                  DEFER                  defer_1_0              Defer_1_0
 chan                  yes    c        chan                   chan                   Chan                   CHAN                   -                      -
 chan                  yes    cpp      chan                   chan                   Chan                   CHAN                   -                      -
 chan                  yes    rust     chan                   chan                   Chan                   CHAN                   chan_1_0               -
-chan                  yes    go       chan_                  chan_                  Chan                   CHAN_                  chan__1_0              Chan_1_0
+chan                  yes    go       chan_                  chan_                  Chan                   CHAN_                  chan_1_0               Chan_1_0
 chan                  yes    ts       chan                   chan                   Chan                   CHAN                   chan_1_0               Chan_1_0
 chan                  yes    python   chan                   chan                   Chan                   CHAN                   chan_1_0               Chan_1_0
 impl                  yes    c        impl                   impl                   Impl                   IMPL                   -                      -
 impl                  yes    cpp      impl                   impl                   Impl                   IMPL                   -                      -
-impl                  yes    rust     impl_                  impl_                  Impl                   IMPL_                  impl__1_0              -
+impl                  yes    rust     impl_                  impl_                  Impl                   IMPL_                  impl_1_0               -
 impl                  yes    go       impl                   impl                   Impl                   IMPL                   impl_1_0               Impl_1_0
 impl                  yes    ts       impl                   impl                   Impl                   IMPL                   impl_1_0               Impl_1_0
 impl                  yes    python   impl                   impl                   Impl                   IMPL                   impl_1_0               Impl_1_0
 loop                  yes    c        loop                   loop                   Loop                   LOOP                   -                      -
 loop                  yes    cpp      loop                   loop                   Loop                   LOOP                   -                      -
-loop                  yes    rust     loop_                  loop_                  Loop                   LOOP_                  loop__1_0              -
+loop                  yes    rust     loop_                  loop_                  Loop                   LOOP_                  loop_1_0               -
 loop                  yes    go       loop                   loop                   Loop                   LOOP                   loop_1_0               Loop_1_0
 loop                  yes    ts       loop                   loop                   Loop                   LOOP                   loop_1_0               Loop_1_0
 loop                  yes    python   loop                   loop                   Loop                   LOOP                   loop_1_0               Loop_1_0
 yield                 yes    c        yield                  yield                  Yield                  YIELD                  -                      -
 yield                 yes    cpp      yield                  yield                  Yield                  YIELD                  -                      -
-yield                 yes    rust     yield_                 yield_                 Yield                  YIELD_                 yield__1_0             -
+yield                 yes    rust     yield_                 yield_                 Yield                  YIELD_                 yield_1_0              -
 yield                 yes    go       yield                  yield                  Yield                  YIELD                  yield_1_0              Yield_1_0
-yield                 yes    ts       yield_                 yield_                 Yield                  YIELD_                 yield__1_0             Yield_1_0
-yield                 yes    python   yield_                 yield_                 Yield                  YIELD_                 yield__1_0             Yield_1_0
+yield                 yes    ts       yield_                 yield_                 Yield                  YIELD_                 yield_1_0              Yield_1_0
+yield                 yes    python   yield_                 yield_                 Yield                  YIELD_                 yield_1_0              Yield_1_0
 lambda                yes    c        lambda                 lambda                 Lambda                 LAMBDA                 -                      -
 lambda                yes    cpp      lambda                 lambda                 Lambda                 LAMBDA                 -                      -
 lambda                yes    rust     lambda                 lambda                 Lambda                 LAMBDA                 lambda_1_0             -
 lambda                yes    go       lambda                 lambda                 Lambda                 LAMBDA                 lambda_1_0             Lambda_1_0
 lambda                yes    ts       lambda                 lambda                 Lambda                 LAMBDA                 lambda_1_0             Lambda_1_0
-lambda                yes    python   lambda_                lambda_                Lambda                 LAMBDA_                lambda__1_0            Lambda_1_0
+lambda                yes    python   lambda_                lambda_                Lambda                 LAMBDA_                lambda_1_0             Lambda_1_0
 except                yes    c        except                 except                 Except                 EXCEPT                 -                      -
 except                yes    cpp      except                 except                 Except                 EXCEPT                 -                      -
 except                yes    rust     except                 except                 Except                 EXCEPT                 except_1_0             -
 except                yes    go       except                 except                 Except                 EXCEPT                 except_1_0             Except_1_0
 except                yes    ts       except                 except                 Except                 EXCEPT                 except_1_0             Except_1_0
-except                yes    python   except_                except_                Except                 EXCEPT_                except__1_0            Except_1_0
+except                yes    python   except_                except_                Except                 EXCEPT_                except_1_0             Except_1_0
 typedef               yes    c        typedef_               typedef_               Typedef                TYPEDEF_               -                      -
 typedef               yes    cpp      typedef_               typedef_               Typedef                TYPEDEF_               -                      -
 typedef               yes    rust     typedef                typedef                Typedef                TYPEDEF                typedef_1_0            -
@@ -214,26 +214,26 @@ delete                yes    c        delete_                delete_            
 delete                yes    cpp      delete_                delete_                Delete                 DELETE_                -                      -
 delete                yes    rust     delete                 delete                 Delete                 DELETE                 delete_1_0             -
 delete                yes    go       delete                 delete                 Delete                 DELETE                 delete_1_0             Delete_1_0
-delete                yes    ts       delete_                delete_                Delete                 DELETE_                delete__1_0            Delete_1_0
+delete                yes    ts       delete_                delete_                Delete                 DELETE_                delete_1_0             Delete_1_0
 delete                yes    python   delete                 delete                 Delete                 DELETE                 delete_1_0             Delete_1_0
 export                yes    c        export_                export_                Export                 EXPORT_                -                      -
 export                yes    cpp      export_                export_                Export                 EXPORT_                -                      -
 export                yes    rust     export                 export                 Export                 EXPORT                 export_1_0             -
 export                yes    go       export                 export                 Export                 EXPORT                 export_1_0             Export_1_0
-export                yes    ts       export_                export_                Export                 EXPORT_                export__1_0            Export_1_0
+export                yes    ts       export_                export_                Export                 EXPORT_                export_1_0             Export_1_0
 export                yes    python   export                 export                 Export                 EXPORT                 export_1_0             Export_1_0
 package               yes    c        package                package                Package                PACKAGE                -                      -
 package               yes    cpp      package                package                Package                PACKAGE                -                      -
 package               yes    rust     package                package                Package                PACKAGE                package_1_0            -
-package               yes    go       package_               package_               Package                PACKAGE_               package__1_0           Package_1_0
-package               yes    ts       package_               package_               Package                PACKAGE_               package__1_0           Package_1_0
+package               yes    go       package_               package_               Package                PACKAGE_               package_1_0            Package_1_0
+package               yes    ts       package_               package_               Package                PACKAGE_               package_1_0            Package_1_0
 package               yes    python   package                package                Package                PACKAGE                package_1_0            Package_1_0
 import                yes    c        import                 import                 Import                 IMPORT                 -                      -
 import                yes    cpp      import                 import                 Import                 IMPORT                 -                      -
 import                yes    rust     import                 import                 Import                 IMPORT                 import_1_0             -
-import                yes    go       import_                import_                Import                 IMPORT_                import__1_0            Import_1_0
-import                yes    ts       import_                import_                Import                 IMPORT_                import__1_0            Import_1_0
-import                yes    python   import_                import_                Import                 IMPORT_                import__1_0            Import_1_0
+import                yes    go       import_                import_                Import                 IMPORT_                import_1_0             Import_1_0
+import                yes    ts       import_                import_                Import                 IMPORT_                import_1_0             Import_1_0
+import                yes    python   import_                import_                Import                 IMPORT_                import_1_0             Import_1_0
 fooBar                yes    c        fooBar                 foo_bar                FooBar                 FOO_BAR                -                      -
 fooBar                yes    cpp      fooBar                 foo_bar                FooBar                 FOO_BAR                -                      -
 fooBar                yes    rust     fooBar                 foo_bar                FooBar                 FOO_BAR                foo_bar_1_0            -
@@ -278,16 +278,16 @@ _Foo                  yes    ts       _Foo                   foo                
 _Foo                  yes    python   _Foo                   foo                    Foo                    FOO                    foo_1_0                Foo_1_0
 foo_                  yes    c        foo_                   foo_                   Foo                    FOO_                   -                      -
 foo_                  yes    cpp      foo_                   foo_                   Foo                    FOO_                   -                      -
-foo_                  yes    rust     foo_                   foo_                   Foo                    FOO_                   foo__1_0               -
-foo_                  yes    go       foo_                   foo_                   Foo                    FOO_                   foo__1_0               Foo_1_0
-foo_                  yes    ts       foo_                   foo_                   Foo                    FOO_                   foo__1_0               Foo_1_0
-foo_                  yes    python   foo_                   foo_                   Foo                    FOO_                   foo__1_0               Foo_1_0
+foo_                  yes    rust     foo_                   foo_                   Foo                    FOO_                   foo_1_0                -
+foo_                  yes    go       foo_                   foo_                   Foo                    FOO_                   foo_1_0                Foo_1_0
+foo_                  yes    ts       foo_                   foo_                   Foo                    FOO_                   foo_1_0                Foo_1_0
+foo_                  yes    python   foo_                   foo_                   Foo                    FOO_                   foo_1_0                Foo_1_0
 Foo_                  yes    c        Foo_                   foo_                   Foo                    FOO_                   -                      -
 Foo_                  yes    cpp      Foo_                   foo_                   Foo                    FOO_                   -                      -
-Foo_                  yes    rust     Foo_                   foo_                   Foo                    FOO_                   foo__1_0               -
-Foo_                  yes    go       Foo_                   foo_                   Foo                    FOO_                   foo__1_0               Foo_1_0
-Foo_                  yes    ts       Foo_                   foo_                   Foo                    FOO_                   foo__1_0               Foo_1_0
-Foo_                  yes    python   Foo_                   foo_                   Foo                    FOO_                   foo__1_0               Foo_1_0
+Foo_                  yes    rust     Foo_                   foo_                   Foo                    FOO_                   foo_1_0                -
+Foo_                  yes    go       Foo_                   foo_                   Foo                    FOO_                   foo_1_0                Foo_1_0
+Foo_                  yes    ts       Foo_                   foo_                   Foo                    FOO_                   foo_1_0                Foo_1_0
+Foo_                  yes    python   Foo_                   foo_                   Foo                    FOO_                   foo_1_0                Foo_1_0
 foo_t                 yes    c        foo_t                  foo_t                  FooT                   FOO_T                  -                      -
 foo_t                 yes    cpp      foo_t                  foo_t                  FooT                   FOO_T                  -                      -
 foo_t                 yes    rust     foo_t                  foo_t                  FooT                   FOO_T                  foo_t_1_0              -
@@ -302,16 +302,16 @@ FULL_NAME             yes    ts       FULL_NAME              full_name          
 FULL_NAME             yes    python   FULL_NAME              full_name              FULLNAME               FULL_NAME              full_name_1_0          FULLNAME_1_0
 FULL_NAME_            yes    c        FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             -                      -
 FULL_NAME_            yes    cpp      FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             -                      -
-FULL_NAME_            yes    rust     FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         -
-FULL_NAME_            yes    go       FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         FULLNAME_1_0
-FULL_NAME_            yes    ts       FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         FULLNAME_1_0
-FULL_NAME_            yes    python   FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name__1_0         FULLNAME_1_0
+FULL_NAME_            yes    rust     FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name_1_0          -
+FULL_NAME_            yes    go       FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name_1_0          FULLNAME_1_0
+FULL_NAME_            yes    ts       FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name_1_0          FULLNAME_1_0
+FULL_NAME_            yes    python   FULL_NAME_             full_name_             FULLNAME               FULL_NAME_             full_name_1_0          FULLNAME_1_0
 wire_flat_            yes    c        wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             -                      -
 wire_flat_            yes    cpp      wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             -                      -
-wire_flat_            yes    rust     wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         -
-wire_flat_            yes    go       wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         WireFlat_1_0
-wire_flat_            yes    ts       wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         WireFlat_1_0
-wire_flat_            yes    python   wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat__1_0         WireFlat_1_0
+wire_flat_            yes    rust     wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat_1_0          -
+wire_flat_            yes    go       wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat_1_0          WireFlat_1_0
+wire_flat_            yes    ts       wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat_1_0          WireFlat_1_0
+wire_flat_            yes    python   wire_flat_             wire_flat_             WireFlat               WIRE_FLAT_             wire_flat_1_0          WireFlat_1_0
 UNION_OPTION_COUNT    yes    c        UNION_OPTION_COUNT     union_option_count     UNIONOPTIONCOUNT       UNION_OPTION_COUNT     -                      -
 UNION_OPTION_COUNT    yes    cpp      UNION_OPTION_COUNT     union_option_count     UNIONOPTIONCOUNT       UNION_OPTION_COUNT     -                      -
 UNION_OPTION_COUNT    yes    rust     UNION_OPTION_COUNT     union_option_count     UNIONOPTIONCOUNT       UNION_OPTION_COUNT     union_option_count_1_0 -
@@ -374,15 +374,15 @@ x9                    yes    ts       x9                     x9                 
 x9                    yes    python   x9                     x9                     X9                     X9                     x9_1_0                 X9_1_0
 self                  no     c        self                   self                   Self                   SELF                   -                      -
 self                  no     cpp      self                   self                   Self                   SELF                   -                      -
-self                  no     rust     self_                  self_                  Self_                  SELF_                  self__1_0              -
+self                  no     rust     self_                  self_                  Self_                  SELF_                  self_1_0               -
 self                  no     go       self                   self                   Self                   SELF                   self_1_0               Self_1_0
 self                  no     ts       self                   self                   Self                   SELF                   self_1_0               Self_1_0
 self                  no     python   self                   self                   Self                   SELF                   self_1_0               Self_1_0
 type                  no     c        type                   type                   Type                   TYPE                   -                      -
 type                  no     cpp      type                   type                   Type                   TYPE                   -                      -
-type                  no     rust     type_                  type_                  Type                   TYPE_                  type__1_0              -
-type                  no     go       type_                  type_                  Type                   TYPE_                  type__1_0              Type_1_0
-type                  no     ts       type_                  type_                  Type                   TYPE_                  type__1_0              Type_1_0
+type                  no     rust     type_                  type_                  Type                   TYPE_                  type_1_0               -
+type                  no     go       type_                  type_                  Type                   TYPE_                  type_1_0               Type_1_0
+type                  no     ts       type_                  type_                  Type                   TYPE_                  type_1_0               Type_1_0
 type                  no     python   type                   type                   Type                   TYPE                   type_1_0               Type_1_0
 9AxisIMU              no     c        _9AxisIMU              _9axis_imu             _9AxisIMU              _9AXIS_IMU             -                      -
 9AxisIMU              no     cpp      _9AxisIMU              _9axis_imu             _9AxisIMU              _9AXIS_IMU             -                      -
@@ -481,12 +481,14 @@ rust     upper_snake  allocator  FOO_                foo_, Foo_
 rust     upper_snake  allocator  FOO_BAR             fooBar, foo_bar, FooBar, FOO_BAR
 rust     upper_snake  allocator  MATCH_              match, Match_
 rust     file_stem    rejected   a_1_0               a, A
-rust     file_stem    rejected   break__1_0          break, Break, Break_
+rust     file_stem    rejected   break_1_0           break, Break, Break_
+rust     file_stem    rejected   class_1_0           class, Class_
 rust     file_stem    rejected   efoo_1_0            Efoo, EFOO
-rust     file_stem    rejected   foo_1_0             _foo, __foo, _Foo
-rust     file_stem    rejected   foo__1_0            foo_, Foo_
+rust     file_stem    rejected   foo_1_0             _foo, __foo, _Foo, foo_, Foo_
 rust     file_stem    rejected   foo_bar_1_0         fooBar, foo_bar, FooBar, FOO_BAR
-rust     file_stem    rejected   match__1_0          match, Match_
+rust     file_stem    rejected   full_name_1_0       FULL_NAME, FULL_NAME_
+rust     file_stem    rejected   map_1_0             map, Map_
+rust     file_stem    rejected   match_1_0           match, Match_
 go       snake        allocator  a                   a, A
 go       snake        allocator  break_              break, Break, Break_
 go       snake        allocator  efoo                Efoo, EFOO
@@ -510,12 +512,14 @@ go       upper_snake  allocator  FOO_                foo_, Foo_
 go       upper_snake  allocator  FOO_BAR             fooBar, foo_bar, FooBar, FOO_BAR
 go       upper_snake  allocator  MAP_                map, Map_
 go       file_stem    rejected   a_1_0               a, A
-go       file_stem    rejected   break__1_0          break, Break, Break_
+go       file_stem    rejected   break_1_0           break, Break, Break_
+go       file_stem    rejected   class_1_0           class, Class_
 go       file_stem    rejected   efoo_1_0            Efoo, EFOO
-go       file_stem    rejected   foo_1_0             _foo, __foo, _Foo
-go       file_stem    rejected   foo__1_0            foo_, Foo_
+go       file_stem    rejected   foo_1_0             _foo, __foo, _Foo, foo_, Foo_
 go       file_stem    rejected   foo_bar_1_0         fooBar, foo_bar, FooBar, FOO_BAR
-go       file_stem    rejected   map__1_0            map, Map_
+go       file_stem    rejected   full_name_1_0       FULL_NAME, FULL_NAME_
+go       file_stem    rejected   map_1_0             map, Map_
+go       file_stem    rejected   match_1_0           match, Match_
 go       type_name    rejected   A_1_0               a, A
 go       type_name    rejected   Break_1_0           break, Break, Break_
 go       type_name    rejected   Class_1_0           class, Class_
@@ -547,12 +551,14 @@ ts       upper_snake  allocator  FOO                 _foo, __foo, _Foo
 ts       upper_snake  allocator  FOO_                foo_, Foo_
 ts       upper_snake  allocator  FOO_BAR             fooBar, foo_bar, FooBar, FOO_BAR
 ts       file_stem    rejected   a_1_0               a, A
-ts       file_stem    rejected   break__1_0          break, Break, Break_
-ts       file_stem    rejected   class__1_0          class, Class_
+ts       file_stem    rejected   break_1_0           break, Break, Break_
+ts       file_stem    rejected   class_1_0           class, Class_
 ts       file_stem    rejected   efoo_1_0            Efoo, EFOO
-ts       file_stem    rejected   foo_1_0             _foo, __foo, _Foo
-ts       file_stem    rejected   foo__1_0            foo_, Foo_
+ts       file_stem    rejected   foo_1_0             _foo, __foo, _Foo, foo_, Foo_
 ts       file_stem    rejected   foo_bar_1_0         fooBar, foo_bar, FooBar, FOO_BAR
+ts       file_stem    rejected   full_name_1_0       FULL_NAME, FULL_NAME_
+ts       file_stem    rejected   map_1_0             map, Map_
+ts       file_stem    rejected   match_1_0           match, Match_
 ts       type_name    rejected   A_1_0               a, A
 ts       type_name    rejected   Break_1_0           break, Break, Break_
 ts       type_name    rejected   Class_1_0           class, Class_
@@ -586,13 +592,14 @@ python   upper_snake  allocator  FOO_                foo_, Foo_
 python   upper_snake  allocator  FOO_BAR             fooBar, foo_bar, FooBar, FOO_BAR
 python   upper_snake  allocator  MATCH_              match, Match_
 python   file_stem    rejected   a_1_0               a, A
-python   file_stem    rejected   break__1_0          break, Break, Break_
-python   file_stem    rejected   class__1_0          class, Class_
+python   file_stem    rejected   break_1_0           break, Break, Break_
+python   file_stem    rejected   class_1_0           class, Class_
 python   file_stem    rejected   efoo_1_0            Efoo, EFOO
-python   file_stem    rejected   foo_1_0             _foo, __foo, _Foo
-python   file_stem    rejected   foo__1_0            foo_, Foo_
+python   file_stem    rejected   foo_1_0             _foo, __foo, _Foo, foo_, Foo_
 python   file_stem    rejected   foo_bar_1_0         fooBar, foo_bar, FooBar, FOO_BAR
-python   file_stem    rejected   match__1_0          match, Match_
+python   file_stem    rejected   full_name_1_0       FULL_NAME, FULL_NAME_
+python   file_stem    rejected   map_1_0             map, Map_
+python   file_stem    rejected   match_1_0           match, Match_
 python   type_name    rejected   A_1_0               a, A
 python   type_name    rejected   Break_1_0           break, Break, Break_
 python   type_name    rejected   Class_1_0           class, Class_

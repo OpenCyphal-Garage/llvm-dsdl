@@ -56,7 +56,7 @@
 # CPP: static float get_real(
 # RUN: %dsdlc --target-language rust %S/fixtures_union --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_union/vendor/choice_1_0.rs | FileCheck %s --check-prefix=RUST
-# RUST: pub fn get__tag_(buffer: &[u8]) -> u8 {
+# RUST: pub fn get_tag_(buffer: &[u8]) -> u8 {
 # RUST: pub fn get_quad(buffer: &[u8]) -> &[u8] {
 # RUN: %dsdlc --target-language go %S/fixtures_union --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/go/fixtures_union/vendor/choice_1_0.go | FileCheck %s --check-prefix=GO

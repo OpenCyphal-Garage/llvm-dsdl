@@ -26,7 +26,8 @@
 # Rust gives every definition its own module, so the repeat is unreachable and must not be reported.
 # RUN: %dsdlc --target-language rust --rust-crate-name m %t/dsdl/ns --outdir %t/rust
 # RUN: cat %t/rust/src/ns/foo_1_0.rs %t/rust/src/ns/foo_request_1_0.rs | FileCheck %s --check-prefix=RUST
-# RUST-DAG: pub struct ns_Foo_Request {
+# RUST-DAG: pub struct FooRequest {
+# RUST-DAG: pub struct Request {
 
 # The versions do not have to match: the unversioned name carries neither, so a service at 1.0 and a
 # sibling at 2.0 collide just the same.

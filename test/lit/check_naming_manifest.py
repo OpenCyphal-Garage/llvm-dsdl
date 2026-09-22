@@ -55,9 +55,12 @@ def main() -> int:
     if constants.get("FULL_NAME") != "FULL_NAME_":
         failures.append(f"expected FULL_NAME to be reported as FULL_NAME_, got {constants.get('FULL_NAME')!r}")
 
+    # The stem is projected from the versioned name, so the keyword `break` is not what the escape
+    # sees and nothing is escaped. The manifest reports the file on disk, which is what a build
+    # integration references.
     brk = go.get("fixtures_naming.naming.Break.1.0", {})
-    if brk.get("file_stem") != "break__1_0":
-        failures.append(f"expected Break to take the stem break__1_0, got {brk.get('file_stem')!r}")
+    if brk.get("file_stem") != "break_1_0":
+        failures.append(f"expected Break to take the stem break_1_0, got {brk.get('file_stem')!r}")
 
     # A union option's tag is the one fact about it that cannot be read off the generated type, so
     # the manifest is the only place a build integration can get it. Both halves are checked: the

@@ -281,27 +281,34 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     // A file name taken from the DSDL short name, untouched.
     static constexpr RolePolicy kVerbatim{CaseStyle::Preserve, false, false, false};
 
-    const bool cLike    = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
-    const bool rustLike = language == CodegenNamingLanguage::Rust;
-    const bool goLike   = language == CodegenNamingLanguage::Go;
+    const bool cLike  = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
+    const bool goLike = language == CodegenNamingLanguage::Go;
 
     switch (role)
     {
     case IdentifierRole::TypeName:
-        return (cLike || rustLike) ? kPreserve : kPascal;
+        // Rust takes the Pascal projection the other module-scoped languages take: its module
+        // carries the namespace, so the name is the DSDL short name alone and `non_camel_case_types`
+        // reports whatever is not cased.
+        return cLike ? kPreserve : kPascal;
     case IdentifierRole::FieldName:
     case IdentifierRole::FunctionName:
     case IdentifierRole::LocalName:
-        if (cLike || rustLike)
+        if (cLike)
         {
             return kPreserve;
         }
+        // `non_snake_case` covers a Rust field, method and local alike, so a DSDL member spelled
+        // `fooBar` is projected rather than carried through. Two members that fold onto one name
+        // are separated by the scope they are declared into, as they already are in the four
+        // languages that have always projected here.
         return goLike ? kPascal : kSnake;
     case IdentifierRole::ConstantName:
     case IdentifierRole::MacroName:
         return cLike ? kMacroToken : kUpperSnake;
     case IdentifierRole::NamespaceName:
-        return (cLike || rustLike) ? kPreserve : kSnake;
+        // A Rust namespace component is a module, which `non_snake_case` covers too.
+        return cLike ? kPreserve : kSnake;
     case IdentifierRole::FileStem:
         return cLike ? kVerbatim : kSnake;
     }
