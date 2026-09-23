@@ -258,16 +258,17 @@ already forbids.
 Each remaining language gains the style judge its compiler is not: `cargo clippy -- -D warnings`
 beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` rules for Python,
 `eslint` with `@typescript-eslint/naming-convention`, and `clang-tidy`'s
-`readability-identifier-naming` over the generated C and C++. Of those, the `ts26.4.3` toolshed image
-carries `clang-tidy` and `cargo-clippy`; `staticcheck`, `ruff` and a TypeScript-capable `eslint` are
-not in it, so each needs pinned provisioning or an image bump before its lane can run in CI.
+`readability-identifier-naming` over the generated C and C++. The `ts26.4.4` toolshed image carries
+all five. The lint lane reports which of them it found and stops if one is missing, so an image that
+cannot host a judge says so there rather than as a lane that quietly stopped judging.
 
 The version a judge is pinned at is part of what it reports. The counts below were taken with
 `ruff` 0.16.8, `staticcheck` 2026.2.1 and `eslint` 10.11.0 beside `typescript-eslint` 8.70.1 and
 TypeScript 6.0.3 -- which is the newest set that resolves, since `typescript-eslint` holds
 TypeScript below 6.1. `no-useless-assignment` arrived in `eslint` 10 and reports a defect the
 older release did not, so a lane pinned behind it would have ratcheted in a shape two other judges
-already name.
+already name. The lint lane holds `eslint` at 10 or newer for that reason, and holds the other two
+to nothing: the versions tried report identically, rule for rule.
 
 Those three are what remains of this phase, and they gate the phases after it rather than decorate
 them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and

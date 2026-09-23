@@ -84,7 +84,7 @@ jobs:
     if: github.event.action != 'labeled'
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     # clang-tidy needs the generated headers -- TableGen output and the configured Version.h --
     # so this lane configures and builds before it can analyse anything. The walk itself is a
     # couple of minutes across the pool.
@@ -142,7 +142,7 @@ jobs:
     if: github.event.action != 'labeled'
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     timeout-minutes: 120
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -274,7 +274,7 @@ jobs:
     # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     timeout-minutes: 120
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -371,7 +371,7 @@ jobs:
     # Dafny and its solver come from the toolshed image rather than being fetched
     # per run.
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -434,7 +434,7 @@ jobs:
     # two halves.
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -543,7 +543,7 @@ jobs:
     # job. Keep that list growing as recipes land.
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     timeout-minutes: 60
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -688,7 +688,7 @@ jobs:
     # than behind the two-hour lane.
     runs-on: ubuntu-26.04
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.3
+      image: ghcr.io/opencyphal/toolshed:ts26.4.4
     timeout-minutes: 45
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
