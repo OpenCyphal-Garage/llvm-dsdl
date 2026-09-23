@@ -266,7 +266,7 @@ bool isGoInitialism(const std::string& word)
                                                        "SLA",  "SMTP", "SQL",  "SSH",   "TCP",  "TLS",   "TTL", "UDP",
                                                        "UI",   "UID",  "URI",  "URL",   "UTF8", "UUID",  "VM",  "XML",
                                                        "XMPP", "XSRF", "XSS"};
-    return kInitialisms.count(word) > 0;
+    return kInitialisms.contains(word);
 }
 
 /// @brief Splits @p name into words at separators and at case boundaries.
@@ -284,9 +284,9 @@ std::vector<std::string> splitWords(llvm::StringRef name)
             current.clear();
         }
     };
-    for (std::size_t i = 0; i < name.size(); ++i)
+    for (const char raw : name)
     {
-        const auto c = static_cast<unsigned char>(name[i]);
+        const auto c = static_cast<unsigned char>(raw);
         if (!std::isalnum(c))
         {
             flush();
@@ -978,11 +978,12 @@ std::string NamingScope::declare(const IdentifierRole  role,
     //
     // Go joins with nothing: its names carry no underscore at all, and one here is what `ST1003`
     // reports whatever put it there.
-    const CaseStyle   style  = rolePolicy(language_, role).caseStyle;
-    const bool        goName = (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported);
-    const std::string join   = goName ? "" : ((base.empty() || (base.back() != '_')) ? "_" : "");
-    std::string       taken  = base;
-    unsigned          suffix = 2;
+    const CaseStyle   style   = rolePolicy(language_, role).caseStyle;
+    const bool        goName  = (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported);
+    const bool        doubles = !base.empty() && (base.back() == '_');
+    const std::string join    = (goName || doubles) ? "" : "_";
+    std::string       taken   = base;
+    unsigned          suffix  = 2;
     while (!used_.insert(taken).second)
     {
         taken = base + join + std::to_string(suffix);
