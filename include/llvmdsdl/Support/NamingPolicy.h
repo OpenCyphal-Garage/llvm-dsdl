@@ -69,6 +69,14 @@ enum class IdentifierRole
     /// @brief A generated free function or method name.
     FunctionName,
 
+    /// @brief A generated function that only the definition's own code calls.
+    ///
+    /// Separate from @ref FunctionName because two of these languages say in the name itself that a
+    /// function is not part of the package's surface: Go by the case of its first letter, Python by
+    /// a leading underscore. Rust and TypeScript say it by leaving off `pub` and `export`, and
+    /// spell the name as they would any other.
+    InternalFunctionName,
+
     /// @brief A local or parameter inside a generated body.
     LocalName,
 
@@ -93,6 +101,23 @@ enum class CaseStyle
 
     /// @brief Fold to PascalCase.
     Pascal,
+
+    /// @brief Fold to camelCase.
+    Camel,
+
+    /// @brief Fold to the PascalCase Go exports things under.
+    ///
+    /// Distinct from @ref Pascal in what it does to a word it is given: `Pascal` upper-cases a
+    /// word's first letter and leaves the rest, so `FULL_NAME` reaches `FULLNAME`. This recases
+    /// each word, and upper-cases the ones Go writes as initialisms, so `FULL_NAME` reaches
+    /// `FullName` and `unique_id` reaches `UniqueID`, which is what `ST1003` asks for.
+    GoExported,
+
+    /// @brief @ref GoExported with its first word in lower case, which is how Go says unexported.
+    ///
+    /// The whole of the first word is lowered, an initialism included, so `id_list` reaches
+    /// `idList` rather than `iDList`.
+    GoUnexported,
 };
 
 /// @brief How one role is named in one language.
@@ -256,6 +281,24 @@ std::string codegenToPascalCaseIdentifier(CodegenNamingLanguage language, llvm::
 /// @return Language-safe UPPER_SNAKE_CASE identifier.
 std::string codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
 
+/// @brief The tokens a definition's generated constants are named by, in every language.
+///
+/// A language whose constants are named by the token alone claims them against a DSDL name through
+/// @ref runtimeOwnedNames. Go composes each with the type's name, so the claim there is on what the
+/// composition produces and the emitter reserves that instead.
+/// @return The tokens, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<llvm::StringRef> codegenGeneratedConstantTokens();
+
+/// @brief Projects @p name as Go names something it exports.
+/// @param[in] name The source name.
+/// @return The identifier.
+[[nodiscard]] std::string codegenToGoExportedIdentifier(llvm::StringRef name);
+
+/// @brief Projects @p name as Go names something it does not export.
+/// @param[in] name The source name.
+/// @return The identifier.
+[[nodiscard]] std::string codegenToGoUnexportedIdentifier(llvm::StringRef name);
+
 /// @brief One region of generated code in which identifiers must not collide.
 ///
 /// A scope is a struct body, a namespace directory, a module's top level -- anywhere two names
@@ -279,6 +322,17 @@ public:
     /// @param[in] sourceName The DSDL name.
     /// @return The identifier assigned to it.
     std::string declare(IdentifierRole role, llvm::StringRef sourceName);
+
+    /// @brief Claims @p candidate for @p sourceName in @p role, rather than the projection of it.
+    ///
+    /// For a name composed of parts that are projected apart, where the composition can fold two
+    /// sources onto one name: @p sourceName is what keeps them distinct here, and @p candidate is
+    /// what the scope allocates from. The caller has already projected it.
+    /// @param[in] role What the identifier will be used as.
+    /// @param[in] sourceName What distinguishes this name from its siblings.
+    /// @param[in] candidate The name to claim, or to take an ordinal from where it is taken.
+    /// @return The identifier assigned to it.
+    std::string declare(IdentifierRole role, llvm::StringRef sourceName, llvm::StringRef candidate);
 
     /// @brief Returns the identifier already assigned to (@p role, @p sourceName).
     /// @param[in] role What the identifier is used as.

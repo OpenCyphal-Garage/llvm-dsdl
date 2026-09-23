@@ -66,6 +66,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -554,6 +555,12 @@ public:
     RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const std::set<std::string>& lifetimeSections)
         : symbols_(module)
     {
+        // A helper is a private item of the module the definition is generated into, and the module
+        // is named after the definition, so the schema component of the lowered symbol names what
+        // the module already says. Stripping it leaves what distinguishes one helper of this
+        // definition from another -- the kind it answers, the section it belongs to, and for a
+        // scalar the field's index and direction.
+        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::Rust, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -623,26 +630,6 @@ public:
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
-
-        // A helper is a private item of the module the definition is generated into, and the module
-        // is named after the definition, so the schema component of the lowered symbol names what
-        // the module already says. Stripping it leaves what distinguishes one helper of this
-        // definition from another -- the kind it answers, the section it belongs to, and for a
-        // scalar the field's index and direction. The scope keeps two that strip onto one name
-        // apart, which is the same guarantee a field gets.
-        NamingScope helperScope(CodegenNamingLanguage::Rust);
-        for (mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
-        {
-            if (planBodyDirection(fn) || fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            const llvm::StringRef symbol = fn.getSymName();
-            helperNames_[symbol]         = helperScope.declare(IdentifierRole::FunctionName,
-                                                               renderScopeLocalHelperName(CodegenNamingLanguage::Rust,
-                                                                                          symbol,
-                                                                                          schema.getSymName()));
-        }
     }
 
     // Functions.
@@ -652,6 +639,8 @@ public:
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
         accessor_            = Accessor::None;
+        cannotFail_          = everyReturnIsZero(fn);
+        deferredSize_        = {};
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -672,13 +661,31 @@ public:
         const bool serialize = *direction == "serialize";
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
         const bool lifetime = planOf(fn.getArgument(0)).lifetime;
-        w.open(serialize
-                   ? std::string{"pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {"}
-                   : std::string{"pub fn deserialize(&mut self, buffer: &"} + (lifetime ? "'a " : "") +
-                         "[u8]) -> core::result::Result<usize, i8> {");
-        // The size a plan is handed by pointer, read at entry and written back at the end.
-        w.line("let mut inout_buffer_size_bytes: usize = buffer.len();");
-        return {"self", "buffer", "inout_buffer_size_bytes"};
+
+        // The size a plan is handed by pointer becomes a local, and how it is declared follows the
+        // body's own use of it. A body that reads the size it arrives with binds the slice's
+        // length; one that only writes a size back -- an empty definition writes zero without
+        // reading -- leaves the declaration to that write, since a binding nothing reads before
+        // overwriting is what `unused_assignments` reports and a bare `let` before it is what
+        // `needless_late_init` reports. Where the length goes, the buffer can be left unused, and
+        // Rust names an argument a body ignores with a leading underscore.
+        const SizeUse     size   = sizeUse(fn);
+        const bool        defer  = !size.read && size.writtenOnceAtEntry;
+        const std::string buffer = (defer && fn.getArgument(1).use_empty()) ? "_buffer" : "buffer";
+
+        w.open(serialize ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> core::result::Result<usize, i8> {"
+                         : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
+                               "[u8]) -> core::result::Result<usize, i8> {");
+        if (defer)
+        {
+            deferredSize_ = fn.getArgument(2);
+        }
+        else
+        {
+            w.line(std::string{"let "} + (size.written ? "mut " : "") + "inout_buffer_size_bytes: usize = " + buffer +
+                   ".len();");
+        }
+        return {"self", buffer, "inout_buffer_size_bytes"};
     }
 
     /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
@@ -843,15 +850,21 @@ public:
             w.line(expr.str() + returnCast_);
             return;
         }
+        // Where every return of the function is the constant zero the error arm is unreachable, and
+        // spelling the test anyway is the `0i8 == 0i8` that `eq_op` reports. The IR holds no
+        // comparison -- it returns the constant -- so the redundancy is this spelling's to avoid.
         if (accessor_ == Accessor::Setter)
         {
-            w.line("if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
+            w.line(cannotFail_ ? std::string{"Ok(())"}
+                               : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
             return;
         }
         // A body answers the runtime's error code; its Rust signature answers the size or the code.
         if (inBody_)
         {
-            w.line("if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" + expr.str() + ") }");
+            w.line(cannotFail_ ? std::string{"Ok(inout_buffer_size_bytes)"}
+                               : "if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" +
+                                     expr.str() + ") }");
             return;
         }
         w.line(expr.str());
@@ -1012,6 +1025,11 @@ public:
         return recast ? "(" + expression + ") as " + typeName(type) : expression;
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "!(" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -1111,6 +1129,11 @@ public:
         return "false";
     }
 
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return "true";
+    }
+
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
     {
         // Through isize and back: a count past the signed range of the target's index does not
@@ -1141,7 +1164,14 @@ public:
 
     void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
     {
-        w.line(names(op.getPointer()) + " = " + asSize(names(op.getValue())) + ";");
+        const std::string value = asSize(names(op.getValue()));
+        if (op.getPointer() == deferredSize_)
+        {
+            deferredSize_ = {};
+            w.line("let " + names(op.getPointer()) + ": usize = " + value + ";");
+            return;
+        }
+        w.line(names(op.getPointer()) + " = " + value + ";");
     }
 
     [[nodiscard]] std::string local(SourceWriter&         w,
@@ -1151,7 +1181,7 @@ public:
     {
         // The size a nested call is handed bounds the slice it gets; it is written back only
         // where the plan reads the answer.
-        w.line(std::string("let ") + (isRead(op.getAddress()) ? "mut " : "") + name.str() +
+        w.line(std::string("let ") + (plansReadOfSize(op.getAddress()) ? "mut " : "") + name.str() +
                ": usize = " + asSize(names(op.getInit())) + ";");
         return name.str();
     }
@@ -1400,7 +1430,8 @@ public:
         const std::string size      = names(op.getSize());
         const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
                                       (serialize ? "&mut " : "&") + buffer + "[.._len] }";
-        const std::string used = isRead(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
+        const std::string used =
+            plansReadOfSize(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
         return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
                used + " Err(_code) => _code }";
     }
@@ -1489,13 +1520,6 @@ private:
         }
         return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
                               asSize(names(element.getIndex())));
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
     }
 
     /// @brief The Rust type the struct declares a scalar field or element as.
@@ -1641,6 +1665,10 @@ private:
     mlir::SymbolTable     symbols_;
     llvm::StringMap<Plan> plans_;
 
+    /// @brief The scope the module's helper names are declared into, which keeps two that project
+    ///        onto one name apart.
+    NamingScope helperScope_{CodegenNamingLanguage::Rust};
+
     /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
     llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
@@ -1657,6 +1685,63 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
+
+    /// @brief Whether the function being spelt returns the constant zero on every path.
+    mutable bool cannotFail_{false};
+
+    /// @brief The size argument whose local the body's own write is still to declare, if any.
+    mutable mlir::Value deferredSize_;
+
+    /// @brief Returns whether every return of @p fn answers a constant zero.
+    static bool everyReturnIsZero(mlir::func::FuncOp fn)
+    {
+        bool zero = true;
+        fn.walk([&](mlir::func::ReturnOp ret) {
+            if ((ret.getNumOperands() != 1) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
+            {
+                zero = false;
+            }
+        });
+        return zero;
+    }
+
+    /// @brief How a plan body uses the size it is handed by pointer.
+    struct SizeUse final
+    {
+        /// @brief Whether the body reads the size it arrives with.
+        bool read{};
+        /// @brief Whether the body writes a size back.
+        bool written{};
+        /// @brief Whether that write is a single one in the entry block, so it always happens.
+        bool writtenOnceAtEntry{};
+    };
+
+    /// @brief Returns how the plan body @p fn uses its size argument.
+    static SizeUse sizeUse(mlir::func::FuncOp fn)
+    {
+        const mlir::Value pointer = fn.getArgument(2);
+        SizeUse           out;
+        out.read = plansReadOfSize(pointer);
+
+        unsigned         writes = 0;
+        mlir::Operation* write  = nullptr;
+        for (mlir::Operation* user : pointer.getUsers())
+        {
+            if (mlir::isa<mlir::dsdl::StoreScalarOp>(user))
+            {
+                ++writes;
+                write = user;
+            }
+            else if (!mlir::isa<mlir::dsdl::LoadScalarOp>(user))
+            {
+                // Anything else that holds the pointer may read through it.
+                out.read = true;
+            }
+        }
+        out.written            = writes > 0;
+        out.writtenOnceAtEntry = (writes == 1) && (write->getBlock() == &fn.front());
+        return out;
+    }
 };
 
 std::string rustConstType(const TypeExprAST& type)

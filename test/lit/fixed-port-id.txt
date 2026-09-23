@@ -37,11 +37,11 @@
 # RUN: cat %t/go/fixtures_unregulated/unregulated_1_0.go | FileCheck %s --check-prefix=GO_MESSAGE
 # RUN: cat %t/go/fixtures_unregulated/ported_call_1_0.go | FileCheck %s --check-prefix=GO_SERVICE
 
-# GO_MESSAGE: const UNREGULATED_HAS_FIXED_PORT_ID = true
-# GO_MESSAGE: const UNREGULATED_FIXED_PORT_ID = 1234
+# GO_MESSAGE: const UnregulatedHasFixedPortID = true
+# GO_MESSAGE: const UnregulatedFixedPortID = 1234
 
-# GO_SERVICE: const PORTED_CALL_HAS_FIXED_PORT_ID = true
-# GO_SERVICE: const PORTED_CALL_FIXED_PORT_ID = 200
+# GO_SERVICE: const PortedCallHasFixedPortID = true
+# GO_SERVICE: const PortedCallFixedPortID = 200
 
 # RUN: %dsdlc --target-language rust --rust-crate-name ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/rust
 # RUN: cat %t/rust/src/fixtures_unregulated/unregulated_1_0.rs | FileCheck %s --check-prefix=RUST_MESSAGE

@@ -119,10 +119,11 @@
 # GO_KEYWORDS: Map uint8
 # GO_KEYWORDS: Range uint8
 
-# The PascalCase projection is many-to-one, so the per-scope allocator disambiguates.
+# The exported projection is many-to-one, so the per-scope allocator disambiguates. Go joins the
+# ordinal with nothing, since a Go name carries no underscore wherever it came from.
 # GO_FOLDS: FooBar uint8
-# GO_FOLDS: FooBar_2 uint8
-# GO_FOLDS: FooBar_3 uint8
+# GO_FOLDS: FooBar2 uint8
+# GO_FOLDS: FooBar3 uint8
 
 # TypeScript and Python fold fields to snake_case, which puts them back in reach of the keyword set.
 # TS_KEYWORDS: break_: number;
@@ -186,11 +187,12 @@
 # C_CONSTANTS: #define fixtures_naming__naming__Constants_FOOBAR (2)
 # C_CONSTANTS: #define fixtures_naming__naming__Constants_BREAK (3)
 
-# Go folds to UPPER_SNAKE_CASE first, so `FOO_BAR` and `fooBar` do collide and the scope repairs the
-# second one; and it does strop, so `break` becomes BREAK_.
-# GO_CONSTANTS: const CONSTANTS_FOO_BAR = 1
-# GO_CONSTANTS: const CONSTANTS_FOO_BAR_2 = 2
-# GO_CONSTANTS: const CONSTANTS_BREAK_ = 3
+# A Go constant carries the type it belongs to and is cased as Go cases anything exported, so
+# `FOO_BAR` and `fooBar` do collide and the scope repairs the second one. A keyword is no longer
+# reachable once the name carries the type, so `break` needs no strop.
+# GO_CONSTANTS: const ConstantsFooBar = 1
+# GO_CONSTANTS: const ConstantsFooBar2 = 2
+# GO_CONSTANTS: const ConstantsBreak = 3
 
 # GO_NAMESPACE: package map_
 
@@ -262,8 +264,8 @@
 
 # Go gives a DSDL constant the same prefix as its metadata constants, and forbids a field and a
 # method sharing a name.
-# GO_CLAIMED: const CLAIMED_FULL_NAME =
-# GO_CLAIMED: const CLAIMED_FULL_NAME_ = 1
+# GO_CLAIMED: const ClaimedFullName =
+# GO_CLAIMED: const ClaimedFullName2 = 1
 # GO_CLAIMED: Serialize_ uint8
 
 # RUST_CLAIMED: pub const FULL_NAME: &'static str =
@@ -344,10 +346,10 @@
 
 # Go upper-snakes, so `fooBar` and `foo_bar` fold onto one name and the second option moves; the
 # DSDL constant named after it moves again, past both.
-# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG uint8 = 0
-# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 uint8 = 1
-# GO_OPTION_TAGS: const OPTION_TAGS_OTHER_OPTION_TAG uint8 = 2
-# GO_OPTION_TAGS: const OPTION_TAGS_FOO_BAR_OPTION_TAG_3 = 1
+# GO_OPTION_TAGS: const OptionTagsFooBarOptionTag uint8 = 0
+# GO_OPTION_TAGS: const OptionTagsFooBarOptionTag2 uint8 = 1
+# GO_OPTION_TAGS: const OptionTagsOtherOptionTag uint8 = 2
+# GO_OPTION_TAGS: const OptionTagsFooBarOptionTag3 = 1
 
 # RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG: u8 = 0;
 # RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG_2: u8 = 1;
@@ -427,8 +429,8 @@
 
 # CPP_POOL: std::uint8_t FOO{};
 # CPP_POOL: static constexpr auto FOO_2 = 2;
-# GO_POOL: const MEMBER_POOL_FOO = 2
-# GO_POOL: FOO uint8
+# GO_POOL: const MemberPoolFoo = 2
+# GO_POOL: Foo uint8
 
 # NOTES: note: field 'break_' is emitted as 'break_2' for target language 'cpp'
 # NOTES: note: constant 'foo' is emitted as 'FOO_2' for target language 'cpp'

@@ -622,9 +622,12 @@ public:
     using TypeNameResolver =
         std::function<std::string(llvm::StringRef fullName, std::uint32_t major, std::uint32_t minor)>;
 
-    PythonSpelling(mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
+    PythonSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
         : typeNameOf_(std::move(typeNameOf))
     {
+        // A helper is a module-level function of the definition's own module, so the schema
+        // component of the lowered symbol names what the module already says.
+        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::Python, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -787,7 +790,14 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Python, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Python spelling: a call to a helper this module does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
     }
 
     // Statements.
@@ -1011,6 +1021,11 @@ public:
         return lhs.str() + " " + operatorToken(op) + " " + rhs.str();
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "not (" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -1077,6 +1092,16 @@ public:
         // An int holds every count; a list holds at most sys.maxsize elements.
         const std::string value = names(op.getValue());
         return "(-sys.maxsize - 1 <= " + value + " <= sys.maxsize)";
+    }
+
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " is not None";
+        }
+        return "True";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
@@ -1346,7 +1371,7 @@ public:
         const std::string size      = names(op.getSize());
         const std::string bound     = fresh("bound");
         const std::string result    = fresh("result");
-        const bool        read      = isRead(op.getSize());
+        const bool        read      = plansReadOfSize(op.getSize());
         line(w, bound + " = min(" + size + ", len(" + buffer + "))");
         line(w,
              result + " = " + names(op.getObject()) + "." + (serialize ? serializeInto() : deserializeFrom()) + "(" +
@@ -1439,13 +1464,6 @@ private:
                               const ValueNames&     names) const
     {
         return memberAccess(object, member, names) + "[" + index + "]";
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
     }
 
     /// @brief The container expression and element base of the bool array @p address names.
@@ -1694,6 +1712,13 @@ private:
 
     TypeNameResolver      typeNameOf_;
     llvm::StringMap<Plan> plans_;
+
+    /// @brief The scope the module's helper names are declared into, which keeps two that project
+    ///        onto one name apart.
+    NamingScope helperScope_{CodegenNamingLanguage::Python};
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
+    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -1924,7 +1949,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     w.blank();
 
     // The spelling names a nested type as this file does.
-    const PythonSpelling                 spelling(schema,
+    const PythonSpelling                 spelling(module,
+                                                  schema,
                                                   [&ctx](const llvm::StringRef fullName,
                                                          const std::uint32_t   major,
                                                          const std::uint32_t   minor) {

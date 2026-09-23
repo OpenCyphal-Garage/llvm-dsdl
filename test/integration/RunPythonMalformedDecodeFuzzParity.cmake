@@ -158,8 +158,8 @@ def load_variant(name: str, output_root: str, package: str, runtime_mode: str) -
     empty_service_mod = importlib.import_module(
         f"{package}.fixtures.vendor.empty_service_1_0"
     )
-    classes["empty_req"] = empty_service_mod.EmptyService_1_0_Request
-    classes["empty_resp"] = empty_service_mod.EmptyService_1_0_Response
+    classes["empty_req"] = empty_service_mod.EmptyService_1_0Request
+    classes["empty_resp"] = empty_service_mod.EmptyService_1_0Response
     return Variant(
         name=name,
         output_root=output_root,

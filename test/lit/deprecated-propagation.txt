@@ -122,10 +122,10 @@
 # RUST_OK_NEG-NOT: pub type Current
 
 # Go recognises a deprecation only from a doc-comment paragraph beginning exactly `Deprecated: `.
-# GO_DEP: _IS_DEPRECATED = true
+# GO_DEP: IsDeprecated = true
 # GO_DEP: // Deprecated: dep.Retired.1.0 is marked @deprecated
 
-# GO_OK: _IS_DEPRECATED = false
+# GO_OK: IsDeprecated = false
 # GO_OK-NOT: Deprecated:
 
 # TypeScript needs a JSDoc block; this backend's ordinary doc comments are `//` lines, which tsc

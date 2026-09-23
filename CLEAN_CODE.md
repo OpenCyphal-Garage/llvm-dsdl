@@ -228,7 +228,15 @@ does not. Helpers stay module-private and take camelCase names.
 
 Each phase is one change, with a gate that fails against the tree before the phase is written.
 
-**1 — The judges.** The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
+Rust landed first, in #41, ahead of the mechanism phases rather than after them. That was not the
+order below and it earned something: phase 3's gate is that the surface tree reproduces today's
+output byte for byte, and today's output is now idiomatic Rust rather than the flat names. A tree
+that reproduces `list_0_2::Request` is tested against the shape it exists to produce; one that
+reproduced `uavcan_file_List_Request` would only have been tested against the shape it replaces.
+
+**1 — The judges.** *Rust's half landed in #41; three languages still have no style judge.*
+
+The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
 runs `cargo check`, `RunUavcanGoBuild` runs `go test ./...`, `RunUavcanTsTypecheck` runs `tsc`, and
 the C and C++ generation lanes compile under `-Werror`. What none of them judges is idiom, because
 a compiler accepts an un-idiomatic name by design. Python has no lane of either kind.
@@ -254,24 +262,110 @@ beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` r
 carries `clang-tidy` and `cargo-clippy`; `staticcheck`, `ruff` and a TypeScript-capable `eslint` are
 not in it, so each needs pinned provisioning or an image bump before its lane can run in CI.
 
+Those three are what remains of this phase, and they gate the phases after it rather than decorate
+them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and
+the six of them that earlier fixes in that same branch created were each caught by a judge rather
+than by inspection. Go, Python and TypeScript have no such judge installed, so running their phases
+first would mean discovering their defects in review, which is the cost this phase exists to avoid.
+
 A presence or byte-parity gate ratchets in the shape it finds, so no existing gate can report this
 class of defect; that is why the phases below come after this one rather than before it. The
 findings this produces are the backlog, recorded as a baseline outside the generated source that
 later phases may only shrink.
 
 The naming was the half that was expected. With the Rust names fixed, rustc reports nothing over the
-regulated corpus and `cargo clippy -- -D warnings` reports 2,134 findings, none of them about a
-name. Around 1,700 share one cause: the plan opens each body by testing its pointer arguments
-against null, and a Rust `&self` or `&mut [u8]` cannot be null, so `dsdl.is_null` spells as `false`
-and the guard survives as `false || false`, a dead `if`, and an error path nothing can reach. The
-spelling folds the operand, and the constant arrives after `--optimize-lowered-serdes` has run, so
-nothing removes what the fold made dead. The remainder are a hand-written `Default` that
-`#[derive(Default)]` covers, and casts between one type and itself.
+regulated corpus, and `cargo clippy -- -D warnings` reported 2,134 findings, none of them about a
+name. Around 1,700 shared one cause: a plan opens each body by testing its pointer arguments against
+null, and a Rust `&self` or `&mut [u8]` cannot be null, so the guard survived as `false || false`, a
+dead `if`, and an error path nothing can reach.
 
-That is a defect of the lowering rather than of any backend, and it belongs where every backend
-inherits the fix: a plan whose target cannot present a null argument should not carry the guard. It
-is called out here because it is what pointing a real judge at the output found, and because the
-naming work is what made it visible.
+That was a defect of the lowering rather than of any backend, and the fix went where every backend
+inherits it. `dsdl-fold-null-guards` runs after `build-dsdl-plan-bodies` under a `TargetNullability`
+the driver derives from the target: Rust keeps neither test, Go, TypeScript and Python keep the one
+on the object a caller may omit, and C and C++ keep both. It canonicalises the bodies it changed
+rather than waiting for `--optimize-lowered-serdes`, which is off unless a caller asks for it, so a
+guard folded to a constant is never left where a reader would find it. The C and C++ output is
+unchanged byte for byte.
+
+Two findings survived the fold as spelling rather than lowering, and both were bodies whose plan
+cannot fail. Rust wrapped the plan's error code in `if err == 0i8 { Ok(..) } else { Err(err) }`
+against an error the fold had made the constant zero, and bound the slice's length to a size local
+that the body overwrote before reading. Neither shape is in the IR, so both are answered in the
+emitter: a function whose every return is a constant zero spells the success arm alone, and a body
+that never reads the size it is handed leaves the local's declaration to its own write.
+
+With the other three judges installed beside it, the backlog this phase exists to produce came to
+10,106 findings over the regulated corpus. Fixing what the four of them agreed on took it to 5,499,
+and every one of those fixes was in a single place:
+
+| where | what it was | what it is |
+|-------|-------------|------------|
+| `lower-dsdl-exec` | `cmpi eq %held, false` | `xori %held, true`, which every language spells with its own negation |
+| `lower-dsdl-exec` | a tag chain seeded with `false` | a chain beginning at the first option |
+| `dsdl-fold-null-guards` | reads the fold orphaned, which a canonicaliser keeps | swept to a fixed point, so no arm arrives empty |
+| `BodyTranslator` | an `scf.if` of values spelled as a branch | the select it is |
+| `BodyTranslator` | a null test negated by wrapping its text | `isNotNull`, which each language spells as its own test |
+| `EmitCommon` | `isRead`, in four copies, three of them stale | `plansReadOfSize` |
+| `HelperBindingNaming` | one lowered symbol per helper, in four languages | a name the scope holding it reaches it by |
+| `Ts.cpp` | `interface X {}`, which any non-nullish value satisfies | `Record<string, never>` |
+
+The helper naming was the largest of them. A definition's 658 lowered helper symbols reached the
+output verbatim -- `mlir_llvmdsdl_plan_capacity_check__uavcan_diagnostic_Record_1_1` -- which was
+every one of Python's `N802` findings and three fifths of its over-long lines. Rust had already
+answered it: a helper is private to the scope the definition is generated into, so the schema
+component of the symbol names what that scope already says. `renderSchemaHelperNames` is that answer
+for all four. Rust, TypeScript and Python each give a definition a module of its own, so the scope
+covers one definition and the name is what distinguishes one helper from its siblings:
+`capacity_check`, `capacityCheck`, `_capacity_check`. A Go package holds a whole DSDL namespace, so
+the scope is the package's and the name carries the definition: `recordCapacityCheck`. C and C++
+reach a helper by a symbol that carries the whole definition and are unchanged.
+
+Three generation gates asserted the old symbol by name. A presence gate ratchets in the shape it
+finds, which is what this phase exists to notice.
+
+Go's names then went the way Rust's had. `SEVERITY_TRACE` is not a Go constant; `SeverityTrace`
+is. Three roles moved to a casing of Go's own -- a constant, a field and an exported function to
+`GoExported`, a local and a helper to `GoUnexported` -- and both recase each word of a source that
+has no lower case, leave the capitals of one that does, and upper-case the words `ST1003` calls
+initialisms. `FULL_NAME` means `FullName`; `VSLAMPoseUpdate` is the author's and stays; `unique_id`
+is `UniqueID`. A Go name carries no underscore, so a scope's ordinal joins with nothing there:
+`FooBar`, `FooBar2`.
+
+A Go constant carries the type it belongs to, so the parts are projected apart and joined -- the
+type verbatim, since it is already the type's name and folding its separators would put 1.23 and
+12.3 of one definition on one constant. The scope keys on the DSDL parts rather than the composed
+name, because `barBaz` and `bar_baz` are two constants and `CBarBaz` is one name, and the generated
+tokens are keyed apart from the DSDL ones, because a definition may declare a constant called
+`FULL_NAME` and the claim exists for exactly that. The naming manifest builds the same scope, so
+what it reports is what is written.
+
+A service section joins with nothing in Go, TypeScript and Python: `GetInfoRequest`. An underscore
+inside a PascalCase name is what `ST1003` and `N801` report and what `naming-convention` rejects.
+
+| language | judge | before the sweep | now |
+|----------|-------|-----------------:|----:|
+| Rust | clippy | 867 | 607 |
+| Go | staticcheck | 3,241 | 462 |
+| Python | ruff | 4,188 | 1,762 |
+| TypeScript | eslint | 1,810 | 548 |
+| | | **10,106** | **3,379** |
+
+What is left is per-language.
+
+| count | language | lint | cause |
+|------:|----------|------|-------|
+| 998 | Python | `E501` | long lines |
+| 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
+| 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
+| 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
+| 198 | Python | `F401` | unused imports |
+| 181 | Python | `UP037` | quoted annotations |
+| 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
+| 164 | Python | `SIM108` | the remaining branch-not-expression sites |
+| 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
+| 88 | Go, Python | `SA4006`/`F841` | an accessor binds a size the language's signature does not return |
+| 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
+| 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
 nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that
@@ -297,11 +391,35 @@ stresses it most.
 Nothing in phases 2 to 10 touches a plan body. The wire is fixed by the round-trip, parity and
 cross-language equivalence lanes throughout, and a phase that moves a wire byte has failed.
 
+## The adversarial corpus
+
+`Discovery` rejects a corpus in which two DSDL names reach one generated identifier. The class that
+went ungated is the other one: a DSDL name reaching an identifier a backend emits for every type --
+a trait its bodies name unqualified, a module its crate root declares, a global the standard headers
+put beside a namespace, an accessor composed from another field, a union's synthetic tag. Reaching
+it needs a name pair the regulated corpus has no instance of, so those defects arrived one at a time
+through review.
+
+`test/integration/generate_naming_adversarial_corpus.py` writes that corpus rather than checking it
+in, so an axis is a name in a list, and `RunNamingAdversarialGate.cmake` hands each backend's output
+to that language's own compiler. It found three defects on the days it was written, two of them in
+backends the Rust work never touched: `namespace index` against POSIX's `index()` in C++, `lib`
+against the crate root's own file in Rust, and TypeScript's missing import scope.
+
+Its boundary is worth stating, because it is not obvious from the outside. The gate compiles, so it
+finds what a compiler diagnoses and nothing else. `namespace std` compiles: [namespace.std] makes a
+declaration added to it undefined behaviour rather than a diagnostic, so the corpus carried a `std`
+root namespace and reported nothing. A rule the language states and no compiler enforces needs an
+assertion on the name emitted, which is what `naming-stropping.txt` carries for that one. Compile
+gates and text assertions are two halves, not alternatives.
+
 ## Acceptance
 
 | gate | phases | holds |
 |---|---|---|
 | each language's own compiler and linter, at maximum strictness, over the regulated corpus | 1, then 5–10 | the output is accepted by the tools that judge that language |
+| the adversarial corpus, compiled in every backend | 1 onwards | a generated name does not meet another generated name |
+| the name emitted, asserted in lit | 1 onwards | a rule no compiler enforces still holds |
 | byte-diff of all seven targets before and after | 3, 4 | a mechanism change changes no output |
 | emission sites in the declaration half | 4 | the shape is stated once, the syntax six times |
 | round-trip, the C↔language parity lanes, cross-language equivalence | all | the wire is unchanged |

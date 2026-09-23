@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -49,6 +50,9 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Rewrite/FrozenRewritePatternSet.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Pass/Pass.h>
@@ -367,12 +371,19 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp             
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
     mlir::Value const tagValue = entry->getArgument(0);
-    mlir::Value       anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
+
+    // The chain begins at the first option rather than at false, so that no target spells the
+    // `false || tag == 0` that seeding it would leave in front of every union's tag check.
+    mlir::Value anyMatch;
     for (const std::int64_t option : optionIndexes)
     {
         auto optConst = mlir::arith::ConstantIntOp::create(builder, loc, option, 64).getResult();
         auto match    = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
-        anyMatch      = mlir::arith::OrIOp::create(builder, loc, anyMatch, match);
+        anyMatch = anyMatch ? mlir::arith::OrIOp::create(builder, loc, anyMatch, match).getResult() : match.getResult();
+    }
+    if (!anyMatch)
+    {
+        anyMatch = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1).getResult();
     }
 
     auto status = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, anyMatch, true);
@@ -772,8 +783,8 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp           
         auto tooLarge   = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
         // A length the target's index type cannot hold is rejected on that target.
         auto held       = mlir::dsdl::IndexHoldsOp::create(builder, loc, builder.getI1Type(), length);
-        auto falseConst = mlir::arith::ConstantIntOp::create(builder, loc, 0, 1);
-        auto unheld     = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, held, falseConst);
+        auto trueConst  = mlir::arith::ConstantIntOp::create(builder, loc, 1, 1);
+        auto unheld     = mlir::arith::XOrIOp::create(builder, loc, held, trueConst);
         auto outOfRange = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
         auto invalid    = mlir::arith::OrIOp::create(builder, loc, outOfRange, unheld);
         auto status     = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, invalid, true);
@@ -1276,6 +1287,110 @@ struct KeepDSDLAccessorsPass : public mlir::PassWrapper<KeepDSDLAccessorsPass, m
         markUnreferencedHelpers(module);
         module->setAttr("llvmdsdl.accessors_only", mlir::UnitAttr::get(module.getContext()));
     }
+};
+
+/// @brief Replaces a null test the target cannot fail with a constant, and folds what that kills.
+struct FoldDSDLNullGuardsPass : public mlir::PassWrapper<FoldDSDLNullGuardsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    explicit FoldDSDLNullGuardsPass(const TargetNullability nullability)
+        : nullability_(nullability)
+    {
+    }
+
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-null-guards";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Replace a null test the target cannot fail with a constant";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        auto module = getOperation();
+
+        // The pointee says which argument a test is about: a body is handed the object it reads,
+        // the buffer it writes and the slot holding that buffer's size, and only the first is an
+        // object. The two answers are separate because a language can be handed a reference to one
+        // and a pointer to the other -- Go has a pointer receiver beside a slice.
+        llvm::SmallVector<mlir::func::FuncOp> touched;
+        module.walk([&](mlir::dsdl::IsNullOp op) {
+            const auto pointer  = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+            const bool isObject = mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee());
+            if (isObject ? nullability_.objectPointer : nullability_.rawPointer)
+            {
+                return;
+            }
+            mlir::OpBuilder builder(op);
+            auto            never = mlir::arith::ConstantIntOp::create(builder, op.getLoc(), 0, 1);
+            op.getResult().replaceAllUsesWith(never.getResult());
+            if (auto fn = op->getParentOfType<mlir::func::FuncOp>(); fn && !llvm::is_contained(touched, fn))
+            {
+                touched.push_back(fn);
+            }
+            op.erase();
+        });
+        if (touched.empty())
+        {
+            return;
+        }
+
+        // What the constant kills is an `or` chain that is now constant and a branch nothing takes,
+        // and the body of a plan sits in the arm that survives. Canonicalising here rather than
+        // leaving it to `--optimize-lowered-serdes` is what makes this stage complete on its own:
+        // that flag is off unless a caller asks for it, and a guard folded to a constant nobody
+        // removes is worse to read than the test it replaced.
+        mlir::RewritePatternSet cleanup(&getContext());
+        for (const mlir::RegisteredOperationName name : getContext().getRegisteredOperations())
+        {
+            name.getCanonicalizationPatterns(cleanup, &getContext());
+        }
+        const mlir::FrozenRewritePatternSet frozen(std::move(cleanup));
+        for (mlir::func::FuncOp fn : touched)
+        {
+            if (mlir::failed(mlir::applyPatternsGreedily(fn, frozen)))
+            {
+                fn.emitError("failed to canonicalise a body whose null guard was folded");
+                signalPassFailure();
+                return;
+            }
+            eraseUnusedLoads(fn);
+        }
+    }
+
+    /// @brief Erases the reads of @p fn whose results nothing consumes.
+    ///
+    /// A read is not memory-effect-free, so the canonicaliser keeps one whose result the fold has
+    /// just orphaned. What it leaves is a value no backend spells and, where the read was the whole
+    /// of an arm, a branch with nothing in it. A plan reads only through a pointer it has already
+    /// established, so the read has no effect beyond the value nothing now wants. Erasing one can
+    /// orphan the read that addressed it, so this runs to a fixed point.
+    static void eraseUnusedLoads(mlir::func::FuncOp fn)
+    {
+        bool erasedAny = true;
+        while (erasedAny)
+        {
+            erasedAny = false;
+            llvm::SmallVector<mlir::Operation*> dead;
+            fn.walk([&](mlir::Operation* op) {
+                if (mlir::isa<mlir::dsdl::LoadScalarOp, mlir::dsdl::LoadMemberOp, mlir::dsdl::LoadElementOp>(op) &&
+                    op->use_empty())
+                {
+                    dead.push_back(op);
+                }
+            });
+            for (mlir::Operation* op : dead)
+            {
+                op->erase();
+                erasedAny = true;
+            }
+        }
+    }
+
+private:
+    TargetNullability nullability_;
 };
 
 /// @brief Replaces a host-image section's field-wise body with one move.
@@ -2012,6 +2127,11 @@ std::unique_ptr<mlir::Pass> createDSDLVerifyAliasLayoutPass()
     return std::make_unique<VerifyDSDLAliasLayoutPass>();
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(const TargetNullability nullability)
+{
+    return std::make_unique<FoldDSDLNullGuardsPass>(nullability);
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
 {
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
@@ -2029,14 +2149,22 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
-                                const bool           optimizeLoweredSerDes,
-                                const bool           targetObjectsAreByteImages,
-                                const bool           accessorsOnly)
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager&    pm,
+                                const bool              optimizeLoweredSerDes,
+                                const bool              targetObjectsAreByteImages,
+                                const bool              accessorsOnly,
+                                const TargetNullability nullability)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
     pm.addPass(createBuildDSDLPlanBodiesPass());
+    // Its own stage, under the target's capability, for the reason the host-image fold is: the
+    // three passes above produce one body per plan regardless of target, and that is the pipeline
+    // section 4 of DESIGN.md names.
+    if (!nullability.allNullable())
+    {
+        pm.addPass(createFoldDSDLNullGuardsPass(nullability));
+    }
     // Its own stage, under the target's capability. Folding inside the optimise stage would make
     // the fast path turn on a flag about simplification, which is a different question.
     if (targetObjectsAreByteImages)

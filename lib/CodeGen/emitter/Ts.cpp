@@ -410,6 +410,17 @@ void emitStructSectionType(SourceWriter&          w,
 {
     emitAttachedDocTs(w, typeDoc);
     emitDeprecationJsDocTs(w, deprecated, fullName, majorVersion, minorVersion);
+
+    // A definition with no field is an object with no property, and `interface X {}` does not say
+    // that: TypeScript reads an empty interface as a constraint nothing fails, so a number or a
+    // string satisfies it. `Record<string, never>` is the type of an object that has no property.
+    const bool anyField = llvm::any_of(section.fields, [](const auto& field) { return !field.isPadding; });
+    if (!anyField)
+    {
+        w.line("export type " + typeName + " = Record<string, never>;");
+        return;
+    }
+
     w.open("export interface " + typeName + " {");
     const NamingScope fieldIdents = makeTsFieldIdents(section);
     for (const auto& field : section.fields)
@@ -530,6 +541,9 @@ public:
         : symbols_(module)
         , typeNameOf_(std::move(typeNameOf))
     {
+        // A helper is a function of the definition's own module, which is not exported, so the
+        // schema component of the lowered symbol names what the module already says.
+        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::TypeScript, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -670,7 +684,14 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::TypeScript, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("TypeScript spelling: a call to a helper this module does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
     }
 
     // Statements.
@@ -907,6 +928,11 @@ public:
         return lhs.str() + " " + operatorToken(op) + " " + rhs.str();
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "!(" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -978,6 +1004,16 @@ public:
         return "(" + value + " >= 0n && " + value + " <= 4294967295n)";
     }
 
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " != null";
+        }
+        return "true";
+    }
+
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
         // The object arrives by reference and may be missing; a buffer and a local are never null.
@@ -1016,7 +1052,9 @@ public:
                                     const llvm::StringRef name,
                                     const ValueNames&     names) const override
     {
-        w.line("let " + name.str() + " = " + asNumber(op.getInit(), names) + ";");
+        // A size the plan reads the answer back into is reassigned; one it only hands out is not.
+        w.line(std::string{plansReadOfSize(op.getAddress()) ? "let " : "const "} + name.str() + " = " +
+               asNumber(op.getInit(), names) + ";");
         return name.str();
     }
 
@@ -1241,7 +1279,7 @@ public:
         const std::string size   = names(op.getSize());
         const std::string bound  = fresh("bound");
         const std::string result = fresh("result");
-        const bool        read   = isRead(op.getSize());
+        const bool        read   = plansReadOfSize(op.getSize());
         w.line("const " + bound + " = Math.min(" + size + ", " + buffer + ".length);");
         w.line("const " + result + " = " + nestedFunction(op) + "(" + names(op.getObject()) + ", " + buffer +
                ".subarray(0, " + bound + "));");
@@ -1347,13 +1385,6 @@ private:
                               const ValueNames&     names) const
     {
         return containerAccess(object, member, names) + "[" + index + "]";
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
     }
 
     /// @brief The container expression and element base of the bool array @p address names.
@@ -1624,6 +1655,13 @@ private:
     {
         return "_" + std::string(stem) + std::to_string(fresh_++) + "_";
     }
+
+    /// @brief The scope the module's helper names are declared into, which keeps two that project
+    ///        onto one name apart.
+    NamingScope helperScope_{CodegenNamingLanguage::TypeScript};
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
+    llvm::StringMap<std::string> helperNames_;
 
     mlir::SymbolTable     symbols_;
     TypeNameResolver      typeNameOf_;

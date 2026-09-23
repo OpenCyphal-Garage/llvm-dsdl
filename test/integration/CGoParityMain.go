@@ -1050,7 +1050,7 @@ func buildParityCases(baseIterations int) []parityCase {
 	return []parityCase{
 		{
 			name:              "heartbeat",
-			maxSerialized:     node.HEARTBEAT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.Heartbeat@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1068,14 +1068,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "execute_command_request",
-			maxSerialized:     node.EXECUTE_COMMAND@V1_3@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.ExecuteCommand@V1_3@RequestSerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_execute_command_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.ExecuteCommand@V1_3@_Request
+				var obj node.ExecuteCommand@V1_3@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1086,14 +1086,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "execute_command_response",
-			maxSerialized:     node.EXECUTE_COMMAND@V1_3@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.ExecuteCommand@V1_3@ResponseSerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_execute_command_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.ExecuteCommand@V1_3@_Response
+				var obj node.ExecuteCommand@V1_3@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1104,7 +1104,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_id",
-			maxSerialized:     node.ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.ID@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1122,7 +1122,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_mode",
-			maxSerialized:     node.MODE@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.Mode@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1140,7 +1140,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_version",
-			maxSerialized:     node.VERSION@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.Version@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1158,7 +1158,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_health",
-			maxSerialized:     node.HEALTH@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.Health@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1176,7 +1176,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_io_statistics",
-			maxSerialized:     node.IO_STATISTICS@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.IOStatistics@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1194,14 +1194,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "get_info_response",
-			maxSerialized:     node.GET_INFO@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.GetInfo@V1_0@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_get_info_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.GetInfo@V1_0@_Response
+				var obj node.GetInfo@V1_0@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1212,7 +1212,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "diagnostic_record",
-			maxSerialized:     diagnosticpkg.RECORD@V1_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     diagnosticpkg.Record@V1_1@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1230,7 +1230,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "diagnostic_severity",
-			maxSerialized:     diagnosticpkg.SEVERITY@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     diagnosticpkg.Severity@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1248,7 +1248,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "register_value",
-			maxSerialized:     registerpkg.VALUE@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     registerpkg.Value@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1266,14 +1266,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "register_access_request",
-			maxSerialized:     registerpkg.ACCESS@V1_0@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     registerpkg.Access@V1_0@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_register_access_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj registerpkg.Access@V1_0@_Request
+				var obj registerpkg.Access@V1_0@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1284,14 +1284,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "register_access_response",
-			maxSerialized:     registerpkg.ACCESS@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     registerpkg.Access@V1_0@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_register_access_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj registerpkg.Access@V1_0@_Response
+				var obj registerpkg.Access@V1_0@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1302,7 +1302,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "register_name",
-			maxSerialized:     registerpkg.NAME@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     registerpkg.Name@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1320,14 +1320,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "register_list_request",
-			maxSerialized:     registerpkg.LIST@V1_0@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     registerpkg.List@V1_0@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_register_list_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj registerpkg.List@V1_0@_Request
+				var obj registerpkg.List@V1_0@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1338,14 +1338,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "register_list_response",
-			maxSerialized:     registerpkg.LIST@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     registerpkg.List@V1_0@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_register_list_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj registerpkg.List@V1_0@_Response
+				var obj registerpkg.List@V1_0@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1356,14 +1356,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_list_request",
-			maxSerialized:     filepkg.LIST@V0_2@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.List@V0_2@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_list_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.List@V0_2@_Request
+				var obj filepkg.List@V0_2@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1374,14 +1374,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_list_response",
-			maxSerialized:     filepkg.LIST@V0_2@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.List@V0_2@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_list_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.List@V0_2@_Response
+				var obj filepkg.List@V0_2@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1392,14 +1392,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_read_request",
-			maxSerialized:     filepkg.READ@V1_1@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Read@V1_1@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_read_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Read@V1_1@_Request
+				var obj filepkg.Read@V1_1@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1410,14 +1410,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_read_response",
-			maxSerialized:     filepkg.READ@V1_1@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Read@V1_1@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_read_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Read@V1_1@_Response
+				var obj filepkg.Read@V1_1@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1428,14 +1428,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_write_request",
-			maxSerialized:     filepkg.WRITE@V1_1@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Write@V1_1@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_write_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Write@V1_1@_Request
+				var obj filepkg.Write@V1_1@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1446,14 +1446,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_write_response",
-			maxSerialized:     filepkg.WRITE@V1_1@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Write@V1_1@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_write_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Write@V1_1@_Response
+				var obj filepkg.Write@V1_1@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1464,14 +1464,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_modify_request",
-			maxSerialized:     filepkg.MODIFY@V1_1@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Modify@V1_1@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_modify_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Modify@V1_1@_Request
+				var obj filepkg.Modify@V1_1@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1482,14 +1482,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_modify_response",
-			maxSerialized:     filepkg.MODIFY@V1_1@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Modify@V1_1@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_modify_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.Modify@V1_1@_Response
+				var obj filepkg.Modify@V1_1@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1500,14 +1500,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_get_info_request",
-			maxSerialized:     filepkg.GET_INFO@V0_2@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.GetInfo@V0_2@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_get_info_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.GetInfo@V0_2@_Request
+				var obj filepkg.GetInfo@V0_2@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1518,14 +1518,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_get_info_response",
-			maxSerialized:     filepkg.GET_INFO@V0_2@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.GetInfo@V0_2@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_file_get_info_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj filepkg.GetInfo@V0_2@_Response
+				var obj filepkg.GetInfo@V0_2@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1536,7 +1536,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_error",
-			maxSerialized:     filepkg.ERROR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Error@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1554,14 +1554,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "get_transport_statistics_request",
-			maxSerialized:     node.GET_TRANSPORT_STATISTICS@V0_1@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.GetTransportStatistics@V0_1@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_get_transport_statistics_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.GetTransportStatistics@V0_1@_Request
+				var obj node.GetTransportStatistics@V0_1@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1572,14 +1572,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "get_transport_statistics_response",
-			maxSerialized:     node.GET_TRANSPORT_STATISTICS@V0_1@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     node.GetTransportStatistics@V0_1@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_get_transport_statistics_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj node.GetTransportStatistics@V0_1@_Response
+				var obj node.GetTransportStatistics@V0_1@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1590,7 +1590,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_frame",
-			maxSerialized:     metacan.FRAME@V0_2@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.Frame@V0_2@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1608,7 +1608,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_data_classic",
-			maxSerialized:     metacan.DATA_CLASSIC@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.DataClassic@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1626,7 +1626,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_error",
-			maxSerialized:     metacan.ERROR@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.Error@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1644,7 +1644,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_data_fd",
-			maxSerialized:     metacan.DATA_FD@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.DataFD@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1662,7 +1662,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_rtr",
-			maxSerialized:     metacan.RTR@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.RTR@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1680,7 +1680,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_manifestation",
-			maxSerialized:     metacan.MANIFESTATION@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.Manifestation@V0_1@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1698,7 +1698,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_arbitration_id",
-			maxSerialized:     metacan.ARBITRATION_ID@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.ArbitrationID@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1716,7 +1716,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_base_arbitration_id",
-			maxSerialized:     metacan.BASE_ARBITRATION_ID@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.BaseArbitrationID@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1734,7 +1734,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "can_extended_arbitration_id",
-			maxSerialized:     metacan.EXTENDED_ARBITRATION_ID@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metacan.ExtendedArbitrationID@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1752,7 +1752,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "metatransport_serial_fragment",
-			maxSerialized:     metaserialpkg.FRAGMENT@V0_2@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metaserialpkg.Fragment@V0_2@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1770,7 +1770,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "metatransport_ethernet_frame",
-			maxSerialized:     metaethernetpkg.FRAME@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metaethernetpkg.Frame@V0_1@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1788,7 +1788,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "metatransport_ethernet_ethertype",
-			maxSerialized:     metaethernetpkg.ETHER_TYPE@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metaethernetpkg.EtherType@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1806,7 +1806,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "metatransport_udp_endpoint",
-			maxSerialized:     metaudppkg.ENDPOINT@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metaudppkg.Endpoint@V0_1@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1824,7 +1824,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "metatransport_udp_frame",
-			maxSerialized:     metaudppkg.FRAME@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     metaudppkg.Frame@V0_1@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1842,7 +1842,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "time_synchronization",
-			maxSerialized:     timepkg.SYNCHRONIZATION@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     timepkg.Synchronization@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1860,7 +1860,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "time_synchronized_timestamp",
-			maxSerialized:     timepkg.SYNCHRONIZED_TIMESTAMP@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     timepkg.SynchronizedTimestamp@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1878,7 +1878,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "time_system",
-			maxSerialized:     timepkg.TIME_SYSTEM@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     timepkg.TimeSystem@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1896,7 +1896,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "time_tai_info",
-			maxSerialized:     timepkg.TAI_INFO@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     timepkg.TAIInfo@V0_1@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1914,14 +1914,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "get_sync_master_info_request",
-			maxSerialized:     timepkg.GET_SYNCHRONIZATION_MASTER_INFO@V0_1@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     timepkg.GetSynchronizationMasterInfo@V0_1@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_time_get_sync_master_info_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj timepkg.GetSynchronizationMasterInfo@V0_1@_Request
+				var obj timepkg.GetSynchronizationMasterInfo@V0_1@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1932,14 +1932,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "get_sync_master_info_response",
-			maxSerialized:     timepkg.GET_SYNCHRONIZATION_MASTER_INFO@V0_1@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     timepkg.GetSynchronizationMasterInfo@V0_1@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_time_get_sync_master_info_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj timepkg.GetSynchronizationMasterInfo@V0_1@_Response
+				var obj timepkg.GetSynchronizationMasterInfo@V0_1@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1950,7 +1950,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "udp_outgoing_packet",
-			maxSerialized:     internetudppkg.OUTGOING_PACKET@V0_2@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     internetudppkg.OutgoingPacket@V0_2@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -1968,14 +1968,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "udp_handle_incoming_request",
-			maxSerialized:     internetudppkg.HANDLE_INCOMING_PACKET@V0_2@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     internetudppkg.HandleIncomingPacket@V0_2@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_udp_handle_incoming_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj internetudppkg.HandleIncomingPacket@V0_2@_Request
+				var obj internetudppkg.HandleIncomingPacket@V0_2@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -1986,14 +1986,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "udp_handle_incoming_response",
-			maxSerialized:     internetudppkg.HANDLE_INCOMING_PACKET@V0_2@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     internetudppkg.HandleIncomingPacket@V0_2@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_udp_handle_incoming_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj internetudppkg.HandleIncomingPacket@V0_2@_Response
+				var obj internetudppkg.HandleIncomingPacket@V0_2@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2004,7 +2004,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_unit_angle_quaternion",
-			maxSerialized: siunitanglepkg.QUATERNION@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: siunitanglepkg.Quaternion@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2023,7 +2023,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_unit_acceleration_vector3",
-			maxSerialized: siunitaccelerationpkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: siunitaccelerationpkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2042,7 +2042,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_unit_force_vector3",
-			maxSerialized: siunitforcepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: siunitforcepkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2061,7 +2061,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_unit_length_wide_vector3",
-			maxSerialized: siunitlengthpkg.WIDE_VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: siunitlengthpkg.WideVector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2080,7 +2080,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_unit_torque_vector3",
-			maxSerialized: siunittorquepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: siunittorquepkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2099,7 +2099,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_sample_angle_quaternion",
-			maxSerialized: sisampleanglepkg.QUATERNION@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: sisampleanglepkg.Quaternion@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2118,7 +2118,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_sample_acceleration_vector3",
-			maxSerialized: sisampleaccelerationpkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: sisampleaccelerationpkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2137,7 +2137,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_sample_force_vector3",
-			maxSerialized: sisampleforcepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: sisampleforcepkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2156,7 +2156,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_sample_torque_vector3",
-			maxSerialized: sisampletorquepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: sisampletorquepkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2175,7 +2175,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_unit_velocity_vector3",
-			maxSerialized: siunitvelocitypkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: siunitvelocitypkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2194,7 +2194,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "si_sample_velocity_vector3",
-			maxSerialized: sisamplevelocitypkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: sisamplevelocitypkg.Vector3@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float-heavy fixed arrays may differ in NaN bit canonicalisation while preserving behaviour.
 			requireByteParity: true,
@@ -2213,7 +2213,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "si_unit_temperature_scalar",
-			maxSerialized:     siunitemperaturepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     siunitemperaturepkg.Scalar@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2231,7 +2231,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "si_sample_temperature_scalar",
-			maxSerialized:     sisampletemperaturepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     sisampletemperaturepkg.Scalar@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2249,7 +2249,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "si_unit_voltage_scalar",
-			maxSerialized:     siunitvoltagepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     siunitvoltagepkg.Scalar@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2267,7 +2267,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "si_sample_voltage_scalar",
-			maxSerialized:     sisamplevoltagepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     sisamplevoltagepkg.Scalar@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2285,7 +2285,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "natural8",
-			maxSerialized:     primarray.NATURAL8@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Natural8@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2303,7 +2303,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:          "real16",
-			maxSerialized: primarray.REAL16@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized: primarray.Real16@V1_0@SerializationBufferSizeBytes,
 			iterations:    scaledIterations(baseIterations, 2, 32),
 			// Float16 NaN payload/canonicalization may differ while wire-level semantics remain equivalent.
 			requireByteParity: true,
@@ -2322,7 +2322,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "real32",
-			maxSerialized:     primarray.REAL32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Real32@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2340,7 +2340,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "bit_array",
-			maxSerialized:     primarray.BIT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Bit@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2358,7 +2358,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_bit",
-			maxSerialized:     primitivescalarpkg.BIT@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Bit@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2376,7 +2376,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_integer8",
-			maxSerialized:     primitivescalarpkg.INTEGER8@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Integer8@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2394,7 +2394,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_integer16",
-			maxSerialized:     primitivescalarpkg.INTEGER16@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Integer16@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2412,7 +2412,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_integer32",
-			maxSerialized:     primitivescalarpkg.INTEGER32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Integer32@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2430,7 +2430,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_integer64",
-			maxSerialized:     primitivescalarpkg.INTEGER64@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Integer64@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2448,7 +2448,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_natural8",
-			maxSerialized:     primitivescalarpkg.NATURAL8@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Natural8@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2466,7 +2466,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_natural16",
-			maxSerialized:     primitivescalarpkg.NATURAL16@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Natural16@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2484,7 +2484,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_natural32",
-			maxSerialized:     primitivescalarpkg.NATURAL32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Natural32@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2502,7 +2502,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_natural64",
-			maxSerialized:     primitivescalarpkg.NATURAL64@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Natural64@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2520,7 +2520,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_real16",
-			maxSerialized:     primitivescalarpkg.REAL16@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Real16@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2538,7 +2538,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_real32",
-			maxSerialized:     primitivescalarpkg.REAL32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Real32@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2556,7 +2556,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "scalar_real64",
-			maxSerialized:     primitivescalarpkg.REAL64@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivescalarpkg.Real64@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2574,7 +2574,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_integer8",
-			maxSerialized:     primarray.INTEGER8@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Integer8@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2592,7 +2592,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_integer16",
-			maxSerialized:     primarray.INTEGER16@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Integer16@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2610,7 +2610,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_integer32",
-			maxSerialized:     primarray.INTEGER32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Integer32@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2628,7 +2628,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_integer64",
-			maxSerialized:     primarray.INTEGER64@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Integer64@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2646,7 +2646,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_natural16",
-			maxSerialized:     primarray.NATURAL16@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Natural16@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2664,7 +2664,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_natural32",
-			maxSerialized:     primarray.NATURAL32@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Natural32@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2682,7 +2682,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_natural64",
-			maxSerialized:     primarray.NATURAL64@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Natural64@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2700,7 +2700,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "array_real64",
-			maxSerialized:     primarray.REAL64@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primarray.Real64@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2718,7 +2718,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "primitive_empty",
-			maxSerialized:     primitivepkg.EMPTY@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivepkg.Empty@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2736,7 +2736,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "primitive_string",
-			maxSerialized:     primitivepkg.STRING@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivepkg.String@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2754,7 +2754,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "primitive_unstructured",
-			maxSerialized:     primitivepkg.UNSTRUCTURED@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     primitivepkg.Unstructured@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2772,7 +2772,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "file_path",
-			maxSerialized:     filepkg.PATH@V2_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     filepkg.Path@V2_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2790,7 +2790,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_id_allocation_data",
-			maxSerialized:     pnppkg.NODE_ID_ALLOCATION_DATA@V2_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnppkg.NodeIDAllocationData@V2_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2808,7 +2808,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "pnp_cluster_entry",
-			maxSerialized:     pnpclusterpkg.ENTRY@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnpclusterpkg.Entry@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2826,14 +2826,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "pnp_cluster_append_entries_request",
-			maxSerialized:     pnpclusterpkg.APPEND_ENTRIES@V1_0@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnpclusterpkg.AppendEntries@V1_0@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_pnp_cluster_append_entries_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnpclusterpkg.AppendEntries@V1_0@_Request
+				var obj pnpclusterpkg.AppendEntries@V1_0@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2844,14 +2844,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "pnp_cluster_append_entries_response",
-			maxSerialized:     pnpclusterpkg.APPEND_ENTRIES@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnpclusterpkg.AppendEntries@V1_0@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_pnp_cluster_append_entries_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnpclusterpkg.AppendEntries@V1_0@_Response
+				var obj pnpclusterpkg.AppendEntries@V1_0@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2862,14 +2862,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "pnp_cluster_request_vote_request",
-			maxSerialized:     pnpclusterpkg.REQUEST_VOTE@V1_0@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnpclusterpkg.RequestVote@V1_0@RequestSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_pnp_cluster_request_vote_request_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnpclusterpkg.RequestVote@V1_0@_Request
+				var obj pnpclusterpkg.RequestVote@V1_0@Request
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2880,14 +2880,14 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "pnp_cluster_request_vote_response",
-			maxSerialized:     pnpclusterpkg.REQUEST_VOTE@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnpclusterpkg.RequestVote@V1_0@ResponseSerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
 				return C.c_pnp_cluster_request_vote_response_roundtrip(input, inputSize, output, outputCapacity, result)
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
-				var obj pnpclusterpkg.RequestVote@V1_0@_Response
+				var obj pnpclusterpkg.RequestVote@V1_0@Response
 				desRC, consumed := obj.Deserialize(input)
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
@@ -2898,7 +2898,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "pnp_cluster_discovery",
-			maxSerialized:     pnpclusterpkg.DISCOVERY@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     pnpclusterpkg.Discovery@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2916,7 +2916,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_port_service_id",
-			maxSerialized:     nodeport.SERVICE_ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     nodeport.ServiceID@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2934,7 +2934,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_port_subject_id",
-			maxSerialized:     nodeport.SUBJECT_ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     nodeport.SubjectID@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2952,7 +2952,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_port_service_id_list",
-			maxSerialized:     nodeport.SERVICE_ID_LIST@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     nodeport.ServiceIDList@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 2, 32),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2970,7 +2970,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_port_subject_id_list",
-			maxSerialized:     nodeport.SUBJECT_ID_LIST@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     nodeport.SubjectIDList@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 8, 8),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -2988,7 +2988,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_port_id",
-			maxSerialized:     nodeport.ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     nodeport.ID@V1_0@SerializationBufferSizeBytes,
 			iterations:        baseIterations,
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -3006,7 +3006,7 @@ func buildParityCases(baseIterations int) []parityCase {
 		},
 		{
 			name:              "node_port_list",
-			maxSerialized:     nodeport.LIST@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES,
+			maxSerialized:     nodeport.List@V1_0@SerializationBufferSizeBytes,
 			iterations:        scaledIterations(baseIterations, 8, 8),
 			requireByteParity: true,
 			cRoundtrip: func(input *C.uint8_t, inputSize C.size_t, output *C.uint8_t, outputCapacity C.size_t, result *C.CCaseResult) C.int {
@@ -4069,7 +4069,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "node_port_service_id",
 			input:                  []byte{0x00, 0x00},
 			useOutputCapacity:      true,
-			outputCapacity:         nodeport.SERVICE_ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         nodeport.ServiceID@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4078,7 +4078,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "node_port_subject_id",
 			input:                  []byte{0x00, 0x00},
 			useOutputCapacity:      true,
-			outputCapacity:         nodeport.SUBJECT_ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         nodeport.SubjectID@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4087,7 +4087,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "node_port_service_id_list",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         nodeport.SERVICE_ID_LIST@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         nodeport.ServiceIDList@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4096,7 +4096,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "node_port_subject_id_list",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         nodeport.SUBJECT_ID_LIST@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         nodeport.SubjectIDList@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4105,7 +4105,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "node_port_id",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         nodeport.ID@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         nodeport.ID@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4114,7 +4114,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_unit_velocity_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         siunitvelocitypkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         siunitvelocitypkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4123,7 +4123,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_sample_velocity_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         sisamplevelocitypkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         sisamplevelocitypkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4132,7 +4132,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_unit_temperature_scalar",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         siunitemperaturepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         siunitemperaturepkg.Scalar@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4141,7 +4141,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_sample_temperature_scalar",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         sisampletemperaturepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         sisampletemperaturepkg.Scalar@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4150,7 +4150,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_unit_acceleration_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         siunitaccelerationpkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         siunitaccelerationpkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4159,7 +4159,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_unit_force_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         siunitforcepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         siunitforcepkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4168,7 +4168,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_unit_torque_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         siunittorquepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         siunittorquepkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4177,7 +4177,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_sample_acceleration_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         sisampleaccelerationpkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         sisampleaccelerationpkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4186,7 +4186,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_sample_force_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         sisampleforcepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         sisampleforcepkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4195,7 +4195,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_sample_torque_vector3",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         sisampletorquepkg.VECTOR3@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         sisampletorquepkg.Vector3@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4204,7 +4204,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_unit_voltage_scalar",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         siunitvoltagepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         siunitvoltagepkg.Scalar@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4213,7 +4213,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "si_sample_voltage_scalar",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         sisamplevoltagepkg.SCALAR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         sisamplevoltagepkg.Scalar@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4222,7 +4222,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "file_error",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         filepkg.ERROR@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         filepkg.Error@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4240,7 +4240,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "metatransport_ethernet_ethertype",
 			input:                  []byte{0x00, 0x00},
 			useOutputCapacity:      true,
-			outputCapacity:         metaethernetpkg.ETHER_TYPE@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metaethernetpkg.EtherType@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4276,7 +4276,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "pnp_cluster_entry",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         pnpclusterpkg.ENTRY@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         pnpclusterpkg.Entry@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4285,7 +4285,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "pnp_cluster_append_entries_request",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         pnpclusterpkg.APPEND_ENTRIES@V1_0@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         pnpclusterpkg.AppendEntries@V1_0@RequestSerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4294,7 +4294,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "pnp_cluster_append_entries_response",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         pnpclusterpkg.APPEND_ENTRIES@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         pnpclusterpkg.AppendEntries@V1_0@ResponseSerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4303,7 +4303,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "pnp_cluster_request_vote_request",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         pnpclusterpkg.REQUEST_VOTE@V1_0@_REQUEST_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         pnpclusterpkg.RequestVote@V1_0@RequestSerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4312,7 +4312,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "pnp_cluster_request_vote_response",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         pnpclusterpkg.REQUEST_VOTE@V1_0@_RESPONSE_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         pnpclusterpkg.RequestVote@V1_0@ResponseSerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4321,7 +4321,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "pnp_cluster_discovery",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         pnpclusterpkg.DISCOVERY@V1_0@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         pnpclusterpkg.Discovery@V1_0@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4339,7 +4339,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "can_data_fd",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         metacan.DATA_FD@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metacan.DataFD@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4357,7 +4357,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "can_rtr",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         metacan.RTR@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metacan.RTR@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4366,7 +4366,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "can_manifestation",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         metacan.MANIFESTATION@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metacan.Manifestation@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4375,7 +4375,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "can_arbitration_id",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         metacan.ARBITRATION_ID@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metacan.ArbitrationID@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4384,7 +4384,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "can_base_arbitration_id",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         metacan.BASE_ARBITRATION_ID@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metacan.BaseArbitrationID@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},
@@ -4393,7 +4393,7 @@ func runCGoParity(iterations int) error {
 			caseName:               "can_extended_arbitration_id",
 			input:                  []byte{},
 			useOutputCapacity:      true,
-			outputCapacity:         metacan.EXTENDED_ARBITRATION_ID@V0_1@_SERIALIZATION_BUFFER_SIZE_BYTES - 1,
+			outputCapacity:         metacan.ExtendedArbitrationID@V0_1@SerializationBufferSizeBytes - 1,
 			expectDeserializeError: false,
 			expectSerializeError:   true,
 		},

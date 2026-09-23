@@ -449,11 +449,12 @@ struct RoleEntry
 };
 
 /// @brief Every role, in enum order.
-constexpr std::array<RoleEntry, 8> kRoles = {{
+constexpr std::array<RoleEntry, 9> kRoles = {{
     {IdentifierRole::TypeName, "TypeName"},
     {IdentifierRole::FieldName, "FieldName"},
     {IdentifierRole::ConstantName, "ConstantName"},
     {IdentifierRole::FunctionName, "FunctionName"},
+    {IdentifierRole::InternalFunctionName, "InternalFunctionName"},
     {IdentifierRole::LocalName, "LocalName"},
     {IdentifierRole::NamespaceName, "NamespaceName"},
     {IdentifierRole::FileStem, "FileStem"},
@@ -464,8 +465,11 @@ constexpr std::array<RoleEntry, 8> kRoles = {{
 ///
 /// FunctionName and LocalName carry the same policy as FieldName and no call site feeds them a DSDL
 /// name yet, so their columns would be duplicates. The policy section above still lists them.
-constexpr std::array<RoleEntry, 6> kTabulatedRoles = {{
+/// InternalFunctionName is tabulated: it is the one role where Go and TypeScript part from the
+/// others, and a helper's name is composed rather than taken from a DSDL name.
+constexpr std::array<RoleEntry, 7> kTabulatedRoles = {{
     {IdentifierRole::TypeName, "TypeName"},
+    {IdentifierRole::InternalFunctionName, "InternalFunctionName"},
     {IdentifierRole::FieldName, "FieldName"},
     {IdentifierRole::ConstantName, "ConstantName"},
     {IdentifierRole::NamespaceName, "NamespaceName"},
@@ -483,6 +487,12 @@ const char* caseStyleName(const CaseStyle style)
         return "snake";
     case CaseStyle::Pascal:
         return "pascal";
+    case CaseStyle::Camel:
+        return "camel";
+    case CaseStyle::GoExported:
+        return "go-exported";
+    case CaseStyle::GoUnexported:
+        return "go-unexported";
     }
     return "?";
 }
@@ -573,8 +583,8 @@ std::string renderRoleGolden()
         << "# still checked -- see the claimed-name cases in NamingPolicyTests.cpp.\n";
 
     out << "\n== role policy ==\n\n";
-    appendRow(out, {{"language", 9}, {"role", 15}, {"case", 10}, {"escape", 8}, {"strop", 7}, {"upper", 0}});
-    out << std::string(9 + 15 + 10 + 8 + 7 + 5, '-') << "\n";
+    appendRow(out, {{"language", 9}, {"role", 22}, {"case", 10}, {"escape", 8}, {"strop", 7}, {"upper", 0}});
+    out << std::string(9 + 22 + 10 + 8 + 7 + 5, '-') << "\n";
     for (const auto& entry : kLanguages)
     {
         for (const auto& role : kRoles)
@@ -582,7 +592,7 @@ std::string renderRoleGolden()
             const auto& policy = codegenNamingPolicy(entry.language).roleFor(role.role);
             appendRow(out,
                       {{entry.name, 9},
-                       {role.name, 15},
+                       {role.name, 22},
                        {caseStyleName(policy.caseStyle), 10},
                        {policy.escape ? "yes" : "no", 8},
                        {policy.strop ? "yes" : "no", 7},

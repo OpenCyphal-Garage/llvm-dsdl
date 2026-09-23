@@ -17,22 +17,16 @@ DSDL_HAS_FIXED_PORT_ID = False
 DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "nested-not-flat"
 
-def mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(p0: int) -> int:
+def _capacity_check(p0: int) -> int:
     v0 = 96 > p0
-    if v0:
-        v1 = -3
-    else:
-        v1 = 0
+    v1 = (-3 if v0 else 0)
     return v1
 
-def mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(p0: int, p1: int) -> int:
+def _validate_delimiter_header_1(p0: int, p1: int) -> int:
     v0 = p0 < 0
     v1 = p0 > p1
     v2 = v0 or v1
-    if v2:
-        v3 = -12
-    else:
-        v3 = 0
+    v3 = (-12 if v2 else 0)
     return v3
 
 @dataclass(slots=True)
@@ -56,20 +50,18 @@ class UsesDelimited:
 
     def _serialize_into(self, buffer: memoryview) -> int:
         inout_buffer_size_bytes = len(buffer)
-        v0 = self is None or False
-        v1 = v0 or False
-        if v1:
+        if self is None:
             err = -2
         else:
             size = inout_buffer_size_bytes
-            v2 = size * 8
-            err_2 = mlir_llvmdsdl_plan_capacity_check__fixtures_vendor_UsesDelimited_1_0(v2)
-            v3 = err_2 == 0
-            if v3:
-                v4 = size - 4
-                nested_size = v4
-                v5 = err_2 == 0
-                if v5:
+            v0 = size * 8
+            err_2 = _capacity_check(v0)
+            v1 = err_2 == 0
+            if v1:
+                v2 = size - 4
+                nested_size = v2
+                v3 = err_2 == 0
+                if v3:
                     nested_buf = buffer[min(4, len(buffer)):]
                     _bound0_ = min(nested_size, len(nested_buf))
                     _result1_ = self.nested._serialize_into(nested_buf[:_bound0_])
@@ -77,25 +69,25 @@ class UsesDelimited:
                         nested_err = _result1_
                     else:
                         nested_err = 0
-                    err_5 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(1, v4)
-                    v6 = nested_err == 0
-                    v7 = (err_5 if v6 else nested_err)
-                    v8 = v7 == 0
-                    if v8:
+                    err_5 = _validate_delimiter_header_1(1, v2)
+                    v4 = nested_err == 0
+                    v5 = (err_5 if v4 else nested_err)
+                    v6 = v5 == 0
+                    if v6:
                         err_7 = dsdl_runtime.write_unsigned(buffer, 0, 32, 1, False)
-                        v9 = v7 == 0
-                        v10 = (err_7 if v9 else v7)
-                        err_6 = v10
+                        v7 = v5 == 0
+                        v8 = (err_7 if v7 else v5)
+                        err_6 = v8
                     else:
-                        err_6 = v7
+                        err_6 = v5
                     err_4 = err_6
                 else:
                     err_4 = err_2
                 err_3 = err_4
             else:
                 err_3 = err_2
-            v11 = err_3 == 0
-            if v11:
+            v9 = err_3 == 0
+            if v9:
                 inout_buffer_size_bytes = 5
             err = err_3
         if err == 0:
@@ -104,55 +96,47 @@ class UsesDelimited:
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         inout_buffer_size_bytes = len(buffer)
-        v0 = self is None or False
-        if v0:
-            rejected = True
-        else:
-            size = inout_buffer_size_bytes
-            v1 = size != 0
-            v2 = False and v1
-            rejected = v2
-        if rejected:
+        if self is None:
             err = -2
         else:
-            size_2 = inout_buffer_size_bytes
+            size = inout_buffer_size_bytes
             value = dsdl_runtime.read_unsigned(buffer, 0, 32)
-            v3 = size_2 > 4
-            v4 = (4 if v3 else size_2)
-            v5 = size_2 - v4
+            v0 = size > 4
+            v1 = (4 if v0 else size)
+            v2 = size - v1
             nested_size = value
-            err_2 = mlir_llvmdsdl_plan_validate_delimiter_header__fixtures_vendor_UsesDelimited_1_0__1(value, v5)
-            v6 = err_2 == 0
-            if v6:
-                nested_buf = buffer[min(v4, len(buffer)):]
+            err_2 = _validate_delimiter_header_1(value, v2)
+            v3 = err_2 == 0
+            if v3:
+                nested_buf = buffer[min(v1, len(buffer)):]
                 _bound2_ = min(nested_size, len(nested_buf))
                 _result3_ = self.nested._deserialize_from(nested_buf[:_bound2_])
                 if _result3_ < 0:
                     nested_err = _result3_
                 else:
                     nested_err = 0
-                v7 = nested_err == 0
-                if v7:
-                    v9 = value * 8
-                    v10 = v9 + 32
-                    v8 = v10
+                v4 = nested_err == 0
+                if v4:
+                    v6 = value * 8
+                    v7 = v6 + 32
+                    v5 = v7
                 else:
-                    v8 = 32
-                offset = v8
+                    v5 = 32
+                offset = v5
                 err_3 = nested_err
             else:
                 offset = 32
                 err_3 = err_2
-            v11 = offset + 7
-            v12 = v11 // 8
-            v13 = v12 * 8
-            v14 = size_2 * 8
-            v15 = v13 < v14
-            v16 = (v13 if v15 else v14)
-            v17 = err_3 == 0
-            if v17:
-                v18 = v16 // 8
-                inout_buffer_size_bytes = v18
+            v8 = offset + 7
+            v9 = v8 // 8
+            v10 = v9 * 8
+            v11 = size * 8
+            v12 = v10 < v11
+            v13 = (v10 if v12 else v11)
+            v14 = err_3 == 0
+            if v14:
+                v15 = v13 // 8
+                inout_buffer_size_bytes = v15
             err = err_3
         if err == 0:
             return inout_buffer_size_bytes

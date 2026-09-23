@@ -682,7 +682,11 @@ public:
                                         const llvm::StringRef member,
                                         const std::size_t     ordinal) const override
     {
-        return camelValueName(role, member, ordinal);
+        // The snake rendering, projected as Go names a local: the same fold as every other
+        // language's, with Go's initialisms and its case.
+        return codegenProjectIdentifier(CodegenNamingLanguage::Go,
+                                        IdentifierRole::LocalName,
+                                        snakeValueName(role, member, ordinal));
     }
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
@@ -740,7 +744,25 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Go, callee);
+        const auto found = helperNames_.find(callee);
+        if (found == helperNames_.end())
+        {
+            llvm::report_fatal_error(llvm::Twine("Go spelling: a call to a helper this package does "
+                                                 "not declare: ") +
+                                     callee);
+        }
+        return found->second;
+    }
+
+    /// @brief Takes the names this definition's helpers were declared under.
+    ///
+    /// A Go package holds a whole DSDL namespace, so the scope that allocated them is the package's
+    /// and outlives this spelling. The type name is not known when the spelling is built, so the
+    /// names arrive here rather than in the constructor.
+    /// @param[in] names Each helper's lowered symbol, under its declared name.
+    void setHelperNames(llvm::StringMap<std::string> names)
+    {
+        helperNames_ = std::move(names);
     }
 
     /// @brief Names the Go type each plan's bodies are methods of.
@@ -1012,6 +1034,11 @@ public:
         return recast ? typeName(type) + "(" + expression + ")" : expression;
     }
 
+    [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
+    {
+        return "!(" + expr.str() + ")";
+    }
+
     [[nodiscard]] std::string compare(const Comparison      comparison,
                                       const llvm::StringRef lhs,
                                       const llvm::StringRef rhs,
@@ -1094,6 +1121,16 @@ public:
         // itself.
         const std::string value = names(op.getValue());
         return "(uint64(int(" + value + ")) == " + value + ")";
+    }
+
+    [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
+    {
+        const auto pointer = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
+        if (mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            return names(op.getPointer()) + " != nil";
+        }
+        return "true";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
@@ -1371,7 +1408,7 @@ public:
         const std::string buffer    = names(op.getBuffer());
         const std::string size      = names(op.getSize());
         const std::string bound     = fresh("bound");
-        const std::string used      = isRead(op.getSize()) ? fresh("used") : "_";
+        const std::string used      = plansReadOfSize(op.getSize()) ? fresh("used") : "_";
         w.line(bound + " := dsdlruntime.ChooseMin(" + size + ", len(" + buffer + "))");
         w.line((name.empty() ? "_" : name.str()) + ", " + used + (name.empty() && used == "_" ? " = " : " := ") +
                names(op.getObject()) + (serialize ? ".Serialize(" : ".Deserialize(") + buffer + "[:" + bound + "])");
@@ -1431,13 +1468,6 @@ private:
                               const ValueNames&     names) const
     {
         return memberAccess(object, member, names) + "[" + asInt(index) + "]";
-    }
-
-    /// @brief Whether the plan reads the size @p pointer addresses back after handing it out.
-    static bool isRead(const mlir::Value pointer)
-    {
-        return llvm::any_of(pointer.getUsers(),
-                            [](mlir::Operation* user) { return mlir::isa<mlir::dsdl::LoadScalarOp>(user); });
     }
 
     /// @brief The container expression and element base of the bool array @p address names.
@@ -1658,6 +1688,9 @@ private:
     }
 
     llvm::StringMap<Plan> plans_;
+
+    /// @brief Each helper of this schema, by lowered symbol, under the name the package declares it as.
+    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -1833,48 +1866,43 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             mlir::ModuleOp                            module,
                             PlanBodyLookups&                          lookups)
 {
-    const auto typeConstPrefix =
-        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, typeName);
-    w.line("const " + typeConstPrefix + "_FULL_NAME = \"" + metadata.fullName + "\"");
-    w.line("const " + typeConstPrefix + "_IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
+    const NamingScope constScope = makeGoConstantScope(section, typeName);
+    const auto        named      = [&constScope](const std::vector<llvm::StringRef>& parts) {
+        return constScope.get(IdentifierRole::ConstantName, goConstantKey(parts));
+    };
+    const auto meta = [&constScope, &typeName](const llvm::StringRef token) {
+        return constScope.get(IdentifierRole::ConstantName, goGeneratedConstantKey(typeName, token));
+    };
+    w.line("const " + meta("FULL_NAME") + " = \"" + metadata.fullName + "\"");
+    w.line("const " + meta("IS_DEPRECATED") + " = " + std::string(metadata.deprecated ? "true" : "false"));
+    w.line("const " + meta("FULL_NAME_AND_VERSION") + " = \"" + metadata.fullName + "." +
            std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"");
-    w.line("const " + typeConstPrefix + "_EXTENT_BYTES = " + std::to_string(metadata.extentBytes));
-    w.line("const " + typeConstPrefix +
-           "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + typeConstPrefix + "_WIRE_FLAT = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\"");
-    w.line("const " + typeConstPrefix + "_HOST_IMAGE = " + std::string(metadata.hostImage.holds ? "true" : "false"));
-    w.line("const " + typeConstPrefix + "_HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\"");
+    w.line("const " + meta("EXTENT_BYTES") + " = " + std::to_string(metadata.extentBytes));
+    w.line("const " + meta("SERIALIZATION_BUFFER_SIZE_BYTES") + " = " +
+           std::to_string(metadata.serializationBufferSizeBytes));
+    w.line("const " + meta("WIRE_FLAT") + " = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
+    w.line("const " + meta("WIRE_FLAT_REASON") + " = \"" + metadata.wireFlat.reason + "\"");
+    w.line("const " + meta("HOST_IMAGE") + " = " + std::string(metadata.hostImage.holds ? "true" : "false"));
+    w.line("const " + meta("HOST_IMAGE_REASON") + " = \"" + metadata.hostImage.reason + "\"");
 
     if (metadata.declaresPortId)
     {
-        w.line("const " + typeConstPrefix +
-               "_HAS_FIXED_PORT_ID = " + std::string(metadata.fixedPortId ? "true" : "false"));
+        w.line("const " + meta("HAS_FIXED_PORT_ID") + " = " + std::string(metadata.fixedPortId ? "true" : "false"));
         if (metadata.fixedPortId)
         {
-            w.line("const " + typeConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId));
+            w.line("const " + meta("FIXED_PORT_ID") + " = " + std::to_string(*metadata.fixedPortId));
         }
     }
     if (metadata.isUnion)
     {
-        w.line("const " + typeConstPrefix + "_UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()));
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
+        w.line("const " + meta("UNION_OPTION_COUNT") + " = " + std::to_string(metadata.unionOptions.size()));
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("const " + typeConstPrefix + "_" +
-                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Go, option.name)) +
-                   " " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
+            w.line("const " + named({typeName, option.name, "OPTION_TAG"}) + " " +
+                   unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
         }
     }
 
-    std::vector<std::string> constNames;
-    constNames.reserve(section.constants.size());
-    for (const auto& c : section.constants)
-    {
-        constNames.push_back(c.name);
-    }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Go, section, {});
     for (const auto& c : section.constants)
     {
         // gofmt separates a documented declaration from whatever precedes it, so a doc
@@ -1884,8 +1912,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
             w.blank();
         }
         emitAttachedDocGo(w, c.doc);
-        w.line("const " + typeConstPrefix + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
-               goConstValue(c.type, c.value));
+        w.line("const " + named({typeName, c.name}) + " = " + goConstValue(c.type, c.value));
     }
     w.blank();
 
@@ -2091,7 +2118,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const std::string&        moduleName,
                                                  mlir::ModuleOp            module,
-                                                 PlanBodyLookups&          lookups)
+                                                 PlanBodyLookups&          lookups,
+                                                 NamingScope&              packageScope)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -2151,6 +2179,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                          reqType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "response"),
                          respType);
+
+    // A helper is private to the package, which holds a whole DSDL namespace, so its name carries
+    // the definition's type: the package's scope is what proves two of them cannot meet.
+    spelling.setHelperNames(renderSchemaHelperNames(CodegenNamingLanguage::Go, module, schema, packageScope, baseType));
 
     // The declarations and bodies first: whether the runtime is imported depends on whether a
     // body calls it, and Go rejects an import nothing uses.
@@ -2232,14 +2264,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
         w.blank();
-        const auto baseConstPrefix =
-            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, baseType);
         // The service-ID belongs to the service, and this alias is how the service is named.
-        w.line("const " + baseConstPrefix +
-               "_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "true" : "false"));
+        w.line("const " + goConstantName({baseType, "HAS_FIXED_PORT_ID"}) + " = " +
+               std::string(def.info.fixedPortId ? "true" : "false"));
         if (def.info.fixedPortId)
         {
-            w.line("const " + baseConstPrefix + "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
+            w.line("const " + goConstantName({baseType, "FIXED_PORT_ID"}) + " = " +
+                   std::to_string(*def.info.fixedPortId));
         }
     }
 
@@ -2436,6 +2467,10 @@ llvm::Error emit(const SemanticModule& semantic,
     const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
 
     PlanBodyLookups lookups(module);
+
+    // One scope per package, since that is the scope a Go helper is declared into: two definitions
+    // of one DSDL namespace are two files of one package.
+    std::map<std::string, NamingScope> packageScopes;
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -2450,7 +2485,12 @@ llvm::Error emit(const SemanticModule& semantic,
         {
             dir /= dirRel;
         }
-        auto file = renderDefinitionFile(def, ctx, options.moduleName, module, lookups);
+        auto file = renderDefinitionFile(def,
+                                         ctx,
+                                         options.moduleName,
+                                         module,
+                                         lookups,
+                                         packageScopes.try_emplace(dirRel, CodegenNamingLanguage::Go).first->second);
         if (!file)
         {
             return file.takeError();

@@ -233,6 +233,13 @@ public:
                                               llvm::StringRef rhs,
                                               mlir::Type      type) const = 0;
 
+    /// @brief The negation of the boolean @p expr.
+    ///
+    /// Separate from @ref binary because MLIR carries a negation as a xor against true, and every
+    /// language here has an operator for it. Spelling the xor instead reaches `x != true`, which
+    /// each of their linters reads as a comparison against a constant.
+    [[nodiscard]] virtual std::string logicalNot(llvm::StringRef expr) const = 0;
+
     [[nodiscard]] virtual std::string select(llvm::StringRef condition,
                                              llvm::StringRef ifTrue,
                                              llvm::StringRef ifFalse,
@@ -267,7 +274,13 @@ public:
     /// declare.
     [[nodiscard]] virtual bool spellsInline(mlir::Operation* op) const = 0;
 
-    [[nodiscard]] virtual std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const               = 0;
+    [[nodiscard]] virtual std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const = 0;
+
+    /// @brief The test @ref isNull answers the opposite of.
+    ///
+    /// Every language here spells this as its own test rather than as a negation, and one of them
+    /// is judged on it: Python reads `not (x is None)` as a test that should have been `is not`.
+    [[nodiscard]] virtual std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const            = 0;
     [[nodiscard]] virtual std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const       = 0;
     [[nodiscard]] virtual std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const = 0;
     [[nodiscard]] virtual std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const           = 0;

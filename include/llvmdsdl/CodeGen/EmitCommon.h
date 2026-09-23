@@ -18,6 +18,7 @@
 #include "llvmdsdl/Semantics/Model.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "mlir/IR/Value.h"
 #include "llvm/Support/Error.h"
 
 #include <cstdint>
@@ -64,6 +65,16 @@ std::string definitionTypeKey(const DiscoveredDefinition& info);
 /// @param[in] field The member's name in the target language.
 /// @return The accessor's source name, to be projected and declared by the caller.
 [[nodiscard]] std::string accessorSource(llvm::StringRef kind, llvm::StringRef field);
+
+/// @brief Whether the plan reads back the size @p pointer addresses after handing it out.
+///
+/// A size a plan hands to a nested call is a variable where the plan reads the answer and a
+/// constant where it does not, and the languages that distinguish the two are judged on it. A load
+/// nobody consumes is not a read: the translator spells a load where its result is used, so such a
+/// load reaches no line of output. A plan whose entry guard has folded away leaves one behind.
+/// @param[in] pointer The size pointer.
+/// @return Whether a read of it reaches the output.
+[[nodiscard]] bool plansReadOfSize(mlir::Value pointer);
 
 /// @brief Result of narrowing a set of type keys to the newest version of each type.
 struct NewestVersionSelection final

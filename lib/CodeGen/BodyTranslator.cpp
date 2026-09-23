@@ -46,6 +46,8 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Matchers.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
@@ -600,8 +602,108 @@ private:
         return llvm::Error::success();
     }
 
+    /// @brief The negation of the boolean @p condition.
+    ///
+    /// A null test carries its own opposite, so it is asked for rather than wrapped: negating the
+    /// text reaches `not (x is None)` where `x is not None` is what Python means by it.
+    std::string negated(const mlir::Value condition)
+    {
+        if (auto test = condition.getDefiningOp<mlir::dsdl::IsNullOp>())
+        {
+            return spelling_.isNotNull(test, *this);
+        }
+        return spelling_.logicalNot((*this)(condition));
+    }
+
+    /// @brief Gives every constant of @p region the spelling its uses will read it by.
+    void nameConstants(mlir::Region& region)
+    {
+        if (region.empty())
+        {
+            return;
+        }
+        for (mlir::Operation& op : region.front().without_terminator())
+        {
+            if (auto value = mlir::dyn_cast<mlir::arith::ConstantOp>(op))
+            {
+                names_[value.getResult()] = spelling_.constant(mlir::cast<mlir::TypedAttr>(value.getValue()));
+            }
+        }
+    }
+
+    /// @brief Whether spelling @p region writes no line.
+    ///
+    /// A constant is spelled where it is used, so an arm holding nothing but the constants it
+    /// yields writes as little as one holding nothing at all. Values defined in a region cannot be
+    /// read outside it, so there is nothing else such an arm can be there to do.
+    static bool spellsNothing(mlir::Region& region)
+    {
+        if (region.empty())
+        {
+            return true;
+        }
+        return llvm::all_of(region.front().without_terminator(),
+                            [](mlir::Operation& op) { return op.hasTrait<mlir::OpTrait::ConstantLike>(); });
+    }
+
     llvm::Error structured(mlir::scf::IfOp op)
     {
+        // An arm that yields nothing and holds nothing reaches a `{ }` that every linter here
+        // reports as an empty branch, and MLIR keeps such an `scf.if` rather than folding it: its
+        // regions are empty but the operation is not dead while the condition is computed. The
+        // shapes are answered before the arms are spelt -- both empty is no statement at all, and
+        // an empty first arm is the condition negated.
+        const bool emptyThen = spellsNothing(op.getThenRegion());
+        const bool emptyElse = spellsNothing(op.getElseRegion());
+        if ((op.getNumResults() == 0) && emptyThen && emptyElse)
+        {
+            return llvm::Error::success();
+        }
+        if ((op.getNumResults() == 0) && emptyThen)
+        {
+            spelling_.openIf(w_, negated(op.getCondition()));
+            if (auto err = block(op.getElseRegion().front(), {}, {}))
+            {
+                return err;
+            }
+            spelling_.closeBlock(w_);
+            return llvm::Error::success();
+        }
+
+        // An `scf.if` whose arms hold nothing but their yields chooses between values rather than
+        // branching between statements, and every language here has an expression for that. The
+        // values it yields are computed before the branch, so choosing between them evaluates
+        // nothing the branch would have skipped. Spelling the branch instead reaches the declare-
+        // then-assign-in-each-arm that clippy calls a needless late initialisation and ruff an
+        // if-else block that wanted an if-expression.
+        if ((op.getNumResults() > 0) && emptyThen && emptyElse && !op.getElseRegion().empty())
+        {
+            auto ifTrue  = mlir::cast<mlir::scf::YieldOp>(op.getThenRegion().front().getTerminator());
+            auto ifFalse = mlir::cast<mlir::scf::YieldOp>(op.getElseRegion().front().getTerminator());
+
+            // The constants an arm yields are declared inside it, so they are named here: the arms
+            // themselves are never walked.
+            nameConstants(op.getThenRegion());
+            nameConstants(op.getElseRegion());
+            const std::string condition = (*this)(op.getCondition());
+            for (const auto [index, result] : llvm::enumerate(op.getResults()))
+            {
+                if (result.use_empty())
+                {
+                    continue;
+                }
+                const std::string name = nameFor(result);
+                spelling_.declareSelect(w_,
+                                        result.getType(),
+                                        name,
+                                        condition,
+                                        (*this)(ifTrue.getOperand(index)),
+                                        (*this)(ifFalse.getOperand(index)));
+                names_[result] = name;
+            }
+            return llvm::Error::success();
+        }
+
         std::vector<std::string> results;
         results.reserve(op.getNumResults());
         for (const mlir::Value result : op.getResults())
@@ -613,7 +715,9 @@ private:
         {
             return err;
         }
-        if (!op.getElseRegion().empty())
+        // An else arm carrying only a yield still assigns the results, so it is skipped only where
+        // there are none.
+        if (!op.getElseRegion().empty() && (!emptyElse || (op.getNumResults() > 0)))
         {
             spelling_.openElse(w_);
             if (auto err = block(op.getElseRegion().front(), results, {}))
@@ -737,7 +841,17 @@ private:
             .Case<mlir::arith::RemSIOp>([&](auto) -> void { binary(op, BinaryOperator::RemS); })
             .Case<mlir::arith::AndIOp>([&](auto) -> void { binary(op, BinaryOperator::And); })
             .Case<mlir::arith::OrIOp>([&](auto) -> void { binary(op, BinaryOperator::Or); })
-            .Case<mlir::arith::XOrIOp>([&](auto) -> void { binary(op, BinaryOperator::Xor); })
+            .Case<mlir::arith::XOrIOp>([&](mlir::arith::XOrIOp exclusive) -> void {
+                // A xor of a boolean against true is a negation, both as the lowering writes it and
+                // as the canonicaliser rewrites a test against false. The constant sits on the
+                // right, where a commutative operation's canonicalisation puts it.
+                if (exclusive.getType().isInteger(1) && mlir::matchPattern(exclusive.getRhs(), mlir::m_One()))
+                {
+                    define(exclusive.getResult(), negated(exclusive.getLhs()), true);
+                    return;
+                }
+                binary(op, BinaryOperator::Xor);
+            })
             .Case<mlir::arith::ShLIOp>([&](auto) -> void { binary(op, BinaryOperator::ShiftLeft); })
             .Case<mlir::arith::ShRUIOp>([&](auto) -> void { binary(op, BinaryOperator::ShiftRightU); })
             .Case<mlir::arith::ShRSIOp>([&](auto) -> void { binary(op, BinaryOperator::ShiftRightS); })

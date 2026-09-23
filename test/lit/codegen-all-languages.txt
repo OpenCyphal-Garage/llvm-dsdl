@@ -147,8 +147,8 @@
 # GO_SUMMARY: command: go
 # GO_SUMMARY: files generated:
 # GO_MODULE: module demo/generated/smoke
-# GO_TYPE: const WIDGET_WIRE_FLAT = true
-# GO_TYPE: const WIDGET_HOST_IMAGE = false
+# GO_TYPE: const WidgetWireFlat = true
+# GO_TYPE: const WidgetHostImage = false
 
 # TS_PORTABLE_SUMMARY: Run summary:
 # TS_PORTABLE_SUMMARY: command: ts
@@ -157,8 +157,11 @@
 # TS_PORTABLE_PACKAGE: "tsRuntimeSpecialization": "portable"
 # TS_PORTABLE_RUNTIME: export function copyBits(
 # TS_PORTABLE_RUNTIME-NOT: dst.set(src.subarray
-# TS_HELPERS: function mlir_
-# TS_HELPERS: mlir_
+# A helper is a function of the definition's own module: not exported, and named for what it
+# answers rather than for the lowered symbol it came from.
+# TS_HELPERS: function capacityCheck(
+# TS_HELPERS-NOT: export function capacityCheck(
+# TS_HELPERS: capacityCheck(
 # Widget is a message, so it carries one verdict, not a request/response pair.
 # An object here has no byte image, so only the wire verdict is stated.
 # TS_TYPE: export const DSDL_WIRE_FLAT = true;
@@ -198,10 +201,13 @@
 # PY_PYPROJECT: requires-python = ">=3.10"
 # PY_PYPROJECT: [tool.setuptools.package-data]
 # PY_PYPROJECT: _dsdl_runtime_accel*.so
-# PY_HELPERS: def mlir_
-# PY_HELPERS: mlir_
+# A helper is a module-level function of the definition's own module, marked as not part of its
+# surface the way Python marks one.
+# PY_HELPERS: def _capacity_check(
+# PY_HELPERS: def _scalar_unsigned_2_ser(
 # PY_HELPERS: @dataclass(slots=True)
 # PY_HELPERS: def serialize(self) -> bytes:
 # PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)
+# PY_HELPERS: _capacity_check(
 # PY_TYPE: DSDL_WIRE_FLAT = True
 # PY_TYPE-NOT: HOST_IMAGE

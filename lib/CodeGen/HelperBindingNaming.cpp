@@ -15,9 +15,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
+#include "llvmdsdl/CodeGen/BodyTranslator.h"
+#include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/StringMap.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <cstddef>
 #include <string>
 
@@ -65,7 +70,8 @@ std::string renderHelperBindingIdentifier(const CodegenNamingLanguage language, 
 
 std::string renderScopeLocalHelperName(const CodegenNamingLanguage language,
                                        const llvm::StringRef       helperSymbol,
-                                       const llvm::StringRef       schemaSymbol)
+                                       const llvm::StringRef       schemaSymbol,
+                                       const llvm::StringRef       qualifier)
 {
     llvm::StringRef rest = helperSymbol;
     rest.consume_front(kPlanHelperSymbolPrefix);
@@ -97,7 +103,38 @@ std::string renderScopeLocalHelperName(const CodegenNamingLanguage language,
     {
         trimmed = helperSymbol.str();
     }
-    return codegenProjectIdentifier(language, IdentifierRole::FunctionName, trimmed);
+    if (!qualifier.empty())
+    {
+        trimmed = qualifier.str() + "_" + trimmed;
+    }
+
+    return codegenProjectIdentifier(language, IdentifierRole::InternalFunctionName, trimmed);
+}
+
+llvm::StringMap<std::string> renderSchemaHelperNames(const CodegenNamingLanguage language,
+                                                     const mlir::ModuleOp        module,
+                                                     mlir::dsdl::SchemaOp        schema,
+                                                     NamingScope&                scope,
+                                                     const llvm::StringRef       qualifier)
+{
+    llvm::StringMap<std::string> names;
+    for (mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
+    {
+        if (planBodyDirection(fn) || fn->hasAttr("llvmdsdl.unreferenced"))
+        {
+            continue;
+        }
+        const llvm::StringRef symbol = fn.getSymName();
+
+        // The marker goes on after the scope has allocated the name, because the projection a scope
+        // applies folds a leading underscore away. Every helper takes the same marker, so two that
+        // the scope kept apart stay apart.
+        const std::string declared =
+            scope.declare(IdentifierRole::InternalFunctionName,
+                          renderScopeLocalHelperName(language, symbol, schema.getSymName(), qualifier));
+        names[symbol] = (language == CodegenNamingLanguage::Python) ? "_" + declared : declared;
+    }
+    return names;
 }
 
 }  // namespace llvmdsdl
