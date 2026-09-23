@@ -262,6 +262,13 @@ beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` r
 carries `clang-tidy` and `cargo-clippy`; `staticcheck`, `ruff` and a TypeScript-capable `eslint` are
 not in it, so each needs pinned provisioning or an image bump before its lane can run in CI.
 
+The version a judge is pinned at is part of what it reports. The counts below were taken with
+`ruff` 0.16.8, `staticcheck` 2026.2.1 and `eslint` 10.11.0 beside `typescript-eslint` 8.70.1 and
+TypeScript 6.0.3 -- which is the newest set that resolves, since `typescript-eslint` holds
+TypeScript below 6.1. `no-useless-assignment` arrived in `eslint` 10 and reports a defect the
+older release did not, so a lane pinned behind it would have ratcheted in a shape two other judges
+already name.
+
 Those three are what remains of this phase, and they gate the phases after it rather than decorate
 them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and
 the six of them that earlier fixes in that same branch created were each caught by a judge rather
@@ -347,8 +354,8 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 | Rust | clippy | 867 | 607 |
 | Go | staticcheck | 3,241 | 462 |
 | Python | ruff | 4,188 | 1,762 |
-| TypeScript | eslint | 1,810 | 548 |
-| | | **10,106** | **3,379** |
+| TypeScript | eslint | 1,810 | 592 |
+| | | **10,106** | **3,423** |
 
 What is left is per-language.
 
@@ -356,6 +363,7 @@ What is left is per-language.
 |------:|----------|------|-------|
 | 998 | Python | `E501` | long lines |
 | 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
+| 132 | Go, Python, TypeScript | `SA4006`/`F841`/`no-useless-assignment` | an accessor binds a size the language's signature does not return; all three count 44 |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
 | 198 | Python | `F401` | unused imports |
@@ -363,7 +371,6 @@ What is left is per-language.
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 164 | Python | `SIM108` | the remaining branch-not-expression sites |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
-| 88 | Go, Python | `SA4006`/`F841` | an accessor binds a size the language's signature does not return |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
 | 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
 
