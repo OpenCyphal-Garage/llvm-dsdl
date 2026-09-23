@@ -212,8 +212,7 @@ std::string goConstantName(const std::vector<llvm::StringRef>& parts)
             out = part.str();
             continue;
         }
-        std::string projected =
-            codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, part);
+        std::string projected = codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, part);
         // A part that begins with a digit is escaped with a leading underscore, which is for the
         // start of an identifier. Anywhere else the digit already follows a letter.
         if (!projected.empty() && (projected.front() == '_'))

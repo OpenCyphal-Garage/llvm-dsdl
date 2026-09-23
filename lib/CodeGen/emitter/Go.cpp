@@ -1867,7 +1867,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                             PlanBodyLookups&                          lookups)
 {
     const NamingScope constScope = makeGoConstantScope(section, typeName);
-    const auto        named       = [&constScope](const std::vector<llvm::StringRef>& parts) {
+    const auto        named      = [&constScope](const std::vector<llvm::StringRef>& parts) {
         return constScope.get(IdentifierRole::ConstantName, goConstantKey(parts));
     };
     const auto meta = [&constScope, &typeName](const llvm::StringRef token) {
@@ -1887,8 +1887,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
 
     if (metadata.declaresPortId)
     {
-        w.line("const " + meta("HAS_FIXED_PORT_ID") + " = " +
-               std::string(metadata.fixedPortId ? "true" : "false"));
+        w.line("const " + meta("HAS_FIXED_PORT_ID") + " = " + std::string(metadata.fixedPortId ? "true" : "false"));
         if (metadata.fixedPortId)
         {
             w.line("const " + meta("FIXED_PORT_ID") + " = " + std::to_string(*metadata.fixedPortId));
@@ -2183,8 +2182,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     // A helper is private to the package, which holds a whole DSDL namespace, so its name carries
     // the definition's type: the package's scope is what proves two of them cannot meet.
-    spelling.setHelperNames(
-        renderSchemaHelperNames(CodegenNamingLanguage::Go, module, schema, packageScope, baseType));
+    spelling.setHelperNames(renderSchemaHelperNames(CodegenNamingLanguage::Go, module, schema, packageScope, baseType));
 
     // The declarations and bodies first: whether the runtime is imported depends on whether a
     // body calls it, and Go rejects an import nothing uses.

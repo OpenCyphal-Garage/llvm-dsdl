@@ -125,11 +125,9 @@ llvm::StringMap<std::string> renderSchemaHelperNames(const CodegenNamingLanguage
         // The marker goes on after the scope has allocated the name, because the projection a scope
         // applies folds a leading underscore away. Every helper takes the same marker, so two that
         // the scope kept apart stay apart.
-        const std::string declared = scope.declare(IdentifierRole::InternalFunctionName,
-                                                   renderScopeLocalHelperName(language,
-                                                                              symbol,
-                                                                              schema.getSymName(),
-                                                                              qualifier));
+        const std::string declared =
+            scope.declare(IdentifierRole::InternalFunctionName,
+                          renderScopeLocalHelperName(language, symbol, schema.getSymName(), qualifier));
         names[symbol] = (language == CodegenNamingLanguage::Python) ? "_" + declared : declared;
     }
     return names;

@@ -374,8 +374,8 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp             
     for (const std::int64_t option : optionIndexes)
     {
         auto optConst = mlir::arith::ConstantIntOp::create(builder, loc, option, 64).getResult();
-        auto match = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
-        anyMatch   = anyMatch ? mlir::arith::OrIOp::create(builder, loc, anyMatch, match).getResult() : match.getResult();
+        auto match    = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
+        anyMatch = anyMatch ? mlir::arith::OrIOp::create(builder, loc, anyMatch, match).getResult() : match.getResult();
     }
     if (!anyMatch)
     {
@@ -778,9 +778,9 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp           
         auto isNegative = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
         auto tooLarge   = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
         // A length the target's index type cannot hold is rejected on that target.
-        auto held      = mlir::dsdl::IndexHoldsOp::create(builder, loc, builder.getI1Type(), length);
-        auto trueConst = mlir::arith::ConstantIntOp::create(builder, loc, 1, 1);
-        auto unheld    = mlir::arith::XOrIOp::create(builder, loc, held, trueConst);
+        auto held       = mlir::dsdl::IndexHoldsOp::create(builder, loc, builder.getI1Type(), length);
+        auto trueConst  = mlir::arith::ConstantIntOp::create(builder, loc, 1, 1);
+        auto unheld     = mlir::arith::XOrIOp::create(builder, loc, held, trueConst);
         auto outOfRange = mlir::arith::OrIOp::create(builder, loc, isNegative, tooLarge);
         auto invalid    = mlir::arith::OrIOp::create(builder, loc, outOfRange, unheld);
         auto status     = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, invalid, true);

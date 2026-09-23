@@ -59,13 +59,14 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language,
 
     // Go's constants carry the type they belong to, so the name is one identifier rather than a
     // prefix a consumer joins to a token, and it is built by the scope the emitter builds.
-    const bool        goLike = language == CodegenNamingLanguage::Go;
-    const NamingScope constScope =
-        goLike ? makeGoConstantScope(section, sectionTypeName)
-               : makeSectionConstantScope(
-                     language,
-                     section,
-                     codegenProjectIdentifier(language, IdentifierRole::ConstantName, sectionTypeName));
+    const bool        goLike     = language == CodegenNamingLanguage::Go;
+    const NamingScope constScope = goLike
+                                       ? makeGoConstantScope(section, sectionTypeName)
+                                       : makeSectionConstantScope(language,
+                                                                  section,
+                                                                  codegenProjectIdentifier(language,
+                                                                                           IdentifierRole::ConstantName,
+                                                                                           sectionTypeName));
 
     llvm::json::Object fields;
     for (const auto& field : section.fields)
@@ -105,11 +106,11 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language,
                 continue;
             }
             llvm::json::Object option;
-            option["name"] =
-                goLike ? constScope.get(IdentifierRole::ConstantName,
-                                        goConstantKey({sectionTypeName, field.name, "OPTION_TAG"}))
-                       : constScope.get(IdentifierRole::MacroName, unionOptionTagName(language, field.name));
-            option["tag"]       = static_cast<std::int64_t>(field.unionOptionIndex);
+            option["name"] = goLike
+                                 ? constScope.get(IdentifierRole::ConstantName,
+                                                  goConstantKey({sectionTypeName, field.name, "OPTION_TAG"}))
+                                 : constScope.get(IdentifierRole::MacroName, unionOptionTagName(language, field.name));
+            option["tag"]  = static_cast<std::int64_t>(field.unionOptionIndex);
             options[field.name] = std::move(option);
         }
         out["union_options"] = std::move(options);

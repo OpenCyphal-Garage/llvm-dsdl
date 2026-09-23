@@ -641,9 +641,8 @@ private:
         {
             return true;
         }
-        return llvm::all_of(region.front().without_terminator(), [](mlir::Operation& op) {
-            return op.hasTrait<mlir::OpTrait::ConstantLike>();
-        });
+        return llvm::all_of(region.front().without_terminator(),
+                            [](mlir::Operation& op) { return op.hasTrait<mlir::OpTrait::ConstantLike>(); });
     }
 
     llvm::Error structured(mlir::scf::IfOp op)

@@ -1430,7 +1430,8 @@ public:
         const std::string size      = names(op.getSize());
         const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
                                       (serialize ? "&mut " : "&") + buffer + "[.._len] }";
-        const std::string used = plansReadOfSize(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
+        const std::string used =
+            plansReadOfSize(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
         return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
                used + " Err(_code) => _code }";
     }

@@ -274,13 +274,13 @@ public:
     /// declare.
     [[nodiscard]] virtual bool spellsInline(mlir::Operation* op) const = 0;
 
-    [[nodiscard]] virtual std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const               = 0;
+    [[nodiscard]] virtual std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const = 0;
 
     /// @brief The test @ref isNull answers the opposite of.
     ///
     /// Every language here spells this as its own test rather than as a negation, and one of them
     /// is judged on it: Python reads `not (x is None)` as a test that should have been `is not`.
-    [[nodiscard]] virtual std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const = 0;
+    [[nodiscard]] virtual std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const            = 0;
     [[nodiscard]] virtual std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const       = 0;
     [[nodiscard]] virtual std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const = 0;
     [[nodiscard]] virtual std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const           = 0;

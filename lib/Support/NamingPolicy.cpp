@@ -259,11 +259,12 @@ std::string normalizePascalCase(llvm::StringRef name)
 /// here. A word not on it is recased as an ordinary one.
 bool isGoInitialism(const std::string& word)
 {
-    static const std::set<std::string> kInitialisms = {
-        "ACL",  "AMQP", "API",  "ASCII", "CPU",  "CSS", "DB",  "DNS",  "EOF",  "GID",  "GUID",
-        "HTML", "HTTP", "HTTPS", "ID",   "IP",   "JSON", "LHS", "QPS", "RAM",  "RHS",  "RPC",
-        "RTP",  "SIP",  "SLA",  "SMTP",  "SQL",  "SSH", "TCP", "TLS", "TTL",  "UDP",  "UI",
-        "UID",  "URI",  "URL",  "UTF8",  "UUID", "VM",  "XML", "XMPP", "XSRF", "XSS"};
+    static const std::set<std::string> kInitialisms = {"ACL",  "AMQP", "API",  "ASCII", "CPU",  "CSS",   "DB",  "DNS",
+                                                       "EOF",  "GID",  "GUID", "HTML",  "HTTP", "HTTPS", "ID",  "IP",
+                                                       "JSON", "LHS",  "QPS",  "RAM",   "RHS",  "RPC",   "RTP", "SIP",
+                                                       "SLA",  "SMTP", "SQL",  "SSH",   "TCP",  "TLS",   "TTL", "UDP",
+                                                       "UI",   "UID",  "URI",  "URL",   "UTF8", "UUID",  "VM",  "XML",
+                                                       "XMPP", "XSRF", "XSS"};
     return kInitialisms.count(word) > 0;
 }
 
@@ -320,9 +321,8 @@ std::string normalizeGoName(llvm::StringRef name, const bool exported)
     // recased: `FULL_NAME` means two words rather than an acronym. A source that has lower case
     // somewhere has its own capitals, and they are the author's -- `VSLAMPoseUpdate` is not for
     // this to reinterpret -- so only the first letter of each word is touched.
-    const bool recase = llvm::none_of(name, [](const char c) {
-        return std::islower(static_cast<unsigned char>(c)) != 0;
-    });
+    const bool recase =
+        llvm::none_of(name, [](const char c) { return std::islower(static_cast<unsigned char>(c)) != 0; });
 
     std::string out;
     for (const std::string& word : splitWords(name))
@@ -351,8 +351,7 @@ std::string normalizeGoName(llvm::StringRef name, const bool exported)
         out.push_back(upper.front());
         for (std::size_t i = 1; i < word.size(); ++i)
         {
-            out.push_back(recase ? static_cast<char>(std::tolower(static_cast<unsigned char>(word[i])))
-                                 : word[i]);
+            out.push_back(recase ? static_cast<char>(std::tolower(static_cast<unsigned char>(word[i]))) : word[i]);
         }
     }
     return out;
@@ -978,12 +977,11 @@ std::string NamingScope::declare(const IdentifierRole  role,
     //
     // Go joins with nothing: its names carry no underscore at all, and one here is what `ST1003`
     // reports whatever put it there.
-    const CaseStyle   style = rolePolicy(language_, role).caseStyle;
+    const CaseStyle   style  = rolePolicy(language_, role).caseStyle;
     const bool        goName = (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported);
-    const std::string join =
-        goName ? "" : ((base.empty() || (base.back() != '_')) ? "_" : "");
-    std::string taken  = base;
-    unsigned    suffix = 2;
+    const std::string join   = goName ? "" : ((base.empty() || (base.back() != '_')) ? "_" : "");
+    std::string       taken  = base;
+    unsigned          suffix = 2;
     while (!used_.insert(taken).second)
     {
         taken = base + join + std::to_string(suffix);
