@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -49,6 +50,9 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Rewrite/FrozenRewritePatternSet.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Pass/Pass.h>

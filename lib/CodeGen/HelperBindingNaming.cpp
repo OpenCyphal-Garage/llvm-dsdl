@@ -16,9 +16,13 @@
 
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
+#include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/StringMap.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <cstddef>
 #include <string>
 

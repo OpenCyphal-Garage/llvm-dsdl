@@ -24,6 +24,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <string>
 #include <set>
+#include <llvm/ADT/STLExtras.h>
 #include <vector>
 #include <cstddef>
 #include <optional>

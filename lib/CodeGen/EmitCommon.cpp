@@ -38,6 +38,10 @@
 #include <system_error>
 #include <vector>
 
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+
 namespace llvmdsdl
 {
 
