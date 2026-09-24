@@ -823,12 +823,14 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a slice: its length is what the plan stores through the
-            // size pointer, which a slice carries itself, so the store lands in a local the
-            // function must be seen to use.
+            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
+            // length a plan writes back, so the lowering erases the write for this target, and the
+            // size pointer is declared only where a plan still reads it.
             w.open("func " + name + "(buffer []byte" + index + ") []byte {");
-            w.line("var outSize int");
-            w.line("_ = outSize");
+            if (!fn.getArguments().back().use_empty())
+            {
+                w.line("var outSize int");
+            }
         }
         else if (getter)
         {

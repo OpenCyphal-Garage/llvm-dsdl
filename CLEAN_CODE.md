@@ -234,7 +234,7 @@ output byte for byte, and today's output is now idiomatic Rust rather than the f
 that reproduces `list_0_2::Request` is tested against the shape it exists to produce; one that
 reproduced `uavcan_file_List_Request` would only have been tested against the shape it replaces.
 
-**1 — The judges.** *Rust's half landed in #41; three languages still have no style judge.*
+**1 — The judges.** *Landed: every judge is in the image, asserted, and holding its lane to a baseline.*
 
 The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
 runs `cargo check`, `RunUavcanGoBuild` runs `go test ./...`, `RunUavcanTsTypecheck` runs `tsc`, and
@@ -347,6 +347,16 @@ and every one of those fixes was in a single place:
 | `EmitCommon` | `isRead`, in four copies, three of them stale | `plansReadOfSize` |
 | `HelperBindingNaming` | one lowered symbol per helper, in four languages | a name the scope holding it reaches it by |
 | `Ts.cpp` | `interface X {}`, which any non-nullish value satisfies | `Record<string, never>` |
+| `dsdl-fold-unobserved-accessor-sizes` | a composite getter's written-back length, in a local each of four languages suppressed | erased where the getter returns a view that carries its length |
+
+The composite getter was the one defect three judges named alike, 44 times each. It answers a
+pointer to the nested type's bytes and writes their length through another, which C and C++ read.
+Go, Python, TypeScript and Rust answer a slice, a `memoryview` or a `Uint8Array` instead, which
+carries the length, so the write landed in a local nothing read -- and each language had been
+taught to hide it: `_ = outSize`, `void outSize`, a leading underscore. The write is erased in the
+lowering for those four, where it is a question about the getter's signature and not about nulls,
+and the canonicaliser takes what fed it, including the subtraction a getter at a non-zero offset
+used. An emitter declares the size only where a plan still reads it.
 
 The helper naming was the largest of them. A definition's 658 lowered helper symbols reached the
 output verbatim -- `mlir_llvmdsdl_plan_capacity_check__uavcan_diagnostic_Record_1_1` -- which was
@@ -384,10 +394,10 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 | language | judge | before the sweep | now |
 |----------|-------|-----------------:|----:|
 | Rust | clippy | 867 | 641 |
-| Go | staticcheck | 3,241 | 362 |
-| Python | ruff | 4,188 | 1,762 |
-| TypeScript | eslint | 1,810 | 592 |
-| | | **10,106** | **3,357** |
+| Go | staticcheck | 3,241 | 318 |
+| Python | ruff | 4,188 | 1,718 |
+| TypeScript | eslint | 1,810 | 548 |
+| | | **10,106** | **3,225** |
 
 What is left is per-language.
 
@@ -395,7 +405,6 @@ What is left is per-language.
 |------:|----------|------|-------|
 | 997 | Python | `E501` | long lines |
 | 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
-| 132 | Go, Python, TypeScript | `SA4006`/`F841`/`no-useless-assignment` | an accessor binds a size the language's signature does not return; all three count 44 |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
 | 198 | Python | `F401` | unused imports |

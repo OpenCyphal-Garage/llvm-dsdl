@@ -1289,6 +1289,66 @@ struct KeepDSDLAccessorsPass : public mlir::PassWrapper<KeepDSDLAccessorsPass, m
     }
 };
 
+/// @brief Erases the reads of @p fn whose results nothing consumes.
+///
+/// A read is not memory-effect-free, so the canonicaliser keeps one whose result a fold has just
+/// orphaned. What it leaves is a value no backend spells and, where the read was the whole of an
+/// arm, a branch with nothing in it. A plan reads only through a pointer it has already established,
+/// so the read has no effect beyond the value nothing now wants. Erasing one can orphan the read that
+/// addressed it, so this runs to a fixed point.
+void eraseUnusedLoads(mlir::func::FuncOp fn)
+{
+    bool erasedAny = true;
+    while (erasedAny)
+    {
+        erasedAny = false;
+        llvm::SmallVector<mlir::Operation*> dead;
+        fn.walk([&](mlir::Operation* op) {
+            if (mlir::isa<mlir::dsdl::LoadScalarOp, mlir::dsdl::LoadMemberOp, mlir::dsdl::LoadElementOp>(op) &&
+                op->use_empty())
+            {
+                dead.push_back(op);
+            }
+        });
+        for (mlir::Operation* op : dead)
+        {
+            op->erase();
+            erasedAny = true;
+        }
+    }
+}
+
+/// @brief Canonicalises the functions a fold changed, and sweeps the reads it orphaned.
+///
+/// Canonicalising here rather than leaving it to `--optimize-lowered-serdes` is what makes a fold
+/// complete on its own: that flag is off unless a caller asks for it, and a value a fold made dead
+/// that nobody removes is worse to read than what the fold replaced.
+/// @param[in] context The context whose registered operations supply the patterns.
+/// @param[in] touched The functions the fold changed.
+/// @param[in] what What the fold did, for the diagnostic when canonicalisation fails.
+/// @return Failure if a function would not canonicalise.
+mlir::LogicalResult cleanUpFolded(mlir::MLIRContext&                       context,
+                                  const llvm::ArrayRef<mlir::func::FuncOp> touched,
+                                  const llvm::StringRef                    what)
+{
+    mlir::RewritePatternSet cleanup(&context);
+    for (const mlir::RegisteredOperationName name : context.getRegisteredOperations())
+    {
+        name.getCanonicalizationPatterns(cleanup, &context);
+    }
+    const mlir::FrozenRewritePatternSet frozen(std::move(cleanup));
+    for (mlir::func::FuncOp fn : touched)
+    {
+        if (mlir::failed(mlir::applyPatternsGreedily(fn, frozen)))
+        {
+            fn.emitError("failed to canonicalise a body whose ") << what;
+            return mlir::failure();
+        }
+        eraseUnusedLoads(fn);
+    }
+    return mlir::success();
+}
+
 /// @brief Replaces a null test the target cannot fail with a constant, and folds what that kills.
 struct FoldDSDLNullGuardsPass : public mlir::PassWrapper<FoldDSDLNullGuardsPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1338,54 +1398,10 @@ struct FoldDSDLNullGuardsPass : public mlir::PassWrapper<FoldDSDLNullGuardsPass,
         }
 
         // What the constant kills is an `or` chain that is now constant and a branch nothing takes,
-        // and the body of a plan sits in the arm that survives. Canonicalising here rather than
-        // leaving it to `--optimize-lowered-serdes` is what makes this stage complete on its own:
-        // that flag is off unless a caller asks for it, and a guard folded to a constant nobody
-        // removes is worse to read than the test it replaced.
-        mlir::RewritePatternSet cleanup(&getContext());
-        for (const mlir::RegisteredOperationName name : getContext().getRegisteredOperations())
+        // and the body of a plan sits in the arm that survives.
+        if (mlir::failed(cleanUpFolded(getContext(), touched, "null guard was folded")))
         {
-            name.getCanonicalizationPatterns(cleanup, &getContext());
-        }
-        const mlir::FrozenRewritePatternSet frozen(std::move(cleanup));
-        for (mlir::func::FuncOp fn : touched)
-        {
-            if (mlir::failed(mlir::applyPatternsGreedily(fn, frozen)))
-            {
-                fn.emitError("failed to canonicalise a body whose null guard was folded");
-                signalPassFailure();
-                return;
-            }
-            eraseUnusedLoads(fn);
-        }
-    }
-
-    /// @brief Erases the reads of @p fn whose results nothing consumes.
-    ///
-    /// A read is not memory-effect-free, so the canonicaliser keeps one whose result the fold has
-    /// just orphaned. What it leaves is a value no backend spells and, where the read was the whole
-    /// of an arm, a branch with nothing in it. A plan reads only through a pointer it has already
-    /// established, so the read has no effect beyond the value nothing now wants. Erasing one can
-    /// orphan the read that addressed it, so this runs to a fixed point.
-    static void eraseUnusedLoads(mlir::func::FuncOp fn)
-    {
-        bool erasedAny = true;
-        while (erasedAny)
-        {
-            erasedAny = false;
-            llvm::SmallVector<mlir::Operation*> dead;
-            fn.walk([&](mlir::Operation* op) {
-                if (mlir::isa<mlir::dsdl::LoadScalarOp, mlir::dsdl::LoadMemberOp, mlir::dsdl::LoadElementOp>(op) &&
-                    op->use_empty())
-                {
-                    dead.push_back(op);
-                }
-            });
-            for (mlir::Operation* op : dead)
-            {
-                op->erase();
-                erasedAny = true;
-            }
+            signalPassFailure();
         }
     }
 
@@ -1402,6 +1418,73 @@ private:
 ///
 /// It declines anything it does not recognise, and a declined body is the one every backend
 /// already translates, so declining is free.
+/// @brief Erases the size a composite getter writes back, where the target's getter returns a view.
+struct FoldDSDLUnobservedAccessorSizesPass
+    : public mlir::PassWrapper<FoldDSDLUnobservedAccessorSizesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-unobserved-accessor-sizes";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Erase the size a composite getter writes back where the target's getter returns a view";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        // A composite getter answers a pointer to the nested type's bytes and writes their length
+        // through its last argument. A target whose getter answers a view -- a slice, a
+        // `memoryview`, a `Uint8Array` -- hands the caller that length inside the view, so nothing
+        // reads what the pointer receives. The write is erased only where the pointer is never read
+        // back, so a getter that did read it keeps the value it read.
+        llvm::SmallVector<mlir::func::FuncOp> touched;
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (!body || (body.getValue() != "get") || (fn.getNumArguments() == 0) || (fn.getNumResults() != 1) ||
+                !mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front()))
+            {
+                return;
+            }
+            const mlir::Value size = fn.getArguments().back();
+            const auto        type = mlir::dyn_cast<mlir::dsdl::PtrType>(size.getType());
+            if (!type || !mlir::isa<mlir::dsdl::SizeType>(type.getPointee()))
+            {
+                return;
+            }
+            llvm::SmallVector<mlir::Operation*> writes;
+            for (mlir::Operation* user : size.getUsers())
+            {
+                if (!mlir::isa<mlir::dsdl::StoreScalarOp>(user))
+                {
+                    return;
+                }
+                writes.push_back(user);
+            }
+            if (writes.empty())
+            {
+                return;
+            }
+            for (mlir::Operation* write : writes)
+            {
+                write->erase();
+            }
+            touched.push_back(fn);
+        });
+        if (touched.empty())
+        {
+            return;
+        }
+        // What the write consumed -- an offset from the buffer's size, clamped -- is now read by
+        // nothing.
+        if (mlir::failed(cleanUpFolded(getContext(), touched, "unobserved accessor size was erased")))
+        {
+            signalPassFailure();
+        }
+    }
+};
+
 struct FoldDSDLHostImageBodiesPass
     : public mlir::PassWrapper<FoldDSDLHostImageBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -2132,6 +2215,11 @@ std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(const TargetNullability
     return std::make_unique<FoldDSDLNullGuardsPass>(nullability);
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass()
+{
+    return std::make_unique<FoldDSDLUnobservedAccessorSizesPass>();
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
 {
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
@@ -2153,7 +2241,8 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager&    pm,
                                 const bool              optimizeLoweredSerDes,
                                 const bool              targetObjectsAreByteImages,
                                 const bool              accessorsOnly,
-                                const TargetNullability nullability)
+                                const TargetNullability nullability,
+                                const bool              accessorsReturnViews)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
@@ -2164,6 +2253,12 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager&    pm,
     if (!nullability.allNullable())
     {
         pm.addPass(createFoldDSDLNullGuardsPass(nullability));
+    }
+    // Its own stage for the same reason, under a different capability: whether a caller can see the
+    // size a getter writes back is a question about the getter's signature, not about nulls.
+    if (accessorsReturnViews)
+    {
+        pm.addPass(createFoldDSDLUnobservedAccessorSizesPass());
     }
     // Its own stage, under the target's capability. Folding inside the optimise stage would make
     // the fast path turn on a flag about simplification, which is a different question.
