@@ -11,6 +11,7 @@ This installs nothing. A judge that is not here belongs in the toolshed image.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -18,9 +19,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# A Go tool installed with `go install` lands in GOPATH/bin, and a container's GOPATH at run time
-# need not be the one the image built with, so the likely roots are searched rather than assumed.
-GO_BIN_ROOTS = ("/usr/local/bin", "/usr/local/go/bin", "/root/go/bin", "/opt/go/bin")
+# A Go tool installed with `go install` lands in the GOPATH of whoever installed it, which for an
+# image is the account that built it. The runtime GOPATH follows the runtime HOME and so does not
+# reveal that: `ts26.4.5` carries staticcheck in /root/go/bin, while a CI container runs with
+# HOME=/github/home and reports GOPATH=/github/home/go. Both are searched, along with the accounts
+# an image is plausibly built as and the system locations a package would use.
+GO_BIN_ROOTS = ("/usr/local/bin", "/usr/local/go/bin", "/opt/go/bin")
+GO_BIN_GLOBS = ("/root/go/bin", "/home/*/go/bin", "/usr/lib/go*/bin")
 
 # eslint reads a `.ts` file only through the TypeScript parser, so an eslint without one lints
 # nothing and reports that as success. Either package provides it.
@@ -54,6 +59,8 @@ def find_command(name: str, *, go_tool: bool = False) -> tuple[str | None, list[
 
     roots = [root for root in (f"{go_env('GOPATH')}/bin", f"{go_env('GOROOT')}/bin") if root != "/bin"]
     roots += list(GO_BIN_ROOTS)
+    for pattern in GO_BIN_GLOBS:
+        roots += sorted(str(path) for path in Path("/").glob(pattern.lstrip("/")))
     for root in roots:
         looked.append(root)
         candidate = Path(root) / name
@@ -112,24 +119,53 @@ def find_parser() -> tuple[str | None, str, list[str]]:
     return None, "", looked
 
 
+# Which judges are distributed as a Go tool, and so may sit off PATH entirely.
+GO_TOOLS = frozenset({"staticcheck"})
+
+JUDGES = {
+    "staticcheck": "Go style judge (ST1003 and the SA checks)",
+    "ruff": "Python style judge",
+    "eslint": "TypeScript style judge",
+    "cargo-clippy": "Rust style judge, beyond what rustc denies",
+}
+
+
+def print_path(name: str) -> int:
+    """Print where @p name is, for a caller that cannot rely on PATH holding it.
+
+    The build registers a judge lane only for a judge it can find, so this is the one lookup both
+    the assertion and the lane registration ask, rather than each guessing at install locations.
+    """
+    path, looked = find_command(name, go_tool=name in GO_TOOLS)
+    if path is None:
+        print(f"{name} not found; looked in {', '.join(looked)}", file=sys.stderr)
+        return 1
+    print(path)
+    return 0
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--path",
+        metavar="JUDGE",
+        choices=sorted(JUDGES),
+        help="print where one judge is and exit, rather than asserting them all",
+    )
+    arguments = parser.parse_args()
+    if arguments.path:
+        return print_path(arguments.path)
+
     # eslint 10 is where `no-useless-assignment` begins, and it reports the accessor that binds a
     # size the language's signature does not return -- the same defect `SA4006` and `F841` name, at
     # the same count in all three. An eslint behind 10 finds none of them, so a lane on it would
     # ratchet in a shape the other two judges report. The other judges take no floor: the versions
     # tried report identically, rule for rule.
-    judges = {
-        "staticcheck": ("Go style judge (ST1003 and the SA checks)", True),
-        "ruff": ("Python style judge", False),
-        "eslint": ("TypeScript style judge", False),
-        "cargo-clippy": ("Rust style judge, beyond what rustc denies", False),
-    }
-
     missing: list[str] = []
     found: dict[str, str] = {}
 
-    for name, (purpose, go_tool) in judges.items():
-        path, looked = find_command(name, go_tool=go_tool)
+    for name, purpose in JUDGES.items():
+        path, looked = find_command(name, go_tool=name in GO_TOOLS)
         if path is None:
             missing.append(f"command: {name} ({purpose}; looked in {', '.join(looked)})")
             continue
@@ -142,27 +178,21 @@ def main() -> int:
                 f"version: eslint {found['eslint']} is behind 10, where no-useless-assignment begins"
             )
 
-    # The parser is reported rather than required, because no lane reads a `.ts` file yet. It is
-    # not optional for the lane that will: eslint 10.11.0 alone answers `interface` with
-    # `Parsing error: Unexpected token interface`, and a config whose `files` misses `.ts` lints
-    # nothing and exits zero -- which is the shape this script exists to prevent. Whoever builds
-    # the TypeScript judge lane needs an image that carries it.
+    # Required, not optional: eslint alone answers `interface` with `Parsing error: Unexpected
+    # token interface`, and a configuration whose `files` misses `.ts` lints nothing and exits
+    # zero. An image carrying eslint without the parser can host no TypeScript judge.
     package, version, looked = find_parser()
-    pending = ""
     if package is None:
-        pending = (
+        missing.append(
             "module: "
             + " or ".join(PARSER_PACKAGES)
-            + f" (looked under {', '.join(looked)}); the TypeScript judge lane cannot be built"
-            " until the image carries it, since eslint alone cannot parse TypeScript"
+            + f" (TypeScript parser for eslint; looked under {', '.join(looked)})"
         )
     else:
         found[package] = version
 
     for name, version in found.items():
         print(f"{name:<28} {version}")
-    if pending:
-        print(f"pending                      {pending}")
     sys.stdout.flush()
 
     if not missing:

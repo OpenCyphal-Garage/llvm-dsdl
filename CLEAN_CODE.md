@@ -258,28 +258,51 @@ already forbids.
 Each remaining language gains the style judge its compiler is not: `cargo clippy -- -D warnings`
 beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` rules for Python,
 `eslint` with `@typescript-eslint/naming-convention`, and `clang-tidy`'s
-`readability-identifier-naming` over the generated C and C++. `ts26.4.4` carries four of them --
-`staticcheck` 2025.1.1, `ruff` 0.16.8, `eslint` 10.11.0 and `clippy` 0.1.93 -- beside the
-`clang-tidy` the lint lane already runs. `tools/assert_style_judges.py` is what says so: every lane
-that asserts its toolchains asserts the judges too, and reports the versions it found.
+`readability-identifier-naming` over the generated C and C++. `ts26.4.5` carries all of them --
+`staticcheck` 2025.1.1, `ruff` 0.16.8, `eslint` 10.11.0, `clippy` 0.1.93 and `typescript-eslint`
+8.70.1 -- beside the `clang-tidy` the lint lane already runs. `tools/assert_style_judges.py` is what
+says so: every lane that asserts its toolchains asserts the judges too, and reports the versions it
+found.
 
-What the image does not carry is the TypeScript parser, and eslint cannot read a `.ts` file without
-one: 10.11.0 answers `interface` with `Parsing error: Unexpected token interface`, and a
-configuration whose `files` misses `.ts` lints nothing and exits zero. So the Go, Python and Rust
-judge lanes can be built on this image and the TypeScript one cannot. The script reports that gap
-rather than failing on it, because no lane reads a `.ts` file yet; the lane that will needs an image
-carrying `typescript-eslint` or `@typescript-eslint/parser`.
+The parser is required rather than merely reported, because eslint cannot read a `.ts` file without
+it: 10.11.0 answers `interface` with `Parsing error: Unexpected token interface`, and a
+configuration whose `files` misses `.ts` lints nothing and exits zero. An image carrying eslint
+alone can host no TypeScript judge, and would say so by passing.
 
-The version a judge is pinned at is part of what it reports. The counts below were taken with
-`ruff` 0.16.8, `staticcheck` 2026.2.1 and `eslint` 10.11.0 beside `typescript-eslint` 8.70.1 and
-TypeScript 6.0.3 -- which is the newest set that resolves, since `typescript-eslint` holds
-TypeScript below 6.1. `no-useless-assignment` arrived in `eslint` 10 and reports a defect the
+`eslint` is also the one judge the image must not merely carry but resolve to. `ts26.4.4` had
+eslint 10 as an unreachable dependency of `typescript-eslint` while `/usr/bin/eslint` was Debian's
+6.4.0, which predates flat config and sits outside the parser's peer range. The assertion reads the
+version of whatever `eslint` resolves to, so that arrangement fails rather than judges.
+
+The version a judge is pinned at is part of what it reports, so the counts are taken with the
+judges `ts26.4.5` carries and nothing else: `ruff` 0.16.8, `staticcheck` 2025.1.1, `eslint` 10.11.0
+beside `typescript-eslint` 8.70.1 and TypeScript 5.2.2, and `clippy` 0.1.93. Each is recorded per
+rule in `test/integration/judge-baselines/`, written by the lane rather than added up by hand.
+
+Two of those differ from what a local run may have. `clippy` 0.1.95 reports `nonminimal_bool` six
+times where 0.1.93 reports `collapsible_else_if` thirty-four, so a host reading 607 and a lane
+reading 641 are two judges rather than a regression. TypeScript 5.2.2 against 6.0.3 changes none of
+these counts, which is why the pairing the image ships is enough. `typescript-eslint` holds
+TypeScript below 6.1 in any case. `no-useless-assignment` arrived in `eslint` 10 and reports a defect the
 older release did not, so a lane pinned behind it would have ratcheted in a shape two other judges
 already name. The lint lane holds `eslint` at 10 or newer for that reason, and holds the other two
 to nothing: the versions tried report identically, rule for rule.
 
-Those three are what remains of this phase, and they gate the phases after it rather than decorate
-them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and
+The lanes are `llvmdsdl-uavcan-<language>-style-judge`, one per judge, each generating the regulated
+corpus and holding its judge to `test/integration/judge-baselines/<language>.json`. The comparison
+is per rule rather than on the total, because a total alone lets one rule grow behind another
+shrinking. A rule absent from a baseline is a regression at any count: a judge reporting something
+it has never reported is exactly what the lane is for.
+
+A baseline records the judge that produced it and is not compared against another version of it.
+Off CI that mismatch is a skip, since a developer's judge differing from the image's is not a
+verdict on the generated code; on CI it is a failure, because the image pins every judge and a
+mismatch there means the baseline is stale. Each lane is registered only for a judge the build can
+find, which is how every language lane here behaves, and the toolchain assertion is what stops a
+judge going missing in CI without anyone noticing.
+
+Those remaining rows are what is left of this phase, and they gate the phases after it rather than
+decorate them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and
 the six of them that earlier fixes in that same branch created were each caught by a judge rather
 than by inspection. Go, Python and TypeScript have no such judge installed, so running their phases
 first would mean discovering their defects in review, which is the cost this phase exists to avoid.
@@ -360,17 +383,17 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 
 | language | judge | before the sweep | now |
 |----------|-------|-----------------:|----:|
-| Rust | clippy | 867 | 607 |
-| Go | staticcheck | 3,241 | 462 |
+| Rust | clippy | 867 | 641 |
+| Go | staticcheck | 3,241 | 362 |
 | Python | ruff | 4,188 | 1,762 |
 | TypeScript | eslint | 1,810 | 592 |
-| | | **10,106** | **3,423** |
+| | | **10,106** | **3,357** |
 
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
-| 998 | Python | `E501` | long lines |
+| 997 | Python | `E501` | long lines |
 | 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
 | 132 | Go, Python, TypeScript | `SA4006`/`F841`/`no-useless-assignment` | an accessor binds a size the language's signature does not return; all three count 44 |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
@@ -381,6 +404,7 @@ What is left is per-language.
 | 164 | Python | `SIM108` | the remaining branch-not-expression sites |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
+| 34 | Rust | `collapsible_else_if` | an `else` holding one `if`, which the branch shapes leave behind |
 | 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by

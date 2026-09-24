@@ -39,7 +39,7 @@ jobs:
     # C++23, and ubuntu-latest ships a GCC too old for it. LLVM comes from the
     # pin, as everywhere else.
     container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.4
+      image: ghcr.io/opencyphal/toolshed:ts26.4.5
     timeout-minutes: 120
     strategy:
       fail-fast: false

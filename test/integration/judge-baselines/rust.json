@@ -1,0 +1,11 @@
+{
+  "judge": "clippy 0.1.93",
+  "counts": {
+    "clippy::collapsible_else_if": 34,
+    "clippy::derivable_impls": 59,
+    "clippy::doc_lazy_continuation": 8,
+    "clippy::manual_div_ceil": 1,
+    "clippy::needless_late_init": 381,
+    "clippy::unnecessary_cast": 158
+  }
+}
