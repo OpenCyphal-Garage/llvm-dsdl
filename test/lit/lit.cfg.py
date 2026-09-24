@@ -3,7 +3,11 @@ import sys
 import lit.formats
 
 config.name = "LLVMDSDL"
-config.test_format = lit.formats.ShTest(True)
+
+# The internal shell. lit removes the external one in LLVM-24 and refuses to configure it from
+# LLVM-23, and the only construct these tests needed it for was `(cd dir && cmd)` -- which the
+# parentheses were there to contain, and lit gives each RUN line a shell of its own.
+config.test_format = lit.formats.ShTest()
 config.suffixes = [".mlir", ".txt"]
 config.excludes = ["CMakeLists.txt", "lit.cfg.py", "lit.site.cfg.py.in"]
 if not getattr(config, "test_source_root", None):
