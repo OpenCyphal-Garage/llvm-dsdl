@@ -432,9 +432,9 @@ Gate: the same oracle, plus the emission-site count in the declaration half.
 
 **5 to 10 — One phase per language**, each flipping its row from *as today* to the target above and
 turning its judge from phase 1 green. Rust's and Go's names landed ahead of the mechanism, in #41
-and #42, and what remains of each is its error type. C is cheapest and can go anywhere. C++ goes last of the six: nesting is the largest change to the surface tree any language
-asks for, and taking it after five languages have exercised the tree tests it on the shape that
-stresses it most.
+and #42, and what remains of each is its error type. C is cheapest and can go anywhere. C++ goes
+last of the six: nesting is the largest change to the surface tree any language asks for, and
+taking it after five languages have exercised the tree tests it on the shape that stresses it most.
 
 Nothing in phases 2 to 10 touches a plan body. The wire is fixed by the round-trip, parity and
 cross-language equivalence lanes throughout, and a phase that moves a wire byte has failed.
