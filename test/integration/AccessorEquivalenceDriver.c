@@ -15,7 +15,8 @@
  * field, on a full buffer and on a short one, and a setter writes what deserialise reads back. The
  * buffers are pseudo-random, so floats meet every pattern including the NaNs, and values are
  * compared as bits. An integer round trip is also exact; a float's is not asked to be, since a
- * float16 NaN need not survive narrowing with its payload. */
+ * float16 NaN need not survive narrowing with its payload. A getter handed a null buffer reads it
+ * as an empty one, whatever size it is handed, and answers zero. */
 static uint32_t rng = 0x9E3779B9u;
 
 static void fill(uint8_t* const buffer, const size_t size)
@@ -39,12 +40,16 @@ static int failures = 0;
         T       obj;                                                        \
         CTYPE   got;                                                        \
         CTYPE   v;                                                          \
+        CTYPE   zero;                                                       \
         size_t  size = SIZE;                                                \
         int     ok   = 1;                                                   \
         fill(wire, SIZE);                                                   \
+        memset(&zero, 0, sizeof zero);                                      \
         ok   = ok && (T##__deserialize_(&obj, wire, &size) == 0);           \
         got  = T##__get_##FIELD##_(wire, SIZE);                             \
         ok   = ok && (memcmp(&got, &obj.FIELD, sizeof got) == 0);           \
+        got  = T##__get_##FIELD##_(NULL, SIZE);                             \
+        ok   = ok && (memcmp(&got, &zero, sizeof got) == 0);                \
         size = SIZE / 2;                                                    \
         ok   = ok && (T##__deserialize_(&obj, wire, &size) == 0);           \
         got  = T##__get_##FIELD##_(wire, SIZE / 2);                         \
@@ -83,6 +88,8 @@ static int failures = 0;
         got = T##__get_##FIELD##_(wire, SIZE, INDEX);                    \
         ok  = ok && (memcmp(&got, &obj.FIELD[INDEX], sizeof got) == 0);  \
         got = T##__get_##FIELD##_(wire, SIZE, CAPACITY);                 \
+        ok  = ok && (memcmp(&got, &zero, sizeof got) == 0);              \
+        got = T##__get_##FIELD##_(NULL, SIZE, INDEX);                    \
         ok  = ok && (memcmp(&got, &zero, sizeof got) == 0);              \
         memset(out, 0, SIZE);                                            \
         v    = T##__get_##FIELD##_(wire, SIZE, INDEX);                   \
@@ -130,7 +137,8 @@ int main(void)
     }
     REPORT("uavcan.si.unit.angle.Quaternion");
     /* A nested composite, through the buffer its getter answers: the nested type's own getter on it
-     * agrees with deserialise on the full buffer and on one cut inside the nested field. */
+     * agrees with deserialise on the full buffer and on one cut inside the nested field, and a null
+     * buffer answers an empty one. */
     {
         uint8_t                                 wire[11];
         uavcan__si__sample__temperature__Scalar obj;
@@ -146,6 +154,8 @@ int main(void)
         stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(wire, 3, &sub);
         ok    = ok && (sub == 3) &&
                 (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == obj.timestamp.microsecond);
+        stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(NULL, sizeof wire, &sub);
+        ok    = ok && (sub == 0) && (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == 0);
         if (!ok)
         {
             ++type_failures;

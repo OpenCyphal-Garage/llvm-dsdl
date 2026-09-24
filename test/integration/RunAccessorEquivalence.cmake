@@ -14,7 +14,8 @@
 # reached through the buffer its getter answers. Each
 # driver fills a buffer with pseudo-random bytes, so floats meet every pattern including the NaNs,
 # and compares values as bits; it repeats on a half-length buffer, where both sides zero-extend, and
-# refuses a setter an empty buffer.
+# refuses a setter an empty buffer. The C and C++ drivers also hand each getter a null buffer and a
+# non-zero size, which it reads as an empty one.
 #
 # Every language whose toolchain was given runs; C and C++ always do.
 #

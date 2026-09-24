@@ -14,7 +14,8 @@
 
 // An accessor against the body it stands in for: a getter answers what deserialise puts in the
 // field, on a full buffer and on a short one, and a setter writes what deserialise reads back.
-// Values are compared as bits, so a NaN meets itself; an integer round trip is also exact.
+// Values are compared as bits, so a NaN meets itself; an integer round trip is also exact. A getter
+// handed a null buffer reads it as an empty one, whatever size it is handed, and answers zero.
 static std::uint32_t rng = 0x9E3779B9u;
 
 static void fill(std::uint8_t* const buffer, const std::size_t size)
@@ -47,6 +48,7 @@ static bool checkField(V (*get)(const std::uint8_t*, std::size_t),
     std::size_t size = Size;
     bool        ok   = obj.deserialize(wire, &size) == 0;
     ok               = ok && sameBits(get(wire, Size), obj.*member);
+    ok               = ok && sameBits(get(nullptr, Size), V{});
     size             = Size / 2;
     ok               = ok && obj.deserialize(wire, &size) == 0;
     ok               = ok && sameBits(get(wire, Size / 2), obj.*member);
@@ -79,6 +81,7 @@ static bool checkElement(V (*get)(const std::uint8_t*, std::size_t, std::size_t)
         ok        = ok && obj.deserialize(wire, &size) == 0;
         ok        = ok && sameBits(get(wire, Size, i), (obj.*member)[i]);
         ok        = ok && sameBits(get(wire, Size, Capacity), zero);
+        ok        = ok && sameBits(get(nullptr, Size, i), zero);
         const V v = get(wire, Size, i);
         ok        = ok && set(out, Size, i, v) == 0;
         size      = Size;
@@ -134,7 +137,8 @@ int main()
     report("uavcan.si.unit.angle.Quaternion",
            checkElement<Quaternion, float, 16, 4>(&Quaternion::get_wxyz, &Quaternion::set_wxyz, &Quaternion::wxyz));
     // A nested composite, through the buffer its getter answers: the nested type's own getter on it
-    // agrees with deserialise on the full buffer and on one cut inside the nested field.
+    // agrees with deserialise on the full buffer and on one cut inside the nested field, and a null
+    // buffer answers an empty one.
     {
         using uavcan::si::sample::temperature::Scalar;
         using uavcan::time::SynchronizedTimestamp;
@@ -150,6 +154,8 @@ int main()
         ok    = ok && obj.deserialize(wire, &size) == 0;
         stamp = Scalar::get_timestamp(wire, 3, &sub);
         ok    = ok && sub == 3 && SynchronizedTimestamp::get_microsecond(stamp, sub) == obj.timestamp.microsecond;
+        stamp = Scalar::get_timestamp(nullptr, sizeof wire, &sub);
+        ok    = ok && sub == 0 && SynchronizedTimestamp::get_microsecond(stamp, sub) == 0;
         report("uavcan.si.sample.temperature.Scalar",
                ok && checkField<Scalar, float, 11>(&Scalar::get_kelvin, &Scalar::set_kelvin, &Scalar::kelvin, false));
     }

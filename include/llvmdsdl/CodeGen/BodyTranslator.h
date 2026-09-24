@@ -97,7 +97,7 @@ enum class ValueRole : std::uint8_t
     Offset,      ///< The bit offset a plan threads through its steps.
     Object,      ///< The address of a member, or of one element of an array member.
     Buffer,      ///< An address within the wire buffer.
-    Size,        ///< A size in bytes, held where a nested call can write back to it.
+    Size,        ///< A size in bytes: what a getter may read, or what a nested call writes back.
     Length,      ///< An array member's element count.
     Tag,         ///< A union's tag.
     Scalar,      ///< A member's value, or a scalar read out of the buffer.
