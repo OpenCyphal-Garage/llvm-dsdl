@@ -853,10 +853,14 @@ public:
         line(w, "@staticmethod");
         if (composite)
         {
-            // The nested type's buffer, as a slice; the remaining size the plan stores lands in a
-            // local beside it.
+            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
+            // length a plan writes back, so the lowering erases the write for this target, and the
+            // size pointer is declared only where a plan still reads it.
             open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> memoryview:");
-            line(w, "out_size = 0");
+            if (!fn.getArguments().back().use_empty())
+            {
+                line(w, "out_size = 0");
+            }
         }
         else if (getter)
         {

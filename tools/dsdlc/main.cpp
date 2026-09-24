@@ -2237,6 +2237,13 @@ int runDsdlc(int argc, char** argv)
         nullability = {true, false};
     }
 
+    // Whether a composite getter answers a view that carries its own length. C and C++ answer a
+    // pointer and pass the length back through another, which the caller reads; the other four
+    // answer a slice, a `memoryview` or a `Uint8Array`, and the length the plan writes back is read
+    // by nothing. `mlir` keeps the write, printing the neutral body rather than a target's reading.
+    const bool accessorsReturnViews = (options.targetLanguage == "rust") || (options.targetLanguage == "go") ||
+                                      (options.targetLanguage == "ts") || (options.targetLanguage == "python");
+
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
     // over the module they all receive.
     {
@@ -2246,7 +2253,8 @@ int runDsdlc(int argc, char** argv)
                                              options.optimizeLoweredSerDes,
                                              hostImageFolded,
                                              options.aliasableOnly,
-                                             nullability);
+                                             nullability,
+                                             accessorsReturnViews);
         if (mlir::failed(pm.run(*mlirModule)))
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";

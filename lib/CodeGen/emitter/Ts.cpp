@@ -743,11 +743,14 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a subarray, whose length the plan's store of the
-            // remaining size lands in a local beside it.
+            // The nested type's buffer, as a subarray, which carries its own length. Nothing reads
+            // the length a plan writes back, so the lowering erases the write for this target, and
+            // the size pointer is declared only where a plan still reads it.
             w.open("export function " + name + "(buffer: Uint8Array" + index + "): Uint8Array {");
-            w.line("let outSize = 0;");
-            w.line("void outSize;");
+            if (!fn.getArguments().back().use_empty())
+            {
+                w.line("let outSize = 0;");
+            }
         }
         else if (getter)
         {

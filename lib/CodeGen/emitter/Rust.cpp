@@ -707,11 +707,14 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a slice: its length is what the plan stores through the
-            // size pointer, which a slice carries itself, so the store lands in a local nothing
-            // reads, named so the compiler expects that.
+            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
+            // length a plan writes back, so the lowering erases the write for this target, and the
+            // size pointer is declared only where a plan still reads it.
             w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> &[u8] {");
-            w.line("let mut _out_size: usize = 0;");
+            if (!fn.getArguments().back().use_empty())
+            {
+                w.line("let mut out_size: usize = 0;");
+            }
         }
         else if (getter)
         {
@@ -730,7 +733,14 @@ public:
             w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage +
                    ") -> core::result::Result<(), i8> {");
         }
-        w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
+        // The buffer's size as the plan speaks it, bound where the plan uses it at all. A composite
+        // getter does not, once the length it wrote back is erased. A scalar accessor does, but only
+        // through reads whose Rust spelling takes the slice alone, which carries its own length --
+        // so the name is one the compiler is told not to expect to be read.
+        if (!fn.getArgument(1).use_empty())
+        {
+            w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
+        }
         std::vector<std::string> parameters{"buffer", "_buffer_size_bytes"};
         if (indexed)
         {
@@ -739,7 +749,7 @@ public:
         }
         if (composite)
         {
-            parameters.emplace_back("_out_size");
+            parameters.emplace_back("out_size");
         }
         else if (!getter)
         {
