@@ -28,18 +28,35 @@ from __future__ import annotations
 
 import argparse
 import collections
+import concurrent.futures
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from assert_style_judges import GO_TOOLS, find_command
 
 # What each judge is asked, beside the corpus. The selections are the ones `CLEAN_CODE.md` records
 # its counts under; changing one changes what the baseline means, so it belongs here rather than in
 # a lane's arguments.
 RUFF_SELECT = "E,F,W,N,UP,B,SIM,RUF"
 STATICCHECK_CHECKS = "all"
+
+# clang-tidy's rulesets are long enough to carry a reason per subtraction, so they are files beside
+# the baselines rather than strings here.
+CLANG_TIDY_RULESETS = Path(__file__).resolve().parent.parent / "test" / "integration" / "judge-rulesets"
+
+# The C++ judge reads the `std` profile at the lowest standard it compiles under, so no modernize
+# check can suggest what a consumer on that standard could not write.
+CLANG_TIDY_FLAGS = {"c": ["-std=c11"], "cpp": ["-x", "c++-header", "-std=c++14"]}
+CPP_PROFILE = "std"
+
+# The C++ tree carries the C runtime header for its bodies to call. It is the C tree's header under
+# another banner, and the C judge holds it to C's conventions rather than this one to C++'s.
+C_RUNTIME_HEADER = "dsdl_runtime.h"
 
 # What ctest is told to read as a skip, matching the other lanes that cannot run everywhere.
 SKIP_EXIT = 77
@@ -57,6 +74,8 @@ def generate(dsdlc: Path, language: str, corpus: Path, outdir: Path, module: str
         command += ["--go-module", module]
     elif language == "ts":
         command += ["--ts-module", module]
+    elif language == "cpp":
+        command += ["--cpp-profile", CPP_PROFILE]
     result = run(command)
     if result.returncode != 0:
         print(f"generating {language} failed:\n{result.stdout}\n{result.stderr}", file=sys.stderr)
@@ -198,7 +217,105 @@ def judge_rust(judge: Path, root: Path, env: dict[str, str]) -> collections.Coun
     return counts
 
 
+def judge_clang_tidy(language: str, judge: Path, root: Path, env: dict[str, str]) -> collections.Counter:
+    """Count clang-tidy's findings by check.
+
+    Every header is a translation unit of its own as well as being included by others, because
+    `misc-include-cleaner` reads only a unit's main file: a header judged only through its includers
+    would never have its own includes checked. A header several units reach reports a finding once
+    per unit, so a finding is counted once for its check and location.
+
+    A `clang-diagnostic-error` is a unit that did not compile rather than a finding, and is fatal:
+    clang-tidy reports it the same way it reports a check.
+    """
+    try:
+        import yaml
+    except ImportError:
+        print("PyYAML is needed to read clang-tidy's exported findings", file=sys.stderr)
+        raise SystemExit(1)
+
+    # Absolute throughout: the header filter is matched against the path clang resolved an include
+    # to, and a relative root would match nothing and judge only the main files.
+    root = root.resolve()
+    patterns = ("*.c", "*.h") if language == "c" else ("*.hpp", "*.h")
+    units = sorted(
+        path
+        for pattern in patterns
+        for path in root.rglob(pattern)
+        if not (language == "cpp" and path.name == C_RUNTIME_HEADER)
+    )
+    if not units:
+        print(f"no {language} sources under {root}", file=sys.stderr)
+        raise SystemExit(1)
+
+    exported = root / ".clang-tidy-findings"
+    shutil.rmtree(exported, ignore_errors=True)
+    exported.mkdir(parents=True)
+    ruleset = CLANG_TIDY_RULESETS / f"{language}.clang-tidy"
+    within = "^" + re.escape(str(root)) + "/"
+    runtime = [f"--exclude-header-filter=/{re.escape(C_RUNTIME_HEADER)}$"] if language == "cpp" else []
+
+    def judge_unit(index_unit: tuple[int, Path]) -> tuple[Path, list[dict], str]:
+        index, unit = index_unit
+        fixes = exported / f"{index}.yaml"
+        result = run(
+            [
+                str(judge),
+                str(unit),
+                f"--config-file={ruleset}",
+                f"--header-filter={within}",
+                *runtime,
+                f"--export-fixes={fixes}",
+                "--quiet",
+                "--",
+                *CLANG_TIDY_FLAGS[language],
+                f"-I{root}",
+            ],
+            env=env,
+        )
+        if not fixes.is_file():
+            return unit, [], result.stderr if result.returncode != 0 else ""
+        return unit, (yaml.safe_load(fixes.read_text()) or {}).get("Diagnostics") or [], ""
+
+    findings: dict[tuple[str, str, int], str] = {}
+    failed = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+        for unit, diagnostics, error in pool.map(judge_unit, enumerate(units)):
+            if error:
+                failed.append(f"{unit}: {error.strip()[:500]}")
+            for diagnostic in diagnostics:
+                message = diagnostic["DiagnosticMessage"]
+                if diagnostic["DiagnosticName"] == "clang-diagnostic-error":
+                    failed.append(f"{message.get('FilePath')}: {message.get('Message')}")
+                    continue
+                path = message.get("FilePath", "")
+                # The header filter admits a diagnostic any of whose notes is admitted, and an
+                # analyzer path into the C runtime starts in a generated header.
+                if language == "cpp" and Path(path).name == C_RUNTIME_HEADER:
+                    continue
+                key = (diagnostic["DiagnosticName"], path, message.get("FileOffset", 0))
+                findings[key] = message.get("Message", "")
+    if failed:
+        print("clang-tidy could not compile what it was given:", file=sys.stderr)
+        for item in failed[:10]:
+            print(f"  {item}", file=sys.stderr)
+        raise SystemExit(1)
+    return collections.Counter(name for name, _, _ in findings)
+
+
+def judge_c(judge: Path, root: Path, env: dict[str, str]) -> collections.Counter:
+    """Count clang-tidy's findings over generated C."""
+    return judge_clang_tidy("c", judge, root, env)
+
+
+def judge_cpp(judge: Path, root: Path, env: dict[str, str]) -> collections.Counter:
+    """Count clang-tidy's findings over generated C++."""
+    return judge_clang_tidy("cpp", judge, root, env)
+
+
 JUDGES = {
+    "c": ("clang-tidy", judge_c),
+    "cpp": ("clang-tidy", judge_cpp),
     "go": ("staticcheck", judge_go),
     "python": ("ruff", judge_python),
     "ts": ("eslint", judge_typescript),
@@ -232,7 +349,11 @@ def main() -> int:
     parser.add_argument("--dsdlc", type=Path, help="required unless --skip-generate")
     parser.add_argument("--corpus", type=Path, help="the DSDL root to generate from")
     parser.add_argument("--outdir", required=True, type=Path)
-    parser.add_argument("--judge", type=Path, help="the judge's path; resolved from PATH if omitted")
+    parser.add_argument(
+        "--judge",
+        type=Path,
+        help="the judge's path; found as tools/assert_style_judges.py finds it if omitted",
+    )
     parser.add_argument("--baseline", required=True, type=Path)
     parser.add_argument("--module", default="judged_dsdl", help="module name for Go and TypeScript")
     parser.add_argument(
@@ -251,7 +372,37 @@ def main() -> int:
         parser.error("--dsdlc is required unless --skip-generate is given")
 
     judge_name, judge_counts = JUDGES[arguments.language]
-    judge = arguments.judge or Path(judge_name)
+    judge = arguments.judge
+    if judge is None:
+        found, looked = find_command(judge_name, go_tool=judge_name in GO_TOOLS)
+        if found is None:
+            print(f"{judge_name} not found; looked in {', '.join(looked)}", file=sys.stderr)
+            return 1
+        judge = Path(found)
+    version = judge_version(judge)
+    on_ci = os.environ.get("GITHUB_ACTIONS") == "true"
+
+    recorded = None
+    if not arguments.update:
+        if not arguments.baseline.is_file():
+            print(f"no baseline at {arguments.baseline}; take one with --update", file=sys.stderr)
+            return 1
+        recorded = json.loads(arguments.baseline.read_text())
+        if recorded.get("judge") != version:
+            print(
+                f"this baseline was taken with {recorded.get('judge')!r} and the judge here is"
+                f" {version!r}. A count is only comparable within one version of a judge, so this is"
+                " not a verdict on the generated code.",
+                file=sys.stderr,
+            )
+            # On CI the judge still runs, so the log holds the counts the baseline is retaken from.
+            if not on_ci:
+                print(
+                    "Skipping. The toolshed container pins every judge -- CONTRIBUTING.md has the"
+                    " recipe.",
+                    file=sys.stderr,
+                )
+                return SKIP_EXIT
 
     if not arguments.skip_generate:
         generate(
@@ -265,7 +416,6 @@ def main() -> int:
         print(f"{count:>6}  {rule}")
     print(f"{total:>6}  total")
 
-    version = judge_version(judge)
     print(f"        judge: {version}")
 
     if arguments.update:
@@ -276,31 +426,13 @@ def main() -> int:
         print(f"baseline rewritten: {arguments.baseline}")
         return 0
 
-    if not arguments.baseline.is_file():
-        print(f"no baseline at {arguments.baseline}; take one with --update", file=sys.stderr)
-        return 1
-
-    recorded = json.loads(arguments.baseline.read_text())
     if recorded.get("judge") != version:
-        on_ci = os.environ.get("GITHUB_ACTIONS") == "true"
         print(
-            f"this baseline was taken with {recorded.get('judge')!r} and the judge here is"
-            f" {version!r}. A count is only comparable within one version of a judge, so this is"
-            " not a verdict on the generated code.",
+            "::error::the image's judge has moved; retake this baseline with --update and say"
+            " in the commit what changed",
             file=sys.stderr,
         )
-        if on_ci:
-            print(
-                "::error::the image's judge has moved; retake this baseline with --update and say"
-                " in the commit what changed",
-                file=sys.stderr,
-            )
-            return 1
-        print(
-            "Skipping. The toolshed container pins every judge -- CONTRIBUTING.md has the recipe.",
-            file=sys.stderr,
-        )
-        return SKIP_EXIT
+        return 1
 
     regressions = compare(counts, recorded["counts"])
     if not regressions:

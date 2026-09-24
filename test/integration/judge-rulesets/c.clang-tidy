@@ -1,0 +1,115 @@
+#===----------------------------------------------------------------------===#
+#
+# Part of the OpenCyphal project, under the MIT licence
+# SPDX-License-Identifier: MIT
+#
+#===----------------------------------------------------------------------===#
+#
+# The ruleset the C style judge holds generated C to.
+#
+# Read by tools/judge_generated_code.py, which passes it with --config-file.
+# It is the project's own .clang-tidy applied to what dsdlc writes: whole
+# families are enabled, and a check is subtracted only for a reason that holds
+# for generated code. Where the project's reason does not carry over, the check
+# stays on.
+#
+# Subtractions
+# ------------
+#
+# bugprone-easily-swappable-parameters
+#     Fires on the plan's helpers, whose operands are `uint64_t` in the order
+#     the IR gives them, and on the runtime's accessors, which take a buffer's
+#     size beside a bit offset.
+#
+# clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+#     Recommends C11's optional Annex K functions, `memset_s` and `memmove_s`,
+#     in place of the runtime's `memset` and `memmove`. glibc does not provide
+#     them.
+#
+# cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers
+#     Bit widths, field offsets, and wire-format constants are the subject
+#     matter.
+#
+# cppcoreguidelines-macro-to-enum, modernize-macro-to-enum
+#     A type's facts are macros, which a consumer can test in `#if`. An
+#     enumerator cannot be tested there, and is an `int` where an extent is
+#     `unsigned long`.
+#
+# readability-function-cognitive-complexity
+#     A body branches where its plan does, and the plan is held by the
+#     round-trip, parity, and equivalence lanes.
+#
+# readability-identifier-length
+#     A length floor is a convention of neither C nor C++, and no other
+#     language's judge holds its output to one.
+#
+# readability-implicit-bool-conversion
+#     A comparison or a logical operator yields `int` in C, so every `bool` one
+#     initialises converts by the language's own rules.
+#
+# Naming
+# ------
+#
+# readability-identifier-naming states the design in CLEAN_CODE.md. C has no
+# scope a type can open, so an identifier composed for a type carries the
+# type's path: the namespace components, then the short name, then the service
+# section, joined by `__` and each as DSDL spells it --
+# `uavcan__file__List__Request`. An entry point or accessor appends its
+# operation and a trailing `_`, as in `uavcan__file__List__Request__serialize_`,
+# and a fact or constant appends `_` and its upper-case name, as in
+# `uavcan__file__List__Request_EXTENT_BYTES_`. The IgnoredRegexp options accept
+# those three forms. Every other identifier takes the case C conventionally
+# gives its kind, with no leading or trailing underscore.
+#
+# A member ending in `_` is a DSDL field as its author spelt it or as the
+# generator strops a keyword, or a member the generator adds beside the fields.
+# An added member takes the form DSDL reserves, starting and ending with an
+# underscore, so no field can take its name: `_tag_`.
+#
+# Editing
+# -------
+#
+# Keep `#` out of the `Checks:` scalar; .clang-tidy says why.
+# tools/check_clang_tidy_config.py runs over this file in the Lint job.
+#
+#===----------------------------------------------------------------------===#
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-macro-to-enum,
+  -modernize-macro-to-enum,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-magic-numbers
+
+CheckOptions:
+  readability-identifier-naming.EnumCase: lower_case
+  readability-identifier-naming.EnumConstantCase: UPPER_CASE
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.FunctionIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?__[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.GlobalConstantCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?_[A-Z][A-Z0-9_]*$'
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.MemberIgnoredRegexp: '^_?[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.StructCase: lower_case
+  readability-identifier-naming.StructIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?$'
+  readability-identifier-naming.TypedefCase: lower_case
+  readability-identifier-naming.TypedefIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?$'
+  readability-identifier-naming.UnionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
