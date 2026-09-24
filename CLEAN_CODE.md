@@ -258,17 +258,21 @@ already forbids.
 Each remaining language gains the style judge its compiler is not: `cargo clippy -- -D warnings`
 beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` rules for Python,
 `eslint` with `@typescript-eslint/naming-convention`, and `clang-tidy`'s
-`readability-identifier-naming` over the generated C and C++. `ts26.4.4` carries four of them --
-`staticcheck` 2025.1.1, `ruff` 0.16.8, `eslint` 10.11.0 and `clippy` 0.1.93 -- beside the
-`clang-tidy` the lint lane already runs. `tools/assert_style_judges.py` is what says so: every lane
-that asserts its toolchains asserts the judges too, and reports the versions it found.
+`readability-identifier-naming` over the generated C and C++. `ts26.4.5` carries all of them --
+`staticcheck` 2025.1.1, `ruff` 0.16.8, `eslint` 10.11.0, `clippy` 0.1.93 and `typescript-eslint`
+8.70.1 -- beside the `clang-tidy` the lint lane already runs. `tools/assert_style_judges.py` is what
+says so: every lane that asserts its toolchains asserts the judges too, and reports the versions it
+found.
 
-What the image does not carry is the TypeScript parser, and eslint cannot read a `.ts` file without
-one: 10.11.0 answers `interface` with `Parsing error: Unexpected token interface`, and a
-configuration whose `files` misses `.ts` lints nothing and exits zero. So the Go, Python and Rust
-judge lanes can be built on this image and the TypeScript one cannot. The script reports that gap
-rather than failing on it, because no lane reads a `.ts` file yet; the lane that will needs an image
-carrying `typescript-eslint` or `@typescript-eslint/parser`.
+The parser is required rather than merely reported, because eslint cannot read a `.ts` file without
+it: 10.11.0 answers `interface` with `Parsing error: Unexpected token interface`, and a
+configuration whose `files` misses `.ts` lints nothing and exits zero. An image carrying eslint
+alone can host no TypeScript judge, and would say so by passing.
+
+`eslint` is also the one judge the image must not merely carry but resolve to. `ts26.4.4` had
+eslint 10 as an unreachable dependency of `typescript-eslint` while `/usr/bin/eslint` was Debian's
+6.4.0, which predates flat config and sits outside the parser's peer range. The assertion reads the
+version of whatever `eslint` resolves to, so that arrangement fails rather than judges.
 
 The version a judge is pinned at is part of what it reports. The counts below were taken with
 `ruff` 0.16.8, `staticcheck` 2026.2.1 and `eslint` 10.11.0 beside `typescript-eslint` 8.70.1 and

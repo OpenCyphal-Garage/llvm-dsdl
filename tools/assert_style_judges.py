@@ -142,27 +142,21 @@ def main() -> int:
                 f"version: eslint {found['eslint']} is behind 10, where no-useless-assignment begins"
             )
 
-    # The parser is reported rather than required, because no lane reads a `.ts` file yet. It is
-    # not optional for the lane that will: eslint 10.11.0 alone answers `interface` with
-    # `Parsing error: Unexpected token interface`, and a config whose `files` misses `.ts` lints
-    # nothing and exits zero -- which is the shape this script exists to prevent. Whoever builds
-    # the TypeScript judge lane needs an image that carries it.
+    # Required, not optional: eslint alone answers `interface` with `Parsing error: Unexpected
+    # token interface`, and a configuration whose `files` misses `.ts` lints nothing and exits
+    # zero. An image carrying eslint without the parser can host no TypeScript judge.
     package, version, looked = find_parser()
-    pending = ""
     if package is None:
-        pending = (
+        missing.append(
             "module: "
             + " or ".join(PARSER_PACKAGES)
-            + f" (looked under {', '.join(looked)}); the TypeScript judge lane cannot be built"
-            " until the image carries it, since eslint alone cannot parse TypeScript"
+            + f" (TypeScript parser for eslint; looked under {', '.join(looked)})"
         )
     else:
         found[package] = version
 
     for name, version in found.items():
         print(f"{name:<28} {version}")
-    if pending:
-        print(f"pending                      {pending}")
     sys.stdout.flush()
 
     if not missing:

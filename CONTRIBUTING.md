@@ -130,7 +130,7 @@ lane with Clang. `-Wmaybe-uninitialized` in particular is GCC-only. To reproduce
 a GCC diagnostic without pushing, build in the CI image:
 
 ```bash
-docker run --rm -v "$PWD":/w -w /w ghcr.io/opencyphal/toolshed:ts26.4.4 bash -lc 'git config --global --add safe.directory /w && cmake -S /w -B /tmp/b -G Ninja -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-22/lib/cmake/mlir && cmake --build /tmp/b -- -k 0'
+docker run --rm -v "$PWD":/w -w /w ghcr.io/opencyphal/toolshed:ts26.4.5 bash -lc 'git config --global --add safe.directory /w && cmake -S /w -B /tmp/b -G Ninja -DCMAKE_BUILD_TYPE=Debug -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm -DMLIR_DIR=/usr/lib/llvm-22/lib/cmake/mlir && cmake --build /tmp/b -- -k 0'
 ```
 
 Warnings in *generated* code are gated separately: the integration harnesses in
@@ -517,7 +517,7 @@ paragraph before trusting a green local run.
 
 `act` takes `--container-architecture` for your host and `--pull=false` so it uses the image you
 already have; a `.actrc` at the repository root carries both. It is gitignored, so write your own,
-and `docker pull ghcr.io/opencyphal/toolshed:ts26.4.4` once if the image is not present.
+and `docker pull ghcr.io/opencyphal/toolshed:ts26.4.5` once if the image is not present.
 
 ### 11.7 How the site gets published
 
