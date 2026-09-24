@@ -198,8 +198,8 @@ alias existed because a flat scope had no way to say that `Request` belongs to `
 
 **Rust.** `pub struct Request` in module `uavcan::file::list_0_2`, with `impl Request` holding
 `serialize`, `deserialize` and the type's facts as associated consts. Rust has no type nested in a
-type, so its module is what carries the enclosure C++ gets from nesting. The three `#![allow]`
-lines go, and rustc enumerates whatever remains. A helper is a private `fn` of the module.
+type, so its module is what carries the enclosure C++ gets from nesting. A helper is a private `fn`
+of the module.
 `Result<usize, Error>` replaces `Result<usize, i8>`, over an enum deriving `Debug` and implementing
 `Display` and `core::error::Error` — stable in `core` since 1.81, so `no_std` keeps it. The variants
 are values, so returning one allocates nothing.
@@ -234,7 +234,8 @@ output byte for byte, and today's output is now idiomatic Rust rather than the f
 that reproduces `list_0_2::Request` is tested against the shape it exists to produce; one that
 reproduced `uavcan_file_List_Request` would only have been tested against the shape it replaces.
 
-**1 — The judges.** *Landed: every judge is in the image, asserted, and holding its lane to a baseline.*
+**1 — The judges.** *Landed for Go, Python, TypeScript and Rust: each judge is in the image,
+asserted, and holding its lane to a baseline. The C and C++ lane is still to be built.*
 
 The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
 runs `cargo check`, `RunUavcanGoBuild` runs `go test ./...`, `RunUavcanTsTypecheck` runs `tsc`, and
@@ -301,11 +302,10 @@ mismatch there means the baseline is stale. Each lane is registered only for a j
 find, which is how every language lane here behaves, and the toolchain assertion is what stops a
 judge going missing in CI without anyone noticing.
 
-Those remaining rows are what is left of this phase, and they gate the phases after it rather than
-decorate them. Rust's phase converged because rustc names the defect: eighteen findings came out of #41, and
-the six of them that earlier fixes in that same branch created were each caught by a judge rather
-than by inspection. Go, Python and TypeScript have no such judge installed, so running their phases
-first would mean discovering their defects in review, which is the cost this phase exists to avoid.
+The judges gate the phases after this one. Rust's phase converged because rustc names the defect:
+eighteen findings came out of #41, and the six of them that earlier fixes in that same branch created
+were each caught by a judge rather than by inspection. A language's phase run ahead of its judge
+discovers its defects in review, which is the cost this phase exists to avoid.
 
 A presence or byte-parity gate ratchets in the shape it finds, so no existing gate can report this
 class of defect; that is why the phases below come after this one rather than before it. The
@@ -431,9 +431,8 @@ signatures and scope prefixes are deleted from all six emitters. Still no genera
 Gate: the same oracle, plus the emission-site count in the declaration half.
 
 **5 to 10 — One phase per language**, each flipping its row from *as today* to the target above and
-turning its judge from phase 1 green. Rust goes first: its compiler already knows the answers, so
-deleting the three `#![allow]` lines enumerates the phase's own work. C is cheapest and can go
-anywhere. C++ goes last of the six: nesting is the largest change to the surface tree any language
+turning its judge from phase 1 green. Rust's and Go's names landed ahead of the mechanism, in #41
+and #42, and what remains of each is its error type. C is cheapest and can go anywhere. C++ goes last of the six: nesting is the largest change to the surface tree any language
 asks for, and taking it after five languages have exercised the tree tests it on the shape that
 stresses it most.
 
@@ -476,8 +475,8 @@ gates and text assertions are two halves, not alternatives.
 | no in-source diagnostic suppression in generated output | 5–10 | a warning is answered by changing what is emitted |
 
 The last row is the existing rule, applied where it was not. `#pragma GCC diagnostic ignored` was
-removed from generated C and C++ in #24 for the same reason the three Rust `#![allow]` lines are
-removed here: a suppression moves a build-policy decision into source the consumer compiles, and
+removed from generated C and C++ in #24 for the same reason the three Rust `#![allow]` lines were
+removed in #41: a suppression moves a build-policy decision into source the consumer compiles, and
 hides whatever else lands inside it.
 
 ## Known uncovered
@@ -513,8 +512,10 @@ dropping the classes it generated in 1.0 for plain objects and a schema value, h
 classes do not survive the frameworks and serialisation paths TypeScript runs in. The companion
 `const` recovers the discoverability the class would have given.
 
-**Rust and Go take their languages' conventions**, including the error types, in the same phase as
-the naming. Both change every consumer call site once; splitting them changes it twice.
+**Rust and Go take their languages' conventions**, including the error types, in the same release
+as the naming. Both change every consumer call site once; splitting them across releases changes it
+twice. The names landed in #41 and #42 ahead of the error types, and v0.3.0 predates both, so the
+error types land before the next release.
 
 **`renderSectionTypeSuffix` leaves the installed headers.** `renderSectionTypeName` replaced it at
 every call site, and the removed function answers `_Request` where Rust now names the section alone.
