@@ -78,6 +78,13 @@ runs:
         fi
         echo "All required toolchains present."
 
+    - name: Assert the style judges
+      shell: bash
+      # `CLEAN_CODE.md` phase 1 points each language's own judge at the generated code. The check
+      # lives in a script because the devcontainer asserts the same thing, and two copies of a
+      # lookup drift; it runs after the toolchains above because it needs go, node and npm.
+      run: python3 tools/assert_style_judges.py
+
     - name: Report toolchain versions
       shell: bash
       # Diagnostics, not provisioning: when a lane behaves differently from a

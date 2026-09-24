@@ -1,4 +1,4 @@
-# RUN: rm -rf %t.default && mkdir -p %t.default && (cd %t.default && %dsdlc --target-language c %S/fixtures >/dev/null 2>&1) && test -f %t.default/dsdl_out/fixtures/vendor/Widget_1_0.h
+# RUN: rm -rf %t.default && mkdir -p %t.default && cd %t.default && %dsdlc --target-language c %S/fixtures >/dev/null 2>&1 && test -f %t.default/dsdl_out/fixtures/vendor/Widget_1_0.h
 # RUN: rm -rf %t.custom && %dsdlc --target-language c --outdir %t.custom %S/fixtures >/dev/null 2>&1 && test -f %t.custom/fixtures/vendor/Widget_1_0.h
 # RUN: rm -rf %t.no-overwrite && %dsdlc --target-language c --outdir %t.no-overwrite %S/fixtures >/dev/null 2>&1
 # RUN: not %dsdlc --target-language c --no-overwrite --outdir %t.no-overwrite %S/fixtures 2>&1 | FileCheck %s --check-prefix=NO_OVERWRITE
