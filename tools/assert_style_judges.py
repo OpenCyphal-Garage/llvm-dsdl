@@ -19,9 +19,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# A Go tool installed with `go install` lands in GOPATH/bin, and a container's GOPATH at run time
-# need not be the one the image built with, so the likely roots are searched rather than assumed.
-GO_BIN_ROOTS = ("/usr/local/bin", "/usr/local/go/bin", "/root/go/bin", "/opt/go/bin")
+# A Go tool installed with `go install` lands in the GOPATH of whoever installed it, which for an
+# image is the account that built it. The runtime GOPATH follows the runtime HOME and so does not
+# reveal that: `ts26.4.5` carries staticcheck in /root/go/bin, while a CI container runs with
+# HOME=/github/home and reports GOPATH=/github/home/go. Both are searched, along with the accounts
+# an image is plausibly built as and the system locations a package would use.
+GO_BIN_ROOTS = ("/usr/local/bin", "/usr/local/go/bin", "/opt/go/bin")
+GO_BIN_GLOBS = ("/root/go/bin", "/home/*/go/bin", "/usr/lib/go*/bin")
 
 # eslint reads a `.ts` file only through the TypeScript parser, so an eslint without one lints
 # nothing and reports that as success. Either package provides it.
@@ -55,6 +59,8 @@ def find_command(name: str, *, go_tool: bool = False) -> tuple[str | None, list[
 
     roots = [root for root in (f"{go_env('GOPATH')}/bin", f"{go_env('GOROOT')}/bin") if root != "/bin"]
     roots += list(GO_BIN_ROOTS)
+    for pattern in GO_BIN_GLOBS:
+        roots += sorted(str(path) for path in Path("/").glob(pattern.lstrip("/")))
     for root in roots:
         looked.append(root)
         candidate = Path(root) / name
