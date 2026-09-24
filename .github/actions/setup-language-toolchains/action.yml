@@ -53,52 +53,6 @@ runs:
         require_command tsc          "TypeScript backend integration lane"
         require_command node         "TypeScript backend integration lane"
 
-        # One per language's style judge. A compiler accepts an un-idiomatic name by design, so
-        # `CLEAN_CODE.md` phase 1 points each language's own judge at the generated code. A judge
-        # the image lacks would let its lane pass by finding nothing rather than by there being
-        # nothing to find, which is the same way a missing toolchain sheds a language's tests.
-        require_command ruff         "Python style judge"
-        require_command eslint       "TypeScript style judge"
-        # `cargo clippy` is a separate component from cargo, so a cargo that runs proves nothing
-        # about whether clippy does. C and C++ are judged by clang-tidy, which the lint lane runs
-        # and reports the version of.
-        require_command cargo-clippy "Rust style judge, beyond what rustc denies"
-
-        # A Go tool installed with `go install` lands in GOPATH/bin, which a container does not
-        # always put on PATH, so looking only at PATH would call a present tool missing.
-        staticcheck_at=""
-        for candidate in \
-            "$(command -v staticcheck 2>/dev/null || true)" \
-            "$(go env GOPATH 2>/dev/null)/bin/staticcheck" \
-            "$(go env GOROOT 2>/dev/null)/bin/staticcheck" \
-            /usr/local/bin/staticcheck; do
-          if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
-            staticcheck_at="${candidate}"
-            break
-          fi
-        done
-        if [ -z "${staticcheck_at}" ]; then
-          missing+=("command: staticcheck (Go style judge; looked on PATH, in $(go env GOPATH 2>/dev/null)/bin and /usr/local/bin)")
-        fi
-
-        # eslint reads a `.ts` file only through the TypeScript parser, so an eslint without it
-        # lints nothing and reports that as success. The parser ships either as the
-        # `typescript-eslint` meta-package or as `@typescript-eslint/parser`; either will do, and
-        # both are looked for under npm's global root as well as the checkout.
-        parser_at=""
-        if command -v node >/dev/null 2>&1; then
-          npm_root="$(npm root -g 2>/dev/null || true)"
-          for pkg in typescript-eslint @typescript-eslint/parser; do
-            if NODE_PATH="${npm_root}" node -p "require.resolve('${pkg}/package.json')" >/dev/null 2>&1; then
-              parser_at="${pkg}"
-              break
-            fi
-          done
-        fi
-        if [ -z "${parser_at}" ]; then
-          missing+=("module: typescript-eslint or @typescript-eslint/parser (TypeScript parser for eslint; looked under $(npm root -g 2>/dev/null))")
-        fi
-
         # Dafny needs a solver as well as itself. Its NuGet package ships no
         # native binaries, so a `dafny` that launches proves nothing about
         # whether it can discharge an obligation -- check for z3 separately.
@@ -115,18 +69,6 @@ runs:
           missing+=("file: zstdConfig.cmake (libzstd-dev)")
         fi
 
-        # `no-useless-assignment` arrived in eslint 10, and it reports the accessor that binds a
-        # size the language's signature does not return -- the same defect `SA4006` and `F841`
-        # name, at the same count in all three. An eslint behind 10 finds none of them, so a lane
-        # on it would ratchet in a shape the other two judges report. `ruff` and `staticcheck` take
-        # no floor: the versions tried report identically, rule for rule.
-        if command -v eslint >/dev/null 2>&1; then
-          eslint_major="$(eslint --version | sed 's/^v//' | cut -d. -f1)"
-          if [ "${eslint_major:-0}" -lt 10 ]; then
-            missing+=("version: eslint ${eslint_major} is behind 10, where no-useless-assignment begins")
-          fi
-        fi
-
         if [ "${#missing[@]}" -gt 0 ]; then
           echo "::error::The toolshed image is missing prerequisites for a full run:"
           printf '::error::  %s\n' "${missing[@]}"
@@ -135,6 +77,13 @@ runs:
           exit 1
         fi
         echo "All required toolchains present."
+
+    - name: Assert the style judges
+      shell: bash
+      # `CLEAN_CODE.md` phase 1 points each language's own judge at the generated code. The check
+      # lives in a script because the devcontainer asserts the same thing, and two copies of a
+      # lookup drift; it runs after the toolchains above because it needs go, node and npm.
+      run: python3 tools/assert_style_judges.py
 
     - name: Report toolchain versions
       shell: bash
@@ -153,19 +102,5 @@ runs:
           echo "node:   $(node --version 2>&1)  npm $(npm --version 2>&1)"
           echo "tsc:    $(tsc --version 2>&1)"
           echo "cargo:  $(cargo --version 2>&1)"
-          echo '```'
-          echo "## Style judges"
-          echo '```'
-          # Looked up here rather than carried from the step above, which is its own shell.
-          staticcheck_bin="$(command -v staticcheck 2>/dev/null || echo "$(go env GOPATH)/bin/staticcheck")"
-          npm_root="$(npm root -g 2>/dev/null)"
-          echo "staticcheck: $("${staticcheck_bin}" --version 2>&1 | head -1)"
-          echo "ruff:        $(ruff --version 2>&1)"
-          echo "eslint:      $(eslint --version 2>&1)"
-          echo "clippy:      $(cargo-clippy --version 2>&1 | head -1)"
-          for pkg in typescript-eslint @typescript-eslint/parser; do
-            found="$(NODE_PATH="${npm_root}" node -p "require('${pkg}/package.json').version" 2>/dev/null || true)"
-            [ -n "${found}" ] && echo "ts-parser:   ${pkg} ${found}" && break
-          done
           echo '```'
         } >> "${GITHUB_STEP_SUMMARY}"

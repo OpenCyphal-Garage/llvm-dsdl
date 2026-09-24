@@ -25,6 +25,7 @@ missing=()
 for tool in cmake ninja python3 git lit gzip go cargo tsc node dafny z3 "clang-${llvm_version}"; do
   command -v "${tool}" >/dev/null 2>&1 || missing+=("${tool}")
 done
+
 for f in "/usr/lib/llvm-${llvm_version}/lib/cmake/mlir/MLIRConfig.cmake" \
          "/usr/lib/llvm-${llvm_version}/lib/cmake/llvm/LLVMConfig.cmake"; do
   [ -f "${f}" ] || missing+=("${f}")
@@ -40,6 +41,10 @@ if [ "${#missing[@]}" -gt 0 ]; then
   echo "These belong in the toolshed image rather than being installed here." >&2
   exit 1
 fi
+
+# The style judges CLEAN_CODE.md phase 1 points at the generated code, checked by the same script
+# CI uses so the two cannot disagree about what the image owes.
+python3 "$(dirname "$0")/../tools/assert_style_judges.py"
 
 git submodule update --init --recursive
 cmake --preset dev-llvm-env
