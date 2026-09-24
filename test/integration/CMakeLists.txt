@@ -4054,3 +4054,56 @@ if(PYTHON_EXECUTABLE)
     )
   endforeach()
 endif()
+
+# The style judges of CLEAN_CODE.md phase 1, each over the regulated corpus in its own language.
+# A judge reports on shape rather than on correctness, which no compiler here does: a compiler
+# accepts an un-idiomatic name by design. Each lane holds its judge to the per-rule baseline in
+# test/integration/judge-baselines, so a count may fall and may not rise.
+#
+# A judge is located through the same script the toolchain assertion uses, because none of them is
+# reliably on PATH -- staticcheck is a Go tool and sits in GOPATH/bin. A lane is registered only for
+# a judge that was found, which is how every language lane here behaves; the CI image asserts all of
+# them are present, so a judge missing there is an image bug rather than a quietly absent lane.
+if(PYTHON_EXECUTABLE)
+  foreach(judge_lang go python ts rust)
+    if(judge_lang STREQUAL "go")
+      set(judge_tool staticcheck)
+    elseif(judge_lang STREQUAL "python")
+      set(judge_tool ruff)
+    elseif(judge_lang STREQUAL "ts")
+      set(judge_tool eslint)
+    else()
+      set(judge_tool cargo-clippy)
+    endif()
+
+    execute_process(
+      COMMAND ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/assert_style_judges.py --path ${judge_tool}
+      OUTPUT_VARIABLE judge_path
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE judge_found
+    )
+    if(judge_found EQUAL 0 AND judge_path)
+      add_test(
+        NAME llvmdsdl-uavcan-${judge_lang}-style-judge
+        COMMAND
+          ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/judge_generated_code.py
+            --language ${judge_lang}
+            --dsdlc $<TARGET_FILE:dsdlc>
+            --corpus ${LLVMDSDL_UAVCAN_ROOT}
+            --outdir ${CMAKE_CURRENT_BINARY_DIR}/uavcan-${judge_lang}-style-judge-out
+            --judge ${judge_path}
+            --baseline ${LLVMDSDL_SOURCE_DIR}/test/integration/judge-baselines/${judge_lang}.json
+      )
+      set_tests_properties(
+        llvmdsdl-uavcan-${judge_lang}-style-judge
+        PROPERTIES
+          LABELS "integration;uavcan;${judge_lang};style-judge;slow"
+          # A baseline is comparable only within one version of its judge, and a developer's judge
+          # need not be the image's. The lane skips rather than failing there, and says so; on CI
+          # the same mismatch is a failure, because the image pins every judge.
+          SKIP_RETURN_CODE 77
+      )
+    endif()
+  endforeach()
+endif()
