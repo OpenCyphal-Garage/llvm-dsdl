@@ -66,18 +66,34 @@
 # ELEMENT:       arith.cmpi ult, %[[INDEX]], %{{.*}}
 # ELEMENT:       dsdl.write_bits
 
-# A nested composite's getter answers the buffer from the field's byte offset and, through the size
-# pointer, what remains, clamped so a short buffer yields an empty one, as a null buffer does. It has
-# no setter.
+# A nested composite field has a getter and no setter. The getter answers the buffer from the
+# field's byte offset and, through the size pointer, what remains. A field at offset nought answers
+# the buffer the getter was handed, null or not, and the size a getter reads there.
 # RUN: FileCheck %s --check-prefix=COMPOSITE < %t/bodies.mlir
 # COMPOSITE-LABEL: func.func @fixtures_host_image_vendor_Nested_1_0__get_inner_ir_(
 # COMPOSITE-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
+# COMPOSITE-NOT:   dsdl.buffer_or_empty
 # COMPOSITE:       %[[NULL:.*]] = dsdl.is_null %[[BUF]]
-# COMPOSITE:       %[[HELD:.*]] = arith.select %[[NULL]], %{{.*}}, %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
-# COMPOSITE-DAG:   dsdl.store_scalar %[[OUT]], %[[HELD]]
-# COMPOSITE-DAG:   %[[SUB:.*]] = dsdl.buffer_at %{{.*}}[%{{.*}}]
-# COMPOSITE:       return %[[SUB]]
+# COMPOSITE-NEXT:  %[[HELD:.*]] = arith.select %[[NULL]], %{{.*}}, %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
+# COMPOSITE-NEXT:  dsdl.store_scalar %[[OUT]], %[[HELD]]
+# COMPOSITE-NEXT:  return %[[BUF]]
 # COMPOSITE-NOT:   @fixtures_host_image_vendor_Nested_1_0__set_inner_ir_
+
+# Past offset nought the offset is clamped to the size, so a short buffer yields an empty one, as a
+# null buffer does.
+# RUN: %dsdlc --target-language mlir %S/fixtures_aliasable > %t/aliasable.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/aliasable.mlir | FileCheck %s --check-prefix=COMPOSITE_AT
+# COMPOSITE_AT-LABEL: func.func @fixtures_aliasable_vendor_Pose_1_0__get_orientation_ir_(
+# COMPOSITE_AT-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
+# COMPOSITE_AT:       %[[OFF:.*]] = arith.constant 12 : i64
+# COMPOSITE_AT:       %[[READABLE:.*]] = dsdl.buffer_or_empty %[[BUF]]
+# COMPOSITE_AT:       %[[HELD:.*]] = arith.select %{{.*}}, %{{.*}}, %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
+# COMPOSITE_AT:       %[[WITHIN:.*]] = arith.cmpi uge, %[[HELD]], %[[OFF]]
+# COMPOSITE_AT-NEXT:  %[[AT:.*]] = arith.select %[[WITHIN]], %[[OFF]], %[[HELD]]
+# COMPOSITE_AT-NEXT:  %[[REST:.*]] = arith.subi %[[HELD]], %[[AT]]
+# COMPOSITE_AT-NEXT:  dsdl.store_scalar %[[OUT]], %[[REST]]
+# COMPOSITE_AT-NEXT:  %[[SUB:.*]] = dsdl.buffer_at %[[READABLE]][%[[AT]]]
+# COMPOSITE_AT-NEXT:  return %[[SUB]]
 
 # NOT_FLAT-NOT: __get_
 # NOT_FLAT-NOT: __set_

@@ -137,8 +137,10 @@ int main(void)
     }
     REPORT("uavcan.si.unit.angle.Quaternion");
     /* A nested composite, through the buffer its getter answers: the nested type's own getter on it
-     * agrees with deserialise on the full buffer and on one cut inside the nested field, and a null
-     * buffer answers an empty one. A caller that needs no size passes a null pointer for it. */
+     * agrees with deserialise on the full buffer and on one cut inside the nested field. The field is
+     * at offset nought, so the getter answers the buffer it was handed, a null one with a size of
+     * zero, which the nested getter reads as empty. A caller that needs no size passes a null pointer
+     * for it. */
     {
         uint8_t                                 wire[11];
         uavcan__si__sample__temperature__Scalar obj;
@@ -156,7 +158,8 @@ int main(void)
         ok    = ok && (sub == 3) &&
                 (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == obj.timestamp.microsecond);
         stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(NULL, sizeof wire, &sub);
-        ok    = ok && (sub == 0) && (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == 0);
+        ok    = ok && (stamp == NULL) && (sub == 0) &&
+                (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == 0);
         if (!ok)
         {
             ++type_failures;
