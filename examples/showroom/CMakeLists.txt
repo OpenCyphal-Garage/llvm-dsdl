@@ -42,9 +42,17 @@ set(LLVMDSDL_SHOWROOM_VARIANT_STAMPS "")
 # configure runs. Since nothing downstream consumes these files as build
 # inputs, a stamp expresses the dependency correctly and cheaply.
 function(llvmdsdl_add_showroom_variant variant_name)
-  cmake_parse_arguments(ARG "" "LANGUAGE" "OPTIONS" ${ARGN})
+  cmake_parse_arguments(ARG "" "LANGUAGE;VOCABULARY" "OPTIONS" ${ARGN})
   if(NOT ARG_LANGUAGE)
     message(FATAL_ERROR "llvmdsdl_add_showroom_variant(${variant_name}) requires LANGUAGE")
+  endif()
+
+  # A vocabulary file is an input of the generation: the variant regenerates when it changes.
+  set(_vocabulary_args "")
+  set(_vocabulary_deps "")
+  if(ARG_VOCABULARY)
+    set(_vocabulary_args --vocabulary "${ARG_VOCABULARY}")
+    set(_vocabulary_deps "${ARG_VOCABULARY}")
   endif()
 
   set(_variant_out "${LLVMDSDL_SHOWROOM_OUT_ROOT}/${variant_name}")
@@ -61,10 +69,11 @@ function(llvmdsdl_add_showroom_variant variant_name)
         --all-type-versions
         "${LLVMDSDL_SHOWROOM_DSDL_ROOT}"
         ${ARG_OPTIONS}
+        ${_vocabulary_args}
         --outdir "${_variant_out}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_SHOWROOM_STAMP_DIR}"
     COMMAND ${CMAKE_COMMAND} -E touch "${_variant_stamp}"
-    DEPENDS dsdlc ${LLVMDSDL_SHOWROOM_DSDL_SOURCES}
+    DEPENDS dsdlc ${LLVMDSDL_SHOWROOM_DSDL_SOURCES} ${_vocabulary_deps}
     VERBATIM
     COMMENT "Showroom: generating ${variant_name}")
 
@@ -91,7 +100,8 @@ llvmdsdl_add_showroom_variant(cpp-pmr
 
 llvmdsdl_add_showroom_variant(cpp-autosar
   LANGUAGE cpp
-  OPTIONS --cpp-profile autosar)
+  OPTIONS --cpp-profile autosar
+  VOCABULARY "${CMAKE_CURRENT_SOURCE_DIR}/../vocabulary/cpp-autosar-cetl.yaml")
 
 llvmdsdl_add_showroom_variant(rust-std
   LANGUAGE rust

@@ -578,12 +578,19 @@ C++ keeps its status code. The AUTOSAR profile is C++14 and the embedded profile
 exceptions, so neither an exception nor `std::expected` is available across the targets the backend
 serves.
 
-**C++ field accessors take and answer spans.** A getter takes `std::span<const std::uint8_t>`, a
-setter `std::span<std::uint8_t>`, and a composite getter answers the nested type's bytes as a span,
-as Rust, Go, TypeScript and Python answer a slice or a view. A pointer beside a size, with the size
+**C++ field accessors take and answer spans.** A getter takes a span of `const std::uint8_t`, a
+setter one of `std::uint8_t`, and a composite getter answers the nested type's bytes as a span, as
+Rust, Go, TypeScript and Python answer a slice or a view. A pointer beside a size, with the size
 written back through another pointer, is C's idiom; in C++ it let `get_timestamp(buffer, size,
 nullptr)` compile and write through the null pointer. The `std` and `pmr` profiles therefore require
-C++20. The `autosar` profile stays at C++14 and takes CETL's `cetl::pf20::span`, which exists for
-that standard. CETL's `cetlpf.hpp`, which would answer `std::span` at C++20, carries CETL's own
-warning against use in AUTOSAR code, so the profile names `cetl::pf20` directly. Serialise and
-deserialise take a pointer and an in-out size.
+C++20. Serialise and deserialise take a pointer and an in-out size.
+
+**The backend names no library.** Which span a profile uses is a binding in a `--vocabulary` file
+([reference](docs/reference/codegen/vocabulary.md)); the backend states the concept -- the
+operations it performs -- and the built-in bindings name the standard library alone. The first cut
+spelt CETL's `cetl::pf20::span` inside the emitter and the AUTOSAR runtime, which made the profile's
+library a property of the compiler. The `autosar` profile is C++14 and has no built-in span, so it
+fails until a file binds one; no fallback stands in. There are no named packs: CETL's binding is an
+example file, not a flag. The concepts that follow -- a bounded vector, an optional, a variant --
+arrive one change each, when generated code needs them, each with a lit fixture whose binding
+overrides every operation.

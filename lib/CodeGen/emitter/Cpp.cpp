@@ -23,13 +23,15 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/CodeGen/Vocabulary.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
-#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <algorithm>
 #include <cassert>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
@@ -341,6 +343,39 @@ bool isAutosarFlavor(const CppFlavor flavor)
     return flavor == CppFlavor::Autosar;
 }
 
+/// @brief The profile's name, as a vocabulary file names it.
+llvm::StringRef profileName(const CppFlavor flavor)
+{
+    switch (flavor)
+    {
+    case CppFlavor::Std:
+        return "std";
+    case CppFlavor::Pmr:
+        return "pmr";
+    case CppFlavor::Autosar:
+        return "autosar";
+    }
+    llvm::report_fatal_error("C++ backend: a profile with no name");
+}
+
+/// @brief The `#include` lines for @p headers: the angle-bracket ones first, each group in order,
+///        and each header once.
+std::string orderedIncludeLines(std::vector<std::string> headers)
+{
+    std::ranges::sort(headers, [](const std::string& a, const std::string& b) {
+        const bool angleA = a.front() == '<';
+        const bool angleB = b.front() == '<';
+        return (angleA != angleB) ? angleA : (a < b);
+    });
+    headers.erase(std::ranges::unique(headers).begin(), headers.end());
+    std::string lines;
+    for (const std::string& header : headers)
+    {
+        lines += "#include " + header + "\n";
+    }
+    return lines;
+}
+
 /// @brief The C++ spelling of the plan-body vocabulary, for one schema.
 ///
 /// Members are named from the same scope the struct declaration names them in, built from the
@@ -349,8 +384,8 @@ bool isAutosarFlavor(const CppFlavor flavor)
 /// in the memory resource a nested call is handed.
 ///
 /// A serialise and a deserialise take the buffer as a pointer beside its size. A field accessor
-/// takes it as a span, `std::span` or, under `autosar`, CETL's `cetl::pf20::span`, and every byte
-/// pointer in an accessor's body is a span.
+/// takes it as a span, spelt as the vocabulary binds it for the profile, and every byte pointer in
+/// an accessor's body is a span.
 ///
 /// The plan works in `i64`, `i8` for its error codes, `i1` for its tests, and `f32` and `f64`.
 /// `i64` is spelled unsigned, which is what the wire arithmetic and the runtime primitives take;
@@ -359,13 +394,15 @@ bool isAutosarFlavor(const CppFlavor flavor)
 class CppSpelling final : public BodySpelling
 {
 public:
-    CppSpelling(mlir::ModuleOp           module,
-                mlir::dsdl::SchemaOp     schema,
-                const CppFlavor          flavor,
-                const TypeNameVersioning versioning)
+    CppSpelling(mlir::ModuleOp                module,
+                mlir::dsdl::SchemaOp          schema,
+                const CppFlavor               flavor,
+                const TypeNameVersioning      versioning,
+                const vocabulary::Vocabulary& vocabulary)
         : symbols_(module)
         , flavor_(flavor)
         , versioning_(versioning)
+        , vocabulary_(&vocabulary)
     {
         const std::string        fullName = schema.getFullName().str();
         const auto               lastDot  = fullName.rfind('.');
@@ -449,6 +486,12 @@ public:
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
+    }
+
+    /// @brief Whether a spelling named the span, so the header includes what declares it.
+    [[nodiscard]] bool usedSpan() const
+    {
+        return usedSpan_;
     }
 
     // Functions.
@@ -619,7 +662,8 @@ public:
         w.open("{");
         if (!fn.getArgument(1).use_empty())
         {
-            w.line("const std::size_t buffer_size_bytes = buffer.size();");
+            w.line("const std::size_t buffer_size_bytes = " +
+                   vocabulary_->operation(vocabulary::Concept::Span, "size", {{"self", "buffer"}}) + ";");
         }
         std::vector<std::string> parameters{"buffer", "buffer_size_bytes"};
         if (indexed)
@@ -867,7 +911,7 @@ public:
 
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
     {
-        const std::string buffer = names(op.getBuffer());
+        std::string buffer = names(op.getBuffer());
         if (accessor_ != Accessor::None)
         {
             return buffer;
@@ -877,10 +921,13 @@ public:
 
     [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
     {
-        // An accessor's offset is clamped to its span's size, which is what `subspan` requires.
+        // An accessor's offset is clamped to its span's size, which is what a subspan requires.
         if (accessor_ != Accessor::None)
         {
-            return names(op.getBuffer()) + ".subspan(" + asSize(names(op.getByteOffset())) + ")";
+            return vocabulary_->operation(vocabulary::Concept::Span,
+                                          "subspan",
+                                          {{"self", names(op.getBuffer())},
+                                           {"offset", asSize(names(op.getByteOffset()))}});
         }
         return "&" + names(op.getBuffer()) + "[" + asSize(names(op.getByteOffset())) + "]";
     }
@@ -1401,14 +1448,17 @@ private:
         {
             return names(buffer);
         }
-        return read ? "::llvmdsdl::cpp::readable_bytes(" + names(buffer) + ")" : names(buffer) + ".data()";
+        const std::string bytes = vocabulary_->operation(vocabulary::Concept::Span, "data", {{"self", names(buffer)}});
+        return read ? "::llvmdsdl::cpp::readable_bytes(" + bytes + ")" : bytes;
     }
 
-    /// @brief The span an accessor takes its buffer in, and answers a nested type's bytes in.
+    /// @brief The span an accessor takes its buffer in, and answers a nested type's bytes in, as
+    ///        the vocabulary binds it.
     std::string spanOf(const bool isConst) const
     {
-        return std::string{isAutosarFlavor(flavor_) ? "cetl::pf20::span<" : "std::span<"} + (isConst ? "const " : "") +
-               "std::uint8_t>";
+        usedSpan_ = true;
+        return vocabulary_->type(vocabulary::Concept::Span,
+                                 {{"element", isConst ? "const std::uint8_t" : "std::uint8_t"}});
     }
 
     std::string typeName(const mlir::Type type) const
@@ -1528,6 +1578,7 @@ private:
     mlir::SymbolTable     symbols_;
     CppFlavor             flavor_;
     TypeNameVersioning    versioning_;
+    const vocabulary::Vocabulary* vocabulary_{nullptr};
     llvm::StringMap<Plan> plans_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
@@ -1573,6 +1624,7 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
+    mutable bool        usedSpan_{false};
     mutable std::size_t counter_{0};
 };
 
@@ -2122,7 +2174,7 @@ llvm::Error emitSection(SourceWriter&                         w,
 
 llvm::Expected<std::string> loadCRuntimeHeader()
 {
-    if (const auto data = embedded_runtime::find("dsdl_runtime.h"))
+    if (const auto data = embedded_sources::find("dsdl_runtime.h"))
     {
         return std::string(*data);
     }
@@ -2133,7 +2185,7 @@ llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
 {
     const std::string_view relativeRuntimeHeader =
         isAutosarFlavor(flavor) ? "cpp/autosar/dsdl_runtime.hpp" : "cpp/dsdl_runtime.hpp";
-    if (const auto data = embedded_runtime::find(relativeRuntimeHeader))
+    if (const auto data = embedded_sources::find(relativeRuntimeHeader))
     {
         return std::string(*data);
     }
@@ -2142,11 +2194,12 @@ llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
                                    std::string(relativeRuntimeHeader).c_str());
 }
 
-llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
-                                         const EmitterContext&     ctx,
-                                         const CppFlavor           flavor,
-                                         mlir::ModuleOp            module,
-                                         PlanBodyLookups&          lookups)
+llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
+                                         const EmitterContext&         ctx,
+                                         const CppFlavor               flavor,
+                                         const vocabulary::Vocabulary& vocabulary,
+                                         mlir::ModuleOp                module,
+                                         PlanBodyLookups&              lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -2155,7 +2208,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-    const CppSpelling                    spelling(module, schema, flavor, ctx.typeNameVersioning());
+    const CppSpelling                    spelling(module, schema, flavor, ctx.typeNameVersioning(), vocabulary);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2346,9 +2399,10 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
 
     emitNamespaceClose(w, def.info.namespaceComponents);
 
-    // Each header is included where the declarations take something from it. A nested type's
-    // header is included where this header names the type: a field held as a view names none,
-    // and an accessors-only header names none, since its composite getters answer bytes.
+    // Each header is included where the declarations take something from it, and a binding's
+    // headers where the spelling named its type. A nested type's header is included where this
+    // header names the type: a field held as a view names none, and an accessors-only header names
+    // none, since its composite getters answer bytes.
     const std::string                         declarations = body.str();
     static const std::vector<IncludeProvider> standardHeaders{
         {"<algorithm>", {"std::min(", "std::max(", "std::copy(", "std::fill(", "std::equal("}},
@@ -2358,14 +2412,18 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         {"<cstring>", {"std::memcpy(", "std::memset(", "std::memcmp(", "std::memmove("}},
         {"<limits>", {"std::numeric_limits<"}},
         {"<memory_resource>", {"std::pmr::"}},
-        {"<span>", {"std::span<"}},
         {"<type_traits>", {"std::is_standard_layout<", "std::is_same<", "std::is_trivially"}},
         {"<utility>", {"std::move(", "std::forward(", "std::swap(", "std::pair<", "std::exchange("}},
         {"<vector>", {"std::vector<", "std::pmr::vector<"}},
-        {"\"cetl/pf20/span.hpp\"", {"cetl::pf20::span<"}},
         {"\"dsdl_runtime.hpp\"", {"dsdl_runtime_", "::llvmdsdl::cpp::", "DSDL_RUNTIME_", "LLVMDSDL_"}},
     };
-    out << includeLinesFor(declarations, standardHeaders);
+    std::vector<std::string> headers = includesFor(declarations, standardHeaders);
+    if (spelling.usedSpan())
+    {
+        const auto includes = vocabulary.includes(vocabulary::Concept::Span);
+        headers.insert(headers.end(), includes.begin(), includes.end());
+    }
+    out << orderedIncludeLines(std::move(headers));
     if (!ctx.accessorsOnly())
     {
         for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
@@ -2385,6 +2443,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
                         mlir::ModuleOp                         module,
                         const std::filesystem::path&           outRoot,
                         const CppFlavor                        flavor,
+                        const vocabulary::Vocabulary&          vocabulary,
                         const Options&                         options,
                         const std::unordered_set<std::string>& selectedTypeKeys)
 {
@@ -2449,7 +2508,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         {
             dir /= ns;
         }
-        auto header = renderHeader(def, ctx, flavor, module, lookups);
+        auto header = renderHeader(def, ctx, flavor, vocabulary, module, lookups);
         if (!header)
         {
             return header.takeError();
@@ -2474,25 +2533,45 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     }
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    if (options.vocabulary == nullptr)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "C++ emission needs a vocabulary");
+    }
 
+    // Every profile's bindings are resolved before any file is written, so a profile that binds
+    // nothing fails the run rather than leaving another profile's output beside it.
+    const auto emitWith = [&](const CppFlavor flavor, const std::filesystem::path& root) -> llvm::Error {
+        auto vocabulary = options.vocabulary->resolve(profileName(flavor));
+        if (!vocabulary)
+        {
+            return vocabulary.takeError();
+        }
+        return emitProfile(semantic, module, root, flavor, *vocabulary, options, selectedTypeKeys);
+    };
     if (options.profile == Profile::Std)
     {
-        return emitProfile(semantic, module, outRoot, CppFlavor::Std, options, selectedTypeKeys);
+        return emitWith(CppFlavor::Std, outRoot);
     }
     if (options.profile == Profile::Pmr)
     {
-        return emitProfile(semantic, module, outRoot, CppFlavor::Pmr, options, selectedTypeKeys);
+        return emitWith(CppFlavor::Pmr, outRoot);
     }
     if (options.profile == Profile::Autosar)
     {
-        return emitProfile(semantic, module, outRoot, CppFlavor::Autosar, options, selectedTypeKeys);
+        return emitWith(CppFlavor::Autosar, outRoot);
     }
-
-    if (auto err = emitProfile(semantic, module, outRoot / "std", CppFlavor::Std, options, selectedTypeKeys))
+    for (const CppFlavor flavor : {CppFlavor::Std, CppFlavor::Pmr})
+    {
+        if (auto vocabulary = options.vocabulary->resolve(profileName(flavor)); !vocabulary)
+        {
+            return vocabulary.takeError();
+        }
+    }
+    if (auto err = emitWith(CppFlavor::Std, outRoot / "std"))
     {
         return err;
     }
-    return emitProfile(semantic, module, outRoot / "pmr", CppFlavor::Pmr, options, selectedTypeKeys);
+    return emitWith(CppFlavor::Pmr, outRoot / "pmr");
 }
 
 }  // namespace llvmdsdl::emitter::cpp

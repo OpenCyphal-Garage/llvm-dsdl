@@ -45,6 +45,7 @@ add_executable(llvmdsdl-unit-tests
   LspJsonRpcFuzzTests.cpp
   LexerFuzzTests.cpp
   ParserFuzzTests.cpp
+  VocabularyTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests

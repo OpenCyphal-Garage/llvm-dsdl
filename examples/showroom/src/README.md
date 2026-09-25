@@ -9,8 +9,8 @@ field by field, and exit zero. Nothing more -- correctness of the serialiser is 
 compiled, linked, and could be called, which is the entire claim a build integration makes.
 
 They live here rather than in the recipes: recipes carry build wiring and nothing else, so that two
-recipes in the same row differ only by the thing you are comparing them for. Five Python recipes share one `test_roundtrip.py`; four C and C++ recipes
-share one `roundtrip.c` and one `roundtrip.cpp`.
+recipes in the same row differ only by the thing you are comparing them for. Five Python recipes share one `test_roundtrip.py`; four C recipes share one
+`roundtrip.c`, and the C++ recipe has `roundtrip.cpp`.
 
 Each recipe stages this directory next to itself as `src/`, so a recipe's build files refer to
 `src/c/roundtrip.c` and friends by that relative path.
@@ -22,5 +22,3 @@ it: a directory is a package, and `go build` refuses one containing C sources it
 treat as cgo. Rather than special-case the offender, every language gets its own directory. It also
 means a recipe's `include`, `path`, or glob can name a directory rather than a single file, which is
 what most build systems would rather be given.
-
-Populated per phase, as each row's first recipe lands.

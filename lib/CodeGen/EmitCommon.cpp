@@ -647,17 +647,27 @@ llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path& 
     return writeGeneratedFile(depfilePath, depfileContent, policy);
 }
 
-std::string includeLinesFor(const llvm::StringRef text, const std::vector<IncludeProvider>& providers)
+std::vector<std::string> includesFor(const llvm::StringRef text, const std::vector<IncludeProvider>& providers)
 {
-    std::string lines;
+    std::vector<std::string> headers;
     for (const IncludeProvider& provider : providers)
     {
         const bool used =
             std::ranges::any_of(provider.tokens, [&](const llvm::StringRef token) { return text.contains(token); });
         if (used)
         {
-            lines += "#include " + provider.header.str() + "\n";
+            headers.push_back(provider.header.str());
         }
+    }
+    return headers;
+}
+
+std::string includeLinesFor(const llvm::StringRef text, const std::vector<IncludeProvider>& providers)
+{
+    std::string lines;
+    for (const std::string& header : includesFor(text, providers))
+    {
+        lines += "#include " + header + "\n";
     }
     return lines;
 }

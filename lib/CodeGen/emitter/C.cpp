@@ -22,7 +22,7 @@
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
-#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/IR/DSDLOps.h"
@@ -791,7 +791,7 @@ void emitSection(SourceWriter&              w,
 
 llvm::Expected<std::string> loadRuntimeHeader()
 {
-    if (const auto data = embedded_runtime::find("dsdl_runtime.h"))
+    if (const auto data = embedded_sources::find("dsdl_runtime.h"))
     {
         return std::string(*data);
     }

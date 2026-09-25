@@ -1,0 +1,53 @@
+{
+  "name": "cpp-cmake",
+  "title": "CMake (C++14, AUTOSAR profile)",
+  "row": "C / C++",
+  "language": "C++",
+  "build_system": "CMake",
+  "idiom": "B",
+  "dep_strategy": "list-outputs",
+  "summary": "`dsdlc_generate(LANGUAGE cpp ... VOCABULARY vocabulary.yaml)` generates the `autosar` profile with its span bound to CETL's. The vocabulary file is an input of the generation like the definitions are, so editing a binding regenerates.",
+  "notes": "The `autosar` profile is C++14, which has no `std::span`, and dsdlc carries no binding for it: without a `--vocabulary` file the run fails naming the concept and the flag. `vocabulary.yaml` binds CETL's `cetl::pf20::span`, and the build fetches CETL at the tag the file was written against.\n\ndsdlc lists a vocabulary file among the run's inputs, which is how `dsdlc_generate()` -- and the Makefile recipe's depfiles, and `rules_dsdl` -- come to depend on it without being told twice. Change the binding and the types regenerate; delete the file and configure fails.\n\nThe round-trip program reads a wire-flat type through its accessors as well as serialising the `SystemHealth` the other rows use, so the span the vocabulary binds appears in the program's own source.",
+  "generated_dir": "build/lanyard",
+  "requires": [
+    {
+      "command": "cmake",
+      "reason": "configures and drives the build"
+    },
+    {
+      "command": "c++",
+      "reason": "compiles the generated C++ and the round-trip program"
+    },
+    {
+      "command": "git",
+      "reason": "fetches CETL"
+    }
+  ],
+  "steps": [
+    {
+      "name": "configure",
+      "run": [
+        "cmake",
+        "-S",
+        ".",
+        "-B",
+        "build",
+        "-DCMAKE_PREFIX_PATH={prefix}"
+      ]
+    },
+    {
+      "name": "build",
+      "run": [
+        "cmake",
+        "--build",
+        "build"
+      ]
+    },
+    {
+      "name": "round-trip",
+      "run": [
+        "./build/roundtrip"
+      ]
+    }
+  ]
+}

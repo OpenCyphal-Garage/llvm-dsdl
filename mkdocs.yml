@@ -39,6 +39,7 @@ nav:
           - Backends: reference/codegen/backends.md
           - Identifier Naming: reference/codegen/identifier-naming.md
           - Object Backend: reference/codegen/object.md
+          - Vocabulary: reference/codegen/vocabulary.md
       - Language Server:
           - Lint Rules: reference/lsp/lint-rules.md
           - Index Schema: reference/lsp/index-schema.md

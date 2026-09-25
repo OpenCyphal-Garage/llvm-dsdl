@@ -21,6 +21,7 @@ Everything the tools promise, arranged for lookup rather than for reading throug
 
 - [Backends](codegen/backends.md) — the target languages and what each produces
 - [Object Backend](codegen/object.md) — the `obj` lane: C headers beside objects assembled inside `dsdlc`
+- [Vocabulary](codegen/vocabulary.md) — binding the library types generated code needs, a span first, per language and profile
 
 ## Language server
 

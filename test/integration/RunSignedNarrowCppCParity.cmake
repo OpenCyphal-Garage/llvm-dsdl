@@ -30,6 +30,10 @@ if(CPP_PROFILE STREQUAL "autosar")
   if(NOT DEFINED CETL_INCLUDE_DIR OR NOT EXISTS "${CETL_INCLUDE_DIR}/cetl/pf20/span.hpp")
     message(FATAL_ERROR "CETL not found under '${CETL_INCLUDE_DIR}'; run: git submodule update --init submodules/CETL")
   endif()
+  if(NOT DEFINED CETL_VOCABULARY OR NOT EXISTS "${CETL_VOCABULARY}")
+    message(FATAL_ERROR "the CETL vocabulary file was not found: '${CETL_VOCABULARY}'")
+  endif()
+  set(dsdlc_profile_args --cpp-profile "${CPP_PROFILE}" --vocabulary "${CETL_VOCABULARY}")
   set(cxx_include_flags -isystem "${CETL_INCLUDE_DIR}")
   set(cxx_std_flag -std=c++14)
   set(cxx_warning_flags
@@ -40,6 +44,7 @@ if(CPP_PROFILE STREQUAL "autosar")
       -Wsign-conversion
       -Werror)
 else()
+  set(dsdlc_profile_args --cpp-profile "${CPP_PROFILE}")
   set(cxx_include_flags "")
   set(cxx_std_flag -std=c++23)
   set(cxx_warning_flags
@@ -106,7 +111,7 @@ execute_process(
     "${DSDLC}" --target-language cpp ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
-      --cpp-profile "${CPP_PROFILE}"
+      ${dsdlc_profile_args}
       --outdir "${cpp_out}"
   RESULT_VARIABLE cpp_result
   OUTPUT_VARIABLE cpp_stdout

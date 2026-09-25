@@ -42,6 +42,7 @@ int main()
     ok      = runNamingGoldenTests() && ok;
     ok      = runTypeStorageTests() && ok;
     ok      = runStorageTypeTokensTests() && ok;
+    ok      = runVocabularyTests() && ok;
     ok      = runLoweredContractVersionTests() && ok;
     ok      = runUavcanEmbeddedCatalogTests() && ok;
     ok      = runLspDocumentStoreTests() && ok;

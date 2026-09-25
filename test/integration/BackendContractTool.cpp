@@ -46,6 +46,7 @@
 
 #include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
+#include "llvmdsdl/CodeGen/Vocabulary.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
 #include "llvmdsdl/CodeGen/emitter/Python.h"
@@ -204,8 +205,14 @@ llvm::Error emitWith(const std::string&              backend,
     }
     if (backend == "cpp")
     {
+        auto vocabulary = llvmdsdl::vocabulary::Set::load("cpp", {});
+        if (!vocabulary)
+        {
+            return vocabulary.takeError();
+        }
         llvmdsdl::emitter::cpp::Options options;
-        options.outDir = outDir.string();
+        options.outDir     = outDir.string();
+        options.vocabulary = &*vocabulary;
         return llvmdsdl::emitter::cpp::emit(semantic, module, options);
     }
     if (backend == "rust")

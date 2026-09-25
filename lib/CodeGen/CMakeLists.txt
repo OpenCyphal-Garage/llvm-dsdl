@@ -7,61 +7,57 @@
 ##
 #===----------------------------------------------------------------------===#
 
-# Embed the language-runtime support sources (runtime/) into this library so the
-# C/C++/Rust/Go/Python emitters resolve them from the binary itself rather than
-# from an absolute source path baked in at compile time, so a packaged dsdlc runs
-# outside a source checkout. Unlike the embedded
-# UAVCAN MLIR catalogue (which needs a built dsdlc to produce, hence is committed),
-# this embed only reads files, so it is regenerated at build time from the
-# runtime sources and never committed. See tools/runtime/generate_embedded_runtime.py.
+# The runtime scaffolds and the built-in vocabulary bindings are embedded into
+# the library as raw string literals, so a packaged dsdlc carries them. The
+# embed only reads files, so it is regenerated at build time and never
+# committed. See tools/generate_embedded_sources.py.
 if(NOT LLVMDSDL_PYTHON3_EXE)
   message(FATAL_ERROR
-    "python3 is required to embed the runtime support sources "
-    "(tools/runtime/generate_embedded_runtime.py); none was found.")
+    "python3 is required to embed the runtime and vocabulary sources "
+    "(tools/generate_embedded_sources.py); none was found.")
 endif()
 
-set(LLVMDSDL_EMBEDDED_RUNTIME_GENERATOR
-    "${LLVMDSDL_SOURCE_DIR}/tools/runtime/generate_embedded_runtime.py")
-set(LLVMDSDL_EMBEDDED_RUNTIME_INC
-    "${CMAKE_CURRENT_BINARY_DIR}/EmbeddedRuntimeSources.inc")
+set(LLVMDSDL_EMBEDDED_SOURCES_GENERATOR
+    "${LLVMDSDL_SOURCE_DIR}/tools/generate_embedded_sources.py")
+set(LLVMDSDL_EMBEDDED_SOURCES_INC
+    "${CMAKE_CURRENT_BINARY_DIR}/EmbeddedSources.inc")
 
 # The generator owns the manifest of embedded files; ask it for that list so the
 # custom command depends on exactly the files it embeds (single source of truth,
 # no drift between the DEPENDS list here and what gets baked in).
 execute_process(
-  COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_EMBEDDED_RUNTIME_GENERATOR}" --print-manifest
-  OUTPUT_VARIABLE LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_RAW
-  RESULT_VARIABLE LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_RESULT
-  ERROR_VARIABLE LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_ERR
+  COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_EMBEDDED_SOURCES_GENERATOR}" --print-manifest
+  OUTPUT_VARIABLE LLVMDSDL_EMBEDDED_SOURCES_MANIFEST_RAW
+  RESULT_VARIABLE LLVMDSDL_EMBEDDED_SOURCES_MANIFEST_RESULT
+  ERROR_VARIABLE LLVMDSDL_EMBEDDED_SOURCES_MANIFEST_ERR
   OUTPUT_STRIP_TRAILING_WHITESPACE)
-if(NOT LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_RESULT EQUAL 0)
+if(NOT LLVMDSDL_EMBEDDED_SOURCES_MANIFEST_RESULT EQUAL 0)
   message(FATAL_ERROR
-    "failed to read embedded runtime manifest via "
-    "${LLVMDSDL_EMBEDDED_RUNTIME_GENERATOR}:\n${LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_ERR}")
+    "failed to read the embedded sources manifest via "
+    "${LLVMDSDL_EMBEDDED_SOURCES_GENERATOR}:\n${LLVMDSDL_EMBEDDED_SOURCES_MANIFEST_ERR}")
 endif()
-string(REPLACE "\n" ";" LLVMDSDL_EMBEDDED_RUNTIME_RELPATHS
-       "${LLVMDSDL_EMBEDDED_RUNTIME_MANIFEST_RAW}")
-set(LLVMDSDL_EMBEDDED_RUNTIME_DEPS "")
-foreach(rel IN LISTS LLVMDSDL_EMBEDDED_RUNTIME_RELPATHS)
-  list(APPEND LLVMDSDL_EMBEDDED_RUNTIME_DEPS
-       "${LLVMDSDL_SOURCE_DIR}/runtime/${rel}")
+string(REPLACE "\n" ";" LLVMDSDL_EMBEDDED_SOURCES_RELPATHS
+       "${LLVMDSDL_EMBEDDED_SOURCES_MANIFEST_RAW}")
+set(LLVMDSDL_EMBEDDED_SOURCES_DEPS "")
+foreach(rel IN LISTS LLVMDSDL_EMBEDDED_SOURCES_RELPATHS)
+  list(APPEND LLVMDSDL_EMBEDDED_SOURCES_DEPS "${LLVMDSDL_SOURCE_DIR}/${rel}")
 endforeach()
 
 add_custom_command(
-  OUTPUT "${LLVMDSDL_EMBEDDED_RUNTIME_INC}"
-  COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_EMBEDDED_RUNTIME_GENERATOR}"
-          --runtime-root "${LLVMDSDL_SOURCE_DIR}/runtime"
-          --output "${LLVMDSDL_EMBEDDED_RUNTIME_INC}"
+  OUTPUT "${LLVMDSDL_EMBEDDED_SOURCES_INC}"
+  COMMAND "${LLVMDSDL_PYTHON3_EXE}" "${LLVMDSDL_EMBEDDED_SOURCES_GENERATOR}"
+          --source-root "${LLVMDSDL_SOURCE_DIR}"
+          --output "${LLVMDSDL_EMBEDDED_SOURCES_INC}"
   DEPENDS
-    "${LLVMDSDL_EMBEDDED_RUNTIME_GENERATOR}"
-    ${LLVMDSDL_EMBEDDED_RUNTIME_DEPS}
-  COMMENT "Embedding language-runtime support sources into llvmdsdlCodeGen"
+    "${LLVMDSDL_EMBEDDED_SOURCES_GENERATOR}"
+    ${LLVMDSDL_EMBEDDED_SOURCES_DEPS}
+  COMMENT "Embedding the runtime and vocabulary sources into llvmdsdlCodeGen"
   VERBATIM)
-add_custom_target(llvmdsdl-embedded-runtime-sources
-  DEPENDS "${LLVMDSDL_EMBEDDED_RUNTIME_INC}")
+add_custom_target(llvmdsdl-embedded-sources
+  DEPENDS "${LLVMDSDL_EMBEDDED_SOURCES_INC}")
 
 add_library(llvmdsdlCodeGen
-  EmbeddedRuntimeSources.cpp
+  EmbeddedSources.cpp
   BodyTranslator.cpp
   CompositeImportGraph.cpp
   ConstantLiteralRender.cpp
@@ -81,6 +77,7 @@ add_library(llvmdsdlCodeGen
   TypeMetadata.cpp
   TypeStorage.cpp
   UavcanEmbeddedCatalog.cpp
+  Vocabulary.cpp
   emitter/C.cpp
   emitter/CHeaderRender.cpp
   emitter/Cpp.cpp
@@ -123,11 +120,11 @@ else()
   target_link_libraries(llvmdsdlCodeGen PUBLIC ${LLVMDSDL_OBJECT_COMPONENTS})
 endif()
 
-# The generated EmbeddedRuntimeSources.inc lands in the build tree; the compiler
-# depfile then makes EmbeddedRuntimeSources.cpp recompile whenever a runtime
-# source (and thus the .inc) changes. add_dependencies guarantees the .inc is
-# generated before any object in this library is compiled.
-add_dependencies(llvmdsdlCodeGen llvmdsdl-embedded-runtime-sources)
+# The generated EmbeddedSources.inc lands in the build tree; the compiler depfile
+# then makes EmbeddedSources.cpp recompile whenever an embedded source (and thus
+# the .inc) changes. add_dependencies guarantees the .inc is generated before any
+# object in this library is compiled.
+add_dependencies(llvmdsdlCodeGen llvmdsdl-embedded-sources)
 
 target_include_directories(llvmdsdlCodeGen PUBLIC
   ${LLVMDSDL_SOURCE_DIR}/include

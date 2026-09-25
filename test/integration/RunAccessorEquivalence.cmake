@@ -126,6 +126,28 @@ endif()
 _equivalence_run("C++" "${OUT_DIR}/cpp_equivalence")
 list(APPEND legs "C++")
 
+# The autosar profile, whose span the example vocabulary binds to CETL's, at the C++14 it targets.
+foreach(var CETL_INCLUDE_DIR CETL_VOCABULARY)
+  if(NOT DEFINED ${var} OR NOT EXISTS "${${var}}")
+    message(FATAL_ERROR "the autosar leg needs ${var}: '${${var}}' does not exist")
+  endif()
+endforeach()
+set(autosar_out "${OUT_DIR}/cpp-autosar")
+_equivalence_generate(cpp "${autosar_out}" --cpp-profile autosar --vocabulary "${CETL_VOCABULARY}")
+execute_process(
+  COMMAND "${CXX_COMPILER}" -std=c++14 -O2 -Wall -Wextra -isystem "${CETL_INCLUDE_DIR}"
+    "-DLLVMDSDL_SPAN_HEADER=\"cetl/pf20/span.hpp\"" -DLLVMDSDL_SPAN=cetl::pf20::span
+    -I "${autosar_out}" "${OUT_DIR}/cpp_driver.cpp" -o "${OUT_DIR}/cpp_autosar_equivalence"
+  RESULT_VARIABLE build_result
+  OUTPUT_VARIABLE build_stdout
+  ERROR_VARIABLE build_stderr
+)
+if(NOT build_result EQUAL 0)
+  message(FATAL_ERROR "C++ autosar build failed:\n${build_stdout}\n${build_stderr}")
+endif()
+_equivalence_run("C++ autosar" "${OUT_DIR}/cpp_autosar_equivalence")
+list(APPEND legs "C++ autosar")
+
 # -------------------------------------------------------------------- Rust ----
 if(DEFINED CARGO_EXECUTABLE AND EXISTS "${CARGO_EXECUTABLE}")
   set(RUST_OUT "${OUT_DIR}/rust")

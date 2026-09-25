@@ -1,0 +1,12 @@
+# The standard library's spelling of each concept the C++ backend binds. Compiled into dsdlc and
+# applied first; a file passed with --vocabulary replaces a binding for the profiles it names.
+#
+# The autosar profile is C++14, which has no std::span, so it binds nothing here: generating it
+# takes a --vocabulary file naming the span its consumers use.
+vocabulary: 1
+language: cpp
+profiles: [std, pmr]
+bindings:
+  span:
+    type: "std::span<{element}>"
+    include: ["<span>"]

@@ -2,7 +2,15 @@
 #include <cstdio>
 #include <array>
 #include <cstring>
-#include <span>
+
+// The span the accessors take, as the lane's vocabulary binds it for the profile under test.
+#ifndef LLVMDSDL_SPAN_HEADER
+#    define LLVMDSDL_SPAN_HEADER <span>
+#    define LLVMDSDL_SPAN std::span
+#endif
+#include LLVMDSDL_SPAN_HEADER
+template <typename T>
+using byte_span = LLVMDSDL_SPAN<T>;
 #include "uavcan/node/Version_1_0.hpp"
 #include "uavcan/primitive/scalar/Integer16_1_0.hpp"
 #include "uavcan/primitive/scalar/Natural64_1_0.hpp"
@@ -37,8 +45,8 @@ static bool sameBits(const V& a, const V& b)
 }
 
 template <typename T, typename V, std::size_t Size>
-static bool checkField(V (*get)(std::span<const std::uint8_t>),
-                       std::int8_t (*set)(std::span<std::uint8_t>, V),
+static bool checkField(V (*get)(byte_span<const std::uint8_t>),
+                       std::int8_t (*set)(byte_span<std::uint8_t>, V),
                        V T::*     member,
                        const bool exact)
 {
@@ -52,7 +60,7 @@ static bool checkField(V (*get)(std::span<const std::uint8_t>),
     ok               = ok && sameBits(get({}), V{});
     size             = Size / 2;
     ok               = ok && obj.deserialize(wire, &size) == 0;
-    ok               = ok && sameBits(get(std::span<const std::uint8_t>(wire, Size / 2)), obj.*member);
+    ok               = ok && sameBits(get(byte_span<const std::uint8_t>(wire, Size / 2)), obj.*member);
     const V v        = get(wire);
     ok               = ok && set(out, v) == 0;
     size             = Size;
@@ -66,8 +74,8 @@ static bool checkField(V (*get)(std::span<const std::uint8_t>),
 // An element of a fixed array, through the index the accessor takes; one past the capacity reads
 // as zero and cannot be set.
 template <typename T, typename V, std::size_t Size, std::size_t Capacity>
-static bool checkElement(V (*get)(std::span<const std::uint8_t>, std::size_t),
-                         std::int8_t (*set)(std::span<std::uint8_t>, std::size_t, V),
+static bool checkElement(V (*get)(byte_span<const std::uint8_t>, std::size_t),
+                         std::int8_t (*set)(byte_span<std::uint8_t>, std::size_t, V),
                          std::array<V, Capacity> T::* member)
 {
     bool ok = true;
@@ -148,11 +156,11 @@ int main()
         Scalar                        obj{};
         std::size_t                   size  = sizeof wire;
         bool                          ok    = obj.deserialize(wire, &size) == 0;
-        std::span<const std::uint8_t> stamp = Scalar::get_timestamp(wire);
+        byte_span<const std::uint8_t> stamp = Scalar::get_timestamp(wire);
         ok    = ok && SynchronizedTimestamp::get_microsecond(stamp) == obj.timestamp.microsecond;
         size  = 3;
         ok    = ok && obj.deserialize(wire, &size) == 0;
-        stamp = Scalar::get_timestamp(std::span<const std::uint8_t>(wire, 3));
+        stamp = Scalar::get_timestamp(byte_span<const std::uint8_t>(wire, 3));
         ok    = ok && stamp.size() == 3 && SynchronizedTimestamp::get_microsecond(stamp) == obj.timestamp.microsecond;
         stamp = Scalar::get_timestamp({});
         ok    = ok && stamp.empty() && SynchronizedTimestamp::get_microsecond(stamp) == 0;

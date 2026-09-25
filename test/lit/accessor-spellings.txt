@@ -40,13 +40,14 @@
 # C_BODY-NEXT: dsdl_runtime_get_u16(buf, (size_t) size,
 
 # C++ takes the buffer as a span, which is never null, and binds its size where the plan reads it.
-# A read hands the runtime the span's bytes through `readable_bytes`, since a default-constructed
-# span holds no pointer; a write hands them over after the check that the span holds the field.
+# A read hands the runtime the span's bytes through `readable_bytes`, since an empty span may hold
+# no pointer; a write hands them over after the check that the span holds the field. The span is
+# the type the vocabulary binds: std::span, here, from the built-in binding.
 # CPP:      struct Padded {
 # CPP:      static std::uint16_t get_b(const std::span<const std::uint8_t> buffer)
 # CPP-NEXT: {
 # CPP-NEXT: const std::size_t buffer_size_bytes = buffer.size();
-# CPP-NEXT: dsdl_runtime_get_u16(::llvmdsdl::cpp::readable_bytes(buffer), static_cast<std::size_t>(buffer_size_bytes),
+# CPP-NEXT: dsdl_runtime_get_u16(::llvmdsdl::cpp::readable_bytes(buffer.data()), static_cast<std::size_t>(buffer_size_bytes),
 # CPP:      return static_cast<std::uint16_t>(
 # CPP:      static std::int8_t set_b(const std::span<std::uint8_t> buffer, const std::uint16_t member_value)
 # CPP-NEXT: {

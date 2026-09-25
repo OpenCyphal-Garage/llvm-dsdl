@@ -1,0 +1,10 @@
+# The autosar profile is C++14, which has no std::span, so the span its field accessors take is
+# bound here: CETL's, the C++14 polyfill of std::span. Editing this file regenerates the types --
+# dsdlc lists it among the run's inputs -- and a profile with no span binding fails the build.
+vocabulary: 1
+language: cpp
+profiles: [autosar]
+bindings:
+  span:
+    type: "cetl::pf20::span<{element}>"
+    include: ['"cetl/pf20/span.hpp"']

@@ -17,7 +17,7 @@
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Rust.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -2338,7 +2338,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
 llvm::Expected<std::string> loadRustRuntimeFile(const std::string& fileName)
 {
-    if (const auto data = embedded_runtime::find("rust/" + fileName))
+    if (const auto data = embedded_sources::find("rust/" + fileName))
     {
         return std::string(*data);
     }

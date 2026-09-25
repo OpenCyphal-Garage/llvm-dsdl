@@ -186,10 +186,12 @@ A variable-length array is sized within its capacity before the plan validates t
 malformed count never sizes a container past it. A serialise and a deserialise take the buffer as
 a pointer beside its size. A field accessor takes it as a span, and a pointer into it is a subspan:
 the plan clamps the offset to the span's size. A read hands the runtime the span's bytes through
-`readable_bytes`, which stands a byte in for a span that holds no pointer. The `std`, `pmr` and
-`autosar` profiles differ in how those containers and that span are spelled — `std::span`, or
-CETL's `cetl::pf20::span` under `autosar` — and, under `pmr`, in the memory resource a nested call
-is handed. The C↔C++ parity lanes and the generation lane accept it.
+`readable_bytes`, which stands a byte in for a span that holds no pointer. The span's type, and any
+operation on it the library spells its own way, come from the
+[vocabulary](../reference/codegen/vocabulary.md) resolved for the profile; the spelling records that
+it named the span, and the header includes what the binding declares. The `std`, `pmr` and `autosar`
+profiles differ in how those containers are spelled and, under `pmr`, in the memory resource a
+nested call is handed. The C↔C++ parity lanes and the generation lane accept it.
 
 **Rust** followed. `RustSpelling`, in
 [`lib/CodeGen/emitter/Rust.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Rust.cpp),

@@ -284,6 +284,9 @@ struct IncludeProvider final
     std::vector<llvm::StringRef> tokens;
 };
 
+/// @brief The headers of the providers @p text takes something from, in the order given.
+std::vector<std::string> includesFor(llvm::StringRef text, const std::vector<IncludeProvider>& providers);
+
 /// @brief The `#include` lines for the providers @p text takes something from, in the order given.
 ///
 /// An include a generated file does not use is a lint diagnostic in the consumer's build, so a

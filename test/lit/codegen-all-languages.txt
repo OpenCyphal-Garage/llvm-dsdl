@@ -11,7 +11,7 @@
 # RUN: cat %t/cpp/pmr/fixtures/vendor/Widget_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
 # RUN: cat %t/cpp/std/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_STD_ARRAYS
 # RUN: cat %t/cpp/pmr/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR_ARRAYS
-# RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile autosar --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=CPP_AUTOSAR_SUMMARY
+# RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile autosar --vocabulary %S/../../examples/vocabulary/cpp-autosar-cetl.yaml --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=CPP_AUTOSAR_SUMMARY
 # RUN: test -f %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp
 # RUN: cat %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR
 

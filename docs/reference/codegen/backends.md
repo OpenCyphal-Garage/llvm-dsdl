@@ -5,7 +5,7 @@
 ## Targets
 
 - `c`: C headers + implementation
-- `cpp`: C++ model/runtime outputs (`std`, `pmr`, `autosar`)
+- `cpp`: C++ model/runtime outputs (`std`, `pmr`, `autosar`); the span its accessors take is bound by the [vocabulary](vocabulary.md)
 - `rust`: crate/module output with profile/runtime controls
 - `go`: module/package output
 - `ts`: typed model + runtime helpers

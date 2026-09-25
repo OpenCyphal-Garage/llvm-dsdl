@@ -11,8 +11,7 @@
 /// AUTOSAR-oriented C++ wrappers for the shared C runtime used by generated DSDL bindings.
 ///
 /// This header re-exports the C runtime and provides deterministic bounded
-/// variable-array storage used by generated AUTOSAR C++14 bindings. It requires
-/// CETL (https://github.com/OpenCyphal/CETL), for `cetl::pf20::span`.
+/// variable-array storage used by generated AUTOSAR C++14 bindings.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -23,8 +22,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-
-#include "cetl/pf20/span.hpp"
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L)
 #    if defined(__has_cpp_attribute)
@@ -50,17 +47,17 @@ namespace llvmdsdl
 namespace cpp
 {
 
-/// @brief The source a runtime read primitive takes for @p buffer: its bytes, or a byte that exists
-///        where it holds none.
+/// @brief The source a runtime read primitive takes for a field accessor's buffer: its bytes, or a
+///        byte that exists where it holds none.
 ///
-/// The primitives take a non-null source even where they copy nothing, and a default-constructed
-/// span holds a null pointer.
-/// @param[in] buffer The span a field accessor was handed.
-/// @return A pointer to the first of @p buffer's bytes, which is never null.
-inline const std::uint8_t* readable_bytes(const cetl::pf20::span<const std::uint8_t> buffer) noexcept
+/// The primitives take a non-null source even where they copy nothing, and an empty span may
+/// hold a null pointer.
+/// @param[in] bytes The span's bytes.
+/// @return @p bytes, or a pointer to a byte where @p bytes is null.
+inline const std::uint8_t* readable_bytes(const std::uint8_t* const bytes) noexcept
 {
     static constexpr std::uint8_t STAND_IN{0U};
-    return (buffer.data() != nullptr) ? buffer.data() : &STAND_IN;
+    return (bytes != nullptr) ? bytes : &STAND_IN;
 }
 
 namespace autosar

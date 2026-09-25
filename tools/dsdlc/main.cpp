@@ -43,6 +43,7 @@
 #include "TargetLanguages.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
+#include "llvmdsdl/CodeGen/Vocabulary.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/NamingManifest.h"
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
@@ -91,6 +92,9 @@ struct CliOptions final
     std::vector<std::string> builtinTargets;
 
     std::vector<std::string> lookupDirs;
+
+    /// `--vocabulary` files, in command-line order.
+    std::vector<std::string> vocabularyFiles;
 
     std::string targetLanguage;
     std::string outDir{"dsdl_out"};
@@ -288,6 +292,12 @@ void printHelp()
                  << "      the field and its serialise copies the view. A field of a union, and a\n"
                  << "      field whose type is wire-flat without asserting it, are decoded as\n"
                  << "      usual.\n"
+                 << "  --vocabulary <file>\n"
+                 << "      Repeatable. Binds a concept the generated code needs a library type for --\n"
+                 << "      a span -- to the type a language and profile use, in place of the\n"
+                 << "      built-in standard-library binding for the profiles the file names. The\n"
+                 << "      C++ autosar profile has no built-in binding and takes one. A file is an\n"
+                 << "      input of the run: --list-inputs and -MD name it.\n"
                  << "\n"
                  << "TYPE VERSIONING\n"
                  << "  --versioned-type-names\n"
@@ -541,6 +551,13 @@ llvm::Error normalizePathOptions(CliOptions& options)
             return err;
         }
     }
+    for (auto& file : options.vocabularyFiles)
+    {
+        if (auto err = assign(file, llvmdsdl::expandHomeDirectory(file)))
+        {
+            return err;
+        }
+    }
     for (auto& target : options.positionalTargets)
     {
         if (auto err = assign(target, llvmdsdl::expandHomeDirectory(target)))
@@ -614,6 +631,16 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.lookupDirs.push_back(*value);
+            continue;
+        }
+        if (arg == "--vocabulary")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.vocabularyFiles.push_back(*value);
             continue;
         }
         if (arg == "--outdir" || arg == "-O")
@@ -1556,6 +1583,15 @@ int runDsdlc(int argc, char** argv)
         return 1;
     }
 
+    // The bindings are read before any definition is, so a file that cannot be read or a profile that
+    // binds nothing fails the run before it parses anything.
+    auto vocabularySet = llvmdsdl::vocabulary::Set::load(options.targetLanguage, options.vocabularyFiles);
+    if (!vocabularySet)
+    {
+        llvm::errs() << llvm::toString(vocabularySet.takeError()) << "\n";
+        return 1;
+    }
+
     if (options.listInputs || options.listOutputs)
     {
         options.dryRun = true;
@@ -1825,7 +1861,19 @@ int runDsdlc(int argc, char** argv)
 
     const auto closureSemantic      = filterSemanticModule(mergedSemantic, closureKeys);
     const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);
-    const auto inputsForListing     = collectInputFilesForClosure(mergedSemantic, closureKeys);
+    auto       inputsForListing     = collectInputFilesForClosure(mergedSemantic, closureKeys);
+    // A vocabulary file is an input of every output the run writes, so the listing and every depfile
+    // name it: a build regenerates when a binding changes.
+    std::vector<std::string> vocabularyInputs;
+    for (const auto& file : vocabularySet->files())
+    {
+        if (file.path != "built-in")
+        {
+            vocabularyInputs.push_back(normalizePathForCompare(file.path));
+        }
+    }
+    inputsForListing.insert(inputsForListing.end(), vocabularyInputs.begin(), vocabularyInputs.end());
+    inputsForListing = dedupSorted(std::move(inputsForListing));
 
     // The accessors-only mode is a promise about every type it emits: aliasable, or nested by one
     // that says so. A type that is neither is named here, before anything is generated.
@@ -2177,18 +2225,19 @@ int runDsdlc(int argc, char** argv)
             // An output with no required type keys was rendered from content compiled into this
             // binary rather than from any definition -- a runtime header, a manifest, scaffolding --
             // so the binary is its input.
-            const std::vector<std::string>* deps = &depfilePlanner->depsForCompilerOnlyOutput();
+            std::vector<std::string> deps = depfilePlanner->depsForCompilerOnlyOutput();
 
             if (const auto metadataIt = generatedOutputRequiredTypeKeys.find(output);
                 metadataIt != generatedOutputRequiredTypeKeys.end())
             {
                 const auto depResolutionStart = std::chrono::steady_clock::now();
-                deps                          = &depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
+                deps                          = depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
                 depResolutionElapsed += std::chrono::steady_clock::now() - depResolutionStart;
             }
+            deps.insert(deps.end(), vocabularyInputs.begin(), vocabularyInputs.end());
 
             const auto depWriteStart = std::chrono::steady_clock::now();
-            if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(output, *deps, writePolicy))
+            if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(output, deps, writePolicy))
             {
                 return err;
             }
@@ -2336,6 +2385,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
+        emitOptions.vocabulary                = &*vocabularySet;
 
         if (auto err = llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions))
         {
