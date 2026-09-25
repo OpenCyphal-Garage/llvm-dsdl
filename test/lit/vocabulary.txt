@@ -22,6 +22,16 @@
 # ACME_NESTED: static acme::ByteView<const std::uint8_t> get_orientation(const acme::ByteView<const std::uint8_t> buffer)
 # ACME_NESTED: return buffer.tail(
 
+# A member held as a view is the bound span, read and made as the binding spells it.
+# RUN: %dsdlc --target-language cpp --cpp-profile std --vocabulary %S/vocabulary/acme-byte-view.yaml --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/acme-views > /dev/null
+# RUN: cat %t/acme-views/fixtures_views/vendor/Frame_1_0.hpp | FileCheck %s --check-prefix=ACME_VIEW
+# ACME_VIEW-NOT: #include <span>
+# ACME_VIEW:     #include "acme/byte_view.hpp"
+# ACME_VIEW:     acme::ByteView<const std::uint8_t> pose;
+# ACME_VIEW:     const std::uint8_t* const pose_buf = obj->pose.ptr();
+# ACME_VIEW-NEXT: const std::uint64_t pose_size = static_cast<std::uint64_t>(obj->pose.length());
+# ACME_VIEW:     out_obj->pose = acme::ByteView<const std::uint8_t>::of(&buf[{{.*}}], static_cast<std::size_t>({{.*}}));
+
 # The file names the std profile alone, so pmr keeps the built-in binding.
 # RUN: %dsdlc --target-language cpp --cpp-profile pmr --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_host_image --outdir %t/pmr > /dev/null
 # RUN: cat %t/pmr/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=PMR

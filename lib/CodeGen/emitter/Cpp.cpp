@@ -494,6 +494,12 @@ public:
         return usedSpan_;
     }
 
+    /// @brief The type a member held as a view is declared as: the span over its bytes.
+    [[nodiscard]] std::string viewType() const
+    {
+        return spanOf(/*isConst=*/true);
+    }
+
     // Functions.
 
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
@@ -1137,7 +1143,6 @@ public:
                std::to_string(op.getBytes()) + "U);");
     }
 
-    // A view member is the runtime's pointer and count, or one element of an array of them.
     /// @brief A view member, or the element of an array of views that @p index names.
     std::string viewTarget(const mlir::Value     object,
                            const llvm::StringRef member,
@@ -1149,25 +1154,35 @@ public:
 
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".bytes";
+        return vocabulary_->operation(vocabulary::Concept::Span,
+                                      "data",
+                                      {{"self", viewTarget(op.getObject(), op.getMember(), op.getIndex(), names)}});
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "static_cast<std::uint64_t>(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) +
-               ".size_bytes)";
+        return "static_cast<std::uint64_t>(" +
+               vocabulary_->operation(vocabulary::Concept::Span,
+                                      "size",
+                                      {{"self", viewTarget(op.getObject(), op.getMember(), op.getIndex(), names)}}) +
+               ")";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
-        const std::string access = viewTarget(op.getObject(), op.getMember(), op.getIndex(), names);
-        w.line(access + ".bytes = " + names(op.getBytes()) + ";");
-        w.line(access + ".size_bytes = " + asSize(names(op.getSizeBytes())) + ";");
+        const std::string type  = viewType();
+        const std::string bytes = names(op.getBytes());
+        const std::string size  = asSize(names(op.getSizeBytes()));
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " +
+               vocabulary_->operation(vocabulary::Concept::Span,
+                                      "make",
+                                      {{"type", type}, {"data", bytes}, {"size", size}}) +
+               ";");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
     {
-        // Value-initialised: a null pointer and a count of nought, in every element of an array.
+        // Value-initialised: an empty span, in every element of an array.
         w.line(memberAccess(op.getObject(), op.getMember(), names) + " = {};");
     }
 
@@ -1342,7 +1357,7 @@ private:
     {
         if (io.getHeldAsView())
         {
-            return "dsdl_runtime_view_t";
+            return viewType();
         }
         return io.isComposite() ? nestedTypeName(io) : scalarType(io);
     }
@@ -1700,7 +1715,8 @@ void emitFunctionPrototypes(SourceWriter&      w,
 ///
 /// A zero is spelt `{}` and not `{0}` so that the text is what it was before the value came from
 /// the body; a member of a non-zero default is spelt with it, which is what makes an initialise
-/// body that stores something other than zero visible in the header.
+/// body that stores something other than zero visible in the header. A single view has none: the
+/// span's default constructor holds no bytes.
 std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefault& entry)
 {
     const auto literal = [&](const mlir::TypedAttr value) -> std::string {
@@ -1744,11 +1760,12 @@ std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefa
         }
         return list + "}";
     }
+    case MemberDefault::Kind::View:
+        return (type.arrayKind == ArrayKind::None) ? std::string{} : std::string{"{}"};
     case MemberDefault::Kind::VariableArrayEmpty:
     case MemberDefault::Kind::FixedCompositeArray:
     case MemberDefault::Kind::BoolArray:
     case MemberDefault::Kind::Composite:
-    case MemberDefault::Kind::View:
         return "{}";
     }
     return "{}";
@@ -1805,10 +1822,10 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             }
 
             const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
-            // A view holds the field's bytes and their count, from the buffer the object was
-            // deserialised from; it allocates nothing and takes no memory resource.
+            // A view is a span over the field's bytes in the buffer the object was deserialised
+            // from; it allocates nothing and takes no memory resource.
             const auto baseType =
-                field.heldAsView ? std::string{"dsdl_runtime_view_t"} : cppTypeFromFieldType(field.resolvedType, ctx);
+                field.heldAsView ? spelling.viewType() : cppTypeFromFieldType(field.resolvedType, ctx);
             emitAttachedDocCpp(w, field.doc);
 
             const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));

@@ -40,8 +40,8 @@ namespace llvmdsdl::vocabulary
 /// @brief A role generated code needs a library type for.
 enum class Concept : std::uint8_t
 {
-    /// @brief A view over a run of bytes: a pointer and a count, which the generated code takes a
-    ///        buffer in and answers a nested type's bytes in.
+    /// @brief A view over a run of bytes: a pointer and a count. The generated code takes a buffer
+    ///        in one, answers a nested type's bytes in one, and declares a view member as one.
     Span,
 };
 

@@ -58,7 +58,8 @@ constexpr const char* const kAcme = "vocabulary: 1\n"
                                     "    operations:\n"
                                     "      data: \"{self}.ptr()\"\n"
                                     "      size: \"{self}.length()\"\n"
-                                    "      subspan: \"{self}.tail({offset})\"\n";
+                                    "      subspan: \"{self}.tail({offset})\"\n"
+                                    "      make: \"{type}::of({data}, {size})\"\n";
 
 bool runParsing()
 {
@@ -84,7 +85,7 @@ bool runParsing()
         std::cerr << "the acme file was rejected: " << llvm::toString(acme.takeError()) << "\n";
         return false;
     }
-    if (!acme->profiles.empty() || acme->bindings.front().second.operations.size() != 3)
+    if (!acme->profiles.empty() || acme->bindings.front().second.operations.size() != 4)
     {
         std::cerr << "the acme file was read wrongly\n";
         return false;
@@ -174,6 +175,7 @@ bool runResolution()
             vocabulary->operation(Concept::Span, "data", {{"self", "buffer"}}) != "buffer.data()" ||
             vocabulary->operation(Concept::Span, "size", {{"self", "buffer"}}) != "buffer.size()" ||
             vocabulary->operation(Concept::Span, "subspan", {{"self", "buf"}, {"offset", "at"}}) != "buf.subspan(at)" ||
+            vocabulary->operation(Concept::Span, "make", {{"type", "S"}, {"data", "p"}, {"size", "n"}}) != "S(p, n)" ||
             vocabulary->includes(Concept::Span) != llvm::ArrayRef<std::string>{"<span>"} ||
             vocabulary->binding(Concept::Span).origin != "built-in")
         {

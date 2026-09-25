@@ -245,10 +245,11 @@ zeros past its end and which serialises zero-filled; an initialised object holds
 which serialises as the nested type's default. An array of an `@aliasable` type is one view per
 element: a fixed array's held in place, a variable-length one's beside its count. A holder of a view
 is not a host image. A field of a union, and a field whose type is wire-flat without asserting it,
-are decoded as usual. C and C++ hold a view as `dsdl_runtime_view_t`, a pointer and a size; Rust as `&'a [u8]`, which
-gives the holder, and every type that holds one, a lifetime parameter and a deserialise that
-borrows the buffer for it; Go as `[]byte`; TypeScript as `Uint8Array`; Python as `memoryview`. A
-file names no type it holds only as a view.
+are decoded as usual. C holds a view as `dsdl_runtime_view_t`, a pointer and a size; C++ as the
+profile's [span](../codegen/vocabulary.md#span), which the nested type's accessors take as it is
+held; Rust as `&'a [u8]`, which gives the holder, and every type that holds one, a lifetime
+parameter and a deserialise that borrows the buffer for it; Go as `[]byte`; TypeScript as
+`Uint8Array`; Python as `memoryview`. A file names no type it holds only as a view.
 
 A host-image type asserts the verdict where it is compiled: the generated structure carries a
 static assertion on its size and on each member's offset. On the byte-image targets — C, `obj`,

@@ -5,7 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// The C probe's reading of a container holding a view, through the C++ member functions, for both profiles.
+// The C probe's reading of a container holding a view, through the C++ member functions, for each
+// profile. A view is the profile's span, which the record's accessors take as it is held.
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,7 +17,15 @@
 #include "fixtures_views/vendor/Track_1_0.hpp"
 #include <cstdio>
 #include <cstring>
-#include <span>
+
+// The span a view is held in, as the lane's vocabulary binds it for the profile under test.
+#ifndef LLVMDSDL_SPAN_HEADER
+#    define LLVMDSDL_SPAN_HEADER <span>
+#    define LLVMDSDL_SPAN std::span
+#endif
+#include LLVMDSDL_SPAN_HEADER
+using byte_span = LLVMDSDL_SPAN<const std::uint8_t>;
+
 static int  failures = 0;
 static void check(const char* what, bool ok)
 {
@@ -42,9 +51,8 @@ int main()
     std::size_t size = sizeof wire;
     check("deserialise accepted", frame.deserialize(wire, &size) == 0 && size == sizeof wire);
     check("sequence decoded", frame.sequence == seq);
-    check("view points into the buffer", frame.pose.bytes == wire + 4 && frame.pose.size_bytes == 24);
-    std::span<const std::uint8_t> o =
-        Pose::get_orientation(std::span<const std::uint8_t>(frame.pose.bytes, frame.pose.size_bytes));
+    check("view points into the buffer", frame.pose.data() == wire + 4 && frame.pose.size() == 24);
+    byte_span o = Pose::get_orientation(frame.pose);
     check("orientation.y read through the view", Vec3::get_y(o) == 5.5f);
     check("velocity decoded, status after the view", frame.velocity.y == 8.0f && frame.status == 0x5A);
     std::uint8_t out[64];
@@ -55,8 +63,8 @@ int main()
     Frame       short_frame;
     std::size_t short_size = 16;
     check("short deserialise accepted", short_frame.deserialize(wire, &short_size) == 0);
-    check("short view holds what was there", short_frame.pose.bytes == wire + 4 && short_frame.pose.size_bytes == 12);
-    o = Pose::get_orientation(std::span<const std::uint8_t>(short_frame.pose.bytes, short_frame.pose.size_bytes));
+    check("short view holds what was there", short_frame.pose.data() == wire + 4 && short_frame.pose.size() == 12);
+    o = Pose::get_orientation(short_frame.pose);
     check("missing orientation reads as zero", o.empty() && Vec3::get_y(o) == 0.0f && short_frame.status == 0);
     std::memset(out, 0xEE, sizeof out);
     out_size = sizeof out;
@@ -64,7 +72,7 @@ int main()
           short_frame.serialize(out, &out_size) == 0 && std::memcmp(out + 4, wire + 4, 12) == 0 && out[16] == 0 &&
               out[27] == 0);
     Frame fresh;
-    check("fresh object holds an empty view", fresh.pose.bytes == nullptr && fresh.pose.size_bytes == 0);
+    check("fresh object holds an empty view", fresh.pose.data() == nullptr && fresh.pose.empty());
     std::memset(out, 0xEE, sizeof out);
     out_size   = sizeof out;
     bool zeros = fresh.serialize(out, &out_size) == 0;
@@ -89,11 +97,11 @@ int main()
     size = sizeof track_wire;
     check("track deserialise accepted", track.deserialize(track_wire, &size) == 0 && size == 99);
     check("pair elements are views into the buffer",
-          track.pair[0].bytes == track_wire + 1 && track.pair[0].size_bytes == 24 &&
-              track.pair[1].bytes == track_wire + 25 && track.pair[1].size_bytes == 24);
+          track.pair[0].data() == track_wire + 1 && track.pair[0].size() == 24 &&
+              track.pair[1].data() == track_wire + 25 && track.pair[1].size() == 24);
     check("trail keeps its count, elements are views",
-          track.trail.size() == 2 && track.trail[1].bytes == track_wire + 74 && track.trail[1].size_bytes == 24);
-    o = Pose::get_orientation(std::span<const std::uint8_t>(track.pair[1].bytes, track.pair[1].size_bytes));
+          track.trail.size() == 2 && track.trail[1].data() == track_wire + 74 && track.trail[1].size() == 24);
+    o = Pose::get_orientation(track.pair[1]);
     check("orientation.y read through pair[1]", Vec3::get_y(o) == 50.0f && track.kind == 0x07 && track.status == 0x3C);
     std::uint8_t track_out[128];
     std::memset(track_out, 0xEE, sizeof track_out);
@@ -103,8 +111,8 @@ int main()
     Track short_track;
     short_size = 37;
     check("short track: pair[1] short, trail empty",
-          short_track.deserialize(track_wire, &short_size) == 0 && short_track.pair[1].bytes == track_wire + 25 &&
-              short_track.pair[1].size_bytes == 12 && short_track.trail.empty() && short_track.status == 0);
+          short_track.deserialize(track_wire, &short_size) == 0 && short_track.pair[1].data() == track_wire + 25 &&
+              short_track.pair[1].size() == 12 && short_track.trail.empty() && short_track.status == 0);
     std::memset(track_out, 0xEE, sizeof track_out);
     out_size = sizeof track_out;
     check("short element serialises zero-filled",
@@ -113,7 +121,7 @@ int main()
               track_out[49] == 0);
     Track fresh_track;
     check("fresh object holds empty element views",
-          fresh_track.pair[0].bytes == nullptr && fresh_track.pair[1].size_bytes == 0 && fresh_track.trail.empty());
+          fresh_track.pair[0].data() == nullptr && fresh_track.pair[1].empty() && fresh_track.trail.empty());
     std::memset(track_out, 0xEE, sizeof track_out);
     out_size = sizeof track_out;
     zeros    = fresh_track.serialize(track_out, &out_size) == 0 && out_size == 51;
@@ -129,8 +137,8 @@ int main()
     Leading lead;
     size = sizeof lead_wire;
     check("leading deserialise accepted", lead.deserialize(lead_wire, &size) == 0 && size == 25);
-    check("leading view is the buffer itself", lead.pose.bytes == lead_wire && lead.pose.size_bytes == 24);
-    o = Pose::get_orientation(std::span<const std::uint8_t>(lead.pose.bytes, lead.pose.size_bytes));
+    check("leading view is the buffer itself", lead.pose.data() == lead_wire && lead.pose.size() == 24);
+    o = Pose::get_orientation(lead.pose);
     check("orientation.y read through the leading view", Vec3::get_y(o) == 1.25f && lead.status == 0xA5);
     std::memset(out, 0xEE, sizeof out);
     out_size = sizeof out;
@@ -139,8 +147,8 @@ int main()
     Leading short_lead;
     short_size = 12;
     check("short leading view holds what was there",
-          short_lead.deserialize(lead_wire, &short_size) == 0 && short_lead.pose.bytes == lead_wire &&
-              short_lead.pose.size_bytes == 12 && short_lead.status == 0);
+          short_lead.deserialize(lead_wire, &short_size) == 0 && short_lead.pose.data() == lead_wire &&
+              short_lead.pose.size() == 12 && short_lead.status == 0);
     std::memset(out, 0xEE, sizeof out);
     out_size = sizeof out;
     zeros    = short_lead.serialize(out, &out_size) == 0 && out_size == 25 && std::memcmp(out, lead_wire, 12) == 0;
@@ -150,12 +158,11 @@ int main()
     Leading empty_lead;
     short_size          = 0;
     const bool empty_ok = empty_lead.deserialize(nullptr, &short_size) == 0 && short_size == 0;
-    o = Pose::get_orientation(std::span<const std::uint8_t>(empty_lead.pose.bytes, empty_lead.pose.size_bytes));
+    o                   = Pose::get_orientation(empty_lead.pose);
     check("null buffer leaves an empty leading view",
-          empty_ok && empty_lead.pose.size_bytes == 0 && empty_lead.status == 0 && o.empty() && Vec3::get_y(o) == 0.0f);
+          empty_ok && empty_lead.pose.empty() && empty_lead.status == 0 && o.empty() && Vec3::get_y(o) == 0.0f);
     Leading fresh_lead;
-    check("fresh object holds an empty leading view",
-          fresh_lead.pose.bytes == nullptr && fresh_lead.pose.size_bytes == 0);
+    check("fresh object holds an empty leading view", fresh_lead.pose.data() == nullptr && fresh_lead.pose.empty());
     std::memset(out, 0xEE, sizeof out);
     out_size = sizeof out;
     zeros    = fresh_lead.serialize(out, &out_size) == 0 && out_size == 25;
