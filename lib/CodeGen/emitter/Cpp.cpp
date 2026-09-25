@@ -1575,11 +1575,11 @@ private:
         return "_" + stem + std::to_string(counter_++) + "_";
     }
 
-    mlir::SymbolTable     symbols_;
-    CppFlavor             flavor_;
-    TypeNameVersioning    versioning_;
+    mlir::SymbolTable             symbols_;
+    CppFlavor                     flavor_;
+    TypeNameVersioning            versioning_;
     const vocabulary::Vocabulary* vocabulary_{nullptr};
-    llvm::StringMap<Plan> plans_;
+    llvm::StringMap<Plan>         plans_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 

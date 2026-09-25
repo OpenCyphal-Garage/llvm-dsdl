@@ -26,16 +26,16 @@
 #include "lanyard/health/SystemHealth_1_0.hpp"
 #include "lanyard/link/TelemetryLinkStats_1_0.hpp"
 
-#define CHECK(cond, ...)                         \
-    do                                           \
-    {                                            \
-        if (!(cond))                             \
-        {                                        \
-            (void) std::fprintf(stderr, "FAIL: "); \
+#define CHECK(cond, ...)                              \
+    do                                                \
+    {                                                 \
+        if (!(cond))                                  \
+        {                                             \
+            (void) std::fprintf(stderr, "FAIL: ");    \
             (void) std::fprintf(stderr, __VA_ARGS__); \
-            (void) std::fprintf(stderr, "\n");   \
-            return 1;                            \
-        }                                        \
+            (void) std::fprintf(stderr, "\n");        \
+            return 1;                                 \
+        }                                             \
     } while (0)
 
 namespace
@@ -117,8 +117,7 @@ int readLinkStatsThroughAccessors()
     const cetl::pf20::span<const std::uint8_t> wire(buffer, size);
     CHECK(TelemetryLinkStats::get_rssi_dbm(wire) == original.rssi_dbm, "rssi_dbm read differs");
     CHECK(TelemetryLinkStats::get_noise_floor_dbm(wire) == original.noise_floor_dbm, "noise_floor_dbm read differs");
-    CHECK(TelemetryLinkStats::get_link_quality_pct(wire) == original.link_quality_pct,
-          "link_quality_pct read differs");
+    CHECK(TelemetryLinkStats::get_link_quality_pct(wire) == original.link_quality_pct, "link_quality_pct read differs");
     CHECK(TelemetryLinkStats::get_tx_packets(wire) == original.tx_packets, "tx_packets read differs");
     CHECK(TelemetryLinkStats::get_rx_packets(wire) == original.rx_packets, "rx_packets read differs");
     CHECK(SynchronizedTimestamp::get_microsecond(TelemetryLinkStats::get_timestamp(wire)) ==
