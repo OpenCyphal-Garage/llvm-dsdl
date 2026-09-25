@@ -26,6 +26,7 @@
 # HELP-DAG: -MD
 # HELP-DAG: --list-inputs
 # HELP-DAG: --list-outputs
+# HELP-DAG: --vocabulary <file>
 # HELP-DAG: --version, -V
 # HELP-DAG: --cpp-profile <std|pmr|both|autosar>
 

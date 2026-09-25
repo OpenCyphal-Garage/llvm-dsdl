@@ -22,7 +22,7 @@
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Python.h"
 
 #include <cstddef>
@@ -2079,7 +2079,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
 llvm::Expected<std::string> loadRuntimeFile(const std::string& fileName)
 {
-    if (const auto data = embedded_runtime::find("python/" + fileName))
+    if (const auto data = embedded_sources::find("python/" + fileName))
     {
         return std::string(*data);
     }

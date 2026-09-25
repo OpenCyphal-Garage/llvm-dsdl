@@ -52,7 +52,7 @@
 # Each language names the tag's accessor after its own tag member.
 # RUN: %dsdlc --target-language cpp %S/fixtures_union --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/cpp/std/fixtures_union/vendor/Choice_1_0.hpp | FileCheck %s --check-prefix=CPP
-# CPP: static std::uint8_t get_tag_(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)
+# CPP: static std::uint8_t get_tag_(const std::span<const std::uint8_t> buffer)
 # CPP: static float get_real(
 # RUN: %dsdlc --target-language rust %S/fixtures_union --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_union/vendor/choice_1_0.rs | FileCheck %s --check-prefix=RUST

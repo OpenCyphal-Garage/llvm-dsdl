@@ -98,6 +98,7 @@ dsdlc_generate(<name>
   [NAMESPACE  <dir>...]     # root namespace directories (dsdlc's positional arguments)
   [BUILTIN    <selector>...] # embedded-catalog selectors, e.g. +uavcan.node or +uavcan.node.Heartbeat.1.0
   [LOOKUP_DIR <dir>...]     # additional lookup roots, passed as -I
+  [VOCABULARY <file>...]    # --vocabulary files binding the concepts the output needs library types for
   [OUTDIR     <dir>]        # default: ${CMAKE_CURRENT_BINARY_DIR}/<name>
   [SUPPORT    <as-needed|always|never|only>]
   [OMIT_DEPENDENCIES]       # emit only the definitions named, not the ones they refer to
@@ -119,7 +120,7 @@ DSDLC_OUTPUT_DIR property, for a downstream step (cargo, go, npm, pip) to consum
 function(dsdlc_generate name)
   set(_options OMIT_DEPENDENCIES)
   set(_one_value LANGUAGE OUTDIR SUPPORT)
-  set(_multi_value NAMESPACE BUILTIN LOOKUP_DIR OPTIONS)
+  set(_multi_value NAMESPACE BUILTIN LOOKUP_DIR VOCABULARY OPTIONS)
   cmake_parse_arguments(ARG "${_options}" "${_one_value}" "${_multi_value}" ${ARGN})
 
   if(NOT ARG_LANGUAGE)
@@ -198,6 +199,12 @@ function(dsdlc_generate name)
   endif()
   foreach(_lookup IN LISTS ARG_LOOKUP_DIR)
     list(APPEND _argv -I "${_lookup}")
+  endforeach()
+  # A vocabulary file is an input of the run: dsdlc lists it with the definitions, so it joins the
+  # dependencies below and a change to a binding regenerates.
+  foreach(_vocabulary IN LISTS ARG_VOCABULARY)
+    get_filename_component(_vocabulary "${_vocabulary}" ABSOLUTE)
+    list(APPEND _argv --vocabulary "${_vocabulary}")
   endforeach()
   list(APPEND _argv ${ARG_NAMESPACE} ${ARG_BUILTIN} ${ARG_OPTIONS} --outdir "${_outdir}")
 

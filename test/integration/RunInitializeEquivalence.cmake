@@ -110,7 +110,7 @@ set(cpp_out "${OUT_DIR}/cpp")
 _equivalence_generate(cpp "${cpp_out}")
 configure_file("${driver_dir}/InitializeEquivalenceDriver.cpp" "${OUT_DIR}/cpp_driver.cpp" @ONLY)
 execute_process(
-  COMMAND "${CXX_COMPILER}" -std=c++17 -O2 -Wall -Wextra -I "${cpp_out}/std" "${OUT_DIR}/cpp_driver.cpp"
+  COMMAND "${CXX_COMPILER}" -std=c++20 -O2 -Wall -Wextra -I "${cpp_out}/std" "${OUT_DIR}/cpp_driver.cpp"
     -o "${OUT_DIR}/cpp_equivalence"
   RESULT_VARIABLE build_result
   OUTPUT_VARIABLE build_stdout

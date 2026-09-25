@@ -195,7 +195,7 @@ configure_file("${driver_dir}/ArrayLengthPrefixGuardDriver.cpp" "${OUT_DIR}/cpp_
 
 function(_guard_cpp label bin narrow)
   execute_process(
-    COMMAND "${CXX_COMPILER}" -std=c++17 -O2 -Wall -Wextra ${ARGN} -I "${cpp_out}/std" "${OUT_DIR}/cpp_driver.cpp"
+    COMMAND "${CXX_COMPILER}" -std=c++20 -O2 -Wall -Wextra ${ARGN} -I "${cpp_out}/std" "${OUT_DIR}/cpp_driver.cpp"
       -o "${bin}"
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_stdout

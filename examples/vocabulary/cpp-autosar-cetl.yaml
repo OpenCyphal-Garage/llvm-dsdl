@@ -1,0 +1,14 @@
+# Binds the span of the C++ autosar profile to CETL's, the C++14 polyfill of std::span
+# (https://github.com/OpenCyphal/CETL). CETL's span has std::span's shape, so the binding names
+# the type and its header alone; the operations keep their standard spellings.
+#
+#     dsdlc --target-language cpp --cpp-profile autosar --vocabulary cpp-autosar-cetl.yaml ...
+#
+# The generated code compiles with CETL's include directory on the include path.
+vocabulary: 1
+language: cpp
+profiles: [autosar]
+bindings:
+  span:
+    type: "cetl::pf20::span<{element}>"
+    include: ['"cetl/pf20/span.hpp"']

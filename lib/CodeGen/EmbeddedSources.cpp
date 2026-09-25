@@ -12,24 +12,23 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 
 #include <optional>
 #include <string_view>
 
-// Generated at build time from the files under runtime/ by
-// tools/runtime/generate_embedded_runtime.py; see lib/CodeGen/CMakeLists.txt.
-// Defines llvmdsdl::embedded_runtime::detail::kEmbeddedRuntimeFiles.
-#include "EmbeddedRuntimeSources.inc"
+// Generated at build time by tools/generate_embedded_sources.py from the files its manifest
+// names; see lib/CodeGen/CMakeLists.txt. Defines llvmdsdl::embedded_sources::detail::kEmbeddedFiles.
+#include "EmbeddedSources.inc"
 
-namespace llvmdsdl::embedded_runtime
+namespace llvmdsdl::embedded_sources
 {
 
-std::optional<std::string_view> find(const std::string_view relativePath)
+std::optional<std::string_view> find(const std::string_view key)
 {
-    for (const auto& entry : detail::kEmbeddedRuntimeFiles)
+    for (const auto& entry : detail::kEmbeddedFiles)
     {
-        if (entry.path == relativePath)
+        if (entry.key == key)
         {
             return entry.data;
         }
@@ -37,4 +36,4 @@ std::optional<std::string_view> find(const std::string_view relativePath)
     return std::nullopt;
 }
 
-}  // namespace llvmdsdl::embedded_runtime
+}  // namespace llvmdsdl::embedded_sources

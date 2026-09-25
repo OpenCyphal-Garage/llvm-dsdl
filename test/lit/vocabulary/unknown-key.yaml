@@ -1,0 +1,7 @@
+vocabulary: 1
+language: cpp
+bindings:
+  span:
+    type: "acme::ByteView<{element}>"
+    include: ['"acme/byte_view.hpp"']
+    colour: red

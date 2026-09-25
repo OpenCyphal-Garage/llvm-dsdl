@@ -104,6 +104,10 @@ def _dsdl_namespace_repository_impl(repository_ctx):
         repository_ctx.attr.language,
         str(namespace_root),
     ] + repository_ctx.attr.options
+    # A vocabulary file is an input of the run; dsdlc lists it with the definitions, so the loop
+    # below watches it and a change to a binding refetches.
+    for vocabulary in repository_ctx.attr.vocabulary:
+        base += ["--vocabulary", str(repository_ctx.path(vocabulary))]
 
     # Ask which definitions this namespace actually reads, and watch every one. Without this the
     # repository is only refetched when its own attributes change, so an edited definition would be
@@ -148,6 +152,10 @@ dsdl_namespace_repository = repository_rule(
         ),
         "options": attr.string_list(
             doc = "Extra dsdlc flags, passed through verbatim.",
+        ),
+        "vocabulary": attr.label_list(
+            allow_files = True,
+            doc = "Vocabulary files binding the concepts the generated code needs library types for.",
         ),
     },
     environ = ["DSDLC", "PATH"],

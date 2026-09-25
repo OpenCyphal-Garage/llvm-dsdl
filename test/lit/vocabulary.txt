@@ -1,0 +1,57 @@
+# A vocabulary file binds a concept the generated code needs a library type for to the type a
+# profile uses. The C++ span is the first: the built-in binding is std::span for the std and pmr
+# profiles, a file replaces it for the profiles it names, and a profile with no binding fails the
+# run naming the concept and the flag.
+
+# A binding whose library spells every operation differently from std::span: nothing in the
+# emitter assumes the standard shape, and the header includes what the binding names.
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language cpp --cpp-profile std --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_host_image --outdir %t/acme > /dev/null
+# RUN: cat %t/acme/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=ACME
+# RUN: cat %t/acme/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=ACME_NESTED
+# ACME:     #include <cstdint>
+# ACME-NOT: #include <span>
+# ACME:     #include "acme/byte_view.hpp"
+# ACME:     static std::uint16_t get_b(const acme::ByteView<const std::uint8_t> buffer)
+# ACME-NEXT: {
+# ACME-NEXT: const std::size_t buffer_size_bytes = buffer.length();
+# ACME-NEXT: dsdl_runtime_get_u16(::llvmdsdl::cpp::readable_bytes(buffer.ptr()),
+# ACME:     static std::int8_t set_b(const acme::ByteView<std::uint8_t> buffer, const std::uint16_t member_value)
+# ACME:     dsdl_runtime_set_uxx(buffer.ptr(),
+# ACME_NESTED: static acme::ByteView<const std::uint8_t> get_inner(const acme::ByteView<const std::uint8_t> buffer)
+# ACME_NESTED: return buffer.tail(
+
+# The file names the std profile alone, so pmr keeps the built-in binding.
+# RUN: %dsdlc --target-language cpp --cpp-profile pmr --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_host_image --outdir %t/pmr > /dev/null
+# RUN: cat %t/pmr/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=PMR
+# PMR:     #include <span>
+# PMR-NOT: acme
+# PMR:     static std::uint16_t get_b(const std::span<const std::uint8_t> buffer)
+
+# The autosar profile has no built-in binding.
+# RUN: not %dsdlc --target-language cpp --cpp-profile autosar %S/fixtures_host_image --outdir %t/unbound 2>&1 | FileCheck %s --check-prefix=UNBOUND
+# RUN: not test -d %t/unbound/fixtures_host_image
+# UNBOUND: the cpp autosar profile has no binding for span: pass --vocabulary <file> with one
+
+# The example binding CETL's span, which has std::span's shape and so names only its type and header.
+# RUN: %dsdlc --target-language cpp --cpp-profile autosar --vocabulary %S/../../examples/vocabulary/cpp-autosar-cetl.yaml %S/fixtures_host_image --outdir %t/cetl > /dev/null
+# RUN: cat %t/cetl/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=CETL
+# CETL:      #include "cetl/pf20/span.hpp"
+# CETL-NEXT: #include "dsdl_runtime.hpp"
+# CETL:      static std::uint16_t get_b(const cetl::pf20::span<const std::uint8_t> buffer)
+# CETL-NEXT: {
+# CETL-NEXT: const std::size_t buffer_size_bytes = buffer.size();
+# CETL-NEXT: dsdl_runtime_get_u16(::llvmdsdl::cpp::readable_bytes(buffer.data()),
+
+# A file is an input of the run.
+# RUN: %dsdlc --target-language cpp --cpp-profile std --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_host_image --outdir %t/list --list-inputs | FileCheck %s --check-prefix=INPUTS
+# INPUTS: acme-byte-view.yaml
+
+# A file that fails validation is reported where it fails, before anything is generated.
+# RUN: not %dsdlc --target-language cpp --cpp-profile std --vocabulary %S/vocabulary/unknown-key.yaml %S/fixtures_host_image --outdir %t/bad 2>&1 | FileCheck %s --check-prefix=BAD
+# RUN: not test -d %t/bad
+# BAD: unknown-key.yaml:7:5: error: unknown key 'colour'
+
+# A file for another language is refused, and so is any file for a language that binds no concept.
+# RUN: not %dsdlc --target-language rust --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_host_image --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=RUST
+# RUST: --vocabulary does not apply to rust: its backend binds no concept

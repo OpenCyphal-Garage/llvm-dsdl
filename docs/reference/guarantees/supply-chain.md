@@ -20,7 +20,7 @@ Every build emits a [CycloneDX 1.5](https://cyclonedx.org/) SBOM describing the 
 | `llvm`, `mlir` | `required` | The LLVM/MLIR found by `find_package` and linked into the tools |
 | `zstd` | `required` (when found) | Pulled in transitively by LLVM |
 | `llvm-dsdl-runtime` | `required` | First-party serialisation runtime shipped as headers/sources alongside generated code |
-| `public_regulated_data_types`, `libudpard` | `excluded` | Submodules pinned to exact commits. They are **build/test inputs** (the DSDL corpus; libudpard for the examples) and are *not* linked into shipped artifacts — recorded for provenance, scoped out of the shipped dependency set |
+| `public_regulated_data_types`, `libudpard`, `CETL` | `excluded` | Submodules pinned to exact commits. They are **build/test inputs** (the DSDL corpus; libudpard for the examples; CETL for compiling the `autosar` C++ output) and are *not* linked into shipped artifacts — recorded for provenance, scoped out of the shipped dependency set |
 
 ### Determinism
 

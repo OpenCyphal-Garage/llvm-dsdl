@@ -1,0 +1,12 @@
+# A span whose library spells every operation differently from std::span.
+vocabulary: 1
+language: cpp
+profiles: [std]
+bindings:
+  span:
+    type: "acme::ByteView<{element}>"
+    include: ['"acme/byte_view.hpp"']
+    operations:
+      data: "{self}.ptr()"
+      size: "{self}.length()"
+      subspan: "{self}.tail({offset})"

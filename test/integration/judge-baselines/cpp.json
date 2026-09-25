@@ -3,14 +3,18 @@
   "counts": {
     "bugprone-signed-char-misuse": 4,
     "cppcoreguidelines-macro-usage": 1,
-    "cppcoreguidelines-pro-type-reinterpret-cast": 332,
+    "cppcoreguidelines-pro-type-reinterpret-cast": 175,
     "misc-include-cleaner": 488,
-    "modernize-use-auto": 2020,
+    "modernize-concat-nested-namespaces": 168,
+    "modernize-type-traits": 54,
+    "modernize-use-auto": 1907,
+    "modernize-use-integer-sign-comparison": 34,
     "readability-identifier-naming": 1500,
     "readability-non-const-parameter": 5,
-    "readability-redundant-casting": 567,
-    "readability-redundant-inline-specifier": 362,
+    "readability-redundant-casting": 454,
+    "readability-redundant-inline-specifier": 1,
     "readability-redundant-member-init": 34,
-    "readability-redundant-parentheses": 123
+    "readability-redundant-parentheses": 123,
+    "readability-use-concise-preprocessor-directives": 1
   }
 }

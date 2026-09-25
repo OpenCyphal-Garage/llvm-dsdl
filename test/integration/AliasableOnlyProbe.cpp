@@ -14,6 +14,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <span>
 
 int main()
 {
@@ -24,23 +25,18 @@ int main()
     using fixtures_aliasable::vendor::Pose;
     using fixtures_aliasable::vendor::Vec3;
 
-    std::size_t               orientation_size = 0;
-    const std::uint8_t* const orientation      = Pose::get_orientation(buffer, sizeof buffer, &orientation_size);
-    const float               y                = Vec3::get_y(orientation, orientation_size);
-    const std::int8_t         set_result       = Vec3::set_z(buffer, 12, 9.5f);
-    const float               z                = Vec3::get_z(buffer, 12);
-    const float               short_read       = Vec3::get_z(buffer, 4);
-    // The getter writes the size through its out parameter, so it is called in a statement of its
-    // own: reading the size in the same call that fills it leaves the order to the compiler.
-    std::size_t               position_size = 0;
-    const std::uint8_t* const position      = Pose::get_position(buffer, sizeof buffer, &position_size);
-    const float               x             = Vec3::get_x(position, position_size);
+    const std::span<const std::uint8_t> orientation = Pose::get_orientation(buffer);
+    const float                         y           = Vec3::get_y(orientation);
+    const std::int8_t                   set_result  = Vec3::set_z(std::span<std::uint8_t>(buffer, 12), 9.5f);
+    const float                         z           = Vec3::get_z(std::span<const std::uint8_t>(buffer, 12));
+    const float                         short_read  = Vec3::get_z(std::span<const std::uint8_t>(buffer, 4));
+    const float                         x           = Vec3::get_x(Pose::get_position(buffer));
 
     const bool ok =
-        orientation_size == 12 && y == 5.5f && set_result == 0 && z == 9.5f && short_read == 0.0f && x == 1.5f;
+        orientation.size() == 12 && y == 5.5f && set_result == 0 && z == 9.5f && short_read == 0.0f && x == 1.5f;
     std::printf("aliasable-only C++: %s (orientation %zu bytes, y %g, set %d, z %g, short %g, x %g)\n",
                 ok ? "ok" : "FAILED",
-                orientation_size,
+                orientation.size(),
                 static_cast<double>(y),
                 static_cast<int>(set_result),
                 static_cast<double>(z),

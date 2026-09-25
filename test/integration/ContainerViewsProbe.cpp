@@ -15,6 +15,7 @@
 #include "fixtures_views/vendor/Track_1_0.hpp"
 #include <cstdio>
 #include <cstring>
+#include <span>
 static int  failures = 0;
 static void check(const char* what, bool ok)
 {
@@ -41,9 +42,9 @@ int main()
     check("deserialise accepted", frame.deserialize(wire, &size) == 0 && size == sizeof wire);
     check("sequence decoded", frame.sequence == seq);
     check("view points into the buffer", frame.pose.bytes == wire + 4 && frame.pose.size_bytes == 24);
-    std::size_t         n = 0;
-    const std::uint8_t* o = Pose::get_orientation(frame.pose.bytes, frame.pose.size_bytes, &n);
-    check("orientation.y read through the view", Vec3::get_y(o, n) == 5.5f);
+    std::span<const std::uint8_t> o =
+        Pose::get_orientation(std::span<const std::uint8_t>(frame.pose.bytes, frame.pose.size_bytes));
+    check("orientation.y read through the view", Vec3::get_y(o) == 5.5f);
     check("velocity decoded, status after the view", frame.velocity.y == 8.0f && frame.status == 0x5A);
     std::uint8_t out[64];
     std::memset(out, 0xEE, sizeof out);
@@ -54,8 +55,8 @@ int main()
     std::size_t short_size = 16;
     check("short deserialise accepted", short_frame.deserialize(wire, &short_size) == 0);
     check("short view holds what was there", short_frame.pose.bytes == wire + 4 && short_frame.pose.size_bytes == 12);
-    o = Pose::get_orientation(short_frame.pose.bytes, short_frame.pose.size_bytes, &n);
-    check("missing orientation reads as zero", n == 0 && Vec3::get_y(o, n) == 0.0f && short_frame.status == 0);
+    o = Pose::get_orientation(std::span<const std::uint8_t>(short_frame.pose.bytes, short_frame.pose.size_bytes));
+    check("missing orientation reads as zero", o.empty() && Vec3::get_y(o) == 0.0f && short_frame.status == 0);
     std::memset(out, 0xEE, sizeof out);
     out_size = sizeof out;
     check("short view serialises zero-filled",
@@ -91,9 +92,8 @@ int main()
               track.pair[1].bytes == track_wire + 25 && track.pair[1].size_bytes == 24);
     check("trail keeps its count, elements are views",
           track.trail.size() == 2 && track.trail[1].bytes == track_wire + 74 && track.trail[1].size_bytes == 24);
-    o = Pose::get_orientation(track.pair[1].bytes, track.pair[1].size_bytes, &n);
-    check("orientation.y read through pair[1]",
-          Vec3::get_y(o, n) == 50.0f && track.kind == 0x07 && track.status == 0x3C);
+    o = Pose::get_orientation(std::span<const std::uint8_t>(track.pair[1].bytes, track.pair[1].size_bytes));
+    check("orientation.y read through pair[1]", Vec3::get_y(o) == 50.0f && track.kind == 0x07 && track.status == 0x3C);
     std::uint8_t track_out[128];
     std::memset(track_out, 0xEE, sizeof track_out);
     out_size = sizeof track_out;

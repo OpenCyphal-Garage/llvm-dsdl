@@ -43,6 +43,7 @@
 #include "TargetLanguages.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
+#include "llvmdsdl/CodeGen/Vocabulary.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/NamingManifest.h"
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
@@ -91,6 +92,9 @@ struct CliOptions final
     std::vector<std::string> builtinTargets;
 
     std::vector<std::string> lookupDirs;
+
+    /// `--vocabulary` files, in command-line order.
+    std::vector<std::string> vocabularyFiles;
 
     std::string targetLanguage;
     std::string outDir{"dsdl_out"};
@@ -288,6 +292,12 @@ void printHelp()
                  << "      the field and its serialise copies the view. A field of a union, and a\n"
                  << "      field whose type is wire-flat without asserting it, are decoded as\n"
                  << "      usual.\n"
+                 << "  --vocabulary <file>\n"
+                 << "      Repeatable. Binds a concept the generated code needs a library type for --\n"
+                 << "      a span -- to the type a language and profile use, in place of the\n"
+                 << "      built-in standard-library binding for the profiles the file names. The\n"
+                 << "      C++ autosar profile has no built-in binding and takes one. A file is an\n"
+                 << "      input of the run: --list-inputs and -MD name it.\n"
                  << "\n"
                  << "TYPE VERSIONING\n"
                  << "  --versioned-type-names\n"
@@ -541,6 +551,13 @@ llvm::Error normalizePathOptions(CliOptions& options)
             return err;
         }
     }
+    for (auto& file : options.vocabularyFiles)
+    {
+        if (auto err = assign(file, llvmdsdl::expandHomeDirectory(file)))
+        {
+            return err;
+        }
+    }
     for (auto& target : options.positionalTargets)
     {
         if (auto err = assign(target, llvmdsdl::expandHomeDirectory(target)))
@@ -614,6 +631,16 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.lookupDirs.push_back(*value);
+            continue;
+        }
+        if (arg == "--vocabulary")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.vocabularyFiles.push_back(*value);
             continue;
         }
         if (arg == "--outdir" || arg == "-O")
@@ -1556,6 +1583,15 @@ int runDsdlc(int argc, char** argv)
         return 1;
     }
 
+    // The bindings are read before any definition is, so a file that cannot be read or a profile that
+    // binds nothing fails the run before it parses anything.
+    auto vocabularySet = llvmdsdl::vocabulary::Set::load(options.targetLanguage, options.vocabularyFiles);
+    if (!vocabularySet)
+    {
+        llvm::errs() << llvm::toString(vocabularySet.takeError()) << "\n";
+        return 1;
+    }
+
     if (options.listInputs || options.listOutputs)
     {
         options.dryRun = true;
@@ -1825,7 +1861,19 @@ int runDsdlc(int argc, char** argv)
 
     const auto closureSemantic      = filterSemanticModule(mergedSemantic, closureKeys);
     const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);
-    const auto inputsForListing     = collectInputFilesForClosure(mergedSemantic, closureKeys);
+    auto       inputsForListing     = collectInputFilesForClosure(mergedSemantic, closureKeys);
+    // A vocabulary file is an input of every output the run writes, so the listing and every depfile
+    // name it: a build regenerates when a binding changes.
+    std::vector<std::string> vocabularyInputs;
+    for (const auto& file : vocabularySet->files())
+    {
+        if (file.path != "built-in")
+        {
+            vocabularyInputs.push_back(normalizePathForCompare(file.path));
+        }
+    }
+    inputsForListing.insert(inputsForListing.end(), vocabularyInputs.begin(), vocabularyInputs.end());
+    inputsForListing = dedupSorted(std::move(inputsForListing));
 
     // The accessors-only mode is a promise about every type it emits: aliasable, or nested by one
     // that says so. A type that is neither is named here, before anything is generated.
@@ -2177,18 +2225,19 @@ int runDsdlc(int argc, char** argv)
             // An output with no required type keys was rendered from content compiled into this
             // binary rather than from any definition -- a runtime header, a manifest, scaffolding --
             // so the binary is its input.
-            const std::vector<std::string>* deps = &depfilePlanner->depsForCompilerOnlyOutput();
+            std::vector<std::string> deps = depfilePlanner->depsForCompilerOnlyOutput();
 
             if (const auto metadataIt = generatedOutputRequiredTypeKeys.find(output);
                 metadataIt != generatedOutputRequiredTypeKeys.end())
             {
                 const auto depResolutionStart = std::chrono::steady_clock::now();
-                deps                          = &depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
+                deps                          = depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
                 depResolutionElapsed += std::chrono::steady_clock::now() - depResolutionStart;
             }
+            deps.insert(deps.end(), vocabularyInputs.begin(), vocabularyInputs.end());
 
             const auto depWriteStart = std::chrono::steady_clock::now();
-            if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(output, *deps, writePolicy))
+            if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(output, deps, writePolicy))
             {
                 return err;
             }
@@ -2222,27 +2271,33 @@ int runDsdlc(int argc, char** argv)
     // arguments, and a target whose references cannot be null never reaches the answer that guard
     // gives, so the test is a constant and the branch is one nothing takes.
     //
-    // C and C++ are handed pointers and keep both. Rust is handed a reference, a slice and a local
-    // and keeps neither. Go, TypeScript and Python are handed an object a caller may omit, beside a
-    // buffer and a local that cannot be null. `mlir` keeps both, because what it prints is the
-    // neutral body every backend translates rather than any one target's reading of it.
+    // C is handed pointers and keeps every test. C++ is handed pointers too, except by a field
+    // accessor, which takes a span. Rust is handed a reference, a slice and a local and keeps none.
+    // Go, TypeScript and Python are handed an object a caller may omit, beside a buffer and a local
+    // that cannot be null. `mlir` keeps every test, because what it prints is the neutral body every
+    // backend translates rather than any one target's reading of it.
     llvmdsdl::TargetNullability nullability;
-    if (options.targetLanguage == "rust")
+    if (options.targetLanguage == "cpp")
     {
-        nullability = {false, false};
+        nullability = {true, true, false};
+    }
+    else if (options.targetLanguage == "rust")
+    {
+        nullability = {false, false, false};
     }
     else if ((options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
              (options.targetLanguage == "python"))
     {
-        nullability = {true, false};
+        nullability = {true, false, false};
     }
 
-    // Whether a composite getter answers a view that carries its own length. C and C++ answer a
-    // pointer and pass the length back through another, which the caller reads; the other four
-    // answer a slice, a `memoryview` or a `Uint8Array`, and the length the plan writes back is read
+    // Whether a composite getter answers a view that carries its own length. C answers a pointer
+    // and passes the length back through another, which the caller reads; the other five answer a
+    // span, a slice, a `memoryview` or a `Uint8Array`, and the length the plan writes back is read
     // by nothing. `mlir` keeps the write, printing the neutral body rather than a target's reading.
-    const bool accessorsReturnViews = (options.targetLanguage == "rust") || (options.targetLanguage == "go") ||
-                                      (options.targetLanguage == "ts") || (options.targetLanguage == "python");
+    const bool accessorsReturnViews = (options.targetLanguage == "cpp") || (options.targetLanguage == "rust") ||
+                                      (options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
+                                      (options.targetLanguage == "python");
 
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
     // over the module they all receive.
@@ -2330,6 +2385,7 @@ int runDsdlc(int argc, char** argv)
         emitOptions.selectedTypeKeys          = selectedTypeKeys;
         emitOptions.supportGeneration         = options.supportGeneration;
         emitOptions.writePolicy               = writePolicy;
+        emitOptions.vocabulary                = &*vocabularySet;
 
         if (auto err = llvmdsdl::emitter::cpp::emit(closureSemantic, *mlirModule, emitOptions))
         {

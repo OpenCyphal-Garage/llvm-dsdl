@@ -143,6 +143,10 @@ bool runTypeStorageTests();
 /// @return True when every case in the suite passed.
 bool runStorageTypeTokensTests();
 
+/// @brief Runs the VocabularyTests suite.
+/// @return True when every case in the suite passed.
+bool runVocabularyTests();
+
 /// @brief Runs the LoweredContractVersionTests suite.
 /// @return True when every case in the suite passed.
 bool runLoweredContractVersionTests();

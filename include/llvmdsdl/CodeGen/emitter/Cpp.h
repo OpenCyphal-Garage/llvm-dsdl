@@ -30,6 +30,10 @@ class ModuleOp;
 namespace llvmdsdl
 {
 struct SemanticModule;
+namespace vocabulary
+{
+class Set;
+}  // namespace vocabulary
 }  // namespace llvmdsdl
 
 namespace llvmdsdl::emitter::cpp
@@ -100,6 +104,11 @@ struct Options final
 
     /// @brief Output write policy.
     EmitWritePolicy writePolicy;
+
+    /// @brief The bindings of the concepts the output needs a library type for: the built-in ones
+    ///        and each `--vocabulary` file. Resolved for each profile emitted, before any file is
+    ///        written.
+    const vocabulary::Set* vocabulary{nullptr};
 };
 
 /// @brief Emits C++ artifacts from semantic and lowered MLIR inputs.

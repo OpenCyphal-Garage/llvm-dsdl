@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L)
 #    if defined(__has_cpp_attribute)
@@ -45,6 +46,20 @@ namespace llvmdsdl
 {
 namespace cpp
 {
+
+/// @brief The source a runtime read primitive takes for a field accessor's buffer: its bytes, or a
+///        byte that exists where it holds none.
+///
+/// The primitives take a non-null source even where they copy nothing, and an empty span may
+/// hold a null pointer.
+/// @param[in] bytes The span's bytes.
+/// @return @p bytes, or a pointer to a byte where @p bytes is null.
+inline const std::uint8_t* readable_bytes(const std::uint8_t* const bytes) noexcept
+{
+    static constexpr std::uint8_t STAND_IN{0U};
+    return (bytes != nullptr) ? bytes : &STAND_IN;
+}
+
 namespace autosar
 {
 

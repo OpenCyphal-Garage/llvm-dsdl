@@ -44,6 +44,9 @@ binary. Those rules name **the `dsdlc` executable** as their prerequisite instea
 compiler rebuilds what it produced. An output mixing local and embedded definitions lists its real
 inputs and the executable.
 
+A [vocabulary](../codegen/vocabulary.md) file passed with `--vocabulary` is an input of every
+output the run writes, so each depfile names it and `--list-inputs` lists it.
+
 Every path emitted in a depfile or by `--list-inputs` exists on disk, so both can be fed to a build
 system verbatim.
 
@@ -206,14 +209,18 @@ them.
 
 A wire-flat type's scalar fields, and the elements of its fixed arrays of scalars, have accessors
 beside the serialisation functions: a getter that reads one field off a serialised buffer, and a
-setter that writes one into it, each at the field's fixed offset and in the member's own type. An
-element accessor takes the element's index after the buffer. A nested composite field has a getter
-alone, answering the buffer from the field's offset — with what remains through a size pointer in C
-and C++, as a slice elsewhere — for the nested type's own accessors to read. A getter answers what
-`deserialize_` puts in the field, on a short buffer too, where both zero-extend, reads an index at
-or past the array's capacity as zero, and in C and C++ reads a null buffer as an empty one whatever
-size it is handed; a setter answers the runtime's error code, refusing such an index, a null buffer,
-and a buffer too short for the field. C spells them `<type>__get_<field>_` and
+setter that writes one into it, each at the field's fixed offset and in the member's own type. C
+takes the buffer as a pointer and a size, C++ as a span — the type the
+[vocabulary](../codegen/vocabulary.md) binds: `std::span` for `std` and `pmr`, and for `autosar`
+whatever a `--vocabulary` file names — and the other languages as a slice or a view. An element accessor takes the
+element's index after the buffer. A nested composite field has a getter alone, answering the buffer
+from the field's offset for the nested type's own accessors to read: C answers a pointer and writes
+what remains through a size pointer, which may be null; the other languages answer a span, a slice
+or a view, which carries its count. A getter answers what `deserialize_` puts in the field, on a
+short buffer too, where both zero-extend, reads an index at or past the array's capacity as zero,
+and in C reads a null buffer as an empty one whatever size it is handed; a setter answers the
+runtime's error code, refusing such an index, a buffer too short for the field, and in C a null
+buffer. C spells them `<type>__get_<field>_` and
 `<type>__set_<field>_`, C++ as static members `get_<field>` and `set_<field>`, Rust as associated
 functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as
 `get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and `set_<field>`.

@@ -99,7 +99,7 @@ void registerDSDLToLLVMPasses();
 ///
 /// A body opens by testing the three it is handed, and answers `-2` when any is null. A target
 /// whose references cannot be null never reaches that answer, so the test is a constant and the
-/// guard is a branch nothing takes. Both default to the answer C gives, which is that any of them
+/// guard is a branch nothing takes. Each defaults to the answer C gives, which is that any of them
 /// may be null, so a caller that says nothing keeps the guard.
 struct TargetNullability final
 {
@@ -116,10 +116,16 @@ struct TargetNullability final
     /// Python a view and a local; none of those can be null.
     bool rawPointer{true};
 
+    /// @brief Whether a field accessor's buffer can arrive null, where `rawPointer` says a body's can.
+    ///
+    /// True for C, whose accessors take a pointer. False for C++, whose accessors take a span while
+    /// its serialise and deserialise still take a pointer.
+    bool accessorBuffer{true};
+
     /// @brief Whether every argument is still nullable, so the guard has nothing to fold.
     [[nodiscard]] constexpr bool allNullable() const
     {
-        return objectPointer && rawPointer;
+        return objectPointer && rawPointer && accessorBuffer;
     }
 };
 
@@ -136,9 +142,10 @@ std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nulla
 /// @brief Erases the size a composite getter writes back, for a target whose getter returns a view.
 ///
 /// A composite getter answers a pointer to the nested type's bytes and writes their length through
-/// its last argument. A target that answers a view -- a slice, a `memoryview`, a `Uint8Array` --
-/// hands that length to the caller inside the view, so the write is observed by nothing and whatever
-/// computed it is dead. A write is erased only where the pointer is never read back.
+/// its last argument. A target that answers a view -- a span, a slice, a `memoryview`, a
+/// `Uint8Array` -- hands that length to the caller inside the view, so the write is observed by
+/// nothing and whatever computed it is dead. A write is erased only where the pointer is never read
+/// back.
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 
@@ -158,7 +165,7 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 ///                        guard survives.
 /// @param[in] accessorsReturnViews Whether the target's composite getter returns a view carrying its
 ///            own length, so the size the getter writes back is observed by nothing. False, the
-///            default, is what C and C++ need: they pass the size back through a pointer.
+///            default, is what C needs: it passes the size back through a pointer.
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
                                 bool                 optimizeLoweredSerDes,
                                 bool                 targetObjectsAreByteImages = false,

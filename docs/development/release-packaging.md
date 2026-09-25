@@ -23,7 +23,7 @@ coherent against the exact build they shipped with, and dpkg refuses the pairing
 
 The generated output is self-sufficient. Each backend writes its own runtime support scaffold
 into the output tree, and those scaffolds are compiled into the binary
-([tools/runtime/generate_embedded_runtime.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/runtime/generate_embedded_runtime.py)),
+([tools/generate_embedded_sources.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/generate_embedded_sources.py)),
 so a packaged `dsdlc` emits code that compiles on a machine which has never seen this source
 tree.
 

@@ -123,7 +123,7 @@ set(cpp_out "${OUT_DIR}/cpp")
 _union_generate(cpp "${cpp_out}")
 foreach(profile std pmr)
   execute_process(
-    COMMAND "${CXX_COMPILER}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
+    COMMAND "${CXX_COMPILER}" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
       "${probe_dir}/UnionAccessorsProbe.cpp" -o "${OUT_DIR}/probe_cpp_${profile}"
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_stdout

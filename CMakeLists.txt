@@ -1299,7 +1299,8 @@ if(LLVMDSDL_UAVCAN_ROOT)
                                      --target-language cpp --cpp-profile pmr)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-autosar
                                      cpp-autosar
-                                     --target-language cpp --cpp-profile autosar)
+                                     --target-language cpp --cpp-profile autosar
+                                     --vocabulary "${LLVMDSDL_SOURCE_DIR}/examples/vocabulary/cpp-autosar-cetl.yaml")
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-both
                                      cpp-both
                                      --target-language cpp --cpp-profile both)

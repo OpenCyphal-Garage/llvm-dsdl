@@ -8,7 +8,7 @@
  *
  * It is not a serialiser test. Whether the bytes are right is settled by test/lit and
  * test/integration against the specification and the Dafny model; asserting it again here would only
- * mean a schema edit broke thirteen recipes at once. What this asserts is round-trip identity -- the
+ * mean a schema edit broke fourteen recipes at once. What this asserts is round-trip identity -- the
  * weakest property that cannot pass by accident if the wiring is wrong.
  *
  * `lanyard.health.SystemHealth.1.0` is the type under test. It drags in two standard types from the

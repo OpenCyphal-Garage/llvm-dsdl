@@ -21,7 +21,7 @@
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/CodeGen/EmbeddedRuntimeSources.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -2317,7 +2317,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
 llvm::Expected<std::string> loadGoRuntime()
 {
-    if (const auto data = embedded_runtime::find("go/dsdl_runtime.go"))
+    if (const auto data = embedded_sources::find("go/dsdl_runtime.go"))
     {
         return std::string(*data);
     }
