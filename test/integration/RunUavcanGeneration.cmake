@@ -106,7 +106,7 @@ foreach(c_file IN LISTS generated_impls)
   endif()
   # A plan that needs no bits constrains no capacity, so it names no helper and calls none. The
   # header says which those are: every section of the type serialises into nothing.
-  string(REPLACE ".c" ".h" header_for_impl "${c_file}")
+  cmake_path(REPLACE_EXTENSION c_file LAST_ONLY ".h" OUTPUT_VARIABLE header_for_impl)
   set(constrains_capacity TRUE)
   if(EXISTS "${header_for_impl}")
     file(READ "${header_for_impl}" header_for_impl_text)
