@@ -1,0 +1,119 @@
+#===----------------------------------------------------------------------===#
+#
+# Part of the OpenCyphal project, under the MIT licence
+# SPDX-License-Identifier: MIT
+#
+#===----------------------------------------------------------------------===#
+#
+# The ruleset the C++ style judge holds generated C++ to.
+#
+# Read by tools/judge_generated_code.py, which passes it with --config-file.
+# It is the project's own .clang-tidy applied to what dsdlc writes: whole
+# families are enabled, and a check is subtracted only for a reason that holds
+# for generated code. Where the project's reason does not carry over, the check
+# stays on.
+#
+# Subtractions
+# ------------
+#
+# bugprone-easily-swappable-parameters
+#     Fires on the plan's helpers, whose operands are `std::uint64_t` in the
+#     order the IR gives them, and on the runtime's accessors, which take a
+#     buffer's size beside a bit offset.
+#
+# cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers
+#     Bit widths, field offsets, and wire-format constants are the subject
+#     matter.
+#
+# cppcoreguidelines-non-private-member-variables-in-classes,
+# misc-non-private-member-variables-in-classes
+#     A generated type is data, and its public members are the DSDL fields.
+#
+# cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+# cppcoreguidelines-pro-bounds-constant-array-index,
+# cppcoreguidelines-pro-bounds-pointer-arithmetic
+#     Serialisation walks buffers by pointer and indexes them unchecked. The
+#     bounds come from the BitLengthSet algebra.
+#
+# modernize-use-trailing-return-type
+#     The generated C++ writes leading return types, as the project's own does.
+#
+# readability-function-cognitive-complexity
+#     A body branches where its plan does, and the plan is held by the
+#     round-trip, parity, and equivalence lanes.
+#
+# readability-identifier-length
+#     A length floor is a convention of neither C nor C++, and no other
+#     language's judge holds its output to one.
+#
+# cppcoreguidelines-pro-type-reinterpret-cast stays on although the project
+# subtracts it for type punning. The generated C++ puns nothing: its one
+# reinterpret_cast turns a string literal into a byte pointer to stand in for a
+# null buffer.
+#
+# Naming
+# ------
+#
+# readability-identifier-naming states the design in CLEAN_CODE.md: namespaces
+# in lower_case, types in CamelCase, functions, fields, parameters, and locals
+# in lower_case, and a type's facts and constants in UPPER_CASE. No option
+# excepts the way the output composes names today, so `List_Request` and
+# `List_Request_serialize_` are findings until the C++ phase nests them.
+#
+# A namespace or member ending in `_` is a DSDL name as its author spelt it or
+# as the generator strops a keyword, or a member the generator adds beside the
+# fields. An added member takes the form DSDL reserves, starting and ending
+# with an underscore, so no field can take its name: `_tag_`.
+#
+# Editing
+# -------
+#
+# Keep `#` out of the `Checks:` scalar; .clang-tidy says why.
+# tools/check_clang_tidy_config.py runs over this file in the Lint job.
+#
+#===----------------------------------------------------------------------===#
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-use-trailing-return-type,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-magic-numbers
+
+CheckOptions:
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.ClassConstantCase: UPPER_CASE
+  readability-identifier-naming.ConstexprVariableCase: UPPER_CASE
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: UPPER_CASE
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.MemberIgnoredRegexp: '^_?[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.MethodCase: lower_case
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.NamespaceIgnoredRegexp: '^[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.VariableCase: lower_case

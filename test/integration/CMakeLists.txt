@@ -4065,8 +4065,10 @@ endif()
 # a judge that was found, which is how every language lane here behaves; the CI image asserts all of
 # them are present, so a judge missing there is an image bug rather than a quietly absent lane.
 if(PYTHON_EXECUTABLE)
-  foreach(judge_lang go python ts rust)
-    if(judge_lang STREQUAL "go")
+  foreach(judge_lang c cpp go python ts rust)
+    if(judge_lang STREQUAL "c" OR judge_lang STREQUAL "cpp")
+      set(judge_tool clang-tidy)
+    elseif(judge_lang STREQUAL "go")
       set(judge_tool staticcheck)
     elseif(judge_lang STREQUAL "python")
       set(judge_tool ruff)

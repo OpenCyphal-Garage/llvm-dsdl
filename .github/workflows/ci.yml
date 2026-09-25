@@ -110,11 +110,15 @@ jobs:
           clang-format --version
           clang-tidy --version
 
-      - name: Check that .clang-tidy says what it appears to say
+      - name: Check that each clang-tidy ruleset says what it appears to say
         # clang-tidy globs the Checks scalar and silently drops whatever fails to match, so a
         # mistyped check name disables nothing and a comment containing a comma can re-enable a
         # whole family. Neither is an error to clang-tidy. This makes both an error here.
-        run: python3 tools/check_clang_tidy_config.py
+        run: >-
+          python3 tools/check_clang_tidy_config.py --config
+          .clang-tidy
+          test/integration/judge-rulesets/c.clang-tidy
+          test/integration/judge-rulesets/cpp.clang-tidy
 
       - name: Check formatting
         # Runs before the configure: this is the same script the check-format target drives, and it

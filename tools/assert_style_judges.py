@@ -123,6 +123,7 @@ def find_parser() -> tuple[str | None, str, list[str]]:
 GO_TOOLS = frozenset({"staticcheck"})
 
 JUDGES = {
+    "clang-tidy": "C and C++ style judge",
     "staticcheck": "Go style judge (ST1003 and the SA checks)",
     "ruff": "Python style judge",
     "eslint": "TypeScript style judge",
@@ -190,6 +191,14 @@ def main() -> int:
         )
     else:
         found[package] = version
+
+    # clang-tidy's findings are read from the YAML it exports, which is its structured output.
+    try:
+        import yaml
+
+        found["PyYAML"] = yaml.__version__
+    except ImportError:
+        missing.append("module: PyYAML (reads the findings clang-tidy exports for the C and C++ judge)")
 
     for name, version in found.items():
         print(f"{name:<28} {version}")

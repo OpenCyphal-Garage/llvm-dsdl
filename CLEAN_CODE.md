@@ -234,8 +234,7 @@ output byte for byte, and today's output is now idiomatic Rust rather than the f
 that reproduces `list_0_2::Request` is tested against the shape it exists to produce; one that
 reproduced `uavcan_file_List_Request` would only have been tested against the shape it replaces.
 
-**1 — The judges.** *Landed for Go, Python, TypeScript and Rust: each judge is in the image,
-asserted, and holding its lane to a baseline. The C and C++ lane is still to be built.*
+**1 — The judges.** *Landed: every judge is in the image, asserted, and holding its lane to a baseline.*
 
 The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
 runs `cargo check`, `RunUavcanGoBuild` runs `go test ./...`, `RunUavcanTsTypecheck` runs `tsc`, and
@@ -259,9 +258,9 @@ already forbids.
 Each remaining language gains the style judge its compiler is not: `cargo clippy -- -D warnings`
 beyond what rustc denies, `staticcheck` for Go's `ST1003`, `ruff` with the `N` rules for Python,
 `eslint` with `@typescript-eslint/naming-convention`, and `clang-tidy`'s
-`readability-identifier-naming` over the generated C and C++. `ts26.4.5` carries all of them --
-`staticcheck` 2025.1.1, `ruff` 0.16.8, `eslint` 10.11.0, `clippy` 0.1.93 and `typescript-eslint`
-8.70.1 -- beside the `clang-tidy` the lint lane already runs. `tools/assert_style_judges.py` is what
+`readability-identifier-naming` over the generated C and C++. `ts26.4.5` carries all of them:
+`staticcheck` 2025.1.1, `ruff` 0.16.8, `eslint` 10.11.0 with `typescript-eslint` 8.70.1, `clippy`
+0.1.93, and the `clang-tidy` 22.1.2 the lint lane already runs. `tools/assert_style_judges.py` is what
 says so: every lane that asserts its toolchains asserts the judges too, and reports the versions it
 found.
 
@@ -277,7 +276,8 @@ version of whatever `eslint` resolves to, so that arrangement fails rather than 
 
 The version a judge is pinned at is part of what it reports, so the counts are taken with the
 judges `ts26.4.5` carries and nothing else: `ruff` 0.16.8, `staticcheck` 2025.1.1, `eslint` 10.11.0
-beside `typescript-eslint` 8.70.1 and TypeScript 5.2.2, and `clippy` 0.1.93. Each is recorded per
+beside `typescript-eslint` 8.70.1 and TypeScript 5.2.2, `clippy` 0.1.93, and `clang-tidy` 22.1.2.
+Each is recorded per
 rule in `test/integration/judge-baselines/`, written by the lane rather than added up by hand.
 
 Two of those differ from what a local run may have. `clippy` 0.1.95 reports `nonminimal_bool` six
@@ -286,10 +286,10 @@ reading 641 are two judges rather than a regression. TypeScript 5.2.2 against 6.
 these counts, which is why the pairing the image ships is enough. `typescript-eslint` holds
 TypeScript below 6.1 in any case. `no-useless-assignment` arrived in `eslint` 10 and reports a defect the
 older release did not, so a lane pinned behind it would have ratcheted in a shape two other judges
-already name. The lint lane holds `eslint` at 10 or newer for that reason, and holds the other two
-to nothing: the versions tried report identically, rule for rule.
+already name. The lint lane holds `eslint` at 10 or newer for that reason, and holds the others to
+nothing: the versions tried report identically, rule for rule.
 
-The lanes are `llvmdsdl-uavcan-<language>-style-judge`, one per judge, each generating the regulated
+The lanes are `llvmdsdl-uavcan-<language>-style-judge`, one per language, each generating the regulated
 corpus and holding its judge to `test/integration/judge-baselines/<language>.json`. The comparison
 is per rule rather than on the total, because a total alone lets one rule grow behind another
 shrinking. A rule absent from a baseline is a regression at any count: a judge reporting something
@@ -301,6 +301,20 @@ verdict on the generated code; on CI it is a failure, because the image pins eve
 mismatch there means the baseline is stale. Each lane is registered only for a judge the build can
 find, which is how every language lane here behaves, and the toolchain assertion is what stops a
 judge going missing in CI without anyone noticing.
+
+The C and C++ judge is `clang-tidy` under a ruleset for each language, in
+`test/integration/judge-rulesets/`. Each is the project's own `.clang-tidy` applied to generated
+code: the same families, with a check subtracted only where its reason holds there, and the reason
+written beside it. `readability-identifier-naming` states the design above. C's composed names are
+accepted in the three forms the design gives them -- a type, an entry point or accessor, and a fact
+or constant -- and every other C name takes C's own case. The C++ ruleset accepts no composed form,
+so `List_Request` and its free entry points are findings until the C++ phase nests them.
+
+Every header is judged as a translation unit of its own, because `misc-include-cleaner` reads only a
+unit's main file and would otherwise never check a header's includes. The C++ judge reads the `std`
+profile at C++14, the lowest standard that profile compiles under, so no modernize check suggests
+what a consumer on C++14 could not write. It leaves the C runtime header the C++ tree carries to the
+C judge.
 
 The judges gate the phases after this one. Rust's phase converged because rustc names the defect:
 eighteen findings came out of #41, and the six of them that earlier fixes in that same branch created
@@ -399,22 +413,43 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 | TypeScript | eslint | 1,810 | 548 |
 | | | **10,106** | **3,225** |
 
+The C and C++ judge was installed after the sweep, and reads 4,808 findings over the generated C and
+5,437 over the C++.
+
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
+| 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
+| 2,020 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
+| 1,500 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
 | 997 | Python | `E501` | long lines |
+| 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
+| 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
+| 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
+| 567 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
+| 488 | C++ | `misc-include-cleaner` | the C runtime's functions, reached only through `dsdl_runtime.hpp` |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
+| 362 | C++ | `readability-redundant-inline-specifier` | `inline` on `serialize` and `deserialize`, which are defined in their class |
+| 332 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
 | 198 | Python | `F401` | unused imports |
+| 185 | C | `modernize-avoid-c-style-cast` | a cast to the type its operand already has |
 | 181 | Python | `UP037` | quoted annotations |
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 164 | Python | `SIM108` | the remaining branch-not-expression sites |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
+| 123 | C, C++ | `readability-redundant-parentheses` | `!(rejected)`, 123 in each |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
 | 34 | Rust | `collapsible_else_if` | an `else` holding one `if`, which the branch shapes leave behind |
 | 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
+
+Three of the C and C++ judge's findings are defects rather than shape.
+`clang-analyzer-security.ArrayBound` follows an accessor handed a null buffer and a non-zero size:
+the accessor reads from, or returns a pointer past, the `""` it substitutes for the buffer, where a
+deserialiser rejects that pair. A fourth `ArrayBound`, in the runtime's bit copy, assumes a whole
+byte and a partial one in a copy of at most eight bits, which cannot both hold.
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
 nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that

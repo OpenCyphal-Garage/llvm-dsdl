@@ -240,6 +240,22 @@ Threshold policy is 5% regression budget vs in-repo baselines in:
 - [`test/integration/rust_runtime_bench_thresholds.json`](./test/integration/rust_runtime_bench_thresholds.json)
 If an intentional performance shift is accepted, update these files in the same PR.
 
+Style judges. `llvmdsdl-uavcan-<language>-style-judge` points each language's own linter at the
+generated code and holds its count per rule to
+[`test/integration/judge-baselines/`](./test/integration/judge-baselines/). A baseline is valid only
+for the version of the judge that took it, so off CI a lane whose judge differs from the image's
+skips. To judge against the image, generate on the host and judge in the container:
+
+```bash
+build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc --target-language c submodules/public_regulated_data_types/uavcan --outdir /tmp/judge-c
+```
+
+```bash
+docker run --rm -v "$PWD":/w -v /tmp/judge-c:/gen -w /w ghcr.io/opencyphal/toolshed:ts26.4.5 python3 tools/judge_generated_code.py --language c --skip-generate --outdir /gen --baseline test/integration/judge-baselines/c.json
+```
+
+`--update` retakes the baseline. A retake goes in the commit that moved the count, which says why.
+
 Guard self-tests. Each exercises its guard rather than the tree the guard runs over, so a guard
 that has stopped guarding fails here rather than passing quietly:
 
