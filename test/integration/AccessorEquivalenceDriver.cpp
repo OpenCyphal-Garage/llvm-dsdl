@@ -53,21 +53,26 @@ static bool checkField(V (*get)(byte_span<const std::uint8_t>),
     std::uint8_t wire[Size];
     std::uint8_t out[Size] = {};
     fill(wire, Size);
-    T           obj{};
-    std::size_t size = Size;
-    bool        ok   = obj.deserialize(wire, &size) == 0;
-    ok               = ok && sameBits(get(wire), obj.*member);
-    ok               = ok && sameBits(get({}), V{});
-    size             = Size / 2;
-    ok               = ok && obj.deserialize(wire, &size) == 0;
-    ok               = ok && sameBits(get(byte_span<const std::uint8_t>(wire, Size / 2)), obj.*member);
-    const V v        = get(wire);
-    ok               = ok && set(out, v) == 0;
-    size             = Size;
-    ok               = ok && obj.deserialize(out, &size) == 0;
-    ok               = ok && sameBits(get(out), obj.*member);
-    ok               = ok && (!exact || sameBits(v, obj.*member));
-    ok               = ok && set({}, v) != 0;
+    // The spans are built by name: GCC does not convert an array whose bound is a template
+    // parameter to a span through a call by function pointer, where clang does.
+    const byte_span<const std::uint8_t> wireView(wire, Size);
+    const byte_span<std::uint8_t>       outView(out, Size);
+    const byte_span<const std::uint8_t> outRead(out, Size);
+    T                                   obj{};
+    std::size_t                         size = Size;
+    bool                                ok   = obj.deserialize(wire, &size) == 0;
+    ok                                       = ok && sameBits(get(wireView), obj.*member);
+    ok                                       = ok && sameBits(get({}), V{});
+    size                                     = Size / 2;
+    ok                                       = ok && obj.deserialize(wire, &size) == 0;
+    ok        = ok && sameBits(get(byte_span<const std::uint8_t>(wire, Size / 2)), obj.*member);
+    const V v = get(wireView);
+    ok        = ok && set(outView, v) == 0;
+    size      = Size;
+    ok        = ok && obj.deserialize(out, &size) == 0;
+    ok        = ok && sameBits(get(outRead), obj.*member);
+    ok        = ok && (!exact || sameBits(v, obj.*member));
+    ok        = ok && set({}, v) != 0;
     return ok;
 }
 
@@ -84,19 +89,22 @@ static bool checkElement(V (*get)(byte_span<const std::uint8_t>, std::size_t),
         std::uint8_t wire[Size];
         std::uint8_t out[Size] = {};
         fill(wire, Size);
-        T           obj{};
-        std::size_t size = Size;
-        const V     zero{};
+        const byte_span<const std::uint8_t> wireView(wire, Size);
+        const byte_span<std::uint8_t>       outView(out, Size);
+        const byte_span<const std::uint8_t> outRead(out, Size);
+        T                                   obj{};
+        std::size_t                         size = Size;
+        const V                             zero{};
         ok        = ok && obj.deserialize(wire, &size) == 0;
-        ok        = ok && sameBits(get(wire, i), (obj.*member)[i]);
-        ok        = ok && sameBits(get(wire, Capacity), zero);
+        ok        = ok && sameBits(get(wireView, i), (obj.*member)[i]);
+        ok        = ok && sameBits(get(wireView, Capacity), zero);
         ok        = ok && sameBits(get({}, i), zero);
-        const V v = get(wire, i);
-        ok        = ok && set(out, i, v) == 0;
+        const V v = get(wireView, i);
+        ok        = ok && set(outView, i, v) == 0;
         size      = Size;
         ok        = ok && obj.deserialize(out, &size) == 0;
-        ok        = ok && sameBits(get(out, i), (obj.*member)[i]);
-        ok        = ok && set(out, Capacity, v) != 0;
+        ok        = ok && sameBits(get(outRead, i), (obj.*member)[i]);
+        ok        = ok && set(outView, Capacity, v) != 0;
     }
     return ok;
 }
