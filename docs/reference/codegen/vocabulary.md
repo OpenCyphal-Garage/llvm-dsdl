@@ -13,15 +13,18 @@ a **binding** names the library type that fills it. Bindings are data, read from
 
 ### span
 
-A view over a run of bytes: what a C++ field accessor takes its buffer in, and what a composite
-field's getter answers the nested type's bytes in. The type spelling takes one placeholder,
-`{element}`: `const std::uint8_t` for a buffer read, `std::uint8_t` for one written.
+A view over a run of bytes: what a C++ field accessor takes its buffer in, what a composite
+field's getter answers the nested type's bytes in, and what a holder keeps a field in under
+`--aliasable-views`. The type spelling takes one placeholder, `{element}`: `const std::uint8_t` for
+a buffer read or a field held as a view, `std::uint8_t` for a buffer written. A default-constructed
+span must hold no bytes, since a view member starts as one.
 
 | Operation | Placeholders | Standard spelling | Where generated code uses it |
 | --- | --- | --- | --- |
-| `data` | `self` | `{self}.data()` | the pointer a runtime read or write takes |
-| `size` | `self` | `{self}.size()` | the count of bytes the accessor may read |
+| `data` | `self` | `{self}.data()` | the pointer a runtime read or write takes, and the bytes serialise copies from a view |
+| `size` | `self` | `{self}.size()` | the count of bytes the accessor may read, and the count a view holds |
 | `subspan` | `self`, `offset` | `{self}.subspan({offset})` | a nested type's bytes from its field's offset, which the plan clamps to the size |
+| `make` | `type`, `data`, `size` | `{type}({data}, {size})` | a view of the bytes deserialise reads, from a pointer and a count; `type` is the span's type as the binding spells it |
 
 ## Files
 
@@ -56,6 +59,7 @@ bindings:
       data: "{self}.ptr()"
       size: "{self}.length()"
       subspan: "{self}.tail({offset})"
+      make: "{type}::of({data}, {size})"
 ```
 
 A file fails the run, naming the line, when it has an unknown key, concept, language, profile or

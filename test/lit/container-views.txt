@@ -151,29 +151,46 @@
 # C_PLAIN:     struct fixtures_aliasable__vendor__Pose pose;
 # C_PLAIN-NOT: dsdl_runtime_view_t
 
-# The other languages hold the view in their own slice, and name the Pose nowhere: no import of it.
+# C++ holds the view in the profile's span, which the Pose's accessors take as it is held; the other
+# languages hold it in their own slice. None names the Pose: no import of it.
 # RUN: %dsdlc --target-language cpp --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/cpp/std/fixtures_views/vendor/Frame_1_0.hpp | FileCheck %s --check-prefix=CPP
-# CPP-NOT: #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
-# CPP:     #include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
-# CPP-NOT: #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
-# CPP:     dsdl_runtime_view_t pose{};
-# CPP:     dsdl_runtime_copy_bytes(
-# CPP:     ->pose.bytes =
+# CPP:       #include <span>
+# CPP-NOT:   #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
+# CPP:       #include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
+# CPP:       std::span<const std::uint8_t> pose;
+# CPP:       const std::uint8_t* const pose_buf = obj->pose.data();
+# CPP-NEXT:  const std::uint64_t pose_size = static_cast<std::uint64_t>(obj->pose.size());
+# CPP-NEXT:  dsdl_runtime_copy_bytes(&buffer[{{.*}}], pose_buf, static_cast<std::size_t>(pose_size), 24U);
+# CPP:       out_obj->pose = std::span<const std::uint8_t>(&buf[{{.*}}], static_cast<std::size_t>({{.*}}));
+# CPP-NOT:   #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
 # RUN: cat %t/cpp/std/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_TRACK
 # CPP_TRACK-NOT: Pose_1_0.hpp
-# CPP_TRACK:     std::array<dsdl_runtime_view_t, 2U> pair{};
-# CPP_TRACK:     std::vector<dsdl_runtime_view_t> trail{};
-# CPP_TRACK:     ->pair[static_cast<std::size_t>({{.*}})].bytes =
-# CPP_TRACK:     ->trail[static_cast<std::size_t>({{.*}})].bytes =
+# CPP_TRACK:     std::array<std::span<const std::uint8_t>, 2U> pair{};
+# CPP_TRACK:     std::vector<std::span<const std::uint8_t>> trail{};
+# CPP_TRACK:     = obj->pair[static_cast<std::size_t>({{.*}})].data();
+# CPP_TRACK:     = obj->trail[static_cast<std::size_t>({{.*}})].data();
+# CPP_TRACK:     out_obj->pair[static_cast<std::size_t>({{.*}})] = std::span<const std::uint8_t>(
+# CPP_TRACK:     out_obj->trail[static_cast<std::size_t>({{.*}})] = std::span<const std::uint8_t>(
 # CPP_TRACK-NOT: Pose_1_0.hpp
 # RUN: cat %t/cpp/pmr/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR_TRACK
-# CPP_PMR_TRACK:     std::array<dsdl_runtime_view_t, 2U> pair{};
-# CPP_PMR_TRACK:     std::pmr::vector<dsdl_runtime_view_t> trail{};
+# CPP_PMR_TRACK:     std::array<std::span<const std::uint8_t>, 2U> pair{};
+# CPP_PMR_TRACK:     std::pmr::vector<std::span<const std::uint8_t>> trail{};
 # CPP_PMR_TRACK:     trail = decltype(trail)(_memory_resource);
 # CPP_PMR_TRACK-NOT: set_memory_resource(_memory_resource);
-# CPP_PMR_TRACK:     std::pmr::vector<dsdl_runtime_view_t> _sized0_(
+# CPP_PMR_TRACK:     std::pmr::vector<std::span<const std::uint8_t>> _sized0_(
 # CPP_PMR_TRACK-NOT: set_memory_resource(effective_memory_resource);
+# The autosar profile holds the span its vocabulary binds, in its bounded vector for the trail.
+# RUN: %dsdlc --target-language cpp --cpp-profile autosar --vocabulary %S/../../examples/vocabulary/cpp-autosar-cetl.yaml --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: cat %t/cpp-autosar/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR_TRACK
+# CPP_AUTOSAR_TRACK:     #include "cetl/pf20/span.hpp"
+# CPP_AUTOSAR_TRACK:     std::array<cetl::pf20::span<const std::uint8_t>, 2U> pair{};
+# CPP_AUTOSAR_TRACK:     ::llvmdsdl::cpp::autosar::BoundedVector<cetl::pf20::span<const std::uint8_t>, 3U> trail{};
+# CPP_AUTOSAR_TRACK:     out_obj->pair[static_cast<std::size_t>({{.*}})] = cetl::pf20::span<const std::uint8_t>(
+# CPP_AUTOSAR_TRACK:     out_obj->trail[static_cast<std::size_t>({{.*}})] = cetl::pf20::span<const std::uint8_t>(
+# No profile holds a view in the C runtime's type.
+# RUN: cat %t/cpp/*/fixtures_views/vendor/*.hpp %t/cpp-autosar/fixtures_views/vendor/*.hpp | FileCheck %s --check-prefix=CPP_NO_C_VIEW
+# CPP_NO_C_VIEW-NOT: dsdl_runtime_view_t
 # Rust borrows the buffer: the holder, its impls and its deserialise carry the lifetime.
 # RUN: %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_views/vendor/frame_1_0.rs | FileCheck %s --check-prefix=RUST

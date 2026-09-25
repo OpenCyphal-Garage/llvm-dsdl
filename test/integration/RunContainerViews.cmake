@@ -137,6 +137,27 @@ foreach(profile std pmr)
   endif()
   _views_run("C++ ${profile}" "${OUT_DIR}/probe_cpp_${profile}")
 endforeach()
+
+# The autosar profile, whose span the example vocabulary binds to CETL's, at the C++14 it targets.
+foreach(var CETL_INCLUDE_DIR CETL_VOCABULARY)
+  if(NOT DEFINED ${var} OR NOT EXISTS "${${var}}")
+    message(FATAL_ERROR "the autosar leg needs ${var}: '${${var}}' does not exist")
+  endif()
+endforeach()
+set(autosar_out "${OUT_DIR}/cpp-autosar")
+_views_generate(cpp "${autosar_out}" --cpp-profile autosar --vocabulary "${CETL_VOCABULARY}")
+execute_process(
+  COMMAND "${CXX_COMPILER}" -std=c++14 -O2 -Wall -Wextra -Wpedantic -Werror -isystem "${CETL_INCLUDE_DIR}"
+    "-DLLVMDSDL_SPAN_HEADER=\"cetl/pf20/span.hpp\"" -DLLVMDSDL_SPAN=cetl::pf20::span
+    -I "${autosar_out}" "${probe_dir}/ContainerViewsProbe.cpp" -o "${OUT_DIR}/probe_cpp_autosar"
+  RESULT_VARIABLE build_result
+  OUTPUT_VARIABLE build_stdout
+  ERROR_VARIABLE build_stderr
+)
+if(NOT build_result EQUAL 0)
+  message(FATAL_ERROR "C++ autosar probe build failed:\n${build_stdout}\n${build_stderr}")
+endif()
+_views_run("C++ autosar" "${OUT_DIR}/probe_cpp_autosar")
 list(APPEND legs "C++")
 
 # -------------------------------------------------------------------- Rust ----

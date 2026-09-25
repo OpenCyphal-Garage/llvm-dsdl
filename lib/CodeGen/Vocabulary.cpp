@@ -38,17 +38,23 @@ namespace
 constexpr llvm::StringRef kSelf    = "self";
 constexpr llvm::StringRef kElement = "element";
 constexpr llvm::StringRef kOffset  = "offset";
+constexpr llvm::StringRef kType    = "type";
+constexpr llvm::StringRef kData    = "data";
+constexpr llvm::StringRef kSize    = "size";
 
 constexpr llvm::StringRef kSpanTypePlaceholders[] = {kElement};
 constexpr llvm::StringRef kSelfAlone[]            = {kSelf};
 constexpr llvm::StringRef kSelfAndOffset[]        = {kSelf, kOffset};
+constexpr llvm::StringRef kTypeDataAndSize[]      = {kType, kData, kSize};
 
 // The standard library's shape is the contract: a binding spells only what its library does
-// differently. `subspan` is reached with an offset the plan has already clamped to the size.
+// differently. `subspan` is reached with an offset the plan has already clamped to the size, and
+// `make` with a pointer to at least `size` bytes; `type` is the span's type as the binding spells it.
 constexpr Operation kSpanOperations[] = {
     {"data", "{self}.data()", kSelfAlone},
     {"size", "{self}.size()", kSelfAlone},
     {"subspan", "{self}.subspan({offset})", kSelfAndOffset},
+    {"make", "{type}({data}, {size})", kTypeDataAndSize},
 };
 
 constexpr ConceptSpec kConcepts[] = {

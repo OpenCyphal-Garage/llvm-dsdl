@@ -583,7 +583,9 @@ setter one of `std::uint8_t`, and a composite getter answers the nested type's b
 Rust, Go, TypeScript and Python answer a slice or a view. A pointer beside a size, with the size
 written back through another pointer, is C's idiom; in C++ it let `get_timestamp(buffer, size,
 nullptr)` compile and write through the null pointer. The `std` and `pmr` profiles therefore require
-C++20. Serialise and deserialise take a pointer and an in-out size.
+C++20. Serialise and deserialise take a pointer and an in-out size. A member held as a view under
+`--aliasable-views` is a span of `const std::uint8_t` too, so a holder's member goes to the nested
+type's accessors as it is.
 
 **The backend names no library.** Which span a profile uses is a binding in a `--vocabulary` file
 ([reference](docs/reference/codegen/vocabulary.md)); the backend states the concept -- the

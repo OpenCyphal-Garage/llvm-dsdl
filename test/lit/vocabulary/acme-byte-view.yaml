@@ -10,3 +10,4 @@ bindings:
       data: "{self}.ptr()"
       size: "{self}.length()"
       subspan: "{self}.tail({offset})"
+      make: "{type}::of({data}, {size})"
