@@ -12,13 +12,16 @@
 // the record leaves a short view, read as zeros past its end and serialised zero-filled; an
 // initialised object holds an empty view, serialised as the record's zeros. An array of the record
 // is one view per element, the fixed pair's held in place and the bounded trail's beside its count.
-// Compiled against the generated output and nothing else, for C and for the object target.
+// A holder that begins with the record hands its view the buffer itself, and a null buffer of size
+// nought leaves it empty. Compiled against the generated output and nothing else, for C and for the
+// object target.
 //
 //===----------------------------------------------------------------------===//
 
 #include "fixtures_aliasable/vendor/Pose_1_0.h"
 #include "fixtures_aliasable/vendor/Vec3_1_0.h"
 #include "fixtures_views/vendor/Frame_1_0.h"
+#include "fixtures_views/vendor/Leading_1_0.h"
 #include "fixtures_views/vendor/Track_1_0.h"
 #include <stdio.h>
 #include <string.h>
@@ -171,6 +174,72 @@ int main(void)
         zeros = zeros && (track_out[i] == 0);
     }
     check("empty element views serialise as zeros", zeros, &failures);
+
+    /* Leading: Pose (24 bytes) | uint8 status = 25 bytes. The view starts at the buffer itself. */
+    uint8_t lead_wire[25];
+    memset(lead_wire, 0, sizeof lead_wire);
+    const float lead_pose[6] = {0.25f, -0.5f, 0.75f, -1.0f, 1.25f, -1.5f};
+    memcpy(lead_wire, lead_pose, 24);
+    lead_wire[24] = 0xA5;
+
+    fixtures_views__vendor__Leading lead;
+    size = sizeof lead_wire;
+    rc   = fixtures_views__vendor__Leading__deserialize_(&lead, lead_wire, &size);
+    check("leading deserialise accepted", rc == 0 && size == sizeof lead_wire, &failures);
+    check("leading view is the buffer itself", lead.pose.bytes == lead_wire && lead.pose.size_bytes == 24, &failures);
+    o = fixtures_aliasable__vendor__Pose__get_orientation_(lead.pose.bytes, lead.pose.size_bytes, &n);
+    check("orientation.y read through the leading view",
+          fixtures_aliasable__vendor__Vec3__get_y_(o, n) == 1.25f && lead.status == 0xA5,
+          &failures);
+    memset(out, 0xEE, sizeof out);
+    out_size = sizeof out;
+    rc       = fixtures_views__vendor__Leading__serialize_(&lead, out, &out_size);
+    check("leading serialise reproduces the wire",
+          rc == 0 && out_size == sizeof lead_wire && memcmp(out, lead_wire, sizeof lead_wire) == 0,
+          &failures);
+
+    /* A buffer that ends inside the Pose: the view is the buffer's start, short. */
+    fixtures_views__vendor__Leading short_lead;
+    short_size = 12;
+    rc         = fixtures_views__vendor__Leading__deserialize_(&short_lead, lead_wire, &short_size);
+    check("short leading view holds what was there",
+          rc == 0 && short_lead.pose.bytes == lead_wire && short_lead.pose.size_bytes == 12 && short_lead.status == 0,
+          &failures);
+    memset(out, 0xEE, sizeof out);
+    out_size = sizeof out;
+    rc       = fixtures_views__vendor__Leading__serialize_(&short_lead, out, &out_size);
+    zeros    = (rc == 0) && (out_size == sizeof lead_wire) && (memcmp(out, lead_wire, 12) == 0);
+    for (size_t i = 12; i < sizeof lead_wire; ++i)
+    {
+        zeros = zeros && (out[i] == 0);
+    }
+    check("short leading view serialises zero-filled", zeros, &failures);
+
+    /* A null buffer of size nought leaves an empty view, which the record's accessors read as zeros. */
+    fixtures_views__vendor__Leading empty_lead;
+    short_size = 0;
+    rc         = fixtures_views__vendor__Leading__deserialize_(&empty_lead, NULL, &short_size);
+    o = fixtures_aliasable__vendor__Pose__get_orientation_(empty_lead.pose.bytes, empty_lead.pose.size_bytes, &n);
+    check("null buffer leaves an empty leading view",
+          rc == 0 && short_size == 0 && empty_lead.pose.size_bytes == 0 && empty_lead.status == 0 && n == 0 &&
+              fixtures_aliasable__vendor__Vec3__get_y_(o, n) == 0.0f,
+          &failures);
+
+    /* An initialised object's empty view serialises as the record's zeros, from the buffer's start. */
+    fixtures_views__vendor__Leading fresh_lead;
+    rc = fixtures_views__vendor__Leading__initialize_(&fresh_lead);
+    check("initialise clears the leading view",
+          rc == 0 && fresh_lead.pose.bytes == NULL && fresh_lead.pose.size_bytes == 0,
+          &failures);
+    memset(out, 0xEE, sizeof out);
+    out_size = sizeof out;
+    rc       = fixtures_views__vendor__Leading__serialize_(&fresh_lead, out, &out_size);
+    zeros    = (rc == 0) && (out_size == sizeof lead_wire);
+    for (size_t i = 0; i < sizeof lead_wire; ++i)
+    {
+        zeros = zeros && (out[i] == 0);
+    }
+    check("empty leading view serialises as zeros", zeros, &failures);
 
     printf("container-views %s: %s\n", TARGET_NAME, failures == 0 ? "ok" : "FAILED");
     return failures == 0 ? 0 : 1;

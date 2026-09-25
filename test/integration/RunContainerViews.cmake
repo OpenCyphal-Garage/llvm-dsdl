@@ -13,7 +13,8 @@
 # `-D warnings`, `go vet` and `noUnusedLocals` -- and holds the view to its contract: it points
 # into the buffer, the record's accessors read it, serialising reproduces the wire, a short buffer
 # leaves a short view read as zeros and serialised zero-filled, and an initialised object
-# serialises an empty view as zeros.
+# serialises an empty view as zeros. A holder that begins with the record hands its view the buffer
+# itself, and an empty buffer leaves that view empty.
 #
 # Every language whose toolchain was given runs; C, the object target and C++ always do.
 #

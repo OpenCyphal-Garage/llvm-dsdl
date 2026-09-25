@@ -12,6 +12,7 @@
 #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
 #include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
 #include "fixtures_views/vendor/Frame_1_0.hpp"
+#include "fixtures_views/vendor/Leading_1_0.hpp"
 #include "fixtures_views/vendor/Track_1_0.hpp"
 #include <cstdio>
 #include <cstring>
@@ -119,6 +120,48 @@ int main()
     for (int i = 1; i < 51; ++i)
         zeros = zeros && track_out[i] == 0;
     check("empty element views serialise as zeros", zeros);
+    using fixtures_views::vendor::Leading;
+    std::uint8_t lead_wire[25];
+    std::memset(lead_wire, 0, sizeof lead_wire);
+    const float lead_pose[6] = {0.25f, -0.5f, 0.75f, -1.0f, 1.25f, -1.5f};
+    std::memcpy(lead_wire, lead_pose, 24);
+    lead_wire[24] = 0xA5;
+    Leading lead;
+    size = sizeof lead_wire;
+    check("leading deserialise accepted", lead.deserialize(lead_wire, &size) == 0 && size == 25);
+    check("leading view is the buffer itself", lead.pose.bytes == lead_wire && lead.pose.size_bytes == 24);
+    o = Pose::get_orientation(std::span<const std::uint8_t>(lead.pose.bytes, lead.pose.size_bytes));
+    check("orientation.y read through the leading view", Vec3::get_y(o) == 1.25f && lead.status == 0xA5);
+    std::memset(out, 0xEE, sizeof out);
+    out_size = sizeof out;
+    check("leading serialise reproduces the wire",
+          lead.serialize(out, &out_size) == 0 && out_size == 25 && std::memcmp(out, lead_wire, 25) == 0);
+    Leading short_lead;
+    short_size = 12;
+    check("short leading view holds what was there",
+          short_lead.deserialize(lead_wire, &short_size) == 0 && short_lead.pose.bytes == lead_wire &&
+              short_lead.pose.size_bytes == 12 && short_lead.status == 0);
+    std::memset(out, 0xEE, sizeof out);
+    out_size = sizeof out;
+    zeros    = short_lead.serialize(out, &out_size) == 0 && out_size == 25 && std::memcmp(out, lead_wire, 12) == 0;
+    for (int i = 12; i < 25; ++i)
+        zeros = zeros && out[i] == 0;
+    check("short leading view serialises zero-filled", zeros);
+    Leading empty_lead;
+    short_size          = 0;
+    const bool empty_ok = empty_lead.deserialize(nullptr, &short_size) == 0 && short_size == 0;
+    o = Pose::get_orientation(std::span<const std::uint8_t>(empty_lead.pose.bytes, empty_lead.pose.size_bytes));
+    check("null buffer leaves an empty leading view",
+          empty_ok && empty_lead.pose.size_bytes == 0 && empty_lead.status == 0 && o.empty() && Vec3::get_y(o) == 0.0f);
+    Leading fresh_lead;
+    check("fresh object holds an empty leading view",
+          fresh_lead.pose.bytes == nullptr && fresh_lead.pose.size_bytes == 0);
+    std::memset(out, 0xEE, sizeof out);
+    out_size = sizeof out;
+    zeros    = fresh_lead.serialize(out, &out_size) == 0 && out_size == 25;
+    for (int i = 0; i < 25; ++i)
+        zeros = zeros && out[i] == 0;
+    check("empty leading view serialises as zeros", zeros);
     std::printf("container-views C++: %s\n", failures == 0 ? "ok" : "FAILED");
     return failures == 0 ? 0 : 1;
 }
