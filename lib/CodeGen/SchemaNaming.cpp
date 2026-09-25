@@ -33,13 +33,14 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/Language.h"
 
 namespace llvmdsdl
 {
 
 std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
-    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+    return renderDefinitionTypeName(Language::C,
                                     info.namespaceComponents,
                                     info.shortName,
                                     info.majorVersion,
@@ -49,9 +50,9 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVe
 
 void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, const TypeNameVersioning versioning)
 {
-    const NamingScope requestScope = makeSectionFieldScope(CodegenNamingLanguage::C, def.request);
+    const NamingScope requestScope = makeSectionFieldScope(Language::C, def.request);
     const NamingScope responseScope =
-        makeSectionFieldScope(CodegenNamingLanguage::C, def.response.has_value() ? *def.response : def.request);
+        makeSectionFieldScope(Language::C, def.response.has_value() ? *def.response : def.request);
 
     const auto scopeFor = [&](const std::optional<llvm::StringRef> section) -> const NamingScope& {
         return (section && *section == "response") ? responseScope : requestScope;
@@ -79,11 +80,11 @@ void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, con
         {
             if (*section == "request")
             {
-                sectionTypeName = renderSectionTypeName(CodegenNamingLanguage::C, sectionTypeName, "request");
+                sectionTypeName = renderSectionTypeName(Language::C, sectionTypeName, "request");
             }
             else if (*section == "response")
             {
-                sectionTypeName = renderSectionTypeName(CodegenNamingLanguage::C, sectionTypeName, "response");
+                sectionTypeName = renderSectionTypeName(Language::C, sectionTypeName, "response");
             }
         }
         plan.setCTypeNameAttr(mlir::StringAttr::get(context, sectionTypeName));
@@ -123,7 +124,7 @@ void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, con
         }
         io.setCompositeCTypeNameAttr(
             mlir::StringAttr::get(context,
-                                  renderDefinitionTypeName(CodegenNamingLanguage::C,
+                                  renderDefinitionTypeName(Language::C,
                                                            namespaceComponents,
                                                            shortName,
                                                            static_cast<std::uint32_t>(*io.getCompositeMajor()),

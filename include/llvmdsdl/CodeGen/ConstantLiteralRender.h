@@ -21,6 +21,7 @@
 #include <string>
 
 #include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvmdsdl/Support/Language.h"
 
 namespace llvmdsdl
 {
@@ -63,28 +64,6 @@ struct ConstantTypeInfo
 /// @return Numeric class and bit width; `Other`/0 for non-primitive or non-numeric types.
 [[nodiscard]] ConstantTypeInfo makeConstantTypeInfo(const TypeExprAST& type);
 
-/// @brief Target language for constant-literal rendering.
-enum class ConstantLiteralLanguage
-{
-    /// @brief C literal syntax.
-    C,
-
-    /// @brief C++ literal syntax.
-    Cpp,
-
-    /// @brief Rust literal syntax.
-    Rust,
-
-    /// @brief Go literal syntax.
-    Go,
-
-    /// @brief TypeScript literal syntax.
-    TypeScript,
-
-    /// @brief Python literal syntax.
-    Python,
-};
-
 /// @brief Renders a semantic constant value as source code for one language.
 /// @param[in] language Target language syntax.
 /// @param[in] value Semantic constant value.
@@ -92,7 +71,7 @@ enum class ConstantLiteralLanguage
 ///            literals (suffixes, `INT64_MIN`, integer-valued floats, TypeScript `bigint`). Defaults
 ///            to `Other`/0, which preserves value-only rendering for callers without type context.
 /// @return Rendered constant expression.
-std::string renderConstantLiteral(ConstantLiteralLanguage language, const Value& value, ConstantTypeInfo typeInfo = {});
+std::string renderConstantLiteral(Language language, const Value& value, ConstantTypeInfo typeInfo = {});
 
 }  // namespace llvmdsdl
 

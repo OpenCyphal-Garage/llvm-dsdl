@@ -17,6 +17,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 #include "llvm/Support/Error.h"
 
@@ -164,7 +165,7 @@ private:
 llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootNamespaceDirs,
                                            const std::vector<std::string>& lookupDirs,
                                            DiagnosticEngine&               diagnostics,
-                                           llvm::ArrayRef<OutputLanguage>  outputLanguages = {},
+                                           llvm::ArrayRef<LanguageTraits>  outputLanguages = {},
                                            TypeNameVersioning typeNameVersioning = TypeNameVersioning::Unversioned);
 
 }  // namespace llvmdsdl

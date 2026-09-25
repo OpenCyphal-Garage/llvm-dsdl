@@ -16,6 +16,8 @@
 
 #include <memory>
 
+#include "llvmdsdl/Support/BodyInterface.h"
+
 namespace mlir
 {
 class Pass;
@@ -95,40 +97,6 @@ void registerEmitDSDLRuntimePass();
 /// @brief Registers the LLVM lowering with the pass registry.
 void registerDSDLToLLVMPasses();
 
-/// @brief Which of a plan body's pointer arguments a target can present as null.
-///
-/// A body opens by testing the three it is handed, and answers `-2` when any is null. A target
-/// whose references cannot be null never reaches that answer, so the test is a constant and the
-/// guard is a branch nothing takes. Each defaults to the answer C gives, which is that any of them
-/// may be null, so a caller that says nothing keeps the guard.
-struct TargetNullability final
-{
-    /// @brief Whether the object a body serialises can arrive null.
-    ///
-    /// True for C and C++, which are handed a pointer. False for Rust, which is handed a reference.
-    /// Go, TypeScript and Python are handed an object that a caller may still omit, so it is true
-    /// for them as well.
-    bool objectPointer{true};
-
-    /// @brief Whether the buffer and the slot holding its size can arrive null.
-    ///
-    /// True only where they are pointers. Rust has a slice and a local, Go a slice, TypeScript and
-    /// Python a view and a local; none of those can be null.
-    bool rawPointer{true};
-
-    /// @brief Whether a field accessor's buffer can arrive null, where `rawPointer` says a body's can.
-    ///
-    /// True for C, whose accessors take a pointer. False for C++, whose accessors take a span while
-    /// its serialise and deserialise still take a pointer.
-    bool accessorBuffer{true};
-
-    /// @brief Whether every argument is still nullable, so the guard has nothing to fold.
-    [[nodiscard]] constexpr bool allNullable() const
-    {
-        return objectPointer && rawPointer && accessorBuffer;
-    }
-};
-
 /// @brief Replaces a null test the target cannot fail with a constant, and folds what that kills.
 ///
 /// Its own stage rather than an option on `build-dsdl-plan-bodies`, which produces one body per
@@ -156,22 +124,14 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 /// @param[in] pm Pass manager to extend.
 /// @param[in] optimizeLoweredSerDes Canonicalises the helpers and bodies once they are built, so every backend
 ///                                  translates the simplified functions.
-/// @param[in] targetObjectsAreByteImages Whether this target's objects can be byte images of the
-///            wire. True for the native backends; false where a structure has no layout to speak
-///            of, as in TypeScript and Python.
+/// @param[in] target What the target's generated interface lets the lowering assume of a body. The
+///            default assumes nothing, and keeps every body as `mlir` prints it.
 /// @param[in] accessorsOnly Whether to drop the bodies once they are built and keep the field
 ///                          accessors alone, which is what `--aliasable-only` emits.
-/// @param[in] nullability What the target can present as null, which decides whether the entry
-///                        guard survives.
-/// @param[in] accessorsReturnViews Whether the target's composite getter returns a view carrying its
-///            own length, so the size the getter writes back is observed by nothing. False, the
-///            default, is what C needs: it passes the size back through a pointer.
 void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
                                 bool                 optimizeLoweredSerDes,
-                                bool                 targetObjectsAreByteImages = false,
-                                bool                 accessorsOnly              = false,
-                                TargetNullability    nullability                = {},
-                                bool                 accessorsReturnViews       = false);
+                                const BodyInterface& target        = {},
+                                bool                 accessorsOnly = false);
 
 /// @brief Adds the canonicaliser and common-subexpression elimination, nested on every function.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.

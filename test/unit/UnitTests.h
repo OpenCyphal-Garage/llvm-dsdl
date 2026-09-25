@@ -47,6 +47,10 @@ bool runIntegerMathTests();
 /// @return True when every case in the suite passed.
 bool runTargetLanguagesTests();
 
+/// @brief Runs the LanguageTraitsTests suite.
+/// @return True when every case in the suite passed.
+bool runLanguageTraitsTests();
+
 /// @brief Runs the CliPathTests suite.
 /// @return True when every case in the suite passed.
 bool runCliPathTests();

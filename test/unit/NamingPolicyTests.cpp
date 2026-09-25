@@ -18,13 +18,14 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/Language.h"
 
 #include "UnitTests.h"
 
 namespace
 {
 
-using llvmdsdl::CodegenNamingLanguage;
+using llvmdsdl::Language;
 using llvmdsdl::codegenIsKeyword;
 using llvmdsdl::codegenIsReservedNamespaceIdentifier;
 using llvmdsdl::codegenProjectIdentifier;
@@ -65,12 +66,8 @@ const std::vector<std::string>& sampleNames()
     return names;
 }
 
-constexpr std::array<CodegenNamingLanguage, 6> kAllLanguages = {CodegenNamingLanguage::C,
-                                                                CodegenNamingLanguage::Cpp,
-                                                                CodegenNamingLanguage::Rust,
-                                                                CodegenNamingLanguage::Go,
-                                                                CodegenNamingLanguage::TypeScript,
-                                                                CodegenNamingLanguage::Python};
+constexpr std::array<Language, 6> kAllLanguages =
+    {Language::C, Language::Cpp, Language::Rust, Language::Go, Language::TypeScript, Language::Python};
 
 /// @brief Reference implementation of the C and C++ macro token transform.
 ///
@@ -95,11 +92,11 @@ std::string emitterMacroToken(std::string token)
     return token;
 }
 
-bool expectRole(const CodegenNamingLanguage language,
-                const IdentifierRole        role,
-                const std::string&          name,
-                const std::string&          expected,
-                const char* const           oracle)
+bool expectRole(const Language       language,
+                const IdentifierRole role,
+                const std::string&   name,
+                const std::string&   expected,
+                const char* const    oracle)
 {
     const std::string actual = codegenProjectIdentifier(language, role, name);
     if (actual != expected)
@@ -122,8 +119,8 @@ bool runNamingRoleTests()
     {
         for (const auto language : kAllLanguages)
         {
-            const bool cLike  = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
-            const bool goLike = language == CodegenNamingLanguage::Go;
+            const bool cLike  = language == Language::C || language == Language::Cpp;
+            const bool goLike = language == Language::Go;
 
             // Fields: C and C++ keep the DSDL spelling (emitter/C.cpp and emitter/Cpp.cpp call
             // codegenSanitizeIdentifier); Go exports it the way Go exports anything, initialisms
@@ -187,12 +184,12 @@ bool runNamingRoleTests()
 bool runEmptyNameDivergenceTest()
 {
     bool ok = true;
-    if (codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::MacroName, "") != "_")
+    if (codegenProjectIdentifier(Language::C, IdentifierRole::MacroName, "") != "_")
     {
         std::cerr << "empty name: expected the pipeline to substitute _ for a macro token\n";
         ok = false;
     }
-    if (codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::FileStem, "") != "_")
+    if (codegenProjectIdentifier(Language::C, IdentifierRole::FileStem, "") != "_")
     {
         std::cerr << "empty name: expected the pipeline to substitute _ for a file stem\n";
         ok = false;
@@ -217,41 +214,41 @@ bool runNamingClaimedNameTests()
 {
     struct Case
     {
-        CodegenNamingLanguage language;
-        IdentifierRole        role;
-        const char*           source;
-        const char*           expected;
+        Language       language;
+        IdentifierRole role;
+        const char*    source;
+        const char*    expected;
     };
 
     // The Go and Rust cases start from a lower-case source on purpose: the claimed-name check has to
     // run after the upper-casing, or `full_name` would be compared as `full_name` and never match.
     static const std::array<Case, 16> kCases = {{
-        {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME_"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::ConstantName, "extent_bytes", "EXTENT_BYTES_"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "FULL_NAME", "FULL_NAME_"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "serialize", "serialize_"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "deserialize", "deserialize_"},
-        {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "serialize", "Serialize_"},
-        {CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, "host_image_reason", "HOST_IMAGE_REASON_"},
-        {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
-        {CodegenNamingLanguage::TypeScript, IdentifierRole::FieldName, "constructor", "constructor_"},
+        {Language::Cpp, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME_"},
+        {Language::Cpp, IdentifierRole::ConstantName, "extent_bytes", "EXTENT_BYTES_"},
+        {Language::Cpp, IdentifierRole::FieldName, "FULL_NAME", "FULL_NAME_"},
+        {Language::Cpp, IdentifierRole::FieldName, "serialize", "serialize_"},
+        {Language::Cpp, IdentifierRole::FieldName, "deserialize", "deserialize_"},
+        {Language::Go, IdentifierRole::FieldName, "serialize", "Serialize_"},
+        {Language::Rust, IdentifierRole::ConstantName, "host_image_reason", "HOST_IMAGE_REASON_"},
+        {Language::Python, IdentifierRole::FieldName, "serialize", "serialize_"},
+        {Language::TypeScript, IdentifierRole::FieldName, "constructor", "constructor_"},
         // C spells its metadata macros with a trailing underscore, so `FULL_NAME` is free and
         // `FULL_NAME_` has to move -- as does the lower-case spelling of it, since a
         // macro token is upper-cased before the claim is checked.
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME"},
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "FULL_NAME_", "FULL_NAME__"},
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "full_name_", "FULL_NAME__"},
+        {Language::C, IdentifierRole::ConstantName, "FULL_NAME", "FULL_NAME"},
+        {Language::C, IdentifierRole::ConstantName, "FULL_NAME_", "FULL_NAME__"},
+        {Language::C, IdentifierRole::ConstantName, "full_name_", "FULL_NAME__"},
         // An unescaped constant here would redefine the macro beside it, and the type would then
         // report this constant's value as its own layout verdict.
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "wire_flat_", "WIRE_FLAT__"},
+        {Language::C, IdentifierRole::ConstantName, "wire_flat_", "WIRE_FLAT__"},
         // `MacroName` and `ConstantName` name the same thing in C and are claimed alike.
-        {CodegenNamingLanguage::C, IdentifierRole::MacroName, "union_option_count_", "UNION_OPTION_COUNT__"},
+        {Language::C, IdentifierRole::MacroName, "union_option_count_", "UNION_OPTION_COUNT__"},
         // A C macro token is not an identifier in the language namespace, so keywords are left alone.
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "break", "BREAK"},
+        {Language::C, IdentifierRole::ConstantName, "break", "BREAK"},
         // A Go constant carries the type it belongs to, so `full_name` is not a name the generated
         // ones can be reached by and nothing escapes it here. What reserves the composed name is
         // the scope in emitter/Go.cpp that declares it.
-        {CodegenNamingLanguage::Go, IdentifierRole::ConstantName, "full_name", "FullName"},
+        {Language::Go, IdentifierRole::ConstantName, "full_name", "FullName"},
     }};
 
     bool ok = true;
@@ -278,27 +275,27 @@ bool runNamingReservedNamespaceTests()
 {
     struct Case
     {
-        CodegenNamingLanguage language;
-        IdentifierRole        role;
-        const char*           source;
-        const char*           expected;
+        Language       language;
+        IdentifierRole role;
+        const char*    source;
+        const char*    expected;
     };
 
     static const std::array<Case, 10> kCases = {{
-        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
-        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "__bar", "zX005FzX005Fbar"},
+        {Language::C, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
+        {Language::C, IdentifierRole::FieldName, "__bar", "zX005FzX005Fbar"},
         // C reserves a leading underscore before a capital, so the upper-casing a constant gets is
         // what puts `_foo` in the reserved namespace; as a field it stays put.
-        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "_foo", "_foo"},
-        {CodegenNamingLanguage::C, IdentifierRole::ConstantName, "_foo", "zX005FFOO"},
+        {Language::C, IdentifierRole::FieldName, "_foo", "_foo"},
+        {Language::C, IdentifierRole::ConstantName, "_foo", "zX005FFOO"},
         // A double underscore inside an identifier is ordinary in C and reserved in C++.
-        {CodegenNamingLanguage::C, IdentifierRole::FieldName, "foo__bar", "foo__bar"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "foo__bar", "foozX005FzX005Fbar"},
-        {CodegenNamingLanguage::Cpp, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
+        {Language::C, IdentifierRole::FieldName, "foo__bar", "foo__bar"},
+        {Language::Cpp, IdentifierRole::FieldName, "foo__bar", "foozX005FzX005Fbar"},
+        {Language::Cpp, IdentifierRole::FieldName, "_Foo", "zX005FFoo"},
         // No other language reserves a namespace of this kind.
-        {CodegenNamingLanguage::Go, IdentifierRole::FieldName, "__bar", "Bar"},
-        {CodegenNamingLanguage::Rust, IdentifierRole::FieldName, "__bar", "bar"},
-        {CodegenNamingLanguage::Python, IdentifierRole::FieldName, "__bar", "bar"},
+        {Language::Go, IdentifierRole::FieldName, "__bar", "Bar"},
+        {Language::Rust, IdentifierRole::FieldName, "__bar", "bar"},
+        {Language::Python, IdentifierRole::FieldName, "__bar", "bar"},
     }};
 
     bool ok = true;
@@ -474,7 +471,7 @@ bool runNamingScopeTests()
 
     // Three names that fold together in Go must come back as three identifiers, in declaration order.
     // The ordinal joins with nothing: a Go name carries no underscore wherever it came from.
-    NamingScope       goScope(CodegenNamingLanguage::Go);
+    NamingScope       goScope(Language::Go);
     const std::string first  = goScope.declare(IdentifierRole::FieldName, "fooBar");
     const std::string second = goScope.declare(IdentifierRole::FieldName, "foo_bar");
     const std::string third  = goScope.declare(IdentifierRole::FieldName, "FooBar");
@@ -495,7 +492,7 @@ bool runNamingScopeTests()
     // A name claimed by a particular scope is escaped rather than shadowing it. Names the backend
     // claims for *every* type are policy instead, and are covered by runNamingClaimedNameTests.
     static constexpr std::array<llvm::StringRef, 1> kReserved = {"Extra"};
-    NamingScope                                     reservedScope(CodegenNamingLanguage::Go, kReserved);
+    NamingScope                                     reservedScope(Language::Go, kReserved);
     if (reservedScope.declare(IdentifierRole::FieldName, "extra") != "Extra2")
     {
         std::cerr << "scope did not escape a field colliding with a scope-reserved name\n";
@@ -503,7 +500,7 @@ bool runNamingScopeTests()
     }
 
     // Two roles in one scope share the pool: a Go field and a Go method cannot both be `Value`.
-    NamingScope sharedScope(CodegenNamingLanguage::Go);
+    NamingScope sharedScope(Language::Go);
     if (sharedScope.declare(IdentifierRole::FieldName, "value") != "Value" ||
         sharedScope.declare(IdentifierRole::FunctionName, "value") != "Value2")
     {
@@ -517,59 +514,59 @@ bool runNamingScopeTests()
 
 bool runNamingPolicyTests()
 {
-    using llvmdsdl::CodegenNamingLanguage;
+    using llvmdsdl::Language;
     using llvmdsdl::codegenSanitizeIdentifier;
     using llvmdsdl::codegenToPascalCaseIdentifier;
     using llvmdsdl::codegenToSnakeCaseIdentifier;
     using llvmdsdl::codegenToUpperSnakeCaseIdentifier;
 
-    if (codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript, "class") != "class_")
+    if (codegenSanitizeIdentifier(Language::TypeScript, "class") != "class_")
     {
         std::cerr << "TypeScript keyword sanitization mismatch\n";
         return false;
     }
-    if (codegenSanitizeIdentifier(CodegenNamingLanguage::Python, "def") != "def_")
+    if (codegenSanitizeIdentifier(Language::Python, "def") != "def_")
     {
         std::cerr << "Python keyword sanitization mismatch\n";
         return false;
     }
-    if (codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, "self") != "self_")
+    if (codegenSanitizeIdentifier(Language::Rust, "self") != "self_")
     {
         std::cerr << "Rust keyword sanitization mismatch\n";
         return false;
     }
-    if (codegenSanitizeIdentifier(CodegenNamingLanguage::Go, "map") != "map_")
+    if (codegenSanitizeIdentifier(Language::Go, "map") != "map_")
     {
         std::cerr << "Go keyword sanitization mismatch\n";
         return false;
     }
-    if (codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, "namespace") != "namespace_")
+    if (codegenSanitizeIdentifier(Language::Cpp, "namespace") != "namespace_")
     {
         std::cerr << "C++ keyword sanitization mismatch\n";
         return false;
     }
-    if (codegenSanitizeIdentifier(CodegenNamingLanguage::C, "int") != "int_")
+    if (codegenSanitizeIdentifier(Language::C, "int") != "int_")
     {
         std::cerr << "C keyword sanitization mismatch\n";
         return false;
     }
 
-    if (codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, "FlightControlMode") != "flight_control_mode")
+    if (codegenToSnakeCaseIdentifier(Language::TypeScript, "FlightControlMode") != "flight_control_mode")
     {
         std::cerr << "snake_case projection mismatch\n";
         return false;
     }
-    if (codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, "9AxisIMU") != "_9axis_imu")
+    if (codegenToSnakeCaseIdentifier(Language::Python, "9AxisIMU") != "_9axis_imu")
     {
         std::cerr << "snake_case digit-prefix projection mismatch\n";
         return false;
     }
-    if (codegenToPascalCaseIdentifier(CodegenNamingLanguage::Python, "vslam_pose_update") != "VslamPoseUpdate")
+    if (codegenToPascalCaseIdentifier(Language::Python, "vslam_pose_update") != "VslamPoseUpdate")
     {
         std::cerr << "PascalCase projection mismatch\n";
         return false;
     }
-    if (codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, "OpticalFlowRate") != "OPTICAL_FLOW_RATE")
+    if (codegenToUpperSnakeCaseIdentifier(Language::Go, "OpticalFlowRate") != "OPTICAL_FLOW_RATE")
     {
         std::cerr << "UPPER_SNAKE_CASE projection mismatch\n";
         return false;

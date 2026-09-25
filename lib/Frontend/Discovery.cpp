@@ -18,6 +18,8 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
 
@@ -254,30 +256,8 @@ void discoverInRoot(const std::filesystem::path&       root,
 
 }  // namespace
 
-llvm::ArrayRef<OutputLanguage> allOutputLanguages()
-{
-    static const std::array<OutputLanguage, 6> kAll = {{{CodegenNamingLanguage::C, "c"},
-                                                        {CodegenNamingLanguage::Cpp, "cpp"},
-                                                        {CodegenNamingLanguage::Rust, "rust"},
-                                                        {CodegenNamingLanguage::Go, "go"},
-                                                        {CodegenNamingLanguage::TypeScript, "ts"},
-                                                        {CodegenNamingLanguage::Python, "python"}}};
-    return kAll;
-}
-
 namespace
 {
-
-/// @brief True when @p language puts every definition of a namespace in one scope.
-///
-/// C has a single global scope and carries the namespace in the identifier; C++ has a namespace per
-/// DSDL namespace; Go compiles one per package. Rust, TypeScript and Python give each definition
-/// *and version* its own module, so two of them may spell a type the same way without meeting.
-bool namespaceIsOneScope(const CodegenNamingLanguage language)
-{
-    return (language == CodegenNamingLanguage::C) || (language == CodegenNamingLanguage::Cpp) ||
-           (language == CodegenNamingLanguage::Go);
-}
 
 /// @brief What produced a generated type name, for the collision diagnostic.
 struct TypeNameOrigin final
@@ -305,7 +285,7 @@ std::string describeOrigin(const TypeNameOrigin& origin)
 }  // namespace
 
 void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> definitions,
-                                           const llvm::ArrayRef<OutputLanguage>   outputLanguages,
+                                           const llvm::ArrayRef<LanguageTraits>   outputLanguages,
                                            const TypeNameVersioning               versioning,
                                            DiagnosticEngine&                      diagnostics)
 {
@@ -319,7 +299,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
     // `Foo_Request.2.0` do meet, and a key carrying the version would miss it.
     std::map<std::string, TypeNameOrigin> emitted;
 
-    const auto record = [&](const OutputLanguage& language,
+    const auto record = [&](const LanguageTraits& language,
                             const std::string&    scope,
                             const std::string&    name,
                             const TypeNameOrigin& origin) {
@@ -342,7 +322,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
         const auto& info = parsed.info;
         for (const auto& language : outputLanguages)
         {
-            if (!namespaceIsOneScope(language.language))
+            if (!language.composition.definitionsShareNamespaceScope)
             {
                 continue;
             }
@@ -363,7 +343,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
                                                               versioning);
             // A deprecated definition's C++ struct is declared under a name of its own, which a
             // sibling may be called; that name is claimed beside the public one.
-            const bool declaredApart = (language.language == CodegenNamingLanguage::Cpp) && parsed.ast.isDeprecated();
+            const bool declaredApart = language.composition.deprecatedTypeDeclaredApart && parsed.ast.isDeprecated();
             record(language, scope, base, TypeNameOrigin{info.fullName, "", info.filePath});
             if (!parsed.ast.isService())
             {
@@ -395,7 +375,7 @@ void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition
 std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
                                                       const std::vector<std::string>&      lookupDirs,
                                                       DiagnosticEngine&                    diagnostics,
-                                                      const llvm::ArrayRef<OutputLanguage> outputLanguages)
+                                                      const llvm::ArrayRef<LanguageTraits> outputLanguages)
 {
     std::vector<DiscoveredDefinition> definitions;
 
@@ -467,9 +447,11 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         for (const auto& [role, what] : kOutputNames)
         {
             std::map<std::string, std::vector<std::string>> collidedWith;
-            for (const auto& [language, languageName] : outputLanguages)
+            for (const LanguageTraits& row : outputLanguages)
             {
-                std::string namespacePath;
+                const Language        language     = row.language;
+                const llvm::StringRef languageName = row.name;
+                std::string           namespacePath;
                 for (const auto& component : def.namespaceComponents)
                 {
                     const auto projected =

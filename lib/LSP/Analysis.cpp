@@ -27,6 +27,7 @@
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -647,7 +648,7 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
                             discoveryDiagnostics,
                             // The editor emits nothing, so it is the analysis case: surface a name
                             // collision for any backend rather than none.
-                            allOutputLanguages());
+                            allLanguageTraits());
 
     std::unordered_map<std::string, DocumentSnapshot> overlaysByPath;
     std::unordered_map<std::string, std::string>      overlayUriByPath;
@@ -1025,9 +1026,9 @@ std::string renderGeneratedNames(const std::vector<std::string>& orderedNames,
                                  const llvmdsdl::IdentifierRole  role)
 {
     std::vector<std::pair<std::string, std::vector<std::string>>> groups;
-    for (const auto& [language, languageName] : llvmdsdl::allOutputLanguages())
+    for (const llvmdsdl::LanguageTraits& row : llvmdsdl::allLanguageTraits())
     {
-        llvmdsdl::NamingScope scope(language);
+        llvmdsdl::NamingScope scope(row.language);
         for (const auto& name : orderedNames)
         {
             (void) scope.declare(role, name);
@@ -1038,11 +1039,11 @@ std::string renderGeneratedNames(const std::vector<std::string>& orderedNames,
             std::ranges::find_if(groups, [&identifier](const auto& entry) { return entry.first == identifier; });
         if (group == groups.end())
         {
-            groups.push_back({identifier, {languageName.str()}});
+            groups.push_back({identifier, {row.name.str()}});
         }
         else
         {
-            group->second.push_back(languageName.str());
+            group->second.push_back(row.name.str());
         }
     }
 

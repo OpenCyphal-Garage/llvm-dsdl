@@ -64,6 +64,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringExtras.h>
@@ -95,13 +96,12 @@ namespace
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return renderDefinitionFileStem(CodegenNamingLanguage::Cpp, info.shortName, info.majorVersion, info.minorVersion) +
-           ".hpp";
+    return renderDefinitionFileStem(Language::Cpp, info.shortName, info.majorVersion, info.minorVersion) + ".hpp";
 }
 
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    return renderIncludeGuard(CodegenNamingLanguage::Cpp,
+    return renderIncludeGuard(Language::Cpp,
                               "LLVMDSDL_CPP_",
                               info.fullName,
                               info.majorVersion,
@@ -111,17 +111,17 @@ std::string headerGuard(const DiscoveredDefinition& info)
 
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Cpp, value, makeConstantTypeInfo(type));
+    return renderConstantLiteral(Language::Cpp, value, makeConstantTypeInfo(type));
 }
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    return renderUnsignedStorageToken(StorageTokenLanguage::Cpp, bitLength);
+    return renderUnsignedStorageToken(Language::Cpp, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    return renderSignedStorageToken(StorageTokenLanguage::Cpp, bitLength);
+    return renderSignedStorageToken(Language::Cpp, bitLength);
 }
 
 std::string generatedCommentLine(llvm::StringRef detail)
@@ -146,7 +146,7 @@ std::string cppNamespacePath(const std::vector<std::string>& components)
         {
             out += "::";
         }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component);
+        out += codegenProjectIdentifier(Language::Cpp, IdentifierRole::NamespaceName, component);
     }
     return out;
 }
@@ -159,8 +159,7 @@ void emitNamespaceOpen(SourceWriter& w, const std::vector<std::string>& componen
     }
     for (const auto& component : components)
     {
-        w.line("namespace " +
-               codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component) + " {");
+        w.line("namespace " + codegenProjectIdentifier(Language::Cpp, IdentifierRole::NamespaceName, component) + " {");
     }
     w.blank();
 }
@@ -174,8 +173,7 @@ void emitNamespaceClose(SourceWriter& w, const std::vector<std::string>& compone
     w.blank();
     for (const auto& component : std::views::reverse(components))
     {
-        w.line("} // namespace " +
-               codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::NamespaceName, component));
+        w.line("} // namespace " + codegenProjectIdentifier(Language::Cpp, IdentifierRole::NamespaceName, component));
     }
 }
 
@@ -226,7 +224,7 @@ public:
 
     std::string cppTypeName(const DiscoveredDefinition& info) const
     {
-        return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+        return renderDefinitionTypeName(Language::Cpp,
                                         info.namespaceComponents,
                                         info.shortName,
                                         info.majorVersion,
@@ -248,7 +246,7 @@ public:
 
         // Nothing to count versions against, so assume the name is ambiguous and spell the version.
         // Guessing the other way would name a type that does not exist if there are two.
-        return renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+        return renderDefinitionTypeName(Language::Cpp,
                                         ref.namespaceComponents,
                                         ref.shortName,
                                         ref.majorVersion,
@@ -412,7 +410,7 @@ public:
             namespaceComponents = splitNamespace(fullName.substr(0, lastDot));
         }
         const std::string shortName    = (lastDot == std::string::npos) ? fullName : fullName.substr(lastDot + 1);
-        const std::string baseTypeName = renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
+        const std::string baseTypeName = renderDefinitionTypeName(Language::Cpp,
                                                                   namespaceComponents,
                                                                   shortName,
                                                                   static_cast<std::uint32_t>(schema.getMajor()),
@@ -426,14 +424,14 @@ public:
         {
             Plan              entry;
             const std::string section = plan.getSection().value_or(llvm::StringRef{}).str();
-            entry.typeName            = renderSectionTypeName(CodegenNamingLanguage::Cpp, baseTypeName, section);
+            entry.typeName            = renderSectionTypeName(Language::Cpp, baseTypeName, section);
             entry.declaredName        = renderDeclaredTypeName(entry.typeName, schema.getDeprecated());
             entry.unionTagBits        = plan.getUnionTagBits().value_or(0);
             entry.hostImage           = plan.getHostImage();
 
             // The struct declares its fields, then the array metadata, then the constants, into
             // one scope; the same declarations in the same order name the same identifiers.
-            NamingScope                   scope(CodegenNamingLanguage::Cpp);
+            NamingScope                   scope(Language::Cpp);
             std::vector<mlir::dsdl::IOOp> fields;
             if (!plan.getBody().empty())
             {
@@ -453,7 +451,7 @@ public:
                     for (const auto kind : {ArrayMetadataKind::Capacity, ArrayMetadataKind::IsVariableLength})
                     {
                         (void) scope.declare(IdentifierRole::MacroName,
-                                             arrayMetadataName(CodegenNamingLanguage::Cpp, io.getName(), kind));
+                                             arrayMetadataName(Language::Cpp, io.getName(), kind));
                     }
                 }
             }
@@ -576,7 +574,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(CodegenNamingLanguage::Cpp, callee);
+        return renderHelperBindingIdentifier(Language::Cpp, callee);
     }
 
     // Statements.
@@ -1386,12 +1384,8 @@ private:
         {
             qualified += ns + "::";
         }
-        return qualified + renderDefinitionTypeName(CodegenNamingLanguage::Cpp,
-                                                    namespaceComponents,
-                                                    shortName,
-                                                    major,
-                                                    minor,
-                                                    versioning_);
+        return qualified +
+               renderDefinitionTypeName(Language::Cpp, namespaceComponents, shortName, major, minor, versioning_);
     }
 
     /// @brief @p value converted for storage in a field of @p type.
@@ -1675,7 +1669,7 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
 
 void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
 {
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
+    const NamingScope constScope = makeSectionConstantScope(Language::Cpp, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -1683,8 +1677,7 @@ void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
             continue;
         }
         const auto named = [&](const ArrayMetadataKind kind) {
-            return constScope.get(IdentifierRole::MacroName,
-                                  arrayMetadataName(CodegenNamingLanguage::Cpp, field.name, kind));
+            return constScope.get(IdentifierRole::MacroName, arrayMetadataName(Language::Cpp, field.name, kind));
         };
         // A declared capacity is a fact of the schema, not of the target: on a 32-bit target a
         // capacity past 2^32 does not fit std::size_t.
@@ -1786,7 +1779,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                               PlanBodyLookups&                      lookups,
                               const bool                            accessorsOnly)
 {
-    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Cpp, section);
+    const NamingScope fieldScope = makeSectionFieldScope(Language::Cpp, section);
     // Every member's default is what the initialise body stores for it. A field the body does not
     // set has no default this backend may invent.
     llvm::StringMap<const MemberDefault*> defaults;
@@ -1931,8 +1924,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             }
             for (const auto& member : compositeFixedArrayMembers)
             {
-                const auto i =
-                    codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+                const auto i = codegenProjectIdentifier(Language::Cpp, IdentifierRole::LocalName, member + "_index");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
                 w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
@@ -1941,8 +1933,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             }
             for (const auto& member : compositeVariableArrayMembers)
             {
-                const auto i =
-                    codegenProjectIdentifier(CodegenNamingLanguage::Cpp, IdentifierRole::LocalName, member + "_index");
+                const auto i = codegenProjectIdentifier(Language::Cpp, IdentifierRole::LocalName, member + "_index");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
                 w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
@@ -1992,13 +1983,12 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     {
         w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) +
                "U;");
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
+        const NamingScope tagScope = makeSectionConstantScope(Language::Cpp, section, {});
         for (const auto& option : metadata.unionOptions)
         {
-            w.line(
-                "static constexpr " + unsignedStorageType(metadata.unionTagBits) + " " +
-                tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Cpp, option.name)) +
-                " = " + std::to_string(option.tag) + "U;");
+            w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits) + " " +
+                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Cpp, option.name)) + " = " +
+                   std::to_string(option.tag) + "U;");
         }
     }
 
@@ -2008,7 +1998,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
     // constant named FULL_NAME is escaped before it reaches the scope.
 
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Cpp, section, {});
+    NamingScope const constScope = makeSectionConstantScope(Language::Cpp, section, {});
 
     for (const auto& c : section.constants)
     {
@@ -2282,10 +2272,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     // not, and saying so here beats a cascade of redefinitions from inside generated code.
     if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
     {
-        const auto [anyVersion, thisVersion] = renderVersionSentinelMacros(CodegenNamingLanguage::Cpp,
-                                                                           def.info.fullName,
-                                                                           def.info.majorVersion,
-                                                                           def.info.minorVersion);
+        const auto [anyVersion, thisVersion] =
+            renderVersionSentinelMacros(Language::Cpp, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
         out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
         out << "#  error \"" << def.info.fullName
             << ": two versions of one type in one translation unit, but generated type names are "
@@ -2310,8 +2298,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     {
         // A single underscore: C++ reserves any identifier containing `__`, and these name C++
         // structs. The C emitter keeps `__` for its own service section types, where it is legal.
-        const auto requestType  = renderSectionTypeName(CodegenNamingLanguage::Cpp, baseTypeName, "request");
-        const auto responseType = renderSectionTypeName(CodegenNamingLanguage::Cpp, baseTypeName, "response");
+        const auto requestType  = renderSectionTypeName(Language::Cpp, baseTypeName, "request");
+        const auto responseType = renderSectionTypeName(Language::Cpp, baseTypeName, "response");
         // The service alias and its wrappers name the request struct, never the request's public
         // name, which is a deprecated alias when the service is.
         const auto        requestDeclared = renderDeclaredTypeName(requestType, def.request.deprecated);

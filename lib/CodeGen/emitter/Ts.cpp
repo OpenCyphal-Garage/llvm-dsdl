@@ -60,6 +60,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -89,7 +90,7 @@ namespace
 
 std::string tsConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::TypeScript, value, makeConstantTypeInfo(type));
+    return renderConstantLiteral(Language::TypeScript, value, makeConstantTypeInfo(type));
 }
 
 SourceWriter makeTsWriter(std::ostringstream& out)
@@ -141,13 +142,12 @@ public:
 
     static std::string namespacePath(const DiscoveredDefinition& info)
     {
-        return renderNamespaceRelativePath(CodegenNamingLanguage::TypeScript, info.namespaceComponents)
-            .generic_string();
+        return renderNamespaceRelativePath(Language::TypeScript, info.namespaceComponents).generic_string();
     }
 
     std::string typeName(const DiscoveredDefinition& info) const
     {
-        return renderDefinitionTypeName(CodegenNamingLanguage::TypeScript,
+        return renderDefinitionTypeName(Language::TypeScript,
                                         info.namespaceComponents,
                                         info.shortName,
                                         info.majorVersion,
@@ -198,15 +198,12 @@ public:
 
     static std::string fileStem(const DiscoveredDefinition& info)
     {
-        return renderVersionedFileStem(CodegenNamingLanguage::TypeScript,
-                                       info.shortName,
-                                       info.majorVersion,
-                                       info.minorVersion);
+        return renderVersionedFileStem(Language::TypeScript, info.shortName, info.majorVersion, info.minorVersion);
     }
 
     static std::filesystem::path relativeFilePath(const DiscoveredDefinition& info)
     {
-        return renderRelativeTypeFilePath(CodegenNamingLanguage::TypeScript, info, "ts");
+        return renderRelativeTypeFilePath(Language::TypeScript, info, "ts");
     }
 
     std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
@@ -216,7 +213,7 @@ public:
             return relativeFilePath(def->info);
         }
 
-        return renderRelativeTypeFilePath(CodegenNamingLanguage::TypeScript, ref, "ts");
+        return renderRelativeTypeFilePath(Language::TypeScript, ref, "ts");
     }
 
 private:
@@ -308,7 +305,7 @@ std::string moduleAliasFromPath(const std::string& modulePath)
     }
     // Not a role: the alias comes from --ts-module, so it is a token this generator was handed
     // rather than a DSDL name, and must not pick up a role's case projection.
-    return codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript, alias.empty() ? "module" : alias);
+    return codegenSanitizeIdentifier(Language::TypeScript, alias.empty() ? "module" : alias);
 }
 
 /// @brief Declares the tag value that selects each of a union's options.
@@ -321,15 +318,13 @@ void emitUnionOptionTags(SourceWriter&          w,
     {
         return;
     }
-    const auto prefixupper =
-        codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
-    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section, prefixupper);
+    const auto prefixupper     = codegenProjectIdentifier(Language::TypeScript, IdentifierRole::ConstantName, prefix);
+    const NamingScope tagScope = makeSectionConstantScope(Language::TypeScript, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
         w.line("export const " + prefixupper + "_" +
-               tagScope.get(IdentifierRole::MacroName,
-                            unionOptionTagName(CodegenNamingLanguage::TypeScript, option.name)) +
-               " = " + std::to_string(option.tag) + ";");
+               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::TypeScript, option.name)) + " = " +
+               std::to_string(option.tag) + ";");
     }
 }
 
@@ -341,9 +336,8 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     {
         constNames.push_back(constant.name);
     }
-    const auto prefixupper =
-        codegenProjectIdentifier(CodegenNamingLanguage::TypeScript, IdentifierRole::ConstantName, prefix);
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::TypeScript, section, prefixupper);
+    const auto prefixupper       = codegenProjectIdentifier(Language::TypeScript, IdentifierRole::ConstantName, prefix);
+    NamingScope const constScope = makeSectionConstantScope(Language::TypeScript, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocTs(w, constant.doc);
@@ -367,7 +361,7 @@ NamingScope makeTsFieldIdents(const SemanticSection& section)
             names.push_back(field.name);
         }
     }
-    return makeSectionFieldScope(CodegenNamingLanguage::TypeScript, section);
+    return makeSectionFieldScope(Language::TypeScript, section);
 }
 
 void emitDeprecationJsDocTs(SourceWriter&       w,
@@ -543,7 +537,7 @@ public:
     {
         // A helper is a function of the definition's own module, which is not exported, so the
         // schema component of the lowered symbol names what the module already says.
-        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::TypeScript, module, schema, helperScope_);
+        helperNames_ = renderSchemaHelperNames(Language::TypeScript, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -552,7 +546,7 @@ public:
         {
             Plan entry;
             entry.isUnion = plan.getIsUnion();
-            NamingScope                   scope(CodegenNamingLanguage::TypeScript);
+            NamingScope                   scope(Language::TypeScript);
             std::vector<mlir::dsdl::IOOp> fields;
             if (!plan.getBody().empty())
             {
@@ -1661,7 +1655,7 @@ private:
 
     /// @brief The scope the module's helper names are declared into, which keeps two that project
     ///        onto one name apart.
-    NamingScope helperScope_{CodegenNamingLanguage::TypeScript};
+    NamingScope helperScope_{Language::TypeScript};
 
     /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
     llvm::StringMap<std::string> helperNames_;
@@ -2107,8 +2101,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     const auto baseType = ctx.typeName(def.info);
-    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::TypeScript, baseType, "request");
-    const auto respType = renderSectionTypeName(CodegenNamingLanguage::TypeScript, baseType, "response");
+    const auto reqType  = renderSectionTypeName(Language::TypeScript, baseType, "request");
+    const auto respType = renderSectionTypeName(Language::TypeScript, baseType, "response");
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
                          reqType);

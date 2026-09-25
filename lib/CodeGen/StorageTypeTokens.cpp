@@ -17,6 +17,7 @@
 
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 
+#include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/ScalarStorage.h"
 #include <cstdint>
 #include <string>
@@ -26,11 +27,11 @@ namespace llvmdsdl
 namespace
 {
 
-std::string renderToken(const StorageTokenLanguage language, const std::uint32_t storageBits, const bool signedToken)
+std::string renderToken(const Language language, const std::uint32_t storageBits, const bool signedToken)
 {
     switch (language)
     {
-    case StorageTokenLanguage::C:
+    case Language::C:
         if (signedToken)
         {
             switch (storageBits)
@@ -57,7 +58,7 @@ std::string renderToken(const StorageTokenLanguage language, const std::uint32_t
             return "uint64_t";
         }
 
-    case StorageTokenLanguage::Cpp:
+    case Language::Cpp:
         if (signedToken)
         {
             switch (storageBits)
@@ -84,7 +85,7 @@ std::string renderToken(const StorageTokenLanguage language, const std::uint32_t
             return "std::uint64_t";
         }
 
-    case StorageTokenLanguage::Rust:
+    case Language::Rust:
         if (signedToken)
         {
             switch (storageBits)
@@ -111,7 +112,7 @@ std::string renderToken(const StorageTokenLanguage language, const std::uint32_t
             return "u64";
         }
 
-    case StorageTokenLanguage::Go:
+    case Language::Go:
         if (signedToken)
         {
             switch (storageBits)
@@ -137,18 +138,23 @@ std::string renderToken(const StorageTokenLanguage language, const std::uint32_t
         default:
             return "uint64";
         }
+
+    case Language::TypeScript:
+    case Language::Python:
+        // Neither declares a fixed-width storage type, and no emitter of either asks for one.
+        break;
     }
     return signedToken ? "int64_t" : "uint64_t";
 }
 
 }  // namespace
 
-std::string renderUnsignedStorageToken(const StorageTokenLanguage language, const std::uint32_t bitLength)
+std::string renderUnsignedStorageToken(const Language language, const std::uint32_t bitLength)
 {
     return renderToken(language, scalarStorageBits(bitLength), /*signedToken=*/false);
 }
 
-std::string renderSignedStorageToken(const StorageTokenLanguage language, const std::uint32_t bitLength)
+std::string renderSignedStorageToken(const Language language, const std::uint32_t bitLength)
 {
     return renderToken(language, scalarStorageBits(bitLength), /*signedToken=*/true);
 }

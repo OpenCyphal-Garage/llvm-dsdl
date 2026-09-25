@@ -53,9 +53,7 @@ enum class ArrayMetadataKind : std::uint8_t
 /// @param[in] fieldName DSDL field name.
 /// @param[in] kind Which constant.
 /// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
-[[nodiscard]] std::string arrayMetadataName(CodegenNamingLanguage language,
-                                            llvm::StringRef       fieldName,
-                                            ArrayMetadataKind     kind);
+[[nodiscard]] std::string arrayMetadataName(Language language, llvm::StringRef fieldName, ArrayMetadataKind kind);
 
 /// @brief The name a union option's tag constant is declared under in a section scope.
 ///
@@ -70,7 +68,7 @@ enum class ArrayMetadataKind : std::uint8_t
 /// @param[in] language Naming language.
 /// @param[in] fieldName DSDL name of the option.
 /// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
-[[nodiscard]] std::string unionOptionTagName(CodegenNamingLanguage language, llvm::StringRef fieldName);
+[[nodiscard]] std::string unionOptionTagName(Language language, llvm::StringRef fieldName);
 
 /// @brief Builds the field-name scope for @p section in @p language.
 ///
@@ -80,7 +78,7 @@ enum class ArrayMetadataKind : std::uint8_t
 /// @param[in] language Naming language.
 /// @param[in] section The section whose fields are being named.
 /// @return A scope with every field declared.
-[[nodiscard]] NamingScope makeSectionFieldScope(CodegenNamingLanguage language, const SemanticSection& section);
+[[nodiscard]] NamingScope makeSectionFieldScope(Language language, const SemanticSection& section);
 
 /// @brief Builds the constant-name scope for @p section in @p language.
 ///
@@ -142,7 +140,7 @@ enum class ArrayMetadataKind : std::uint8_t
 /// @return The scope.
 [[nodiscard]] NamingScope makeGoConstantScope(const SemanticSection& section, llvm::StringRef typeName);
 
-[[nodiscard]] NamingScope makeSectionConstantScope(CodegenNamingLanguage  language,
+[[nodiscard]] NamingScope makeSectionConstantScope(Language               language,
                                                    const SemanticSection& section,
                                                    llvm::StringRef        typeConstantPrefix);
 

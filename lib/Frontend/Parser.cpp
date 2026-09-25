@@ -23,6 +23,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
@@ -1520,7 +1521,7 @@ std::optional<BinaryOp> Parser::toBinaryOp(TokenKind kind)
 llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
                                            const std::vector<std::string>&      lookupDirs,
                                            DiagnosticEngine&                    diagnostics,
-                                           const llvm::ArrayRef<OutputLanguage> outputLanguages,
+                                           const llvm::ArrayRef<LanguageTraits> outputLanguages,
                                            const TypeNameVersioning             typeNameVersioning)
 {
     ASTModule module;

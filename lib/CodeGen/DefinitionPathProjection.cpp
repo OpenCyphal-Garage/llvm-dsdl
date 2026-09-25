@@ -21,6 +21,7 @@
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/Language.h"
 #include <cstdint>
 #include <filesystem>
 #include <llvm/ADT/StringRef.h>
@@ -45,7 +46,7 @@ std::string normalizedExtension(const llvm::StringRef extension)
     return "." + extension.str();
 }
 
-std::filesystem::path renderRelativeTypeFilePathImpl(const CodegenNamingLanguage     language,
+std::filesystem::path renderRelativeTypeFilePathImpl(const Language                  language,
                                                      const std::vector<std::string>& namespaceComponents,
                                                      const llvm::StringRef           shortName,
                                                      const std::uint32_t             majorVersion,
@@ -59,10 +60,10 @@ std::filesystem::path renderRelativeTypeFilePathImpl(const CodegenNamingLanguage
 
 }  // namespace
 
-std::string renderVersionedTypeName(const CodegenNamingLanguage language,
-                                    const llvm::StringRef       shortName,
-                                    const std::uint32_t         majorVersion,
-                                    const std::uint32_t         minorVersion)
+std::string renderVersionedTypeName(const Language        language,
+                                    const llvm::StringRef shortName,
+                                    const std::uint32_t   majorVersion,
+                                    const std::uint32_t   minorVersion)
 {
     // Composed the way the emitters compose it rather than by appending the version regardless:
     // whether the version belongs in a type name is the naming policy's answer, and Rust's is no,
@@ -70,15 +71,15 @@ std::string renderVersionedTypeName(const CodegenNamingLanguage language,
     return renderDefinitionTypeName(language, {}, shortName, majorVersion, minorVersion, TypeNameVersioning::Versioned);
 }
 
-std::string renderVersionedFileStem(const CodegenNamingLanguage language,
-                                    const llvm::StringRef       shortName,
-                                    const std::uint32_t         majorVersion,
-                                    const std::uint32_t         minorVersion)
+std::string renderVersionedFileStem(const Language        language,
+                                    const llvm::StringRef shortName,
+                                    const std::uint32_t   majorVersion,
+                                    const std::uint32_t   minorVersion)
 {
     return renderDefinitionFileStem(language, shortName, majorVersion, minorVersion);
 }
 
-std::filesystem::path renderNamespaceRelativePath(const CodegenNamingLanguage     language,
+std::filesystem::path renderNamespaceRelativePath(const Language                  language,
                                                   const std::vector<std::string>& namespaceComponents)
 {
     std::filesystem::path path;
@@ -89,7 +90,7 @@ std::filesystem::path renderNamespaceRelativePath(const CodegenNamingLanguage   
     return path;
 }
 
-std::filesystem::path renderRelativeTypeFilePath(const CodegenNamingLanguage language,
+std::filesystem::path renderRelativeTypeFilePath(const Language              language,
                                                  const DiscoveredDefinition& info,
                                                  const llvm::StringRef       extension)
 {
@@ -101,9 +102,9 @@ std::filesystem::path renderRelativeTypeFilePath(const CodegenNamingLanguage lan
                                           extension);
 }
 
-std::filesystem::path renderRelativeTypeFilePath(const CodegenNamingLanguage language,
-                                                 const SemanticTypeRef&      ref,
-                                                 const llvm::StringRef       extension)
+std::filesystem::path renderRelativeTypeFilePath(const Language         language,
+                                                 const SemanticTypeRef& ref,
+                                                 const llvm::StringRef  extension)
 {
     return renderRelativeTypeFilePathImpl(language,
                                           ref.namespaceComponents,

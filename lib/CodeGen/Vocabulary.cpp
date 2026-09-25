@@ -8,6 +8,8 @@
 #include "llvmdsdl/CodeGen/Vocabulary.h"
 
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -68,12 +70,12 @@ constexpr Concept         kCppBindable[]  = {Concept::Span};
 // In Rust, Go, TypeScript and Python a byte view is the language's own slice, so span is fixed
 // there; C has no type for it beyond a pointer and a size.
 constexpr LanguageSpec kLanguages[] = {
-    {"c", {}, {}},
-    {"cpp", kCppProfiles, kCppBindable},
-    {"rust", kRustProfiles, {}},
-    {"go", {}, {}},
-    {"ts", {}, {}},
-    {"python", {}, {}},
+    {Language::C, {}, {}},
+    {Language::Cpp, kCppProfiles, kCppBindable},
+    {Language::Rust, kRustProfiles, {}},
+    {Language::Go, {}, {}},
+    {Language::TypeScript, {}, {}},
+    {Language::Python, {}, {}},
 };
 
 std::string joined(const llvm::ArrayRef<llvm::StringRef> names)
@@ -226,9 +228,14 @@ llvm::ArrayRef<LanguageSpec> languages()
 
 const LanguageSpec* languageNamed(const llvm::StringRef name)
 {
+    const LanguageTraits* const traits = languageTraitsNamed(name);
+    if (traits == nullptr)
+    {
+        return nullptr;
+    }
     for (const LanguageSpec& entry : kLanguages)
     {
-        if (entry.name == name)
+        if (entry.language == traits->language)
         {
             return &entry;
         }
@@ -399,13 +406,14 @@ llvm::Expected<File> parseFile(const llvm::StringRef text, const llvm::StringRef
     {
         return fileError(path, "unknown language '" + raw.language + "'");
     }
+    const llvm::StringRef languageName = languageTraits(language->language).name;
     for (const std::string& profile : raw.profiles)
     {
         if (!llvm::is_contained(language->profiles, llvm::StringRef(profile)))
         {
             return fileError(path,
-                             "'" + profile + "' is not a " + language->name + " profile" +
-                                 (language->profiles.empty() ? llvm::Twine("; ") + language->name + " has none"
+                             "'" + profile + "' is not a " + languageName + " profile" +
+                                 (language->profiles.empty() ? llvm::Twine("; ") + languageName + " has none"
                                                              : "; the profiles are: " + joined(language->profiles)));
         }
         if (llvm::count(raw.profiles, profile) > 1)
@@ -431,7 +439,7 @@ llvm::Expected<File> parseFile(const llvm::StringRef text, const llvm::StringRef
         }
         if (!llvm::is_contained(language->bindable, *role))
         {
-            return fileError(path, name + " is fixed in " + language->name + " and cannot be bound");
+            return fileError(path, name + " is fixed in " + languageName + " and cannot be bound");
         }
         auto binding = validateBinding(rawBinding, spec(*role), path);
         if (!binding)
@@ -565,7 +573,7 @@ llvm::Expected<Vocabulary> Set::resolve(const llvm::StringRef profile) const
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "the %s %s profile has no binding for %s: pass --vocabulary <file> with one",
-                                           language_->name.str().c_str(),
+                                           languageTraits(language_->language).name.str().c_str(),
                                            profile.str().c_str(),
                                            spec(role).name.str().c_str());
         }

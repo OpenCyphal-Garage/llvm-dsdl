@@ -1,0 +1,26 @@
+{
+  "C": {
+    "body": 42,
+    "declaration": 118
+  },
+  "Cpp": {
+    "body": 60,
+    "declaration": 106
+  },
+  "Rust": {
+    "body": 69,
+    "declaration": 120
+  },
+  "Go": {
+    "body": 73,
+    "declaration": 79
+  },
+  "Ts": {
+    "body": 61,
+    "declaration": 412
+  },
+  "Python": {
+    "body": 7,
+    "declaration": 83
+  }
+}

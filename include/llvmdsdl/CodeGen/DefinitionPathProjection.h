@@ -34,10 +34,10 @@ namespace llvmdsdl
 /// @param[in] majorVersion Major version component.
 /// @param[in] minorVersion Minor version component.
 /// @return Language-projected versioned type name.
-std::string renderVersionedTypeName(CodegenNamingLanguage language,
-                                    llvm::StringRef       shortName,
-                                    std::uint32_t         majorVersion,
-                                    std::uint32_t         minorVersion);
+std::string renderVersionedTypeName(Language        language,
+                                    llvm::StringRef shortName,
+                                    std::uint32_t   majorVersion,
+                                    std::uint32_t   minorVersion);
 
 /// @brief Renders a versioned file stem from semantic name parts.
 /// @param[in] language Naming policy language.
@@ -45,16 +45,16 @@ std::string renderVersionedTypeName(CodegenNamingLanguage language,
 /// @param[in] majorVersion Major version component.
 /// @param[in] minorVersion Minor version component.
 /// @return Language-projected versioned file stem.
-std::string renderVersionedFileStem(CodegenNamingLanguage language,
-                                    llvm::StringRef       shortName,
-                                    std::uint32_t         majorVersion,
-                                    std::uint32_t         minorVersion);
+std::string renderVersionedFileStem(Language        language,
+                                    llvm::StringRef shortName,
+                                    std::uint32_t   majorVersion,
+                                    std::uint32_t   minorVersion);
 
 /// @brief Renders namespace components as a relative path.
 /// @param[in] language Naming policy language.
 /// @param[in] namespaceComponents Semantic namespace components.
 /// @return Relative namespace path.
-std::filesystem::path renderNamespaceRelativePath(CodegenNamingLanguage           language,
+std::filesystem::path renderNamespaceRelativePath(Language                        language,
                                                   const std::vector<std::string>& namespaceComponents);
 
 /// @brief Renders relative file path for one discovered definition.
@@ -62,7 +62,7 @@ std::filesystem::path renderNamespaceRelativePath(CodegenNamingLanguage         
 /// @param[in] info Discovered definition metadata.
 /// @param[in] extension File extension, with or without leading dot.
 /// @return Relative file path.
-std::filesystem::path renderRelativeTypeFilePath(CodegenNamingLanguage       language,
+std::filesystem::path renderRelativeTypeFilePath(Language                    language,
                                                  const DiscoveredDefinition& info,
                                                  llvm::StringRef             extension);
 
@@ -71,7 +71,7 @@ std::filesystem::path renderRelativeTypeFilePath(CodegenNamingLanguage       lan
 /// @param[in] ref Referenced type metadata.
 /// @param[in] extension File extension, with or without leading dot.
 /// @return Relative file path.
-std::filesystem::path renderRelativeTypeFilePath(CodegenNamingLanguage  language,
+std::filesystem::path renderRelativeTypeFilePath(Language               language,
                                                  const SemanticTypeRef& ref,
                                                  llvm::StringRef        extension);
 

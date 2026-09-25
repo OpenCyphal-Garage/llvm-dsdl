@@ -20,6 +20,8 @@
 #include <llvm/ADT/ArrayRef.h>
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include <string>
 
@@ -31,12 +33,14 @@ namespace
 
 /// @brief True when @p language declares a section's fields and constants into one region.
 ///
-/// C++ puts both in the struct body. Go, Rust, TypeScript and Python declare constants outside the
-/// type, and C emits them as macros carrying the type name as a prefix, so in those five a field and
-/// a constant that project onto one identifier are two different identifiers.
-bool constantsShareTheFieldScope(const CodegenNamingLanguage language)
+/// That is where the output declares a type's constants in the type's own scope and the language
+/// makes those constants and the fields one namespace. C++ does both. Rust declares its constants
+/// in the type's scope as associated items, which are apart from the fields; the others declare
+/// them outside the type, and C emits them as macros carrying the type name as a prefix.
+bool constantsShareTheFieldScope(const Language language)
 {
-    return language == CodegenNamingLanguage::Cpp;
+    const LanguageTraits& traits = languageTraits(language);
+    return (traits.composition.constants == ConstantsScope::Type) && traits.classification.constantsShareFieldNamespace;
 }
 
 /// @brief Declares @p section's non-padding fields into @p scope, in DSDL order.
@@ -62,15 +66,15 @@ void declareConstants(NamingScope& scope, const SemanticSection& section)
 
 /// @brief True when @p language emits the per-array-field metadata constants.
 ///
-/// Only C and C++ do. The other four expose an array's capacity through the container it is declared
-/// as, so they have no such constant and nothing to allocate a name for.
-bool emitsArrayMetadata(const CodegenNamingLanguage language)
+/// A language that exposes an array's capacity through the container it is declared as has no such
+/// constant and nothing to allocate a name for.
+bool emitsArrayMetadata(const Language language)
 {
-    return language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
+    return languageTraits(language).composition.arrayMetadataConstants;
 }
 
 /// @brief Declares @p section's array-metadata constants into @p scope, in DSDL field order.
-void declareArrayMetadata(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
+void declareArrayMetadata(NamingScope& scope, const SemanticSection& section, const Language language)
 {
     for (const auto& field : section.fields)
     {
@@ -86,7 +90,7 @@ void declareArrayMetadata(NamingScope& scope, const SemanticSection& section, co
 }
 
 /// @brief Declares @p section's union option tag constants into @p scope, in tag order.
-void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
+void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, const Language language)
 {
     if (!section.isUnion)
     {
@@ -101,11 +105,12 @@ void declareUnionOptionTags(NamingScope& scope, const SemanticSection& section, 
     }
 }
 
-/// @brief The names a Python or TypeScript module declares for the definition itself.
+/// @brief The names a module declares for the definition itself, where a section's constants are
+///        the module's too.
 ///
 /// They sit in the module's scope, which is also where a section's constants are declared, so a
 /// type whose constant prefix is `DSDL` or `LLVMDSDL` can reach them.
-llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage language)
+llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const Language language)
 {
     static constexpr std::array<llvm::StringRef, 13> kNames = {"LLVMDSDL_GENERATOR_VERSION",
                                                                "DSDL_FULL_NAME",
@@ -121,8 +126,7 @@ llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage 
                                                                "DSDL_RESPONSE_WIRE_FLAT",
                                                                "DSDL_RESPONSE_WIRE_FLAT_REASON"};
     static constexpr std::array<llvm::StringRef, 0>  kNone  = {};
-    const bool                                       moduleScoped =
-        (language == CodegenNamingLanguage::Python) || (language == CodegenNamingLanguage::TypeScript);
+    const bool moduleScoped = languageTraits(language).composition.constants == ConstantsScope::Module;
     return moduleScoped ? llvm::ArrayRef<llvm::StringRef>(kNames) : llvm::ArrayRef<llvm::StringRef>(kNone);
 }
 
@@ -137,8 +141,7 @@ llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const CodegenNamingLanguage 
 /// These are reserved rather than declared: the scope treats a second `declare` of one source name
 /// as the same entry, which is right for a caller that walks a section twice and wrong here, where
 /// the module owns the name and the DSDL constant is the one that has to move.
-std::vector<std::string> reachableModuleMetadata(const CodegenNamingLanguage language,
-                                                 const llvm::StringRef       typeConstantPrefix)
+std::vector<std::string> reachableModuleMetadata(const Language language, const llvm::StringRef typeConstantPrefix)
 {
     std::vector<std::string> out;
     if (typeConstantPrefix.empty())
@@ -174,7 +177,7 @@ std::vector<std::string> reachableModuleMetadata(const CodegenNamingLanguage lan
 /// are next; DSDL constants are last; of the four, only they can be renamed without changing the
 /// wire format or breaking a field access. The module's own names sit outside this order: they are
 /// reserved before the scope is opened, so nothing declared here can take one.
-void declareConstantRegion(NamingScope& scope, const SemanticSection& section, const CodegenNamingLanguage language)
+void declareConstantRegion(NamingScope& scope, const SemanticSection& section, const Language language)
 {
     if (emitsArrayMetadata(language))
     {
@@ -212,7 +215,7 @@ std::string goConstantName(const std::vector<llvm::StringRef>& parts)
             out = part.str();
             continue;
         }
-        std::string projected = codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, part);
+        std::string projected = codegenProjectIdentifier(Language::Go, IdentifierRole::ConstantName, part);
         // A part that begins with a digit is escaped with a leading underscore, which is for the
         // start of an identifier. Anywhere else the digit already follows a letter.
         if (!projected.empty() && (projected.front() == '_'))
@@ -262,7 +265,7 @@ std::string goGeneratedConstantKey(const llvm::StringRef typeName, const llvm::S
 /// @return The scope.
 NamingScope makeGoConstantScope(const SemanticSection& section, const llvm::StringRef typeName)
 {
-    NamingScope scope(CodegenNamingLanguage::Go);
+    NamingScope scope(Language::Go);
     const auto  claim = [&scope](const std::vector<llvm::StringRef>& parts) {
         (void) scope.declare(IdentifierRole::ConstantName, goConstantKey(parts), goConstantName(parts));
     };
@@ -286,20 +289,18 @@ NamingScope makeGoConstantScope(const SemanticSection& section, const llvm::Stri
     return scope;
 }
 
-std::string arrayMetadataName(const CodegenNamingLanguage language,
-                              const llvm::StringRef       fieldName,
-                              const ArrayMetadataKind     kind)
+std::string arrayMetadataName(const Language language, const llvm::StringRef fieldName, const ArrayMetadataKind kind)
 {
     return fieldName.str() + ((kind == ArrayMetadataKind::Capacity) ? "_ARRAY_CAPACITY" : "_ARRAY_IS_VARIABLE_LENGTH") +
-           ((language == CodegenNamingLanguage::C) ? "_" : "");
+           languageTraits(language).composition.generatedConstantSuffix.str();
 }
 
-std::string unionOptionTagName(const CodegenNamingLanguage language, const llvm::StringRef fieldName)
+std::string unionOptionTagName(const Language language, const llvm::StringRef fieldName)
 {
-    return fieldName.str() + "_OPTION_TAG" + ((language == CodegenNamingLanguage::C) ? "_" : "");
+    return fieldName.str() + "_OPTION_TAG" + languageTraits(language).composition.generatedConstantSuffix.str();
 }
 
-NamingScope makeSectionFieldScope(const CodegenNamingLanguage language, const SemanticSection& section)
+NamingScope makeSectionFieldScope(const Language language, const SemanticSection& section)
 {
     NamingScope scope(language);
     declareFields(scope, section);
@@ -310,9 +311,9 @@ NamingScope makeSectionFieldScope(const CodegenNamingLanguage language, const Se
     return scope;
 }
 
-NamingScope makeSectionConstantScope(const CodegenNamingLanguage language,
-                                     const SemanticSection&      section,
-                                     const llvm::StringRef       typeConstantPrefix)
+NamingScope makeSectionConstantScope(const Language         language,
+                                     const SemanticSection& section,
+                                     const llvm::StringRef  typeConstantPrefix)
 {
     if (constantsShareTheFieldScope(language))
     {

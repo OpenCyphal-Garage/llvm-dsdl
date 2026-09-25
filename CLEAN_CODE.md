@@ -83,16 +83,17 @@ happens when a name is decided away from the references to it.
 ## Language classification
 
 The classification is the input the surface layer reads. One row per language, stating what the
-language can express, indexed by the questions a declaration's shape depends on.
+language can express, indexed by the questions a declaration's shape depends on. The rows are
+`LanguageTraits` in `llvmdsdl/Support/LanguageTraits.h`, and `LanguageTraitsTests` pins each.
 
-| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants |
-|---|---|---|---|---|---|---|
-| C | none | no | no | `static` | status code | macros in the enclosing scope |
-| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class |
-| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` |
-| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed |
-| Python | class | yes | yes | `_` prefix | exception | class attribute |
-| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` |
+| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | constants and fields one namespace | reserved by underscores |
+|---|---|---|---|---|---|---|---|---|
+| C | none | no | no | `static` | status code | macros in the enclosing scope | no | leading `__`, `_X` |
+| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | yes | those, and `__` anywhere |
+| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | no | none |
+| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none |
+| Python | class | yes | yes | `_` prefix | exception | class attribute | yes | none |
+| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | no | none |
 
 A row is a claim about the language, not a preference, which is what makes it testable and what
 keeps it out of the emitters. Two consequences follow directly and are worth stating because they
@@ -152,10 +153,10 @@ which declarations are public, and where a body is attached. The spelling holds:
 opens a namespace, writes a field, declares a constant, spells a signature, marks a declaration
 internal, and returns an error.
 
-This is where the string emission falls. The six emitters hold 1,077 emission sites between them,
-782 of which are outside the `BodySpelling` subclass — the declaration half — and 358 of those are
-in `Ts.cpp` alone. A signature is assembled by concatenation at every entry point, for every
-profile, in every language:
+This is where the string emission falls. `tools/count_emission_sites.py` counts the calls that write
+generated text. When phase 2 took the count the six emitters held 1,230, 918 of them outside the
+`BodySpelling` subclass — the declaration half — and 412 of those in `Ts.cpp` alone. A signature is assembled by
+concatenation at every entry point, for every profile, in every language:
 
 ```cpp
 w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const " : "_deserialize_(") +
@@ -164,7 +165,9 @@ w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const "
 ```
 
 A signature in the tree is a declaration with typed parameters and a return; the spelling writes
-one parameter list. Those 782 sites are the measure the mechanism phases are gated on.
+one parameter list. `llvmdsdl-emission-sites` holds each emitter's two counts to
+`test/integration/emission-sites.json`, so a count rises only by a retake that says why, and the
+declaration half is the measure the renderer is gated on.
 
 This is not licence to add a template engine. A template is a second statement of the shape, in a
 language the compiler cannot check, and it is what every code generator reaches for — nnvg included,
@@ -327,8 +330,8 @@ null, and a Rust `&self` or `&mut [u8]` cannot be null, so the guard survived as
 dead `if`, and an error path nothing can reach.
 
 That was a defect of the lowering rather than of any backend, and the fix went where every backend
-inherits it. `dsdl-fold-null-guards` runs after `build-dsdl-plan-bodies` under a `TargetNullability`
-the driver derives from the target: Rust keeps neither test, Go, TypeScript and Python keep the one
+inherits it. `dsdl-fold-null-guards` runs after `build-dsdl-plan-bodies` under the target's
+`TargetNullability`, which its row states: Rust keeps neither test, Go, TypeScript and Python keep the one
 on the object a caller may omit, and C and C++ keep both. It canonicalises the bodies it changed
 rather than waiting for `--optimize-lowered-serdes`, which is off unless a caller asks for it, so a
 guard folded to a constant is never left where a reader would find it. The C and C++ output is
@@ -452,13 +455,36 @@ TypeScript and Python cannot be handed a null buffer, and their output is unchan
 The `ArrayBound` that remains, in the runtime's bit copy, assumes a whole byte and a partial one in
 a copy of at most eight bits, which cannot both hold.
 
-**2 — The classification.** The capability table as data, one row per language, and
-`LanguageProfile` reading it. Everything [Discipline](#discipline) found deciding a capability by a
-language's name moves onto it: the pipeline takes a profile rather than positional booleans, and
-the driver, the naming code and the vocabulary read the row. One enumeration of the languages
-remains. No generated byte changes. Gate: unit tests pin every row; a check fails on a language
-compared by name outside the classification; the byte-diff oracle over all seven targets; and the
-emission-site count, taken from here on.
+**2 — The classification.** *Landed: every decision on a language reads its row, and a check refuses
+one that does not.*
+
+`llvmdsdl::Language` is the one enumeration of the languages; the three the naming code, the literal
+renderer and the storage tokens each kept are gone. `LanguageTraits` holds a row per language in
+three parts: the classification above; `BodyInterface`, what the generated interface hands a body,
+which the pipeline takes in place of three positional arguments and which the lowering reads without
+meeting a language; and `Composition`, how the output composes its declarations today. The name is
+not `LanguageProfile`, which this plan used before: a profile here is `std`, `pmr` or `autosar`, and
+stays with the vocabulary.
+
+Everything [Discipline](#discipline) found deciding a capability by a language's name reads the row
+instead: the driver's three capability blocks, the section joiner, where a type's constants go,
+which names a module reserves, the generated constants' `_`, Python's helper prefix, C++'s reserved
+underscores, `Discovery`'s scope and deprecation checks, and the vocabulary's language list.
+`DefinitionNamePolicy` became part of the row, losing a field no row had set. The driver resolves
+a `--target-language` value to its row through the CLI table, and dispatches to a backend by
+switching on the language.
+
+The composition is where the output departs from the classification, and `LanguageTraitsTests`
+names the departure the two columns can show: Python and TypeScript declare a type's constants in
+the module. The rest -- C++'s flat section types, TypeScript's free functions -- are in declarations
+the surface tree takes over.
+
+`tools/check_language_classification.py`, run as `llvmdsdl-language-classification`, refuses a
+comparison with a `Language` enumerator, a `case` on one, or a comparison with a language's
+`--target-language` spelling, outside the spelling tables and the driver's dispatch; the tree before
+this phase has 27. `llvmdsdl-emission-sites` holds each emitter's count of the calls that write text.
+No generated byte changed: over the showroom and the regulated corpus, all seven targets, their
+naming manifests and the MLIR are identical before and after.
 
 **3 — The plan semantics the emitters hold.** The three in [Discipline](#discipline) move out of the
 emitters: whether a body can fail becomes an IR fact, a nested call's adaptation to a callee that
@@ -497,15 +523,15 @@ The work to #55 was audited against that at `8c2f0a7`. The lowering held: no pas
 and #45, #47, #51 and #52 changed IR that every backend translates. #47 removed a C-only null test
 from the header wrapper as it went. Three kinds of drift sat around it.
 
-**Capabilities keyed on a language's name.** The driver decides host-image folding,
+**Capabilities keyed on a language's name.** The driver decided host-image folding,
 `TargetNullability` and `accessorsReturnViews` by comparing `--target-language` with each name, and
-hands the pipeline positional booleans; the block grew in #33, #42, #45 and #49. Five files of
-shared naming answer columns of the classification with `language ==`: the section joiner is the
+handed the pipeline positional booleans; the block grew in #33, #42, #45 and #49. Five files of
+shared naming answered columns of the classification with `language ==`: the section joiner was the
 nested-types column, `constantsShareTheFieldScope` the type's-own-constants column, `moduleScoped`
 and the manifest's `goLike` the scopes column, and Python's `_` the internal-linkage column. Seven
-places enumerate the languages: `CodegenNamingLanguage`, `ConstantLiteralLanguage`,
+places enumerated the languages: `CodegenNamingLanguage`, `ConstantLiteralLanguage`,
 `StorageTokenLanguage`, the vocabulary's `LanguageSpec`, `allTargetLanguages`, `allOutputLanguages`
-and the driver.
+and the driver. Phase 2 moved every one onto the row.
 
 **Plan semantics answered in emitters.**
 
@@ -555,9 +581,9 @@ gates and text assertions are two halves, not alternatives.
 | the adversarial corpus, compiled in every backend | 1 onwards | a generated name does not meet another generated name |
 | the name emitted, asserted in lit | 1 onwards | a rule no compiler enforces still holds |
 | byte-diff of all seven targets before and after | 2, 4, 5 | a mechanism change changes no output |
-| no language compared by name outside the classification | 2 onwards | a new language is a row, not a search |
+| no language compared by name outside the classification, `llvmdsdl-language-classification` | 2 onwards | a new language is a row, not a search |
 | no emitter walks the IR to decide what a body means | 3 onwards | a plan's semantics are stated once, in the IR |
-| emission sites in the declaration half, counted | 2 onwards, falling from 5 | the shape is stated once, the syntax six times |
+| emission sites per emitter, held to a baseline by `llvmdsdl-emission-sites` | 2 onwards, falling from 5 | the shape is stated once, the syntax six times |
 | round-trip, the C↔language parity lanes, cross-language equivalence | all | the wire is unchanged |
 | naming manifest against the surface tree | 4 onwards | the manifest reports what the backend writes |
 | no in-source diagnostic suppression in generated output | 6–11 | a warning is answered by changing what is emitted |

@@ -13,9 +13,10 @@
 /// One table, read by the usage line, the help text, and the predicates that decide what a value
 /// means. Adding a lane is one row; nothing else in the tool spells the set out.
 ///
-/// This is CLI vocabulary and stays in the tool. `ast`, `mlir` and `obj` are selectors rather than
-/// naming languages -- `llvmdsdl::allOutputLanguages()` holds the six the library knows about, and
-/// the unit tests hold this table against it.
+/// This is CLI vocabulary and stays in the tool. A value names the language it generates, whose row
+/// in `llvmdsdl/Support/LanguageTraits.h` holds everything the tool needs to know about it; `ast`
+/// and `mlir` generate none, and `obj` generates C as objects. The unit tests hold this table
+/// against `llvmdsdl::allLanguageTraits()`.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_TOOLS_DSDLC_TARGET_LANGUAGES_H
@@ -26,7 +27,11 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <string>
+
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 namespace llvmdsdl::dsdlc
 {
@@ -54,6 +59,9 @@ struct TargetLanguage final
     ///
     /// False for `obj`, which publishes headers beside objects already assembled.
     bool emitsSourceTree;
+
+    /// @brief The language the value generates, where it generates one.
+    std::optional<Language> language;
 };
 
 /// @brief Every accepted `--target-language` value, in the order the help text lists them.
@@ -61,15 +69,15 @@ struct TargetLanguage final
 [[nodiscard]] inline llvm::ArrayRef<TargetLanguage> allTargetLanguages()
 {
     static constexpr std::array<TargetLanguage, 9> kAll{{
-        {"ast", TargetLanguageKind::Dump, false},
-        {"mlir", TargetLanguageKind::Dump, false},
-        {"c", TargetLanguageKind::Codegen, true},
-        {"cpp", TargetLanguageKind::Codegen, true},
-        {"rust", TargetLanguageKind::Codegen, true},
-        {"go", TargetLanguageKind::Codegen, true},
-        {"ts", TargetLanguageKind::Codegen, true},
-        {"python", TargetLanguageKind::Codegen, true},
-        {"obj", TargetLanguageKind::Codegen, false},
+        {"ast", TargetLanguageKind::Dump, false, std::nullopt},
+        {"mlir", TargetLanguageKind::Dump, false, std::nullopt},
+        {"c", TargetLanguageKind::Codegen, true, Language::C},
+        {"cpp", TargetLanguageKind::Codegen, true, Language::Cpp},
+        {"rust", TargetLanguageKind::Codegen, true, Language::Rust},
+        {"go", TargetLanguageKind::Codegen, true, Language::Go},
+        {"ts", TargetLanguageKind::Codegen, true, Language::TypeScript},
+        {"python", TargetLanguageKind::Codegen, true, Language::Python},
+        {"obj", TargetLanguageKind::Codegen, false, Language::C},
     }};
     return kAll;
 }
@@ -125,6 +133,27 @@ struct TargetLanguage final
 {
     const auto* const entry = findTargetLanguage(language);
     return (entry != nullptr) && entry->emitsSourceTree;
+}
+
+/// @brief The row of the language @p language generates.
+/// @param[in] language Value as typed on the command line.
+/// @return The row, or null for a value that generates no language.
+[[nodiscard]] inline const LanguageTraits* traitsOf(const llvm::StringRef language)
+{
+    const auto* const entry = findTargetLanguage(language);
+    return ((entry != nullptr) && entry->language) ? &languageTraits(*entry->language) : nullptr;
+}
+
+/// @brief Whether @p language writes a source tree in @p generated.
+///
+/// What an option that belongs to one backend is checked against.
+/// @param[in] language Value as typed on the command line.
+/// @param[in] generated The language asked about.
+/// @return True for the value that emits @p generated as source.
+[[nodiscard]] inline bool emitsSourceIn(const llvm::StringRef language, const Language generated)
+{
+    const auto* const entry = findTargetLanguage(language);
+    return (entry != nullptr) && entry->emitsSourceTree && (entry->language == generated);
 }
 
 }  // namespace llvmdsdl::dsdlc

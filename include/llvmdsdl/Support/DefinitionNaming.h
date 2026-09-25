@@ -29,6 +29,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 
 namespace llvmdsdl
@@ -55,47 +56,10 @@ enum class TypeNameVersioning : std::uint8_t
     Versioned,
 };
 
-/// @brief How one language composes a definition's type name.
-struct DefinitionNamePolicy final
-{
-    /// @brief Separator joining the namespace components into the type name.
-    ///
-    /// Empty where the namespace is carried by the language instead -- C++ has real namespaces, and
-    /// Go, TypeScript and Python put the type in a per-namespace module.
-    llvm::StringRef namespaceJoin;
-
-    /// @brief Whether to re-project the whole composed name once it has been assembled.
-    ///
-    /// A language that flattens the namespace into the identifier re-projects, so that the joined
-    /// result is checked against the language a second time rather than only its parts.
-    bool reprojectComposed{};
-
-    /// @brief Whether @ref TypeNameVersioning::Versioned puts the version in the type name.
-    ///
-    /// Rust reaches a definition through a module named for the definition and its version, so two
-    /// versions are already two paths and the name has nothing to add. The suffix would also be a
-    /// run of underscores in a position where `non_camel_case_types` reports one.
-    bool versionInTypeName{true};
-
-    /// @brief Whether a consumer can reach the generated type from this name and the namespace.
-    ///
-    /// The naming manifest reports the type name under this, and the naming golden pins it, so the
-    /// answer is stated once here rather than by each of them. It is true where the language carries
-    /// the namespace itself and the name is the definition's own: Rust in a module, Go, TypeScript
-    /// and Python in a per-namespace one.
-    ///
-    /// C is false because its namespace is joined into the identifier, so the namespace the manifest
-    /// reports beside the name would double it. C++ is false as it always has been, and the reason
-    /// once given for it -- that its emitter builds a namespace-qualified symbol of its own -- is not
-    /// what `cppTypeName` does. Whether C++ should report is a question for the phase that takes C++;
-    /// see `CLEAN_CODE.md`.
-    bool typeNameReachesTheType{true};
-};
-
 /// @brief Returns how @p language composes a definition's type name.
 /// @param[in] language Naming language.
 /// @return The policy, valid for the process lifetime.
-[[nodiscard]] const DefinitionNamePolicy& definitionNamePolicy(CodegenNamingLanguage language);
+[[nodiscard]] const DefinitionNamePolicy& definitionNamePolicy(Language language);
 
 /// @brief Renders the type name for one definition in @p language.
 /// @param[in] language Naming language.
@@ -105,7 +69,7 @@ struct DefinitionNamePolicy final
 /// @param[in] minorVersion Minor version.
 /// @param[in] versioning Whether the version is part of the name.
 /// @return The type name.
-[[nodiscard]] std::string renderDefinitionTypeName(CodegenNamingLanguage       language,
+[[nodiscard]] std::string renderDefinitionTypeName(Language                    language,
                                                    llvm::ArrayRef<std::string> namespaceComponents,
                                                    llvm::StringRef             shortName,
                                                    std::uint32_t               majorVersion,
@@ -121,10 +85,10 @@ struct DefinitionNamePolicy final
 /// @param[in] majorVersion Major version.
 /// @param[in] minorVersion Minor version.
 /// @return The stem.
-[[nodiscard]] std::string renderDefinitionFileStem(CodegenNamingLanguage language,
-                                                   llvm::StringRef       shortName,
-                                                   std::uint32_t         majorVersion,
-                                                   std::uint32_t         minorVersion);
+[[nodiscard]] std::string renderDefinitionFileStem(Language        language,
+                                                   llvm::StringRef shortName,
+                                                   std::uint32_t   majorVersion,
+                                                   std::uint32_t   minorVersion);
 
 /// @brief Renders an include-guard macro for one definition's generated header.
 ///
@@ -138,12 +102,12 @@ struct DefinitionNamePolicy final
 /// @param[in] minorVersion Minor version.
 /// @param[in] suffix Trailing discriminator, including its leading separator.
 /// @return The guard macro.
-[[nodiscard]] std::string renderIncludeGuard(CodegenNamingLanguage language,
-                                             llvm::StringRef       prefix,
-                                             llvm::StringRef       fullName,
-                                             std::uint32_t         majorVersion,
-                                             std::uint32_t         minorVersion,
-                                             llvm::StringRef       suffix);
+[[nodiscard]] std::string renderIncludeGuard(Language        language,
+                                             llvm::StringRef prefix,
+                                             llvm::StringRef fullName,
+                                             std::uint32_t   majorVersion,
+                                             std::uint32_t   minorVersion,
+                                             llvm::StringRef suffix);
 
 /// @brief Renders the sentinel macros that detect two versions of one type in one translation unit.
 ///
@@ -158,10 +122,10 @@ struct DefinitionNamePolicy final
 /// @param[in] majorVersion Major version.
 /// @param[in] minorVersion Minor version.
 /// @return A pair of macro names: the generic one, then the one specific to this version.
-[[nodiscard]] std::pair<std::string, std::string> renderVersionSentinelMacros(CodegenNamingLanguage language,
-                                                                              llvm::StringRef       fullName,
-                                                                              std::uint32_t         majorVersion,
-                                                                              std::uint32_t         minorVersion);
+[[nodiscard]] std::pair<std::string, std::string> renderVersionSentinelMacros(Language        language,
+                                                                              llvm::StringRef fullName,
+                                                                              std::uint32_t   majorVersion,
+                                                                              std::uint32_t   minorVersion);
 
 /// @brief Names the generated type of one section of a definition.
 ///
@@ -177,9 +141,9 @@ struct DefinitionNamePolicy final
 /// @param[in] baseTypeName The definition's type name, from @ref renderDefinitionTypeName.
 /// @param[in] sectionName Section name: `request`, `response`, or empty for a message.
 /// @return The section's type name.
-[[nodiscard]] std::string renderSectionTypeName(CodegenNamingLanguage language,
-                                                llvm::StringRef       baseTypeName,
-                                                llvm::StringRef       sectionName);
+[[nodiscard]] std::string renderSectionTypeName(Language        language,
+                                                llvm::StringRef baseTypeName,
+                                                llvm::StringRef sectionName);
 
 /// @brief The prefix every helper symbol `build-dsdl-plan-bodies` synthesises begins with.
 ///

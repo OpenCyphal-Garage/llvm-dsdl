@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -38,7 +39,7 @@ namespace llvmdsdl
 /// @param[in] typeNameVersioning The scheme this invocation generated under. The names below depend
 ///            on it, so a consumer should not have to infer which one produced them.
 [[nodiscard]] std::string renderNamingManifest(const SemanticModule&          semantic,
-                                               llvm::ArrayRef<OutputLanguage> languages,
+                                               llvm::ArrayRef<LanguageTraits> languages,
                                                llvm::StringRef                toolVersion,
                                                TypeNameVersioning             typeNameVersioning);
 

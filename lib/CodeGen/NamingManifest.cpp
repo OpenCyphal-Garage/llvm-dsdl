@@ -19,9 +19,10 @@
 
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
-#include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 
 #include "llvm/Support/JSON.h"
@@ -50,16 +51,17 @@ namespace
 ///            the whole answer rather than part of one. Reported because it does not follow from
 ///            the definition's own: Rust reaches a section through the definition's module, so the
 ///            name is the section word alone and a consumer cannot derive it from the type name.
-llvm::json::Object renderSection(const CodegenNamingLanguage language,
-                                 const SemanticSection&      section,
-                                 const std::string&          sectionTypeName,
-                                 const bool                  reportTypeName)
+llvm::json::Object renderSection(const Language         language,
+                                 const SemanticSection& section,
+                                 const std::string&     sectionTypeName,
+                                 const bool             reportTypeName)
 {
     const NamingScope fieldScope = makeSectionFieldScope(language, section);
 
-    // Go's constants carry the type they belong to, so the name is one identifier rather than a
-    // prefix a consumer joins to a token, and it is built by the scope the emitter builds.
-    const bool        goLike     = language == CodegenNamingLanguage::Go;
+    // Constants in a package's scope carry the type they belong to, so the name is one identifier
+    // rather than a prefix a consumer joins to a token, and it is built by the scope the emitter
+    // builds.
+    const bool        goLike     = languageTraits(language).composition.constants == ConstantsScope::Package;
     const NamingScope constScope = goLike
                                        ? makeGoConstantScope(section, sectionTypeName)
                                        : makeSectionConstantScope(language,
@@ -119,9 +121,9 @@ llvm::json::Object renderSection(const CodegenNamingLanguage language,
 }
 
 /// @brief Renders one definition under one language.
-llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
-                                    const SemanticDefinition&   def,
-                                    const TypeNameVersioning    typeNameVersioning)
+llvm::json::Object renderDefinition(const Language            language,
+                                    const SemanticDefinition& def,
+                                    const TypeNameVersioning  typeNameVersioning)
 {
     llvm::json::Array namespaceParts;
     for (const auto& component : def.info.namespaceComponents)
@@ -176,7 +178,7 @@ llvm::json::Object renderDefinition(const CodegenNamingLanguage language,
 }  // namespace
 
 std::string renderNamingManifest(const SemanticModule&                semantic,
-                                 const llvm::ArrayRef<OutputLanguage> languages,
+                                 const llvm::ArrayRef<LanguageTraits> languages,
                                  const llvm::StringRef                toolVersion,
                                  const TypeNameVersioning             typeNameVersioning)
 {
@@ -186,9 +188,11 @@ std::string renderNamingManifest(const SemanticModule&                semantic,
     root["type_name_versioning"] = (typeNameVersioning == TypeNameVersioning::Versioned) ? "versioned" : "unversioned";
 
     llvm::json::Object byLanguage;
-    for (const auto& [language, languageName] : languages)
+    for (const LanguageTraits& row : languages)
     {
-        llvm::json::Object byType;
+        const Language        language     = row.language;
+        const llvm::StringRef languageName = row.name;
+        llvm::json::Object    byType;
         for (const auto& def : semantic.definitions)
         {
             byType[def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +

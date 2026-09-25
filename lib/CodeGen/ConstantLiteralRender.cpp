@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/Support/Language.h"
 
 #include <cstdint>
 #include <sstream>
@@ -42,19 +43,17 @@ constexpr __int128 kInt64Max = static_cast<__int128>(INT64_MAX);
 /// unsigned suffix. TypeScript models any 64-bit integer as `bigint`, so those literals take an `n`
 /// suffix even for small values. Go and Python integer literals are arbitrary precision, so the bare
 /// decimal is always correct.
-std::string renderIntegerConstant(const ConstantLiteralLanguage language,
-                                  const __int128                wide,
-                                  const ConstantTypeInfo        typeInfo)
+std::string renderIntegerConstant(const Language language, const __int128 wide, const ConstantTypeInfo typeInfo)
 {
     std::string dec = wideToString(wide);
     switch (language)
     {
-    case ConstantLiteralLanguage::Go:
-    case ConstantLiteralLanguage::Python:
+    case Language::Go:
+    case Language::Python:
         return dec;
-    case ConstantLiteralLanguage::TypeScript:
+    case Language::TypeScript:
         return (typeInfo.bitLength > 53U) ? (dec + "n") : dec;
-    case ConstantLiteralLanguage::Rust:
+    case Language::Rust:
         if (wide == kInt64Min)
         {
             return "i64::MIN";
@@ -64,8 +63,8 @@ std::string renderIntegerConstant(const ConstantLiteralLanguage language,
             return dec + "u64";
         }
         return dec;
-    case ConstantLiteralLanguage::C:
-    case ConstantLiteralLanguage::Cpp:
+    case Language::C:
+    case Language::Cpp:
         if (wide == kInt64Min)
         {
             // The bare literal is unsigned (and negating it is a wrong/warned value); build the floor
@@ -109,12 +108,12 @@ std::string quoteCharLiteral(const char value)
 
 /// @brief Renders an integer-valued rational as a floating literal (so a `float` constant such as
 ///        `2.0` is not emitted as the integer `2`, which fails to type-check as `f64` in Rust).
-std::string renderIntegerValuedFloat(const ConstantLiteralLanguage language, const __int128 wide)
+std::string renderIntegerValuedFloat(const Language language, const __int128 wide)
 {
     std::string dec = wideToString(wide);
     switch (language)
     {
-    case ConstantLiteralLanguage::TypeScript:
+    case Language::TypeScript:
         // A TypeScript `number` is already floating; a decimal point is unnecessary and `2` suffices.
         return dec;
     default:
@@ -154,15 +153,13 @@ ConstantTypeInfo makeConstantTypeInfo(const TypeExprAST& type)
     return info;
 }
 
-std::string renderConstantLiteral(const ConstantLiteralLanguage language,
-                                  const Value&                  value,
-                                  const ConstantTypeInfo        typeInfo)
+std::string renderConstantLiteral(const Language language, const Value& value, const ConstantTypeInfo typeInfo)
 {
     if (const auto* booleanValue = std::get_if<bool>(&value.data))
     {
         switch (language)
         {
-        case ConstantLiteralLanguage::Python:
+        case Language::Python:
             return *booleanValue ? "True" : "False";
         default:
             return *booleanValue ? "true" : "false";
@@ -183,16 +180,16 @@ std::string renderConstantLiteral(const ConstantLiteralLanguage language,
         std::ostringstream out;
         switch (language)
         {
-        case ConstantLiteralLanguage::C:
-        case ConstantLiteralLanguage::Cpp:
+        case Language::C:
+        case Language::Cpp:
             out << "((double)" << num << "/(double)" << den << ")";
             return out.str();
-        case ConstantLiteralLanguage::Rust:
+        case Language::Rust:
             out << "(" << num << "f64 / " << den << "f64)";
             return out.str();
-        case ConstantLiteralLanguage::Go:
-        case ConstantLiteralLanguage::TypeScript:
-        case ConstantLiteralLanguage::Python:
+        case Language::Go:
+        case Language::TypeScript:
+        case Language::Python:
             out << "(" << num << " / " << den << ")";
             return out.str();
         }
@@ -200,8 +197,7 @@ std::string renderConstantLiteral(const ConstantLiteralLanguage language,
 
     if (const auto* stringValue = std::get_if<std::string>(&value.data))
     {
-        if ((language == ConstantLiteralLanguage::C || language == ConstantLiteralLanguage::Cpp) &&
-            stringValue->size() == 1U)
+        if ((language == Language::C || language == Language::Cpp) && stringValue->size() == 1U)
         {
             return quoteCharLiteral((*stringValue)[0]);
         }

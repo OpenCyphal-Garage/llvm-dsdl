@@ -39,6 +39,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
+#include "llvmdsdl/Support/Language.h"
 
 #include "UnitTests.h"
 
@@ -46,7 +47,7 @@ namespace
 {
 
 using llvmdsdl::NamingScope;
-using llvmdsdl::CodegenNamingLanguage;
+using llvmdsdl::Language;
 using llvmdsdl::codegenNamingPolicy;
 using llvmdsdl::codegenProjectIdentifier;
 using llvmdsdl::codegenSanitizeIdentifier;
@@ -62,18 +63,18 @@ using llvmdsdl::TypeNameVersioning;
 
 struct LanguageEntry
 {
-    CodegenNamingLanguage language;
-    const char*           name;
+    Language    language;
+    const char* name;
 };
 
 /// @brief Every target language, in a fixed order so the golden map is stable.
 constexpr std::array<LanguageEntry, 6> kLanguages = {{
-    {CodegenNamingLanguage::C, "c"},
-    {CodegenNamingLanguage::Cpp, "cpp"},
-    {CodegenNamingLanguage::Rust, "rust"},
-    {CodegenNamingLanguage::Go, "go"},
-    {CodegenNamingLanguage::TypeScript, "ts"},
-    {CodegenNamingLanguage::Python, "python"},
+    {Language::C, "c"},
+    {Language::Cpp, "cpp"},
+    {Language::Rust, "rust"},
+    {Language::Go, "go"},
+    {Language::TypeScript, "ts"},
+    {Language::Python, "python"},
 }};
 
 /// @brief The adversarial name corpus.
@@ -263,30 +264,30 @@ void appendRow(std::ostringstream& out, const std::vector<std::pair<std::string,
 struct Projection
 {
     const char* name;
-    std::string (*apply)(CodegenNamingLanguage, const std::string&);
+    std::string (*apply)(Language, const std::string&);
 };
 
-std::string applySanitize(const CodegenNamingLanguage language, const std::string& name)
+std::string applySanitize(const Language language, const std::string& name)
 {
     return codegenSanitizeIdentifier(language, name);
 }
-std::string applySnake(const CodegenNamingLanguage language, const std::string& name)
+std::string applySnake(const Language language, const std::string& name)
 {
     return codegenToSnakeCaseIdentifier(language, name);
 }
-std::string applyPascal(const CodegenNamingLanguage language, const std::string& name)
+std::string applyPascal(const Language language, const std::string& name)
 {
     return codegenToPascalCaseIdentifier(language, name);
 }
-std::string applyUpperSnake(const CodegenNamingLanguage language, const std::string& name)
+std::string applyUpperSnake(const Language language, const std::string& name)
 {
     return codegenToUpperSnakeCaseIdentifier(language, name);
 }
-std::string applyFileStem(const CodegenNamingLanguage language, const std::string& name)
+std::string applyFileStem(const Language language, const std::string& name)
 {
     return renderVersionedFileStem(language, name, 1, 0);
 }
-std::string applyTypeName(const CodegenNamingLanguage language, const std::string& name)
+std::string applyTypeName(const Language language, const std::string& name)
 {
     // Composed the way the emitters compose it, which is what decides whether the version is part
     // of the name: Rust reaches a definition through a module named for it and its version, so its
@@ -300,14 +301,14 @@ std::string applyTypeName(const CodegenNamingLanguage language, const std::strin
 /// (both via `renderVersionedFileStem`) all fold the short name to snake_case first. C and C++ use
 /// the DSDL short name verbatim (emitter/C.cpp `headerFileName`, emitter/Cpp.cpp `headerFileName`),
 /// so no two distinct type names can share a header and the column would say nothing about them.
-bool usesSharedFileStem(const CodegenNamingLanguage language)
+bool usesSharedFileStem(const Language language)
 {
-    return language == CodegenNamingLanguage::Rust || language == CodegenNamingLanguage::Go ||
-           language == CodegenNamingLanguage::TypeScript || language == CodegenNamingLanguage::Python;
+    return language == Language::Rust || language == Language::Go || language == Language::TypeScript ||
+           language == Language::Python;
 }
 
 /// @brief Whether @p projection describes what @p language's backend emits.
-bool projectionApplies(const std::string& projection, const CodegenNamingLanguage language)
+bool projectionApplies(const std::string& projection, const Language language)
 {
     if (projection == "file_stem")
     {

@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-#include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 #include "TargetLanguages.h"
 #include "UnitTests.h"
@@ -57,10 +57,9 @@ bool runTargetLanguagesTests()
     TestContext t;
 
     // Every naming language the library offers must be selectable on the command line.
-    for (const auto& [language, name] : llvmdsdl::allOutputLanguages())
+    for (const llvmdsdl::LanguageTraits& row : llvmdsdl::allLanguageTraits())
     {
-        (void) language;
-        const std::string spelled(name);
+        const std::string spelled(row.name);
         t.expect(isKnownLanguage(spelled), "library language '" + spelled + "' is accepted by --target-language");
         t.expect(isCodegenLanguage(spelled), "library language '" + spelled + "' is a codegen lane");
     }
