@@ -12,6 +12,7 @@
 use llvmdsdl_generated::fixtures_aliasable::vendor::pose_1_0::Pose as Pose;
 use llvmdsdl_generated::fixtures_aliasable::vendor::vec3_1_0::Vec3 as Vec3;
 use llvmdsdl_generated::fixtures_views::vendor::frame_1_0::Frame as Frame;
+use llvmdsdl_generated::fixtures_views::vendor::leading_1_0::Leading as Leading;
 use llvmdsdl_generated::fixtures_views::vendor::track_1_0::Track as Track;
 fn main() {
     let mut failures = 0;
@@ -61,6 +62,27 @@ fn main() {
     check("fresh object holds empty element views", fresh_track.pair.iter().all(|p| p.is_empty()) && fresh_track.trail.len() == 0);
     let mut out = [0xEEu8; 128];
     check("empty element views serialise as zeros", fresh_track.serialize(&mut out) == Ok(51) && out[1..51].iter().all(|&b| b == 0));
+    let mut lead_wire = [0u8; 25];
+    for (i, v) in [0.25f32, -0.5, 0.75, -1.0, 1.25, -1.5].iter().enumerate() { lead_wire[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes()); }
+    lead_wire[24] = 0xA5;
+    let mut lead = Leading::default();
+    check("leading deserialise accepted", lead.deserialize(&lead_wire) == Ok(25));
+    check("leading view is the buffer itself", lead.pose.as_ptr() == lead_wire.as_ptr() && lead.pose.len() == 24);
+    check("orientation.y read through the leading view", Vec3::get_y(Pose::get_orientation(lead.pose)) == 1.25 && lead.status == 0xA5);
+    let mut out = [0xEEu8; 64];
+    check("leading serialise reproduces the wire", lead.serialize(&mut out) == Ok(25) && out[..25] == lead_wire);
+    let mut short_lead = Leading::default();
+    check("short leading view holds what was there", short_lead.deserialize(&lead_wire[..12]).is_ok() && short_lead.pose.as_ptr() == lead_wire.as_ptr() && short_lead.pose.len() == 12 && short_lead.status == 0);
+    let mut out = [0xEEu8; 64];
+    check("short leading view serialises zero-filled", short_lead.serialize(&mut out) == Ok(25) && out[..12] == lead_wire[..12] && out[12..25].iter().all(|&b| b == 0));
+    let mut empty_lead = Leading::default();
+    let empty_ok = empty_lead.deserialize(&[]) == Ok(0);
+    let o = Pose::get_orientation(empty_lead.pose);
+    check("empty buffer leaves an empty leading view", empty_ok && empty_lead.pose.is_empty() && empty_lead.status == 0 && o.is_empty() && Vec3::get_y(o) == 0.0);
+    let fresh_lead = Leading::default();
+    check("fresh object holds an empty leading view", fresh_lead.pose.is_empty());
+    let mut out = [0xEEu8; 64];
+    check("empty leading view serialises as zeros", fresh_lead.serialize(&mut out) == Ok(25) && out[..25].iter().all(|&b| b == 0));
     println!("container-views Rust: {}", if failures == 0 { "ok" } else { "FAILED" });
     std::process::exit(if failures == 0 { 0 } else { 1 });
 }

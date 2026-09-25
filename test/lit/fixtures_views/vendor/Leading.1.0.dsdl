@@ -1,0 +1,5 @@
+# A holder that begins with an asserted record. Under --aliasable-views the view starts at the
+# buffer the holder was handed, and holds as much of the record as that buffer has.
+fixtures_aliasable.vendor.Pose.1.0 pose
+uint8 status
+@extent 64 * 8

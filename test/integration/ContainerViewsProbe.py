@@ -13,6 +13,7 @@
 import struct, sys
 sys.path.insert(0, sys.argv[1])
 from dsdl_gen.fixtures_views.vendor.frame_1_0 import Frame
+from dsdl_gen.fixtures_views.vendor.leading_1_0 import Leading
 from dsdl_gen.fixtures_views.vendor.track_1_0 import Track
 from dsdl_gen.fixtures_aliasable.vendor.pose_1_0 import Pose
 from dsdl_gen.fixtures_aliasable.vendor.vec3_1_0 import Vec3
@@ -65,5 +66,25 @@ check("short element serialises zero-filled", len(short_track_out) == 51 and sho
 fresh_track = Track()
 check("fresh object holds empty element views", len(fresh_track.pair) == 2 and all(p.nbytes == 0 for p in fresh_track.pair) and len(fresh_track.trail) == 0)
 check("empty element views serialise as zeros", fresh_track.serialize() == bytes(51))
+lead_wire = bytearray(25)
+lead_wire[0:24] = struct.pack("<6f", 0.25, -0.5, 0.75, -1.0, 1.25, -1.5)
+lead_wire[24] = 0xA5
+lead = Leading.deserialize(memoryview(lead_wire))
+check("leading view is the buffer itself", lead.pose.obj is lead_wire and lead.pose.nbytes == 24 and bytes(lead.pose) == bytes(lead_wire[:24]))
+lead_wire[0] ^= 0xFF
+check("leading view is live, not a copy", lead.pose[0] == lead_wire[0])
+lead_wire[0] ^= 0xFF
+check("orientation.y read through the leading view", Vec3.get_y(Pose.get_orientation(lead.pose)) == 1.25 and lead.status == 0xA5)
+check("leading serialise reproduces the wire", lead.serialize() == bytes(lead_wire))
+short_lead = Leading.deserialize(memoryview(lead_wire)[:12])
+check("short leading view holds what was there", short_lead.pose.obj is lead_wire and short_lead.pose.nbytes == 12 and short_lead.status == 0)
+short_lead_out = short_lead.serialize()
+check("short leading view serialises zero-filled", len(short_lead_out) == 25 and short_lead_out[:12] == bytes(lead_wire[:12]) and short_lead_out[12:] == bytes(13))
+empty_lead = Leading.deserialize(memoryview(b""))
+o = Pose.get_orientation(empty_lead.pose)
+check("empty buffer leaves an empty leading view", empty_lead.pose.nbytes == 0 and empty_lead.status == 0 and len(o) == 0 and Vec3.get_y(o) == 0)
+fresh_lead = Leading()
+check("fresh object holds an empty leading view", fresh_lead.pose.nbytes == 0)
+check("empty leading view serialises as zeros", fresh_lead.serialize() == bytes(25))
 print(f"container-views Python: {'ok' if failures == 0 else 'FAILED'}")
 sys.exit(0 if failures == 0 else 1)

@@ -97,6 +97,34 @@ func main() {
 	out = bytes.Repeat([]byte{0xEE}, 128)
 	rc, n = freshTrack.Serialize(out)
 	check("empty element views serialise as zeros", rc == 0 && n == 51 && bytes.Equal(out[1:51], make([]byte, 50)))
+	leadWire := make([]byte, 25)
+	for i, v := range []float32{0.25, -0.5, 0.75, -1.0, 1.25, -1.5} {
+		binary.LittleEndian.PutUint32(leadWire[i*4:], math.Float32bits(v))
+	}
+	leadWire[24] = 0xA5
+	var lead views.Leading
+	rc, n = lead.Deserialize(leadWire)
+	check("leading deserialise accepted", rc == 0 && n == 25)
+	check("leading view is the buffer itself", len(lead.Pose) == 24 && &lead.Pose[0] == &leadWire[0])
+	check("orientation.y read through the leading view", aliasable.Vec3GetY(aliasable.PoseGetOrientation(lead.Pose)) == 1.25 && lead.Status == 0xA5)
+	out = bytes.Repeat([]byte{0xEE}, 64)
+	rc, n = lead.Serialize(out)
+	check("leading serialise reproduces the wire", rc == 0 && n == 25 && bytes.Equal(out[:25], leadWire))
+	var shortLead views.Leading
+	rc, _ = shortLead.Deserialize(leadWire[:12])
+	check("short leading view holds what was there", rc == 0 && len(shortLead.Pose) == 12 && &shortLead.Pose[0] == &leadWire[0] && shortLead.Status == 0)
+	out = bytes.Repeat([]byte{0xEE}, 64)
+	rc, n = shortLead.Serialize(out)
+	check("short leading view serialises zero-filled", rc == 0 && n == 25 && bytes.Equal(out[:12], leadWire[:12]) && bytes.Equal(out[12:25], make([]byte, 13)))
+	var emptyLead views.Leading
+	rc, n = emptyLead.Deserialize(nil)
+	o = aliasable.PoseGetOrientation(emptyLead.Pose)
+	check("nil buffer leaves an empty leading view", rc == 0 && n == 0 && len(emptyLead.Pose) == 0 && emptyLead.Status == 0 && len(o) == 0 && aliasable.Vec3GetY(o) == 0)
+	var freshLead views.Leading
+	check("fresh object holds an empty leading view", len(freshLead.Pose) == 0)
+	out = bytes.Repeat([]byte{0xEE}, 64)
+	rc, n = freshLead.Serialize(out)
+	check("empty leading view serialises as zeros", rc == 0 && n == 25 && bytes.Equal(out[:25], make([]byte, 25)))
 	verdict := "ok"
 	if failures != 0 {
 		verdict = "FAILED"

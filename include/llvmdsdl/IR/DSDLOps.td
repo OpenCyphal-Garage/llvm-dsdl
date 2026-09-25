@@ -489,9 +489,13 @@ def DSDL_BufferAtOp : DSDL_Op<"buffer_at", [NoMemoryEffect]> {
     A nested type serialises from the start of the buffer it is given, so the caller hands
     it the point its own encoding reached. The offset is in bytes because a composite
     begins on a byte boundary -- the plan aligns to one before this.
+
+    At a constant offset of nought the address is the buffer, and the operation folds to it
+    where the two pointer types agree.
   }];
   let arguments = (ins DSDL_PtrType:$buffer, I64:$byte_offset);
   let results = (outs DSDL_PtrType:$address);
+  let hasFolder = 1;
   let assemblyFormat = "$buffer `[` $byte_offset `]` attr-dict `:` "
                        "type($buffer) `->` type($address)";
 }

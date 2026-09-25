@@ -478,8 +478,8 @@ constexpr llvm::StringLiteral SharedAddress = R"mlir(
   func.func @body(%arg0: !dsdl.ptr<!dsdl.object<"a.B.1.0">>,
                   %buf: !dsdl.ptr<!dsdl.byte>,
                   %size: !dsdl.ptr<!dsdl.size>) -> i8 {
-    %zero = arith.constant 0 : i64
-    %at = dsdl.buffer_at %buf[%zero] : <!dsdl.byte> -> <!dsdl.byte>
+    %four = arith.constant 4 : i64
+    %at = dsdl.buffer_at %buf[%four] : <!dsdl.byte> -> <!dsdl.byte>
     %alpha = dsdl.member_addr %arg0 "alpha" : <!dsdl.object<"a.B.1.0">> -> <!dsdl.object<"a.C.1.0">>
     %beta = dsdl.member_addr %arg0 "beta" : <!dsdl.object<"a.B.1.0">> -> <!dsdl.object<"a.C.1.0">>
     %e1 = dsdl.call_serdes @f(%alpha, %at, %size) {direction = "serialize", member = "alpha"} :

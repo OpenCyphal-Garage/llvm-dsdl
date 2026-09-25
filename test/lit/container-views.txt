@@ -64,6 +64,19 @@
 # BODY-NEXT:  dsdl.set_array_length %{{.*}} "trail", %c0_i64
 # BODY-NOT:   Pose_1_0__initialize_ir_
 
+# A holder that begins with the record hands its view the buffer itself. Serialise copies to the
+# buffer it was given; deserialise holds the buffer it reads, with as much of it as the record
+# spans. No offset is formed and none is bounded.
+# RUN: FileCheck %s --check-prefix=LEADING < %t/bodies.mlir
+# LEADING-LABEL: func.func @fixtures_views_vendor_Leading_1_0__serialize_ir_(
+# LEADING:       %[[BYTES:.*]], %[[SIZE:.*]] = dsdl.load_view %arg0 "pose"
+# LEADING-NEXT:  dsdl.copy_bytes %arg1, %[[BYTES]], size %[[SIZE]] {bytes = 24 : i64}
+# LEADING-LABEL: func.func @fixtures_views_vendor_Leading_1_0__deserialize_ir_(
+# LEADING:       %[[READ:[0-9]+]] = dsdl.buffer_or_empty %arg1
+# LEADING-NEXT:  %[[SHORT:[0-9]+]] = arith.cmpi ult, %[[CAP:[0-9]+]], %c24_i64 : i64
+# LEADING-NEXT:  %[[HELD:[0-9]+]] = arith.select %[[SHORT]], %[[CAP]], %c24_i64 : i64
+# LEADING-NEXT:  dsdl.store_view %arg0 "pose" = %[[READ]], %[[HELD]]
+
 # C holds the view in the runtime's type, includes the Vec3 it decodes and not the Pose it does
 # not name, and its bodies neither call nor declare the nested Pose.
 # RUN: %dsdlc --target-language c --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
@@ -111,6 +124,13 @@
 # C_TRACK_BODY:     ].size_bytes =
 # C_TRACK_BODY:     dsdl_runtime_clear_views(
 # C_TRACK_BODY-NOT: Pose_1_0.h
+
+# In C the view holds the pointer deserialise reads, in which an empty buffer stands in for null.
+# RUN: cat %t/c/fixtures_views/vendor/Leading_1_0.c | FileCheck %s --check-prefix=C_LEADING
+# C_LEADING:     dsdl_runtime_copy_bytes(buffer, pose_buf, (size_t) pose_size, 24U);
+# C_LEADING:     const uint8_t* const buf = ((buffer == NULL) ? (const uint8_t*) "" : buffer);
+# C_LEADING-NOT: &buf[
+# C_LEADING:     out_obj->pose.bytes = buf;
 
 # A sealed holder keeps its accessors and gains no layout assertion or endianness guard.
 # RUN: cat %t/c/fixtures_views/vendor/Sealed_1_0.h | FileCheck %s --check-prefix=C_SEALED

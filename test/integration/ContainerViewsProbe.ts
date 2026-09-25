@@ -10,6 +10,7 @@
 //===----------------------------------------------------------------------===//
 
 import * as frameModule from "./fixtures_views/vendor/frame_1_0";
+import * as leadingModule from "./fixtures_views/vendor/leading_1_0";
 import * as trackModule from "./fixtures_views/vendor/track_1_0";
 import * as poseModule from "./fixtures_aliasable/vendor/pose_1_0";
 import * as vec3Module from "./fixtures_aliasable/vendor/vec3_1_0";
@@ -62,5 +63,27 @@ const freshTrack = trackModule.makeTrack();
 check("fresh object holds empty element views", freshTrack.pair.length === 2 && freshTrack.pair.every((p) => p.length === 0) && freshTrack.trail.length === 0);
 const freshTrackOut = trackModule.serializeTrack(freshTrack);
 check("empty element views serialise as zeros", freshTrackOut.length === 51 && freshTrackOut.subarray(1, 51).every((b) => b === 0));
+const leadWire = new Uint8Array(25);
+const leadView = new DataView(leadWire.buffer);
+[0.25, -0.5, 0.75, -1.0, 1.25, -1.5].forEach((v, i) => leadView.setFloat32(i * 4, v, true));
+leadWire[24] = 0xa5;
+const leadDecoded = leadingModule.deserializeLeading(leadWire);
+const lead = leadDecoded.value;
+check("leading deserialise accepted", leadDecoded.consumed === 25);
+check("leading view is the buffer itself", lead.pose.buffer === leadWire.buffer && lead.pose.byteOffset === 0 && lead.pose.length === 24);
+check("orientation.y read through the leading view", vec3Module.getVec3Y(poseModule.getPoseOrientation(lead.pose)) === 1.25 && lead.status === 0xa5);
+const leadOut = new Uint8Array(64).fill(0xee);
+check("leading serialise reproduces the wire", leadingModule.serializeLeadingInto(lead, leadOut) === 25 && leadOut.subarray(0, 25).every((b, i) => b === leadWire[i]));
+const shortLead = leadingModule.deserializeLeading(leadWire.subarray(0, 12)).value;
+check("short leading view holds what was there", shortLead.pose.buffer === leadWire.buffer && shortLead.pose.byteOffset === 0 && shortLead.pose.length === 12 && shortLead.status === 0);
+const shortLeadOut = new Uint8Array(64).fill(0xee);
+check("short leading view serialises zero-filled", leadingModule.serializeLeadingInto(shortLead, shortLeadOut) === 25 && shortLeadOut.subarray(0, 12).every((b, i) => b === leadWire[i]) && shortLeadOut.subarray(12, 25).every((b) => b === 0));
+const emptyDecoded = leadingModule.deserializeLeading(new Uint8Array(0));
+const emptyOrientation = poseModule.getPoseOrientation(emptyDecoded.value.pose);
+check("empty buffer leaves an empty leading view", emptyDecoded.consumed === 0 && emptyDecoded.value.pose.length === 0 && emptyDecoded.value.status === 0 && emptyOrientation.length === 0 && vec3Module.getVec3Y(emptyOrientation) === 0);
+const freshLead = leadingModule.makeLeading();
+check("fresh object holds an empty leading view", freshLead.pose.length === 0);
+const freshLeadOut = new Uint8Array(64).fill(0xee);
+check("empty leading view serialises as zeros", leadingModule.serializeLeadingInto(freshLead, freshLeadOut) === 25 && freshLeadOut.subarray(0, 25).every((b) => b === 0));
 console.log(`container-views TypeScript: ${failures === 0 ? "ok" : "FAILED"}`);
 if (failures !== 0) { throw new Error("container-views TypeScript probe failed"); }
