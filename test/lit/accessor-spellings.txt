@@ -27,12 +27,17 @@
 # C:      int64_t fixtures_host_image_vendor_Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes);
 # C:      static inline uint16_t fixtures_host_image__vendor__Padded__get_b_(const uint8_t* const buffer, const size_t buffer_size_bytes)
 # C-NEXT: {
-# C-NEXT:   return (uint16_t) fixtures_host_image_vendor_Padded_1_0__get_b_ir_(buffer, (buffer == NULL) ? 0 : (int64_t) buffer_size_bytes);
+# C-NEXT:   return (uint16_t) fixtures_host_image_vendor_Padded_1_0__get_b_ir_(buffer, (int64_t) buffer_size_bytes);
 # C:      static inline int8_t fixtures_host_image__vendor__Padded__set_b_(uint8_t* const buffer, const size_t buffer_size_bytes, const uint16_t value)
 
+# A getter reads a null buffer as an empty one, so the size it reads for is zero there. The plan
+# names that size, and C++ declares it by the name.
 # CPP:      struct Padded {
 # CPP:      static std::uint16_t get_b(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)
 # CPP-NEXT: {
+# CPP:      const bool is_null = (buffer == nullptr);
+# CPP-NEXT: const std::uint64_t size = (is_null ? 0ULL : buffer_size_bytes);
+# CPP-NEXT: dsdl_runtime_get_u16(buf, static_cast<std::size_t>(size),
 # CPP:      return static_cast<std::uint16_t>(
 # CPP:      static std::int8_t set_b(std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const std::uint16_t member_value)
 # CPP-NEXT: {

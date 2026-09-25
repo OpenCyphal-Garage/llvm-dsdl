@@ -22,7 +22,7 @@ import re
 import sys
 
 #: The names lib/CodeGen/BodyTranslator.cpp answers to, in stampedRole.
-READ_BACK = {"offset", "error", "rejected"}
+READ_BACK = {"offset", "error", "rejected", "size"}
 
 _STAMP = re.compile(r"llvmdsdl\.result_roles\s*=\s*\[([^\]]*)\]")
 _NAME = re.compile(r'"([^"]*)"')

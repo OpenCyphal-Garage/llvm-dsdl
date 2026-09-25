@@ -104,16 +104,18 @@ struct ResidueMeet final
     }
 };
 
-/// @brief The roles a plan's own structure gives to the results of its structured operations.
+/// @brief The roles a plan's own structure gives to results that no operation in it describes.
 constexpr llvm::StringLiteral RoleOffset   = "offset";
 constexpr llvm::StringLiteral RoleError    = "error";
 constexpr llvm::StringLiteral RoleRejected = "rejected";
+constexpr llvm::StringLiteral RoleSize     = "size";
 
 /// @brief Names what each result of @p op holds, for a backend to declare it by.
 ///
 /// The offset a plan threads through its steps and the error it carries alongside are `scf`
-/// results of the plan's own shape. This pass knows which is which as it builds them, and writes
-/// that down for the backends.
+/// results of the plan's own shape, and the size a getter may read is a select on whether its
+/// buffer is null. This pass knows which is which as it builds them, and writes that down for the
+/// backends.
 void stampResultRoles(mlir::Operation* const op, const llvm::ArrayRef<llvm::StringRef> roles)
 {
     mlir::SmallVector<mlir::Attribute, 2> names;
@@ -2246,6 +2248,26 @@ void tagAccessor(mlir::func::FuncOp    fn,
     markSigned(fn, step);
 }
 
+/// @brief The buffer a getter reads, and the number of bytes it may read there.
+///
+/// A null buffer is read as an empty one, whatever size it is handed. `deserialize_` refuses a null
+/// buffer with a non-zero size, but a getter has no error to answer with, and an empty buffer is one
+/// it can answer for: every read zero-extends, as a read past the end of any buffer does.
+/// `dsdl-fold-null-guards` folds the test away for a target whose buffer cannot be null.
+std::pair<mlir::Value, mlir::Value> readableBuffer(mlir::OpBuilder&     builder,
+                                                   const mlir::Location loc,
+                                                   const mlir::Type     type,
+                                                   const mlir::Value    buffer,
+                                                   const mlir::Value    size)
+{
+    const mlir::Value readable = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, type, buffer);
+    const mlir::Value null     = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), buffer);
+    const mlir::Value empty    = constantI64(builder, loc, 0);
+    auto              held     = mlir::arith::SelectOp::create(builder, loc, null, empty, size);
+    stampResultRoles(held, {RoleSize});
+    return {readable, held.getResult()};
+}
+
 /// @brief Builds the getter and the setter of one field of a wire-flat section: a scalar, or one
 ///        element of a fixed array of scalars, which the accessors then take an index for.
 ///
@@ -2253,8 +2275,7 @@ void tagAccessor(mlir::func::FuncOp    fn,
 /// and answers the value alone: a read cannot fail, and a short buffer zero-extends, so the answer
 /// is what `deserialize_` puts in the field. An element at or past the array's capacity reads as
 /// zero, as bytes past the buffer do: the read stays within the field and the answer is selected
-/// after it. The buffer is readable for the size given, which a slice is
-/// by construction and a C wrapper makes so for a null pointer. A setter is one write of the
+/// after it. A null buffer reads as an empty one (`readableBuffer`). A setter is one write of the
 /// serialise-normalised value, answering the runtime's error code as the serialise body does: a
 /// null buffer or an index past the capacity is refused as an invalid argument, and a buffer too
 /// short for the field is refused before the write, as the body's capacity check refuses one too
@@ -2314,11 +2335,10 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
         tagAccessor(fn, schema, section, "get", step);
         mlir::Block* entry = fn.addEntryBlock();
         builder.setInsertionPointToStart(entry);
-        const mlir::Value buffer   = entry->getArgument(0);
-        const mlir::Value size     = entry->getArgument(1);
-        const mlir::Value readable = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, readTy, buffer);
-        auto [offset, inRange]     = locate(indexed ? entry->getArgument(2) : mlir::Value{});
-        mlir::Value at             = offset;
+        const auto [readable, size] =
+            readableBuffer(builder, loc, readTy, entry->getArgument(0), entry->getArgument(1));
+        auto [offset, inRange] = locate(indexed ? entry->getArgument(2) : mlir::Value{});
+        mlir::Value at         = offset;
         if (inRange)
         {
             // The read stays within the field for any index; the answer is decided after it. A
@@ -2416,8 +2436,9 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
 /// answers the buffer from the field's byte offset and, through the size pointer, what remains:
 /// `Vec3::get_x(Pose::get_position(buffer))` composes. The offset is clamped to the size, so a
 /// short buffer yields an empty one and every nested read zero-extends, as `deserialize_` does;
-/// an element at or past the capacity yields the same. There is no setter: a nested field is set
-/// through its own fields' setters on the buffer the getter answers.
+/// an element at or past the capacity yields the same, and so does a null buffer
+/// (`readableBuffer`). There is no setter: a nested field is set through its own fields' setters
+/// on the buffer the getter answers.
 mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                           builder,
                                            mlir::ModuleOp                             module,
                                            mlir::Location                             loc,
@@ -2455,10 +2476,8 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
     tagAccessor(fn, schema, section, "get", step);
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    const mlir::Value buffer   = entry->getArgument(0);
-    const mlir::Value size     = entry->getArgument(1);
-    const mlir::Value outSize  = entry->getArgument(indexed ? 3 : 2);
-    const mlir::Value readable = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, readTy, buffer);
+    const mlir::Value outSize   = entry->getArgument(indexed ? 3 : 2);
+    const auto [readable, size] = readableBuffer(builder, loc, readTy, entry->getArgument(0), entry->getArgument(1));
 
     mlir::Value offset = constantI64(builder, loc, bitOffset / 8);
     // A field the buffer starts with is within whatever buffer there is. Comparing its offset

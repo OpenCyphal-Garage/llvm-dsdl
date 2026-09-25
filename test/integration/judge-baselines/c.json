@@ -3,7 +3,7 @@
   "counts": {
     "bugprone-narrowing-conversions": 756,
     "bugprone-signed-char-misuse": 3,
-    "clang-analyzer-security.ArrayBound": 3,
+    "clang-analyzer-security.ArrayBound": 1,
     "misc-include-cleaner": 3,
     "misc-use-internal-linkage": 658,
     "modernize-avoid-c-style-cast": 185,

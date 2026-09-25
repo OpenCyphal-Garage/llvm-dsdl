@@ -2,7 +2,6 @@
   "judge": "Ubuntu LLVM version 22.1.2",
   "counts": {
     "bugprone-signed-char-misuse": 4,
-    "clang-analyzer-security.ArrayBound": 1,
     "cppcoreguidelines-macro-usage": 1,
     "cppcoreguidelines-pro-type-reinterpret-cast": 332,
     "misc-include-cleaner": 488,

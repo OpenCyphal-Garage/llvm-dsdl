@@ -338,10 +338,10 @@ def DSDL_IndexHoldsOp : DSDL_Op<"index_holds", [NoMemoryEffect]> {
 def DSDL_BufferOrEmptyOp : DSDL_Op<"buffer_or_empty", [NoMemoryEffect]> {
   let summary = "The buffer, or a readable empty one when it is null";
   let description = [{
-    A deserialiser accepts a null buffer when the declared size is zero, and the runtime's
-    read primitives require a non-null pointer even when they read nothing from it. This
-    answers with a pointer that is always safe to pass, which each target supplies its own
-    way.
+    A deserialiser accepts a null buffer when the declared size is zero, a getter reads one
+    as empty whatever size it is handed, and the runtime's read primitives require a non-null
+    pointer even when they read nothing from it. This answers with a pointer that is always
+    safe to pass, which each target supplies its own way.
   }];
   let arguments = (ins DSDL_PtrType:$buffer);
   let results = (outs DSDL_PtrType:$result);

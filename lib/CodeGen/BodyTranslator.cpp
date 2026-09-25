@@ -141,8 +141,8 @@ bool addressesSize(const mlir::Value pointer)
 
 /// @brief The role `build-dsdl-plan-bodies` stamped on result @p index of @p op.
 ///
-/// A plan's offset and the error beside it are results of its own shape, known to the pass that
-/// builds them and written down there.
+/// A plan's offset, the error beside it and the size a getter may read are results of its own
+/// shape, known to the pass that builds them and written down there.
 Role stampedRole(mlir::Operation* const op, const unsigned index)
 {
     const auto roles = op->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles");
@@ -169,6 +169,10 @@ Role stampedRole(mlir::Operation* const op, const unsigned index)
     if (name.getValue() == "rejected")
     {
         return {ValueRole::Rejected, {}};
+    }
+    if (name.getValue() == "size")
+    {
+        return {ValueRole::Size, {}};
     }
     return {};
 }
@@ -442,6 +446,7 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
             return Reached{Role{ValueRole::Size, pointer.role.value_or(Role{}).member}, pointer.carryBack};
         })
         .Case<mlir::func::CallOp>([&](auto call) { return Reached{Role{walk.lookups.roleOfCallee(call), {}}}; })
+        .Case<mlir::arith::SelectOp>([&](auto) { return Reached{stampedRole(op, result.getResultNumber())}; })
         .Case<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp>([&](auto) {
             const Role stamped = stampedRole(op, result.getResultNumber());
             if (stamped.role != ValueRole::Anonymous)

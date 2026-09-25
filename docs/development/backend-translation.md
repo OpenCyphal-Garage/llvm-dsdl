@@ -110,14 +110,15 @@ threads through its fields keeps the name at every step. Two arms agreeing on th
 the member give the role alone, and two stating different roles give none. An arm whose value no
 operation describes states nothing rather than states no role, so it neither carries the answer
 nor takes it away. An operation that states nothing about its result takes the
-translator's own `v<N>`, and so does an `arith` result a body declares; a constant is spelled where
-it is used and claims no name at all.
+translator's own `v<N>`, and so does an `arith` result a body declares unless it carries the stamp
+below; a constant is spelled where it is used and claims no name at all.
 
 A plan's own structure states what no operation in it does. The bit offset threaded from step to
 step, and the error carried beside it, reach a body as `scf` results, and the operations that build
 those results say nothing about either -- an error has a role above only where an operation answers
 with one. `guarded`, the union arm, the element loops and the epilogue each build the pair knowing
-which is which.
+which is which. A getter's readable size is another such result: an `arith.select` between zero
+and the size it was handed, on whether its buffer is null.
 `build-dsdl-plan-bodies` writes that down as `llvmdsdl.result_roles`, one name per result:
 
 ```mlir
@@ -126,7 +127,8 @@ which is which.
 } {llvmdsdl.result_roles = ["offset", "error"]}
 ```
 
-`test/lit/plan-cursor-result-roles.txt` holds the stamp on the guard, the loops and the epilogue.
+`test/lit/plan-cursor-result-roles.txt` holds the stamp on the guard, the loops and the epilogue,
+and `test/lit/accessor-bodies.txt` the one on a getter's size.
 The translator takes a stamp only while its length still equals the operation's result count:
 canonicalisation drops a result nothing reads and carries the attribute onto the operation it
 rebuilds, so a stamp that has outlived its results names none of them, and the yielded values are

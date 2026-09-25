@@ -675,8 +675,7 @@ void emitSection(SourceWriter&              w,
     // A wire-flat section's scalar fields, and the elements of its fixed arrays of scalars, have a
     // getter and a setter beside the bodies: one read or one write at the field's offset, through
     // the helpers the bodies normalise with. The lowered entry points take the size, and an index,
-    // as an int64_t and hold an integer in one; the wrappers speak the member's own type, and a
-    // getter reads a null buffer as an empty one.
+    // as an int64_t and hold an integer in one; the wrappers speak the member's own type.
     // A union whose options are all flat and of one length has them too, at the offset after its
     // tag, and the tag as a member named `_tag_`; the pass that builds the bodies decides which
     // unions those are, and the tag's getter is the sign that it did.
@@ -719,7 +718,7 @@ void emitSection(SourceWriter&              w,
             const std::string irIndex   = indexed ? ", int64_t index" : "";
             const std::string cIndex    = indexed ? ", const size_t index" : "";
             const std::string passIndex = indexed ? ", (int64_t) index" : "";
-            const std::string size      = "(buffer == NULL) ? 0 : (int64_t) buffer_size_bytes";
+            const std::string size      = "(int64_t) buffer_size_bytes";
             if (type.scalarCategory == SemanticScalarCategory::Composite)
             {
                 // A nested composite's getter answers the buffer from the field's offset and, through

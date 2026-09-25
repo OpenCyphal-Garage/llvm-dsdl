@@ -445,11 +445,14 @@ What is left is per-language.
 | 34 | Rust | `collapsible_else_if` | an `else` holding one `if`, which the branch shapes leave behind |
 | 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
 
-Three of the C and C++ judge's findings are defects rather than shape.
-`clang-analyzer-security.ArrayBound` follows an accessor handed a null buffer and a non-zero size:
-the accessor reads from, or returns a pointer past, the `""` it substitutes for the buffer, where a
-deserialiser rejects that pair. A fourth `ArrayBound`, in the runtime's bit copy, assumes a whole
-byte and a partial one in a copy of at most eight bits, which cannot both hold.
+Three of the C and C++ judge's findings were one defect rather than shape.
+`clang-analyzer-security.ArrayBound` followed an accessor handed a null buffer and a non-zero size:
+the accessor read from, or returned a pointer past, the `""` it substitutes for the buffer, where a
+deserialiser refuses that pair. A getter has no error to answer with, so the lowering reads a null
+buffer as an empty one, taking its size as zero, and every backend inherits it. Rust, Go,
+TypeScript and Python cannot be handed a null buffer, and their output is unchanged byte for byte.
+The `ArrayBound` that remains, in the runtime's bit copy, assumes a whole byte and a partial one in
+a copy of at most eight bits, which cannot both hold.
 
 **2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
 nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that
