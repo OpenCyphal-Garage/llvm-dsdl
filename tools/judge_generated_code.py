@@ -51,7 +51,7 @@ CLANG_TIDY_RULESETS = Path(__file__).resolve().parent.parent / "test" / "integra
 
 # The C++ judge reads the `std` profile at the lowest standard it compiles under, so no modernize
 # check can suggest what a consumer on that standard could not write.
-CLANG_TIDY_FLAGS = {"c": ["-std=c11"], "cpp": ["-x", "c++-header", "-std=c++14"]}
+CLANG_TIDY_FLAGS = {"c": ["-std=c11"], "cpp": ["-x", "c++-header", "-std=c++20"]}
 CPP_PROFILE = "std"
 
 # The C++ tree carries the C runtime header for its bodies to call. It is the C tree's header under

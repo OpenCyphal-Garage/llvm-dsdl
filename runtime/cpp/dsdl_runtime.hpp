@@ -11,7 +11,8 @@
 /// C++ convenience wrappers for the shared C runtime used by generated DSDL bindings.
 ///
 /// This header re-exports the C runtime and provides common helpers plus an
-/// optional PMR-oriented API used by generated std/pmr C++ bindings.
+/// optional PMR-oriented API used by generated std/pmr C++ bindings. It requires
+/// C++20, for `std::span`.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -19,6 +20,8 @@
 #define LLVMDSDL_CPP_RUNTIME_HPP
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L) && defined(__has_include)
 #    if __has_include(<memory_resource>)
@@ -54,6 +57,19 @@ namespace llvmdsdl
 {
 namespace cpp
 {
+
+/// @brief The source a runtime read primitive takes for @p buffer: its bytes, or a byte that exists
+///        where it holds none.
+///
+/// The primitives take a non-null source even where they copy nothing, and a default-constructed
+/// span holds a null pointer.
+/// @param[in] buffer The span a field accessor was handed.
+/// @return A pointer to the first of @p buffer's bytes, which is never null.
+inline const std::uint8_t* readable_bytes(const std::span<const std::uint8_t> buffer) noexcept
+{
+    static constexpr std::uint8_t STAND_IN{0U};
+    return (buffer.data() != nullptr) ? buffer.data() : &STAND_IN;
+}
 
 #if LLVMDSDL_CPP_HAS_MEMORY_RESOURCE
 /// @brief Alias for the polymorphic memory-resource abstraction.

@@ -107,13 +107,14 @@ Generate C output:
 dsdlc --target-language c path/to/root_namespace --outdir out/c
 ```
 
-Generate C++ output (`std`, `pmr`, `autosar`, or `both` where `both` means `std` + `pmr`):
+Generate C++ output (`std`, `pmr`, `autosar`, or `both` where `both` means `std` + `pmr`); `std` and
+`pmr` are C++20:
 
 ```bash
 dsdlc --target-language cpp path/to/root_namespace --cpp-profile both --outdir out/cpp
 ```
 
-Generate AUTOSAR-oriented C++14 output:
+Generate AUTOSAR-oriented C++14 output, which compiles against [CETL](https://github.com/OpenCyphal/CETL):
 
 ```bash
 dsdlc --target-language cpp path/to/root_namespace --cpp-profile autosar --outdir out/cpp-autosar

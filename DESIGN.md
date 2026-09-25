@@ -196,7 +196,9 @@ Key files:
 
 `pmr` mode adds allocator-aware surfaces while preserving wire semantics shared with other backends.
 
-`autosar` mode provides a C++14-compatible surface with deterministic bounded variable-array storage (no heap-backed containers in generated type fields).
+The `std` and `pmr` profiles require C++20. A field accessor takes its buffer as a `std::span`.
+
+`autosar` mode provides a C++14-compatible surface with deterministic bounded variable-array storage (no heap-backed containers in generated type fields). Its field accessors take [CETL](https://github.com/OpenCyphal/CETL)'s `cetl::pf20::span`, so the output compiles against CETL's headers.
 
 `both` remains a convenience output that emits only the `std` and `pmr` trees.
 

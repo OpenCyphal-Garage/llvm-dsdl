@@ -26,6 +26,11 @@ if(NOT (CPP_PROFILE STREQUAL "std" OR CPP_PROFILE STREQUAL "pmr" OR CPP_PROFILE 
 endif()
 
 if(CPP_PROFILE STREQUAL "autosar")
+  # The autosar profile's accessors take CETL's span.
+  if(NOT DEFINED CETL_INCLUDE_DIR OR NOT EXISTS "${CETL_INCLUDE_DIR}/cetl/pf20/span.hpp")
+    message(FATAL_ERROR "CETL not found under '${CETL_INCLUDE_DIR}'; run: git submodule update --init submodules/CETL")
+  endif()
+  set(cxx_include_flags -isystem "${CETL_INCLUDE_DIR}")
   set(cxx_std_flag -std=c++14)
   set(cxx_warning_flags
       -Wall
@@ -35,6 +40,7 @@ if(CPP_PROFILE STREQUAL "autosar")
       -Wsign-conversion
       -Werror)
 else()
+  set(cxx_include_flags "")
   set(cxx_std_flag -std=c++23)
   set(cxx_warning_flags
       -Wall
@@ -120,6 +126,7 @@ execute_process(
       ${cxx_warning_flags}
       -I "${c_out}"
       -I "${cpp_out}"
+      ${cxx_include_flags}
       -c "${parity_main}"
       -o "${main_obj}"
   RESULT_VARIABLE main_cc_result

@@ -4,3 +4,6 @@
 [submodule "libudpard"]
 	path = submodules/libudpard
 	url = https://github.com/OpenCyphal/libudpard.git
+[submodule "CETL"]
+	path = submodules/CETL
+	url = https://github.com/OpenCyphal/CETL.git

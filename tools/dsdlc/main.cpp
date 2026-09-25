@@ -2222,27 +2222,33 @@ int runDsdlc(int argc, char** argv)
     // arguments, and a target whose references cannot be null never reaches the answer that guard
     // gives, so the test is a constant and the branch is one nothing takes.
     //
-    // C and C++ are handed pointers and keep both. Rust is handed a reference, a slice and a local
-    // and keeps neither. Go, TypeScript and Python are handed an object a caller may omit, beside a
-    // buffer and a local that cannot be null. `mlir` keeps both, because what it prints is the
-    // neutral body every backend translates rather than any one target's reading of it.
+    // C is handed pointers and keeps every test. C++ is handed pointers too, except by a field
+    // accessor, which takes a span. Rust is handed a reference, a slice and a local and keeps none.
+    // Go, TypeScript and Python are handed an object a caller may omit, beside a buffer and a local
+    // that cannot be null. `mlir` keeps every test, because what it prints is the neutral body every
+    // backend translates rather than any one target's reading of it.
     llvmdsdl::TargetNullability nullability;
-    if (options.targetLanguage == "rust")
+    if (options.targetLanguage == "cpp")
     {
-        nullability = {false, false};
+        nullability = {true, true, false};
+    }
+    else if (options.targetLanguage == "rust")
+    {
+        nullability = {false, false, false};
     }
     else if ((options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
              (options.targetLanguage == "python"))
     {
-        nullability = {true, false};
+        nullability = {true, false, false};
     }
 
-    // Whether a composite getter answers a view that carries its own length. C and C++ answer a
-    // pointer and pass the length back through another, which the caller reads; the other four
-    // answer a slice, a `memoryview` or a `Uint8Array`, and the length the plan writes back is read
+    // Whether a composite getter answers a view that carries its own length. C answers a pointer
+    // and passes the length back through another, which the caller reads; the other five answer a
+    // span, a slice, a `memoryview` or a `Uint8Array`, and the length the plan writes back is read
     // by nothing. `mlir` keeps the write, printing the neutral body rather than a target's reading.
-    const bool accessorsReturnViews = (options.targetLanguage == "rust") || (options.targetLanguage == "go") ||
-                                      (options.targetLanguage == "ts") || (options.targetLanguage == "python");
+    const bool accessorsReturnViews = (options.targetLanguage == "cpp") || (options.targetLanguage == "rust") ||
+                                      (options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
+                                      (options.targetLanguage == "python");
 
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
     // over the module they all receive.

@@ -312,8 +312,8 @@ so `List_Request` and its free entry points are findings until the C++ phase nes
 
 Every header is judged as a translation unit of its own, because `misc-include-cleaner` reads only a
 unit's main file and would otherwise never check a header's includes. The C++ judge reads the `std`
-profile at C++14, the lowest standard that profile compiles under, so no modernize check suggests
-what a consumer on C++14 could not write. It leaves the C runtime header the C++ tree carries to the
+profile at C++20, the lowest standard that profile compiles under, so no modernize check suggests
+what a consumer on C++20 could not write. It leaves the C runtime header the C++ tree carries to the
 C judge.
 
 The judges gate the phases after this one. Rust's phase converged because rustc names the defect:
@@ -364,13 +364,14 @@ and every one of those fixes was in a single place:
 | `dsdl-fold-unobserved-accessor-sizes` | a composite getter's written-back length, in a local each of four languages suppressed | erased where the getter returns a view that carries its length |
 
 The composite getter was the one defect three judges named alike, 44 times each. It answers a
-pointer to the nested type's bytes and writes their length through another, which C and C++ read.
-Go, Python, TypeScript and Rust answer a slice, a `memoryview` or a `Uint8Array` instead, which
-carries the length, so the write landed in a local nothing read -- and each language had been
-taught to hide it: `_ = outSize`, `void outSize`, a leading underscore. The write is erased in the
-lowering for those four, where it is a question about the getter's signature and not about nulls,
-and the canonicaliser takes what fed it, including the subtraction a getter at a non-zero offset
-used. An emitter declares the size only where a plan still reads it.
+pointer to the nested type's bytes and writes their length through another, which C reads. Go,
+Python, TypeScript and Rust answer a slice, a `memoryview` or a `Uint8Array` instead, which carries
+the length, so the write landed in a local nothing read -- and each language had been taught to
+hide it: `_ = outSize`, `void outSize`, a leading underscore. The write is erased in the lowering
+for every language whose getter answers a view, where it is a question about the getter's signature
+and not about nulls, and the canonicaliser takes what fed it, including the subtraction a getter at
+a non-zero offset used. An emitter declares the size only where a plan still reads it. C++ answers
+a span, so the write is erased for it too.
 
 The helper naming was the largest of them. A definition's 658 lowered helper symbols reached the
 output verbatim -- `mlir_llvmdsdl_plan_capacity_check__uavcan_diagnostic_Record_1_1` -- which was
@@ -413,36 +414,38 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 | TypeScript | eslint | 1,810 | 548 |
 | | | **10,106** | **3,225** |
 
-The C and C++ judge was installed after the sweep, and reads 4,808 findings over the generated C and
-5,437 over the C++.
+The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
+5,437 over the C++ at C++14. Read at C++20, with the accessors taking spans, the C++ comes to 4,949.
 
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
 | 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
-| 2,020 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
+| 1,907 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
 | 1,500 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
 | 997 | Python | `E501` | long lines |
 | 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
-| 567 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
 | 488 | C++ | `misc-include-cleaner` | the C runtime's functions, reached only through `dsdl_runtime.hpp` |
+| 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
-| 362 | C++ | `readability-redundant-inline-specifier` | `inline` on `serialize` and `deserialize`, which are defined in their class |
-| 332 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
 | 198 | Python | `F401` | unused imports |
 | 185 | C | `modernize-avoid-c-style-cast` | a cast to the type its operand already has |
 | 181 | Python | `UP037` | quoted annotations |
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
+| 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
+| 168 | C++ | `modernize-concat-nested-namespaces` | `namespace uavcan { namespace node {`, where C++17 writes `namespace uavcan::node {` |
 | 164 | Python | `SIM108` | the remaining branch-not-expression sites |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 123 | C, C++ | `readability-redundant-parentheses` | `!(rejected)`, 123 in each |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
+| 54 | C++ | `modernize-type-traits` | `std::is_standard_layout<T>::value`, where C++17 writes `std::is_standard_layout_v<T>` |
 | 34 | Rust | `collapsible_else_if` | an `else` holding one `if`, which the branch shapes leave behind |
+| 34 | C++ | `modernize-use-integer-sign-comparison` | a signed value compared with an unsigned one, where C++20 has `std::cmp_less` |
 | 28 | Go | `ST1003` | a package name with an underscore, and the runtime scaffold's own constants |
 
 Three of the C and C++ judge's findings were one defect rather than shape.
@@ -574,3 +577,13 @@ stem that is written.
 C++ keeps its status code. The AUTOSAR profile is C++14 and the embedded profiles run without
 exceptions, so neither an exception nor `std::expected` is available across the targets the backend
 serves.
+
+**C++ field accessors take and answer spans.** A getter takes `std::span<const std::uint8_t>`, a
+setter `std::span<std::uint8_t>`, and a composite getter answers the nested type's bytes as a span,
+as Rust, Go, TypeScript and Python answer a slice or a view. A pointer beside a size, with the size
+written back through another pointer, is C's idiom; in C++ it let `get_timestamp(buffer, size,
+nullptr)` compile and write through the null pointer. The `std` and `pmr` profiles therefore require
+C++20. The `autosar` profile stays at C++14 and takes CETL's `cetl::pf20::span`, which exists for
+that standard. CETL's `cetlpf.hpp`, which would answer `std::span` at C++20, carries CETL's own
+warning against use in AUTOSAR code, so the profile names `cetl::pf20` directly. Serialise and
+deserialise take a pointer and an in-out size.

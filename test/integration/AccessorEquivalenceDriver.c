@@ -138,7 +138,7 @@ int main(void)
     REPORT("uavcan.si.unit.angle.Quaternion");
     /* A nested composite, through the buffer its getter answers: the nested type's own getter on it
      * agrees with deserialise on the full buffer and on one cut inside the nested field, and a null
-     * buffer answers an empty one. */
+     * buffer answers an empty one. A caller that needs no size passes a null pointer for it. */
     {
         uint8_t                                 wire[11];
         uavcan__si__sample__temperature__Scalar obj;
@@ -149,6 +149,7 @@ int main(void)
         ok                   = ok && (uavcan__si__sample__temperature__Scalar__deserialize_(&obj, wire, &size) == 0);
         const uint8_t* stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(wire, sizeof wire, &sub);
         ok    = ok && (uavcan__time__SynchronizedTimestamp__get_microsecond_(stamp, sub) == obj.timestamp.microsecond);
+        ok    = ok && (uavcan__si__sample__temperature__Scalar__get_timestamp_(wire, sizeof wire, NULL) == stamp);
         size  = 3;
         ok    = ok && (uavcan__si__sample__temperature__Scalar__deserialize_(&obj, wire, &size) == 0);
         stamp = uavcan__si__sample__temperature__Scalar__get_timestamp_(wire, 3, &sub);

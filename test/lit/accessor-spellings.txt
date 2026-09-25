@@ -7,6 +7,7 @@
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language c %S/fixtures_host_image --outdir %t/c > /dev/null
 # RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.h | FileCheck %s --check-prefix=C
+# RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.c | FileCheck %s --check-prefix=C_BODY
 # RUN: cat %t/c/fixtures_host_image/vendor/Arr_1_0.h | FileCheck %s --check-prefix=C_ELEMENT
 # RUN: %dsdlc --target-language cpp --cpp-profile std %S/fixtures_host_image --outdir %t/cpp > /dev/null
 # RUN: cat %t/cpp/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=CPP
@@ -30,18 +31,28 @@
 # C-NEXT:   return (uint16_t) fixtures_host_image_vendor_Padded_1_0__get_b_ir_(buffer, (int64_t) buffer_size_bytes);
 # C:      static inline int8_t fixtures_host_image__vendor__Padded__set_b_(uint8_t* const buffer, const size_t buffer_size_bytes, const uint16_t value)
 
-# A getter reads a null buffer as an empty one, so the size it reads for is zero there. The plan
-# names that size, and C++ declares it by the name.
+# A C getter reads a null buffer as an empty one, so the size it reads for is zero there. The plan
+# names that size, and C declares it by the name.
+# C_BODY:      fixtures_host_image_vendor_Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes){{$}}
+# C_BODY-NEXT: {
+# C_BODY:      const bool is_null = (buffer == NULL);
+# C_BODY-NEXT: const uint64_t size = (is_null ? 0ULL : buffer_size_bytes_);
+# C_BODY-NEXT: dsdl_runtime_get_u16(buf, (size_t) size,
+
+# C++ takes the buffer as a span, which is never null, and binds its size where the plan reads it.
+# A read hands the runtime the span's bytes through `readable_bytes`, since a default-constructed
+# span holds no pointer; a write hands them over after the check that the span holds the field.
 # CPP:      struct Padded {
-# CPP:      static std::uint16_t get_b(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes)
+# CPP:      static std::uint16_t get_b(const std::span<const std::uint8_t> buffer)
 # CPP-NEXT: {
-# CPP:      const bool is_null = (buffer == nullptr);
-# CPP-NEXT: const std::uint64_t size = (is_null ? 0ULL : buffer_size_bytes);
-# CPP-NEXT: dsdl_runtime_get_u16(buf, static_cast<std::size_t>(size),
+# CPP-NEXT: const std::size_t buffer_size_bytes = buffer.size();
+# CPP-NEXT: dsdl_runtime_get_u16(::llvmdsdl::cpp::readable_bytes(buffer), static_cast<std::size_t>(buffer_size_bytes),
 # CPP:      return static_cast<std::uint16_t>(
-# CPP:      static std::int8_t set_b(std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const std::uint16_t member_value)
+# CPP:      static std::int8_t set_b(const std::span<std::uint8_t> buffer, const std::uint16_t member_value)
 # CPP-NEXT: {
+# CPP-NEXT: const std::size_t buffer_size_bytes = buffer.size();
 # CPP-NEXT: const std::uint64_t value = static_cast<std::uint64_t>(member_value);
+# CPP:      dsdl_runtime_set_uxx(buffer.data(),
 # CPP:      };
 
 # RUST:      pub fn get_b(buffer: &[u8]) -> u16 {
@@ -73,8 +84,8 @@
 # An element of a fixed array takes an index after the buffer.
 # C_ELEMENT:    static inline uint8_t fixtures_host_image__vendor__Arr__get_head_(const uint8_t* const buffer, const size_t buffer_size_bytes, const size_t index)
 # C_ELEMENT:    static inline int8_t fixtures_host_image__vendor__Arr__set_head_(uint8_t* const buffer, const size_t buffer_size_bytes, const size_t index, const uint8_t value)
-# CPP_ELEMENT:  static std::uint8_t get_head(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const std::size_t element_index)
-# CPP_ELEMENT:  static std::int8_t set_head(std::uint8_t* const buffer, const std::size_t buffer_size_bytes, const std::size_t element_index, const std::uint8_t member_value)
+# CPP_ELEMENT:  static std::uint8_t get_head(const std::span<const std::uint8_t> buffer, const std::size_t element_index)
+# CPP_ELEMENT:  static std::int8_t set_head(const std::span<std::uint8_t> buffer, const std::size_t element_index, const std::uint8_t member_value)
 # RUST_ELEMENT: pub fn get_head(buffer: &[u8], index: usize) -> u8 {
 # RUST_ELEMENT: pub fn set_head(buffer: &mut [u8], index: usize, value: u8) -> core::result::Result<(), i8> {
 # GO_ELEMENT:   func ArrGetHead(buffer []byte, elementIndex int) uint8 {

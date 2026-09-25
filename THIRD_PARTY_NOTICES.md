@@ -17,6 +17,10 @@ licenses:
    - License: MIT
    - License file:
      `submodules/public_regulated_data_types/LICENSE`
+4. OpenCyphal `CETL` submodule
+   - License: MIT
+   - License file:
+     `submodules/CETL/LICENSE`
 
 When distributing self-contained tool bundles produced by this project, include
 this notice file and the referenced license files in the distribution package.

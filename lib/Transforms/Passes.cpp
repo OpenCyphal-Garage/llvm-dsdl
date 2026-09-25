@@ -1374,19 +1374,25 @@ struct FoldDSDLNullGuardsPass : public mlir::PassWrapper<FoldDSDLNullGuardsPass,
         // The pointee says which argument a test is about: a body is handed the object it reads,
         // the buffer it writes and the slot holding that buffer's size, and only the first is an
         // object. The two answers are separate because a language can be handed a reference to one
-        // and a pointer to the other -- Go has a pointer receiver beside a slice.
+        // and a pointer to the other -- Go has a pointer receiver beside a slice. A field accessor
+        // is handed a buffer alone, which C++ passes as a span where its bodies take a pointer.
         llvm::SmallVector<mlir::func::FuncOp> touched;
         module.walk([&](mlir::dsdl::IsNullOp op) {
+            auto       fn       = op->getParentOfType<mlir::func::FuncOp>();
             const auto pointer  = mlir::cast<mlir::dsdl::PtrType>(op.getPointer().getType());
             const bool isObject = mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee());
-            if (isObject ? nullability_.objectPointer : nullability_.rawPointer)
+            const auto kind     = fn ? fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body") : nullptr;
+            const bool accessor = kind && ((kind.getValue() == "get") || (kind.getValue() == "set"));
+            const bool nullable = isObject ? nullability_.objectPointer
+                                           : (nullability_.rawPointer && (!accessor || nullability_.accessorBuffer));
+            if (nullable)
             {
                 return;
             }
             mlir::OpBuilder builder(op);
             auto            never = mlir::arith::ConstantIntOp::create(builder, op.getLoc(), 0, 1);
             op.getResult().replaceAllUsesWith(never.getResult());
-            if (auto fn = op->getParentOfType<mlir::func::FuncOp>(); fn && !llvm::is_contained(touched, fn))
+            if (fn && !llvm::is_contained(touched, fn))
             {
                 touched.push_back(fn);
             }
@@ -1409,15 +1415,6 @@ private:
     TargetNullability nullability_;
 };
 
-/// @brief Replaces a host-image section's field-wise body with one move.
-///
-/// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
-/// are worked through, and the consumed count is stored. Only the middle is replaced, so this does
-/// not care whether the field work was scalars, a loop over a fixed array, or a call into a nested
-/// type -- all three are the same bytes once the verdict holds.
-///
-/// It declines anything it does not recognise, and a declined body is the one every backend
-/// already translates, so declining is free.
 /// @brief Erases the size a composite getter writes back, where the target's getter returns a view.
 struct FoldDSDLUnobservedAccessorSizesPass
     : public mlir::PassWrapper<FoldDSDLUnobservedAccessorSizesPass, mlir::OperationPass<mlir::ModuleOp>>
@@ -1435,7 +1432,7 @@ struct FoldDSDLUnobservedAccessorSizesPass
     void runOnOperation() override
     {
         // A composite getter answers a pointer to the nested type's bytes and writes their length
-        // through its last argument. A target whose getter answers a view -- a slice, a
+        // through its last argument. A target whose getter answers a view -- a span, a slice, a
         // `memoryview`, a `Uint8Array` -- hands the caller that length inside the view, so nothing
         // reads what the pointer receives. The write is erased only where the pointer is never read
         // back, so a getter that did read it keeps the value it read.
@@ -1485,6 +1482,15 @@ struct FoldDSDLUnobservedAccessorSizesPass
     }
 };
 
+/// @brief Replaces a host-image section's field-wise body with one move.
+///
+/// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
+/// are worked through, and the consumed count is stored. Only the middle is replaced, so this does
+/// not care whether the field work was scalars, a loop over a fixed array, or a call into a nested
+/// type -- all three are the same bytes once the verdict holds.
+///
+/// It declines anything it does not recognise, and a declined body is the one every backend
+/// already translates, so declining is free.
 struct FoldDSDLHostImageBodiesPass
     : public mlir::PassWrapper<FoldDSDLHostImageBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
 {

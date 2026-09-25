@@ -153,12 +153,12 @@ set(cpp_out "${OUT_DIR}/cpp")
 _aliasable_only_generate(cpp "${cpp_out}")
 foreach(profile std pmr)
   _aliasable_only_compile("C++ ${profile}" "${CXX_COMPILER}"
-    -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
+    -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
     "${probe_dir}/AliasableOnlyProbe.cpp" -o "${OUT_DIR}/probe_cpp_${profile}")
   _aliasable_only_run("C++ ${profile}" "${OUT_DIR}/probe_cpp_${profile}")
   _aliasable_only_sweep("${OUT_DIR}/sweep_cpp_${profile}.cpp" "${cpp_out}/${profile}" "hpp")
   _aliasable_only_compile("C++ ${profile} headers" "${CXX_COMPILER}"
-    -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
+    -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror -I "${cpp_out}/${profile}"
     -c "${OUT_DIR}/sweep_cpp_${profile}.cpp" -o "${OUT_DIR}/sweep_cpp_${profile}.o")
 endforeach()
 list(APPEND legs "C++")

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-foreach(var DSDLC UAVCAN_ROOT OUT_DIR CXX_COMPILER)
+foreach(var DSDLC UAVCAN_ROOT OUT_DIR CXX_COMPILER CETL_INCLUDE_DIR)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
     message(FATAL_ERROR "Missing required variable: ${var}")
   endif()
@@ -12,6 +12,11 @@ endif()
 
 if(NOT EXISTS "${UAVCAN_ROOT}")
   message(FATAL_ERROR "uavcan root not found: ${UAVCAN_ROOT}")
+endif()
+
+# The autosar profile's accessors take CETL's span.
+if(NOT EXISTS "${CETL_INCLUDE_DIR}/cetl/pf20/span.hpp")
+  message(FATAL_ERROR "CETL not found under ${CETL_INCLUDE_DIR}; run: git submodule update --init submodules/CETL")
 endif()
 
 file(REMOVE_RECURSE "${OUT_DIR}")
@@ -58,6 +63,7 @@ endif()
 foreach(profile std pmr autosar)
   if(profile STREQUAL "autosar")
     set(profile_root "${OUT_DIR}/${profile}")
+    set(cxx_include_flags -I "${profile_root}" -isystem "${CETL_INCLUDE_DIR}")
     set(cxx_std_flag -std=c++14)
     set(cxx_warning_flags
         -Wall
@@ -68,6 +74,7 @@ foreach(profile std pmr autosar)
         -Werror)
   else()
     set(profile_root "${OUT_DIR}/${profile}")
+    set(cxx_include_flags -I "${profile_root}")
     set(cxx_std_flag -std=c++23)
     set(cxx_warning_flags
         -Wall
@@ -292,8 +299,7 @@ foreach(profile std pmr autosar)
         "${CXX_COMPILER}"
           ${cxx_std_flag}
           ${cxx_warning_flags}
-          -I
-          "${profile_root}"
+          ${cxx_include_flags}
           "${tu}"
           -c
           -o "${obj}"

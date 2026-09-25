@@ -348,6 +348,10 @@ bool isAutosarFlavor(const CppFlavor flavor)
 /// declares them. The profiles differ in how a variable-length array is sized and, under `pmr`,
 /// in the memory resource a nested call is handed.
 ///
+/// A serialise and a deserialise take the buffer as a pointer beside its size. A field accessor
+/// takes it as a span, `std::span` or, under `autosar`, CETL's `cetl::pf20::span`, and every byte
+/// pointer in an accessor's body is a span.
+///
 /// The plan works in `i64`, `i8` for its error codes, `i1` for its tests, and `f32` and `f64`.
 /// `i64` is spelled unsigned, which is what the wire arithmetic and the runtime primitives take;
 /// the few signed comparisons cast for the comparison alone. `i8` is spelled signed, as the
@@ -574,9 +578,11 @@ public:
     }
 
     /// @brief Opens a getter or a setter: a static member defined inside the struct, since it
-    ///        reads the wire and not an object, speaking the member's own type. The plan holds an
-    ///        integer, and an index, in a `std::uint64_t`, so a setter rebinds its value at entry,
-    ///        an element accessor its index, and a getter casts at its return.
+    ///        reads the wire and not an object, taking the buffer as a span and speaking the
+    ///        member's own type. The plan holds the size, an integer and an index in a
+    ///        `std::uint64_t`: the size is the span's own, bound where the plan reads it; a setter
+    ///        rebinds its value at entry, an element accessor its index, and a getter casts at its
+    ///        return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed    a         = accessed(fn);
@@ -588,26 +594,33 @@ public:
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string index     = indexed ? ", const std::size_t element_index" : "";
+        const std::string readable  = spanOf(/*isConst=*/true);
         accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_                 = (getter && integer) ? storage : std::string{};
         if (composite)
         {
-            // The nested type's buffer and, through the pointer, what remains of this one.
-            w.line("static const std::uint8_t* " + name +
-                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index +
-                   ", std::size_t* const out_size)");
+            // The nested type's bytes, as a span, which carries their count. Nothing reads the
+            // count a plan writes back, so the lowering erases the write for this target.
+            if (!fn.getArguments().back().use_empty())
+            {
+                llvm::report_fatal_error("C++ spelling: a composite getter that still writes back its size");
+            }
+            w.line("static " + readable + " " + name + "(const " + readable + " buffer" + index + ")");
         }
         else if (getter)
         {
-            w.line("static " + storage + " " + name +
-                   "(const std::uint8_t* const buffer, const std::size_t buffer_size_bytes" + index + ")");
+            w.line("static " + storage + " " + name + "(const " + readable + " buffer" + index + ")");
         }
         else
         {
-            w.line("static std::int8_t " + name + "(std::uint8_t* const buffer, const std::size_t buffer_size_bytes" +
-                   index + ", const " + storage + (integer ? " member_value)" : " value)"));
+            w.line("static std::int8_t " + name + "(const " + spanOf(/*isConst=*/false) + " buffer" + index +
+                   ", const " + storage + (integer ? " member_value)" : " value)"));
         }
         w.open("{");
+        if (!fn.getArgument(1).use_empty())
+        {
+            w.line("const std::size_t buffer_size_bytes = buffer.size();");
+        }
         std::vector<std::string> parameters{"buffer", "buffer_size_bytes"};
         if (indexed)
         {
@@ -828,7 +841,9 @@ public:
 
     [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
-        return mlir::isa<mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp, mlir::dsdl::BufferAtOp>(op);
+        // A span holds no null to stand a buffer in for, so an accessor's buffer-or-empty is the span.
+        return mlir::isa<mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp, mlir::dsdl::BufferAtOp>(op) ||
+               ((accessor_ != Accessor::None) && mlir::isa<mlir::dsdl::BufferOrEmptyOp>(op));
     }
 
     [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
@@ -853,11 +868,20 @@ public:
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
     {
         const std::string buffer = names(op.getBuffer());
+        if (accessor_ != Accessor::None)
+        {
+            return buffer;
+        }
         return "((" + buffer + " != nullptr) ? " + buffer + " : reinterpret_cast<const std::uint8_t*>(\"\"))";
     }
 
     [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
     {
+        // An accessor's offset is clamped to its span's size, which is what `subspan` requires.
+        if (accessor_ != Accessor::None)
+        {
+            return names(op.getBuffer()) + ".subspan(" + asSize(names(op.getByteOffset())) + ")";
+        }
         return "&" + names(op.getBuffer()) + "[" + asSize(names(op.getByteOffset())) + "]";
     }
 
@@ -971,8 +995,9 @@ public:
         const mlir::Type  valueType = op.getValue().getType();
         const auto        width     = static_cast<std::int64_t>(op.getWidth());
         const std::string value     = names(op.getValue());
-        const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
-                                      asSize(names(op.getBitOffset())) + ", ";
+        const std::string prefix    = bytesOf(op.getBuffer(), names, /*read=*/false) + ", " +
+                                      asSize(names(op.getBufferSizeBytes())) + ", " + asSize(names(op.getBitOffset())) +
+                                      ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             return "dsdl_runtime_set_f" + std::to_string(width) + "(" + prefix + value + ")";
@@ -992,8 +1017,8 @@ public:
     {
         const mlir::Type  valueType = op.getValue().getType();
         const auto        width     = static_cast<std::int64_t>(op.getWidth());
-        const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
-                                      asSize(names(op.getBitOffset()));
+        const std::string prefix    = bytesOf(op.getBuffer(), names, /*read=*/true) + ", " +
+                                      asSize(names(op.getBufferSizeBytes())) + ", " + asSize(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             return "dsdl_runtime_get_f" + std::to_string(width) + "(" + prefix + ")";
@@ -1012,7 +1037,7 @@ public:
 
     void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
     {
-        const std::string destination = names(op.getDestination());
+        const std::string destination = bytesOf(op.getDestination(), names, /*read=*/false);
         const std::string offset      = asSize(names(op.getDestinationBitOffset()));
         const std::string width       = asSize(names(op.getWidth()));
         if (const auto container = boolContainerOf(op.getSource(), names))
@@ -1034,7 +1059,8 @@ public:
 
     void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
     {
-        const std::string buffer = names(op.getBuffer()) + ", " + asSize(names(op.getBufferSizeBytes()));
+        const std::string buffer =
+            bytesOf(op.getBuffer(), names, /*read=*/true) + ", " + asSize(names(op.getBufferSizeBytes()));
         const std::string offset = asSize(names(op.getBitOffset()));
         const std::string width  = asSize(names(op.getWidth()));
         if (const auto container = boolContainerOf(op.getDestination(), names))
@@ -1366,6 +1392,25 @@ private:
         return pointer.starts_with('&') ? pointer.substr(1) : "*" + pointer;
     }
 
+    /// @brief @p buffer as the runtime takes it. An accessor's span is handed over by its pointer,
+    ///        which a read takes through `readable_bytes` since a span may hold none; a write
+    ///        follows the check that the span holds the field.
+    std::string bytesOf(const mlir::Value buffer, const ValueNames& names, const bool read) const
+    {
+        if (accessor_ == Accessor::None)
+        {
+            return names(buffer);
+        }
+        return read ? "::llvmdsdl::cpp::readable_bytes(" + names(buffer) + ")" : names(buffer) + ".data()";
+    }
+
+    /// @brief The span an accessor takes its buffer in, and answers a nested type's bytes in.
+    std::string spanOf(const bool isConst) const
+    {
+        return std::string{isAutosarFlavor(flavor_) ? "cetl::pf20::span<" : "std::span<"} + (isConst ? "const " : "") +
+               "std::uint8_t>";
+    }
+
     std::string typeName(const mlir::Type type) const
     {
         if (mlir::isa<mlir::IndexType>(type))
@@ -1394,7 +1439,7 @@ private:
             const std::string qualifier = pointer.getIsConst() ? "const " : "";
             if (mlir::isa<mlir::dsdl::ByteType>(pointer.getPointee()))
             {
-                return qualifier + "std::uint8_t*";
+                return (accessor_ != Accessor::None) ? spanOf(pointer.getIsConst()) : qualifier + "std::uint8_t*";
             }
             if (mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()))
             {
@@ -2313,9 +2358,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition& def,
         {"<cstring>", {"std::memcpy(", "std::memset(", "std::memcmp(", "std::memmove("}},
         {"<limits>", {"std::numeric_limits<"}},
         {"<memory_resource>", {"std::pmr::"}},
+        {"<span>", {"std::span<"}},
         {"<type_traits>", {"std::is_standard_layout<", "std::is_same<", "std::is_trivially"}},
         {"<utility>", {"std::move(", "std::forward(", "std::swap(", "std::pair<", "std::exchange("}},
         {"<vector>", {"std::vector<", "std::pmr::vector<"}},
+        {"\"cetl/pf20/span.hpp\"", {"cetl::pf20::span<"}},
         {"\"dsdl_runtime.hpp\"", {"dsdl_runtime_", "::llvmdsdl::cpp::", "DSDL_RUNTIME_", "LLVMDSDL_"}},
     };
     out << includeLinesFor(declarations, standardHeaders);
