@@ -2248,12 +2248,26 @@ void tagAccessor(mlir::func::FuncOp    fn,
     markSigned(fn, step);
 }
 
-/// @brief The buffer a getter reads, and the number of bytes it may read there.
+/// @brief The number of bytes a getter may read from its buffer.
 ///
 /// A null buffer is read as an empty one, whatever size it is handed. `deserialize_` refuses a null
 /// buffer with a non-zero size, but a getter has no error to answer with, and an empty buffer is one
 /// it can answer for: every read zero-extends, as a read past the end of any buffer does.
 /// `dsdl-fold-null-guards` folds the test away for a target whose buffer cannot be null.
+mlir::Value readableSize(mlir::OpBuilder&     builder,
+                         const mlir::Location loc,
+                         const mlir::Value    buffer,
+                         const mlir::Value    size)
+{
+    const mlir::Value null  = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), buffer);
+    const mlir::Value empty = constantI64(builder, loc, 0);
+    auto              held  = mlir::arith::SelectOp::create(builder, loc, null, empty, size);
+    stampResultRoles(held, {RoleSize});
+    return held.getResult();
+}
+
+/// @brief The buffer a getter reads, an empty one standing in where it is null, and the number of
+///        bytes it may read there (`readableSize`).
 std::pair<mlir::Value, mlir::Value> readableBuffer(mlir::OpBuilder&     builder,
                                                    const mlir::Location loc,
                                                    const mlir::Type     type,
@@ -2261,11 +2275,7 @@ std::pair<mlir::Value, mlir::Value> readableBuffer(mlir::OpBuilder&     builder,
                                                    const mlir::Value    size)
 {
     const mlir::Value readable = mlir::dsdl::BufferOrEmptyOp::create(builder, loc, type, buffer);
-    const mlir::Value null     = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), buffer);
-    const mlir::Value empty    = constantI64(builder, loc, 0);
-    auto              held     = mlir::arith::SelectOp::create(builder, loc, null, empty, size);
-    stampResultRoles(held, {RoleSize});
-    return {readable, held.getResult()};
+    return {readable, readableSize(builder, loc, buffer, size)};
 }
 
 /// @brief Builds the getter and the setter of one field of a wire-flat section: a scalar, or one
@@ -2434,11 +2444,13 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
 ///
 /// A nested type's accessors read from the start of the buffer they are given, so its getter
 /// answers the buffer from the field's byte offset and, through the size pointer, what remains:
-/// `Vec3::get_x(Pose::get_position(buffer))` composes. The offset is clamped to the size, so a
-/// short buffer yields an empty one and every nested read zero-extends, as `deserialize_` does;
-/// an element at or past the capacity yields the same, and so does a null buffer
-/// (`readableBuffer`). There is no setter: a nested field is set through its own fields' setters
-/// on the buffer the getter answers.
+/// `Vec3::get_x(Pose::get_position(buffer))` composes. A field at offset nought answers the buffer
+/// it was handed, null or not, with the size a getter reads there (`readableSize`): no offset is
+/// added to the buffer, so a null one needs no stand-in, and the nested getters read a null buffer
+/// as empty. Elsewhere the offset is clamped to the size, so a short buffer yields an empty one and
+/// every nested read zero-extends, as `deserialize_` does; an element at or past the capacity
+/// yields the same, and so does a null buffer (`readableBuffer`). There is no setter: a nested
+/// field is set through its own fields' setters on the buffer the getter answers.
 mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                           builder,
                                            mlir::ModuleOp                             module,
                                            mlir::Location                             loc,
@@ -2476,18 +2488,28 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
     tagAccessor(fn, schema, section, "get", step);
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    const mlir::Value outSize   = entry->getArgument(indexed ? 3 : 2);
-    const auto [readable, size] = readableBuffer(builder, loc, readTy, entry->getArgument(0), entry->getArgument(1));
+    const mlir::Value  buffer     = entry->getArgument(0);
+    const mlir::Value  outSize    = entry->getArgument(indexed ? 3 : 2);
+    const std::int64_t byteOffset = bitOffset / 8;
+    if (!indexed && (byteOffset == 0))
+    {
+        mlir::dsdl::StoreScalarOp::create(builder,
+                                          loc,
+                                          outSize,
+                                          readableSize(builder, loc, buffer, entry->getArgument(1)));
+        mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{buffer});
+        built.push_back(fn);
+        return mlir::success();
+    }
+    const auto [readable, size] = readableBuffer(builder, loc, readTy, buffer, entry->getArgument(1));
 
-    mlir::Value offset = constantI64(builder, loc, bitOffset / 8);
-    // A field the buffer starts with is within whatever buffer there is. Comparing its offset
-    // against the size would answer the same for every size, and a target that reads its own
-    // generated code is told so by a compiler that can see it.
-    mlir::Value within =
-        ((bitOffset / 8) == 0)
-            ? mlir::arith::ConstantIntOp::create(builder, loc, 1, 1).getResult()
-            : mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ule, offset, size).getResult();
-    if (indexed)
+    mlir::Value offset = constantI64(builder, loc, byteOffset);
+    mlir::Value within;
+    if (!indexed)
+    {
+        within = mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ule, offset, size);
+    }
+    else
     {
         const mlir::Value index   = entry->getArgument(2);
         const mlir::Value inRange = mlir::arith::CmpIOp::create(builder,

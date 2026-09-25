@@ -30,7 +30,7 @@
       "plain:fixtures_aliasable_vendor_Pose_1_0__serialize_ir_"
     ],
     "measured": {
-      "llvm-22": "LLVM 22.1.8, 2026-09-24, a getter reads a null buffer as an empty one"
+      "llvm-22": "LLVM 22.1.8, 2026-09-25, a composite getter at offset nought answers its buffer"
     },
     "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A whole-function count includes the cold path: a getter's hot path is a bounds check and one load on a little-endian target, and the primitive it keeps for a buffer short of the field is the rest of the count.",
     "views": "A container holding a view of an @aliasable record, under --aliasable-views (`views:`) and as a decoded copy (`plain:`). A static count is per function, and the plain path's nested decode is a call, so the holder's own count does not show what the view removes: that is the callee, baselined beside it under `plain:`."
@@ -50,7 +50,7 @@
         "vendor_Flat_1_0__set_a_ir_": 20,
         "vendor_Padded_1_0__get_b_ir_": 17,
         "vendor_Arr_1_0__get_head_ir_": 13,
-        "vendor_Nested_1_0__get_inner_ir_": 7,
+        "vendor_Nested_1_0__get_inner_ir_": 4,
         "views:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 75,
         "views:fixtures_views_vendor_Frame_1_0__serialize_ir_": 60,
         "plain:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 75,
@@ -71,7 +71,7 @@
         "vendor_Flat_1_0__set_a_ir_": 20,
         "vendor_Padded_1_0__get_b_ir_": 18,
         "vendor_Arr_1_0__get_head_ir_": 18,
-        "vendor_Nested_1_0__get_inner_ir_": 7,
+        "vendor_Nested_1_0__get_inner_ir_": 6,
         "views:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 86,
         "views:fixtures_views_vendor_Frame_1_0__serialize_ir_": 72,
         "plain:fixtures_views_vendor_Frame_1_0__deserialize_ir_": 88,

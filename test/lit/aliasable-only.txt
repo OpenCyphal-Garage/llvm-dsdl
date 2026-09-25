@@ -36,8 +36,12 @@
 # CPP_POSE-NEXT: #include <cstdint>
 # CPP_POSE-NEXT: #include <span>
 # CPP_POSE-NOT: #include
-# The composite getter answers the nested record's bytes as a span, which carries their count.
+# The composite getter answers the nested record's bytes as a span, which carries their count. A
+# record the buffer starts with is the buffer.
 # CPP_POSE: static std::span<const std::uint8_t> get_position(const std::span<const std::uint8_t> buffer)
+# CPP_POSE-NEXT: {
+# CPP_POSE-NEXT: return buffer;
+# CPP_POSE: static std::span<const std::uint8_t> get_orientation(const std::span<const std::uint8_t> buffer)
 # CPP_POSE: return buffer.subspan(
 # A file of scalar accessors reads through the runtime; one of composite getters does not.
 # CPP_VEC3: #include "dsdl_runtime.hpp"

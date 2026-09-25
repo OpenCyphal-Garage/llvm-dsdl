@@ -8,7 +8,8 @@
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language cpp --cpp-profile std --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_host_image --outdir %t/acme > /dev/null
 # RUN: cat %t/acme/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=ACME
-# RUN: cat %t/acme/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=ACME_NESTED
+# RUN: %dsdlc --target-language cpp --cpp-profile std --vocabulary %S/vocabulary/acme-byte-view.yaml %S/fixtures_aliasable --outdir %t/acme-nested > /dev/null
+# RUN: cat %t/acme-nested/fixtures_aliasable/vendor/Pose_1_0.hpp | FileCheck %s --check-prefix=ACME_NESTED
 # ACME:     #include <cstdint>
 # ACME-NOT: #include <span>
 # ACME:     #include "acme/byte_view.hpp"
@@ -18,7 +19,7 @@
 # ACME-NEXT: dsdl_runtime_get_u16(::llvmdsdl::cpp::readable_bytes(buffer.ptr()),
 # ACME:     static std::int8_t set_b(const acme::ByteView<std::uint8_t> buffer, const std::uint16_t member_value)
 # ACME:     dsdl_runtime_set_uxx(buffer.ptr(),
-# ACME_NESTED: static acme::ByteView<const std::uint8_t> get_inner(const acme::ByteView<const std::uint8_t> buffer)
+# ACME_NESTED: static acme::ByteView<const std::uint8_t> get_orientation(const acme::ByteView<const std::uint8_t> buffer)
 # ACME_NESTED: return buffer.tail(
 
 # The file names the std profile alone, so pmr keeps the built-in binding.
