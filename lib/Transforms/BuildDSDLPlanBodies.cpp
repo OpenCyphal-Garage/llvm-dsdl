@@ -885,6 +885,9 @@ PlanCursor buildAlignment(mlir::OpBuilder& b,
 /// exceed the capacity; the pointer handed to a nested type is formed at the bounded byte, which
 /// every backend can address. A writer's cannot: the capacity check at the top of the plan
 /// established room for the whole layout, and a write that ran out of it stopped the plan.
+///
+/// A cursor at bit nought stands at the start of any buffer, with all of it left, so it is not
+/// bounded: the bounded byte would be nought for every capacity.
 struct BufferPosition
 {
     mlir::Value byteOffset;
@@ -897,6 +900,10 @@ BufferPosition bufferPosition(mlir::OpBuilder& b,
                               mlir::Value      bitOffset,
                               const bool       writing)
 {
+    if (mlir::matchPattern(bitOffset, mlir::m_Zero()))
+    {
+        return BufferPosition{constantI64(b, loc, 0), capacityBytes};
+    }
     mlir::Value taken = mlir::arith::DivUIOp::create(b, loc, bitOffset, constantI64(b, loc, 8));
     if (!writing)
     {

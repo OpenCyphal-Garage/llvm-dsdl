@@ -10,7 +10,7 @@
 /// @file
 /// Implements verification and operation glue for DSDL MLIR ops.
 ///
-/// Operation-specific semantic checks are defined here alongside generated operation class inclusions.
+/// Operation-specific semantic checks and folders are defined here alongside generated operation class inclusions.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -31,6 +31,7 @@
 #include "mlir/IR/Builders.h"           // IWYU pragma: keep
 #include "mlir/IR/BuiltinAttributes.h"  // IWYU pragma: keep
 #include "mlir/IR/Diagnostics.h"        // IWYU pragma: keep
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/Support/LLVM.h"
 
 using namespace mlir;
@@ -603,6 +604,16 @@ LogicalResult IOOp::verify()
     }
 
     return success();
+}
+
+OpFoldResult BufferAtOp::fold(FoldAdaptor adaptor)
+{
+    const auto offset = llvm::dyn_cast_if_present<IntegerAttr>(adaptor.getByteOffset());
+    if (offset && offset.getValue().isZero() && (getBuffer().getType() == getType()))
+    {
+        return getBuffer();
+    }
+    return {};
 }
 
 #define GET_OP_CLASSES
