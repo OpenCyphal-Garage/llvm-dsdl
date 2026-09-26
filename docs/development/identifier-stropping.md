@@ -351,6 +351,18 @@ error: type name collision in generated output: ns.Foo_bar and ns.FooBar
        map to the same output file name for target languages 'rust', 'go', 'ts', 'python'
 ```
 
+A definition's file can also meet a namespace's directory. Rust declares `file_1_0.rs` and
+`file_1_0/` as one `mod file_1_0`, and Python's package `file_1_0/` hides its module `file_1_0.py`,
+so where the row's `fileAndDirectoryAreOneModule` is set the pair is rejected:
+
+```
+error: type name collision in generated output: ns.File.1.0 and namespace ns.file_1_0,
+       which holds ns.file_1_0.X, map to the same module name for target languages 'rust', 'python'
+```
+
+TypeScript generates the pair: it resolves `./file_1_0` to the file, and imports a type in the
+directory by that type's own path.
+
 A name a type does not declare can still collide. A service emits a type per section named after
 itself — `Foo` gives `Foo_Request` — and a sibling definition may be *called* `Foo_Request`, which is
 conformant DSDL. Neither declared name collides, so the check above cannot see it. A second pass

@@ -90,6 +90,9 @@ void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> defi
 ///   escape fires -- so whichever half collides, one type would be lost or the output would not
 ///   compile. The keys come from the same engine the emitters name with, so the check cannot drift
 ///   from what is written.
+/// - **File and directory collisions.** A definition whose output file and a namespace whose
+///   directory take one module name, in a selected language where a file and a directory of one
+///   name are one module: `ns/File.1.0` beside `ns/file_1_0/` in Rust and Python.
 ///
 /// It does *not* catch a service section colliding with a sibling type, because that needs to know
 /// which definitions are services and this runs before parsing. See

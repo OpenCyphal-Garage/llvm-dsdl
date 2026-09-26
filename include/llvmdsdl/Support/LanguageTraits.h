@@ -207,6 +207,11 @@ struct Composition final
     /// type the same way without meeting.
     bool definitionsShareNamespaceScope{};
 
+    /// @brief Whether a definition's file and a namespace's directory of one name are one module.
+    ///
+    /// Rust declares either as a `mod`, and Python imports either as its package's attribute.
+    bool fileAndDirectoryAreOneModule{};
+
     /// @brief Where a type's constants are declared.
     ConstantsScope constants{};
 

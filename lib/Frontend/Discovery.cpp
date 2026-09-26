@@ -282,6 +282,110 @@ std::string describeOrigin(const TypeNameOrigin& origin)
     return "the " + origin.section + " section of '" + origin.fullName + "'";
 }
 
+/// @brief Renders target language names as a diagnostic phrase, as in `target languages 'rust', 'go'`.
+std::string describeLanguages(const std::vector<std::string>& languages)
+{
+    std::string out = (languages.size() > 1U) ? "target languages " : "target language ";
+    for (std::size_t i = 0; i < languages.size(); ++i)
+    {
+        out += (i > 0 ? ", " : "") + ("'" + languages[i] + "'");
+    }
+    return out;
+}
+
+/// @brief Rejects a definition whose output file is the module a namespace's directory also is.
+///
+/// Where a file and a directory of one name are one module, `ns/File.1.0` beside a namespace
+/// `ns.file_1_0` makes `file_1_0.rs` and `file_1_0/` one Rust `mod`, which rustc refuses, and
+/// Python's package `file_1_0/` hides its module `file_1_0.py`.
+///
+/// @param[in] definitions Every definition discovered, sorted.
+/// @param[in] outputLanguages Languages whose output names are checked.
+/// @param[in,out] diagnostics Diagnostic sink.
+void checkFileDirectoryCollisions(const std::vector<DiscoveredDefinition>& definitions,
+                                  const llvm::ArrayRef<LanguageTraits>     outputLanguages,
+                                  DiagnosticEngine&                        diagnostics)
+{
+    // What takes one module name: the first definition whose file does, and the first namespace
+    // whose directory does, with the first definition that namespace holds.
+    struct ModuleOwners final
+    {
+        const DiscoveredDefinition* file{};
+        std::string                 namespaceName;
+        const DiscoveredDefinition* heldBy{};
+    };
+    struct Collision final
+    {
+        ModuleOwners             owners;
+        std::vector<std::string> languages;
+    };
+    // Keyed on the file and the namespace rather than on the module, so a pair that collides in
+    // several languages is one diagnostic naming all of them.
+    std::map<std::pair<std::string, std::string>, Collision> collisions;
+
+    for (const LanguageTraits& row : outputLanguages)
+    {
+        if (!row.composition.fileAndDirectoryAreOneModule)
+        {
+            continue;
+        }
+        std::map<std::string, ModuleOwners> modules;
+        for (const auto& def : definitions)
+        {
+            std::string path;
+            std::string namespaceName;
+            for (const auto& component : def.namespaceComponents)
+            {
+                path += codegenProjectIdentifier(row.language, IdentifierRole::NamespaceName, component);
+                namespaceName += component;
+                ModuleOwners& owners = modules[path];
+                if (owners.heldBy == nullptr)
+                {
+                    owners.namespaceName = namespaceName;
+                    owners.heldBy        = &def;
+                }
+                path.push_back('/');
+                namespaceName.push_back('.');
+            }
+            path += renderDefinitionFileStem(row.language, def.shortName, def.majorVersion, def.minorVersion);
+            ModuleOwners& owners = modules[path];
+            if (owners.file == nullptr)
+            {
+                owners.file = &def;
+            }
+        }
+        for (const auto& [path, owners] : modules)
+        {
+            if ((owners.file == nullptr) || (owners.heldBy == nullptr))
+            {
+                continue;
+            }
+            Collision& collision = collisions[{owners.file->filePath, owners.namespaceName}];
+            collision.owners     = owners;
+            collision.languages.push_back(row.name.str());
+        }
+    }
+
+    for (const auto& [key, collision] : collisions)
+    {
+        const DiscoveredDefinition& file = *collision.owners.file;
+        std::string                 message;
+        message.append("type name collision in generated output: ")
+            .append(file.fullName)
+            .append(".")
+            .append(std::to_string(file.majorVersion))
+            .append(".")
+            .append(std::to_string(file.minorVersion))
+            .append(" and namespace ")
+            .append(collision.owners.namespaceName)
+            .append(", which holds ")
+            .append(collision.owners.heldBy->fullName)
+            .append(", map to the same module name for ")
+            .append(describeLanguages(collision.languages));
+        diagnostics.error({file.filePath, 1, 1}, message);
+    }
+}
+
 }  // namespace
 
 void checkServiceSectionTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> definitions,
@@ -498,11 +602,6 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                 {
                     continue;
                 }
-                std::string languageList;
-                for (std::size_t i = 0; i < languages.size(); ++i)
-                {
-                    languageList += (i > 0 ? ", " : "") + ("'" + languages[i] + "'");
-                }
                 std::string collision;
                 collision.append("type name collision in generated output: ")
                     .append(def.fullName)
@@ -510,9 +609,8 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                     .append(other)
                     .append(" map to the same ")
                     .append(what)
-                    .append(" for target language")
-                    .append(languages.size() > 1U ? "s " : " ")
-                    .append(languageList);
+                    .append(" for ")
+                    .append(describeLanguages(languages));
                 diagnostics.error({def.filePath, 1, 1}, collision);
             }
         }
@@ -537,6 +635,8 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                                   "." + std::to_string(def.minorVersion));
         }
     }
+
+    checkFileDirectoryCollisions(definitions, outputLanguages, diagnostics);
 
     return definitions;
 }
