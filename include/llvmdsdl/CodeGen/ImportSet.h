@@ -38,6 +38,9 @@ enum class ImportOrigin : std::uint8_t
     /// @brief The target language's own standard library.
     Standard,
 
+    /// @brief A library a vocabulary binding names.
+    Library,
+
     /// @brief The runtime the generator writes beside the generated code.
     Runtime,
 

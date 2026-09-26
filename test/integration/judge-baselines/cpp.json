@@ -4,7 +4,6 @@
     "bugprone-signed-char-misuse": 4,
     "cppcoreguidelines-macro-usage": 1,
     "cppcoreguidelines-pro-type-reinterpret-cast": 175,
-    "misc-include-cleaner": 485,
     "modernize-concat-nested-namespaces": 168,
     "modernize-type-traits": 54,
     "modernize-use-auto": 1910,

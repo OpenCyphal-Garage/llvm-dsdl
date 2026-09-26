@@ -21,6 +21,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/Vocabulary.h"
@@ -32,6 +33,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
@@ -45,7 +47,6 @@
 #include <cstdint>
 
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
-#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
@@ -111,16 +112,6 @@ std::string headerGuard(const DiscoveredDefinition& info)
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
 {
     return renderConstantLiteral(Language::Cpp, value, makeConstantTypeInfo(type));
-}
-
-std::string unsignedStorageType(const std::uint32_t bitLength)
-{
-    return renderUnsignedStorageToken(Language::Cpp, bitLength);
-}
-
-std::string signedStorageType(const std::uint32_t bitLength)
-{
-    return renderSignedStorageToken(Language::Cpp, bitLength);
 }
 
 std::string generatedCommentLine(llvm::StringRef detail)
@@ -355,22 +346,181 @@ llvm::StringRef profileName(const CppFlavor flavor)
     llvm::report_fatal_error("C++ backend: a profile with no name");
 }
 
-/// @brief The `#include` lines for @p headers: the angle-bracket ones first, each group in order,
-///        and each header once.
-std::string orderedIncludeLines(std::vector<std::string> headers)
+/// @brief How one C++ header names what it takes from other headers, recording each include.
+///
+/// Every name the header writes from another header is named here, so the includes written from
+/// the set once the header is rendered hold what the header names and nothing else.
+class CppFileNames final
 {
-    std::ranges::sort(headers, [](const std::string& a, const std::string& b) {
-        const bool angleA = a.front() == '<';
-        const bool angleB = b.front() == '<';
-        return (angleA != angleB) ? angleA : (a < b);
-    });
-    headers.erase(std::ranges::unique(headers).begin(), headers.end());
-    std::string lines;
-    for (const std::string& header : headers)
+public:
+    CppFileNames(const EmitterContext&         ctx,
+                 ImportSet&                    includes,
+                 const vocabulary::Vocabulary& vocabulary,
+                 std::string                   ownHeader)
+        : ctx_(ctx)
+        , includes_(includes)
+        , vocabulary_(vocabulary)
+        , ownHeader_(std::move(ownHeader))
     {
-        lines += "#include " + header + "\n";
+    }
+
+    [[nodiscard]] const EmitterContext& context() const
+    {
+        return ctx_;
+    }
+
+    /// @brief The standard library's @p name, from the header that declares it.
+    [[nodiscard]] std::string standard(const llvm::StringRef name) const
+    {
+        const auto header = standardHeaders().find(name);
+        if (header == standardHeaders().end())
+        {
+            llvm::report_fatal_error(llvm::Twine("C++ backend: no header is known to declare '") + name + "'");
+        }
+        return includes_.member(ImportOrigin::Standard, header->second, name);
+    }
+
+    /// @brief The C runtime's @p name, which the bodies call.
+    [[nodiscard]] std::string cRuntime(const llvm::StringRef name) const
+    {
+        return includes_.member(ImportOrigin::Runtime, "\"dsdl_runtime.h\"", name);
+    }
+
+    /// @brief The C++ runtime's @p name.
+    [[nodiscard]] std::string cppRuntime(const llvm::StringRef name) const
+    {
+        return includes_.member(ImportOrigin::Runtime, "\"dsdl_runtime.hpp\"", name);
+    }
+
+    /// @brief The type the vocabulary binds @p role to, from the headers the binding names.
+    [[nodiscard]] std::string boundType(const vocabulary::Concept      role,
+                                        const vocabulary::Placeholders placeholders) const
+    {
+        return bound(role, vocabulary_.type(role, placeholders));
+    }
+
+    /// @brief The operation @p operation on @p role as the vocabulary binds it, from the headers the
+    ///        binding names.
+    [[nodiscard]] std::string boundOperation(const vocabulary::Concept      role,
+                                             const llvm::StringRef          operation,
+                                             const vocabulary::Placeholders placeholders) const
+    {
+        return bound(role, vocabulary_.operation(role, operation, placeholders));
+    }
+
+    /// @brief @p name, which the header of the definition @p ref declares; that header is included
+    ///        unless it is this one.
+    [[nodiscard]] std::string declaredIn(const SemanticTypeRef& ref, std::string name) const
+    {
+        const auto* def = ctx_.find(ref);
+        if (def == nullptr)
+        {
+            return name;
+        }
+        const std::string header = EmitterContext::relativeHeaderPath(*def);
+        if (header == ownHeader_)
+        {
+            return name;
+        }
+        return includes_.member(ImportOrigin::Definition, "\"" + header + "\"", name);
+    }
+
+private:
+    /// @brief The header each standard name the generated C++ writes is declared in.
+    static const llvm::StringMap<std::string>& standardHeaders()
+    {
+        static const llvm::StringMap<std::string> headers{
+            {"offsetof", "<cstddef>"},
+            {"std::array", "<array>"},
+            {"std::int16_t", "<cstdint>"},
+            {"std::int32_t", "<cstdint>"},
+            {"std::int64_t", "<cstdint>"},
+            {"std::int8_t", "<cstdint>"},
+            {"std::is_standard_layout", "<type_traits>"},
+            {"std::move", "<utility>"},
+            {"std::pmr::vector", "<vector>"},
+            {"std::ptrdiff_t", "<cstddef>"},
+            {"std::size_t", "<cstddef>"},
+            {"std::uint16_t", "<cstdint>"},
+            {"std::uint32_t", "<cstdint>"},
+            {"std::uint64_t", "<cstdint>"},
+            {"std::uint8_t", "<cstdint>"},
+            {"std::vector", "<vector>"},
+        };
+        return headers;
+    }
+
+    /// @brief @p text, which the binding of @p role writes. A header the binding names is the
+    ///        standard library's where a standard name this backend writes is declared in it, and
+    ///        the bound library's otherwise.
+    std::string bound(const vocabulary::Concept role, std::string text) const
+    {
+        for (const std::string& header : vocabulary_.includes(role))
+        {
+            const bool standardHeader =
+                llvm::any_of(standardHeaders(), [&](const auto& entry) { return entry.getValue() == header; });
+            (void) includes_.module(standardHeader ? ImportOrigin::Standard : ImportOrigin::Library, header, {});
+        }
+        return text;
+    }
+
+    const EmitterContext&         ctx_;
+    ImportSet&                    includes_;
+    const vocabulary::Vocabulary& vocabulary_;
+    std::string                   ownHeader_;
+};
+
+/// @brief The group of a header's include block that a header from @p origin is written in.
+std::size_t includeGroup(const ImportOrigin origin)
+{
+    switch (origin)
+    {
+    case ImportOrigin::Standard:
+        return 0U;
+    case ImportOrigin::Library:
+        return 1U;
+    case ImportOrigin::Runtime:
+    case ImportOrigin::Definition:
+        return 2U;
+    }
+    llvm::report_fatal_error("C++ backend: an include from no origin");
+}
+
+/// @brief The `#include` lines of a header that names @p includes: the standard library's headers,
+///        then a bound library's, then the generated tree's own, each group in the order of its
+///        paths and set apart from the next by a blank line.
+std::string renderCppIncludes(const ImportSet& includes)
+{
+    std::array<std::vector<std::string>, 3> groups;
+    for (const ImportedModule& module : includes.modules())
+    {
+        groups.at(includeGroup(module.origin)).push_back(module.path);
+    }
+    std::string lines;
+    for (std::vector<std::string>& group : groups)
+    {
+        if (group.empty())
+        {
+            continue;
+        }
+        std::ranges::sort(group);
+        lines += lines.empty() ? "" : "\n";
+        for (const std::string& path : group)
+        {
+            lines += "#include " + path + "\n";
+        }
     }
     return lines;
+}
+
+std::string unsignedStorageType(const std::uint32_t bitLength, const CppFileNames& file)
+{
+    return file.standard(renderUnsignedStorageToken(Language::Cpp, bitLength));
+}
+
+std::string signedStorageType(const std::uint32_t bitLength, const CppFileNames& file)
+{
+    return file.standard(renderSignedStorageToken(Language::Cpp, bitLength));
 }
 
 /// @brief The C++ spelling of the plan-body vocabulary, for one schema.
@@ -391,30 +541,23 @@ std::string orderedIncludeLines(std::vector<std::string> headers)
 class CppSpelling final : public BodySpelling
 {
 public:
-    CppSpelling(mlir::ModuleOp                module,
-                mlir::dsdl::SchemaOp          schema,
-                const CppFlavor               flavor,
-                const TypeNameVersioning      versioning,
-                const vocabulary::Vocabulary& vocabulary)
+    CppSpelling(mlir::ModuleOp           module,
+                mlir::dsdl::SchemaOp     schema,
+                const CppFlavor          flavor,
+                const TypeNameVersioning versioning,
+                const CppFileNames&      file)
         : symbols_(module)
         , flavor_(flavor)
         , versioning_(versioning)
-        , vocabulary_(&vocabulary)
+        , file_(file)
     {
-        const std::string        fullName = schema.getFullName().str();
-        const auto               lastDot  = fullName.rfind('.');
-        std::vector<std::string> namespaceComponents;
-        if (lastDot != std::string::npos)
-        {
-            namespaceComponents = splitNamespace(fullName.substr(0, lastDot));
-        }
-        const std::string shortName    = (lastDot == std::string::npos) ? fullName : fullName.substr(lastDot + 1);
-        const std::string baseTypeName = renderDefinitionTypeName(Language::Cpp,
-                                                                  namespaceComponents,
-                                                                  shortName,
-                                                                  static_cast<std::uint32_t>(schema.getMajor()),
-                                                                  static_cast<std::uint32_t>(schema.getMinor()),
-                                                                  versioning);
+        const SemanticTypeRef self         = typeRefOf(schema);
+        const std::string     baseTypeName = renderDefinitionTypeName(Language::Cpp,
+                                                                      self.namespaceComponents,
+                                                                      self.shortName,
+                                                                      self.majorVersion,
+                                                                      self.minorVersion,
+                                                                      versioning);
         if (schema.getBody().empty())
         {
             return;
@@ -485,12 +628,6 @@ public:
         }
     }
 
-    /// @brief Whether a spelling named the span, so the header includes what declares it.
-    [[nodiscard]] bool usedSpan() const
-    {
-        return usedSpan_;
-    }
-
     /// @brief The type a member held as a view is declared as: the span over its bytes.
     [[nodiscard]] std::string viewType() const
     {
@@ -514,23 +651,27 @@ public:
         const Plan&       plan      = planOf(fn.getArgument(0));
         const bool        serialize = *direction == "serialize";
         const std::string object    = serialize ? "obj" : "out_obj";
-        const std::string resource =
-            isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "";
-        w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const " : "_deserialize_(") +
-               plan.declaredName + "* const " + object + ", " + (serialize ? "" : "const ") +
-               "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes" + resource + ")");
+        const std::string resource = isPmrFlavor(flavor_) ? ", " + file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
+                                                                "* const memory_resource"
+                                                          : "";
+        w.line("inline " + file_.standard("std::int8_t") + " " + plan.typeName +
+               (serialize ? "_serialize_(const " : "_deserialize_(") + plan.declaredName + "* const " + object + ", " +
+               (serialize ? "" : "const ") + file_.standard("std::uint8_t") + "* const buffer, " +
+               file_.standard("std::size_t") + "* const inout_buffer_size_bytes" + resource + ")");
         w.open("{");
         if (isPmrFlavor(flavor_) && plan.hostImage)
         {
             // A host image holds no resource of its own; the one handed in reaches its nested calls.
-            w.line("::llvmdsdl::cpp::MemoryResource* const effective_memory_resource = memory_resource;");
+            w.line(file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
+                   "* const effective_memory_resource = memory_resource;");
             w.line("(void)effective_memory_resource;");
         }
         else if (isPmrFlavor(flavor_))
         {
             // The plan tests its object for null before it reads it, so the resource it would be
             // read from is taken only when there is an object to take it from.
-            w.line("::llvmdsdl::cpp::MemoryResource* const effective_memory_resource = (memory_resource != nullptr) ? "
+            w.line(file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
+                   "* const effective_memory_resource = (memory_resource != nullptr) ? "
                    "memory_resource : ((" +
                    object + " != nullptr) ? " + object + "->_memory_resource : nullptr);");
             w.line("(void)effective_memory_resource;");
@@ -632,48 +773,56 @@ public:
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed    a         = accessed(fn);
-        const std::string storage   = scalarType(a.member->io);
         const std::string name      = getter ? a.member->getterName : a.member->setterName;
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
         const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
-        const std::string index     = indexed ? ", const std::size_t element_index" : "";
-        const std::string readable  = spanOf(/*isConst=*/true);
+        const std::string index     = indexed ? ", const " + file_.standard("std::size_t") + " element_index" : "";
         accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_                 = (getter && integer) ? storage : std::string{};
+        returnCast_.clear();
+        // The member's type is named where it is written: a composite getter answers bytes.
         if (composite)
         {
             // The nested type's bytes, as a span, which carries their count.
+            const std::string readable = spanOf(/*isConst=*/true);
             w.line("static " + readable + " " + name + "(const " + readable + " buffer" + index + ")");
         }
         else if (getter)
         {
-            w.line("static " + storage + " " + name + "(const " + readable + " buffer" + index + ")");
+            const std::string storage = scalarType(a.member->io);
+            if (integer)
+            {
+                returnCast_ = storage;
+            }
+            w.line("static " + storage + " " + name + "(const " + spanOf(/*isConst=*/true) + " buffer" + index + ")");
         }
         else
         {
-            w.line("static std::int8_t " + name + "(const " + spanOf(/*isConst=*/false) + " buffer" + index +
-                   ", const " + storage + (integer ? " member_value)" : " value)"));
+            w.line("static " + file_.standard("std::int8_t") + " " + name + "(const " + spanOf(/*isConst=*/false) +
+                   " buffer" + index + ", const " + scalarType(a.member->io) +
+                   (integer ? " member_value)" : " value)"));
         }
         w.open("{");
         if (readsArgument(fn, 1))
         {
-            w.line("const std::size_t buffer_size_bytes = " +
-                   vocabulary_->operation(vocabulary::Concept::Span, "size", {{"self", "buffer"}}) + ";");
+            w.line("const " + file_.standard("std::size_t") + " buffer_size_bytes = " +
+                   file_.boundOperation(vocabulary::Concept::Span, "size", {{"self", "buffer"}}) + ";");
         }
         std::vector<std::string> parameters{"buffer", "buffer_size_bytes"};
         if (indexed)
         {
-            w.line("const std::uint64_t index = static_cast<std::uint64_t>(element_index);");
+            w.line("const " + file_.standard("std::uint64_t") + " index = static_cast<" +
+                   file_.standard("std::uint64_t") + ">(element_index);");
             parameters.emplace_back("index");
         }
         if (!getter)
         {
             if (integer)
             {
-                w.line("const std::uint64_t value = static_cast<std::uint64_t>(member_value);");
+                w.line("const " + file_.standard("std::uint64_t") + " value = static_cast<" +
+                       file_.standard("std::uint64_t") + ">(member_value);");
             }
             parameters.emplace_back("value");
         }
@@ -722,8 +871,8 @@ public:
                  const llvm::StringRef upper,
                  const llvm::StringRef step) const override
     {
-        w.open("for (std::size_t " + variable.str() + " = " + lower.str() + "; " + variable.str() + " < " +
-               upper.str() + "; " + variable.str() + " += " + step.str() + ") {");
+        w.open("for (" + file_.standard("std::size_t") + " " + variable.str() + " = " + lower.str() + "; " +
+               variable.str() + " < " + upper.str() + "; " + variable.str() + " += " + step.str() + ") {");
     }
 
     void closeBlock(SourceWriter& w) const override
@@ -754,7 +903,7 @@ public:
                 {
                     return std::to_string(integer.getValue().getZExtValue()) + "ULL";
                 }
-                return "static_cast<std::uint64_t>(" + signedLiteral(signedValue) + ")";
+                return "static_cast<" + file_.standard("std::uint64_t") + ">(" + signedLiteral(signedValue) + ")";
             }
             return "static_cast<" + typeName(type) + ">(" + std::to_string(signedValue) + ")";
         }
@@ -913,8 +1062,8 @@ public:
         // Through std::size_t and back as std::ptrdiff_t: a count past the signed range of the
         // target's index does not come back as itself.
         const std::string value = names(op.getValue());
-        return "(static_cast<std::uint64_t>(static_cast<std::ptrdiff_t>(static_cast<std::size_t>(" + value +
-               "))) == " + value + ")";
+        return "(static_cast<" + file_.standard("std::uint64_t") + ">(static_cast<" + file_.standard("std::ptrdiff_t") +
+               ">(static_cast<" + file_.standard("std::size_t") + ">(" + value + "))) == " + value + ")";
     }
 
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
@@ -924,7 +1073,8 @@ public:
         {
             return buffer;
         }
-        return "((" + buffer + " != nullptr) ? " + buffer + " : reinterpret_cast<const std::uint8_t*>(\"\"))";
+        return "((" + buffer + " != nullptr) ? " + buffer + " : reinterpret_cast<const " +
+               file_.standard("std::uint8_t") + "*>(\"\"))";
     }
 
     [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
@@ -932,10 +1082,10 @@ public:
         // An accessor's offset is clamped to its span's size, which is what a subspan requires.
         if (accessor_ != Accessor::None)
         {
-            return vocabulary_->operation(vocabulary::Concept::Span,
-                                          "subspan",
-                                          {{"self", names(op.getBuffer())},
-                                           {"offset", asSize(names(op.getByteOffset()))}});
+            return file_.boundOperation(vocabulary::Concept::Span,
+                                        "subspan",
+                                        {{"self", names(op.getBuffer())},
+                                         {"offset", asSize(names(op.getByteOffset()))}});
         }
         return "&" + names(op.getBuffer()) + "[" + asSize(names(op.getByteOffset())) + "]";
     }
@@ -955,7 +1105,7 @@ public:
                                     const llvm::StringRef name,
                                     const ValueNames&     names) const override
     {
-        w.line("std::size_t " + name.str() + " = " + asSize(names(op.getInit())) + ";");
+        w.line(file_.standard("std::size_t") + " " + name.str() + " = " + asSize(names(op.getInit())) + ";");
         return "&" + name.str();
     }
 
@@ -996,7 +1146,8 @@ public:
 
     [[nodiscard]] std::string arrayLength(mlir::dsdl::ArrayLengthOp op, const ValueNames& names) const override
     {
-        return "static_cast<std::uint64_t>(" + memberAccess(op.getObject(), op.getMember(), names) + ".size())";
+        return "static_cast<" + file_.standard("std::uint64_t") + ">(" +
+               memberAccess(op.getObject(), op.getMember(), names) + ".size())";
     }
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
@@ -1012,15 +1163,16 @@ public:
             return;
         }
         const std::string temporary = fresh("sized");
-        w.line("std::pmr::vector<" + containerElementType(io) + "> " + temporary +
-               "(effective_memory_resource != nullptr ? effective_memory_resource : "
-               "::llvmdsdl::cpp::default_memory_resource());");
+        w.line(file_.standard("std::pmr::vector") + "<" + containerElementType(io) + "> " + temporary +
+               "(effective_memory_resource != nullptr ? effective_memory_resource : " +
+               file_.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "());");
         w.line(temporary + ".resize(" + count + ");");
-        w.line(access + " = std::move(" + temporary + ");");
+        w.line(access + " = " + file_.standard("std::move") + "(" + temporary + ");");
         if (io.isComposite() && !io.getHeldAsView())
         {
             const std::string index = fresh("i");
-            w.open("for (std::size_t " + index + " = 0U; " + index + " < " + access + ".size(); ++" + index + ") {");
+            w.open("for (" + file_.standard("std::size_t") + " " + index + " = 0U; " + index + " < " + access +
+                   ".size(); ++" + index + ") {");
             w.line(access + "[" + index + "].set_memory_resource(effective_memory_resource);");
             w.close("}");
         }
@@ -1028,14 +1180,15 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "static_cast<std::uint64_t>(" + names(op.getObject()) + "->_tag_)";
+        return "static_cast<" + file_.standard("std::uint64_t") + ">(" + names(op.getObject()) + "->_tag_)";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         const Plan& plan = planOf(op.getObject());
         w.line(names(op.getObject()) + "->_tag_ = static_cast<" +
-               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) + ">(" + names(op.getValue()) + ");");
+               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits), file_) + ">(" + names(op.getValue()) +
+               ");");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
@@ -1048,17 +1201,20 @@ public:
                                       ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdl_runtime_set_f" + std::to_string(width) + "(" + prefix + value + ")";
+            return file_.cRuntime(file_.cRuntime("dsdl_runtime_set_f") + std::to_string(width)) + "(" + prefix + value +
+                   ")";
         }
         if (width == 1 && !op.getIsSigned())
         {
-            return "dsdl_runtime_set_bit(" + prefix + (isBool(valueType) ? value : "(" + value + " != 0ULL)") + ")";
+            return file_.cRuntime("dsdl_runtime_set_bit") + "(" + prefix +
+                   (isBool(valueType) ? value : "(" + value + " != 0ULL)") + ")";
         }
         if (op.getIsSigned())
         {
-            return "dsdl_runtime_set_ixx(" + prefix + asSigned(value, valueType) + ", " + std::to_string(width) + "U)";
+            return file_.cRuntime("dsdl_runtime_set_ixx") + "(" + prefix + asSigned(value, valueType) + ", " +
+                   std::to_string(width) + "U)";
         }
-        return "dsdl_runtime_set_uxx(" + prefix + value + ", " + std::to_string(width) + "U)";
+        return file_.cRuntime("dsdl_runtime_set_uxx") + "(" + prefix + value + ", " + std::to_string(width) + "U)";
     }
 
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
@@ -1069,45 +1225,47 @@ public:
                                       asSize(names(op.getBufferSizeBytes())) + ", " + asSize(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdl_runtime_get_f" + std::to_string(width) + "(" + prefix + ")";
+            return file_.cRuntime(file_.cRuntime("dsdl_runtime_get_f") + std::to_string(width)) + "(" + prefix + ")";
         }
         const std::string result = typeName(valueType);
         if (width == 1 && !op.getIsSigned())
         {
-            return "static_cast<" + result + ">(dsdl_runtime_get_bit(" + prefix + "))";
+            return "static_cast<" + result + ">(" + file_.cRuntime("dsdl_runtime_get_bit") + "(" + prefix + "))";
         }
         // The runtime answers in the narrowest standard width that holds the field; a signed read
         // arrives sign-extended and keeps its value across the widening.
         const unsigned holder = holderWidthFor(width);
-        return "static_cast<" + result + ">(dsdl_runtime_get_" + (op.getIsSigned() ? "i" : "u") +
-               std::to_string(holder) + "(" + prefix + ", " + std::to_string(width) + "U))";
+        return "static_cast<" + result + ">(" +
+               file_.cRuntime(std::string(file_.cRuntime("dsdl_runtime_get_")) + (op.getIsSigned() ? "i" : "u") +
+                              std::to_string(holder)) +
+               "(" + prefix + ", " + std::to_string(width) + "U))";
     }
 
     void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
     {
         // A fixed bool array is packed into bytes, as on the wire. A variable-length one holds a bool
         // per element, and its runs reach C++ expanded.
-        w.line("dsdl_runtime_copy_bits(" + bytesOf(op.getDestination(), names, /*read=*/false) + ", " +
-               asSize(names(op.getDestinationBitOffset())) + ", " + asSize(names(op.getWidth())) + ", " +
+        w.line(file_.cRuntime("dsdl_runtime_copy_bits") + "(" + bytesOf(op.getDestination(), names, /*read=*/false) +
+               ", " + asSize(names(op.getDestinationBitOffset())) + ", " + asSize(names(op.getWidth())) + ", " +
                names(op.getSource()) + ", " + asSize(names(op.getSourceBitOffset())) + ");");
     }
 
     void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_get_bits(" + names(op.getDestination()) + ", " +
+        w.line(file_.cRuntime("dsdl_runtime_get_bits") + "(" + names(op.getDestination()) + ", " +
                bytesOf(op.getBuffer(), names, /*read=*/true) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
                asSize(names(op.getBitOffset())) + ", " + asSize(names(op.getWidth())) + ");");
     }
 
     void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
     {
-        w.line("::llvmdsdl::cpp::set_bit(" + bytesOf(op.getBuffer(), names, /*read=*/false) + ", " +
-               asSize(names(op.getBitOffset())) + ", " + names(op.getValue()) + ");");
+        w.line(file_.cppRuntime("::llvmdsdl::cpp::set_bit") + "(" + bytesOf(op.getBuffer(), names, /*read=*/false) +
+               ", " + asSize(names(op.getBitOffset())) + ", " + names(op.getValue()) + ");");
     }
 
     [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
     {
-        return "dsdl_runtime_get_bit(" + bytesOf(op.getBuffer(), names, /*read=*/true) + ", " +
+        return file_.cRuntime("dsdl_runtime_get_bit") + "(" + bytesOf(op.getBuffer(), names, /*read=*/true) + ", " +
                asSize(names(op.getBufferSizeBytes())) + ", " + asSize(names(op.getBitOffset())) + ")";
     }
 
@@ -1115,14 +1273,14 @@ public:
     {
         // The same helper the C backend calls: a constant-length copy the compiler folds to loads
         // and stores, zeroing what a short buffer does not supply.
-        w.line("dsdl_runtime_image_read(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", " +
-               asSize(names(op.getBufferSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
+        w.line(file_.cRuntime("dsdl_runtime_image_read") + "(" + names(op.getObject()) + ", " + names(op.getBuffer()) +
+               ", " + asSize(names(op.getBufferSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
     }
 
     void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_image_write(" + names(op.getBuffer()) + ", " + names(op.getObject()) + ", " +
-               std::to_string(op.getBytes()) + "U);");
+        w.line(file_.cRuntime("dsdl_runtime_image_write") + "(" + names(op.getBuffer()) + ", " + names(op.getObject()) +
+               ", " + std::to_string(op.getBytes()) + "U);");
     }
 
     /// @brief A view member, or the element of an array of views that @p index names.
@@ -1136,17 +1294,17 @@ public:
 
     [[nodiscard]] std::string viewBytes(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return vocabulary_->operation(vocabulary::Concept::Span,
-                                      "data",
-                                      {{"self", viewTarget(op.getObject(), op.getMember(), op.getIndex(), names)}});
+        return file_.boundOperation(vocabulary::Concept::Span,
+                                    "data",
+                                    {{"self", viewTarget(op.getObject(), op.getMember(), op.getIndex(), names)}});
     }
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "static_cast<std::uint64_t>(" +
-               vocabulary_->operation(vocabulary::Concept::Span,
-                                      "size",
-                                      {{"self", viewTarget(op.getObject(), op.getMember(), op.getIndex(), names)}}) +
+        return "static_cast<" + file_.standard("std::uint64_t") + ">(" +
+               file_.boundOperation(vocabulary::Concept::Span,
+                                    "size",
+                                    {{"self", viewTarget(op.getObject(), op.getMember(), op.getIndex(), names)}}) +
                ")";
     }
 
@@ -1155,11 +1313,10 @@ public:
         const std::string type  = viewType();
         const std::string bytes = names(op.getBytes());
         const std::string size  = asSize(names(op.getSizeBytes()));
-        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " +
-               vocabulary_->operation(vocabulary::Concept::Span,
-                                      "make",
-                                      {{"type", type}, {"data", bytes}, {"size", size}}) +
-               ";");
+        w.line(
+            viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " +
+            file_.boundOperation(vocabulary::Concept::Span, "make", {{"type", type}, {"data", bytes}, {"size", size}}) +
+            ";");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1170,8 +1327,9 @@ public:
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_copy_bytes(" + names(op.getDestination()) + ", " + names(op.getSource()) + ", " +
-               asSize(names(op.getSourceSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
+        w.line(file_.cRuntime("dsdl_runtime_copy_bytes") + "(" + names(op.getDestination()) + ", " +
+               names(op.getSource()) + ", " + asSize(names(op.getSourceSizeBytes())) + ", " +
+               std::to_string(op.getBytes()) + "U);");
     }
 
     void declareCallSerdesSized(SourceWriter& /*w*/,
@@ -1194,9 +1352,7 @@ public:
         {
             llvm::report_fatal_error("C++ spelling: a nested call to a body of no schema in the module");
         }
-        const std::string nested = qualifiedTypeName(schema.getFullName(),
-                                                     static_cast<std::uint32_t>(schema.getMajor()),
-                                                     static_cast<std::uint32_t>(schema.getMinor()));
+        const std::string nested = qualifiedTypeName(typeRefOf(schema));
         return nested + (op.getDirection() == "serialize" ? "_serialize_(" : "_deserialize_(") + names(op.getObject()) +
                ", " + names(op.getBuffer()) + ", " + names(op.getSize()) +
                (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ")";
@@ -1223,26 +1379,6 @@ private:
         bool                    hostImage{false};
         llvm::StringMap<Member> members;
     };
-
-    static std::vector<std::string> splitNamespace(const std::string& dotted)
-    {
-        std::vector<std::string> out;
-        std::string              component;
-        for (const char c : dotted)
-        {
-            if (c == '.')
-            {
-                out.push_back(component);
-                component.clear();
-            }
-            else
-            {
-                component.push_back(c);
-            }
-        }
-        out.push_back(component);
-        return out;
-    }
 
     std::vector<std::string> openHelper(SourceWriter& w, mlir::func::FuncOp fn) const
     {
@@ -1299,7 +1435,7 @@ private:
     }
 
     /// @brief The C++ type the struct declares a scalar field or element as.
-    static std::string scalarType(mlir::dsdl::IOOp io)
+    [[nodiscard]] std::string scalarType(mlir::dsdl::IOOp io) const
     {
         const llvm::StringRef category = io.getScalarCategory();
         const auto            bits     = static_cast<std::uint32_t>(io.getBitLength());
@@ -1309,13 +1445,13 @@ private:
         }
         if (category == "signed")
         {
-            return signedStorageType(bits);
+            return signedStorageType(bits, file_);
         }
         if (category == "float")
         {
             return bits == 64U ? "double" : "float";
         }
-        return unsignedStorageType(bits);
+        return unsignedStorageType(bits, file_);
     }
 
     std::string containerElementType(mlir::dsdl::IOOp io) const
@@ -1330,29 +1466,25 @@ private:
     /// @brief The qualified name of the nested type a composite step holds.
     std::string nestedTypeName(mlir::dsdl::IOOp io) const
     {
-        return qualifiedTypeName(io.getCompositeFullName().value_or(llvm::StringRef{}),
-                                 static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                 static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0)));
+        return qualifiedTypeName(typeRefOf(io));
     }
 
-    /// @brief The qualified public name of the type @p fullName names at @p major.@p minor.
-    std::string qualifiedTypeName(const llvm::StringRef fullName,
-                                  const std::uint32_t   major,
-                                  const std::uint32_t   minor) const
+    /// @brief The qualified public name of the definition @p ref, from the header that declares it.
+    std::string qualifiedTypeName(const SemanticTypeRef& ref) const
     {
-        const auto                     lastDot             = fullName.rfind('.');
-        const std::vector<std::string> namespaceComponents = (lastDot == llvm::StringRef::npos)
-                                                                 ? std::vector<std::string>{}
-                                                                 : splitNamespace(fullName.substr(0, lastDot).str());
-        const llvm::StringRef shortName = (lastDot == llvm::StringRef::npos) ? fullName : fullName.substr(lastDot + 1);
-        std::string           qualified = "::";
-        const auto            ns        = cppNamespacePath(namespaceComponents);
+        std::string qualified = "::";
+        const auto  ns        = cppNamespacePath(ref.namespaceComponents);
         if (!ns.empty())
         {
             qualified += ns + "::";
         }
-        return qualified +
-               renderDefinitionTypeName(Language::Cpp, namespaceComponents, shortName, major, minor, versioning_);
+        return file_.declaredIn(ref,
+                                qualified + renderDefinitionTypeName(Language::Cpp,
+                                                                     ref.namespaceComponents,
+                                                                     ref.shortName,
+                                                                     ref.majorVersion,
+                                                                     ref.minorVersion,
+                                                                     versioning_));
     }
 
     /// @brief @p access read as a value of @p type. A bool is read as a bool.
@@ -1400,19 +1532,19 @@ private:
         return 64U;
     }
 
-    static std::string asSigned(const llvm::StringRef value, const mlir::Type type)
+    [[nodiscard]] std::string asSigned(const llvm::StringRef value, const mlir::Type type) const
     {
-        return "static_cast<" + signedStorageType(widthOf(type)) + ">(" + value.str() + ")";
+        return "static_cast<" + signedStorageType(widthOf(type), file_) + ">(" + value.str() + ")";
     }
 
-    static std::string asUnsigned(const llvm::StringRef value, const mlir::Type type)
+    [[nodiscard]] std::string asUnsigned(const llvm::StringRef value, const mlir::Type type) const
     {
-        return "static_cast<" + unsignedStorageType(widthOf(type)) + ">(" + value.str() + ")";
+        return "static_cast<" + unsignedStorageType(widthOf(type), file_) + ">(" + value.str() + ")";
     }
 
-    static std::string asSize(const std::string& value)
+    [[nodiscard]] std::string asSize(const std::string& value) const
     {
-        return "static_cast<std::size_t>(" + value + ")";
+        return "static_cast<" + file_.standard("std::size_t") + ">(" + value + ")";
     }
 
     /// @brief The object @p pointer addresses: a local is read by its name.
@@ -1430,24 +1562,25 @@ private:
         {
             return names(buffer);
         }
-        const std::string bytes = vocabulary_->operation(vocabulary::Concept::Span, "data", {{"self", names(buffer)}});
-        return read ? "::llvmdsdl::cpp::readable_bytes(" + bytes + ")" : bytes;
+        const std::string bytes = file_.boundOperation(vocabulary::Concept::Span, "data", {{"self", names(buffer)}});
+        return read ? file_.cppRuntime("::llvmdsdl::cpp::readable_bytes") + "(" + bytes + ")" : bytes;
     }
 
     /// @brief The span an accessor takes its buffer in, and answers a nested type's bytes in, as
     ///        the vocabulary binds it.
     std::string spanOf(const bool isConst) const
     {
-        usedSpan_ = true;
-        return vocabulary_->type(vocabulary::Concept::Span,
-                                 {{"element", isConst ? "const std::uint8_t" : "std::uint8_t"}});
+        return file_.boundType(vocabulary::Concept::Span,
+                               {{"element",
+                                 isConst ? "const " + file_.standard("std::uint8_t")
+                                         : file_.standard("std::uint8_t")}});
     }
 
     std::string typeName(const mlir::Type type) const
     {
         if (mlir::isa<mlir::IndexType>(type))
         {
-            return "std::size_t";
+            return file_.standard("std::size_t");
         }
         if (type.isF32())
         {
@@ -1463,19 +1596,20 @@ private:
             {
                 return "bool";
             }
-            return isSignedSpelt(type) ? signedStorageType(integer.getWidth())
-                                       : unsignedStorageType(integer.getWidth());
+            return isSignedSpelt(type) ? signedStorageType(integer.getWidth(), file_)
+                                       : unsignedStorageType(integer.getWidth(), file_);
         }
         if (const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(type))
         {
             const std::string qualifier = pointer.getIsConst() ? "const " : "";
             if (mlir::isa<mlir::dsdl::ByteType>(pointer.getPointee()))
             {
-                return (accessor_ != Accessor::None) ? spanOf(pointer.getIsConst()) : qualifier + "std::uint8_t*";
+                return (accessor_ != Accessor::None) ? spanOf(pointer.getIsConst())
+                                                     : qualifier + file_.standard("std::uint8_t") + "*";
             }
             if (mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()))
             {
-                return qualifier + "std::size_t*";
+                return qualifier + file_.standard("std::size_t") + "*";
             }
             const auto object = mlir::cast<mlir::dsdl::ObjectType>(pointer.getPointee());
             const auto found  = plans_.find(object.getIdentity());
@@ -1557,11 +1691,12 @@ private:
         return "_" + stem + std::to_string(counter_++) + "_";
     }
 
-    mlir::SymbolTable             symbols_;
-    CppFlavor                     flavor_;
-    TypeNameVersioning            versioning_;
-    const vocabulary::Vocabulary* vocabulary_{nullptr};
-    llvm::StringMap<Plan>         plans_;
+    mlir::SymbolTable  symbols_;
+    CppFlavor          flavor_;
+    TypeNameVersioning versioning_;
+    /// @brief How the header names what it takes from other headers.
+    const CppFileNames&   file_;
+    llvm::StringMap<Plan> plans_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -1606,11 +1741,10 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
-    mutable bool        usedSpan_{false};
     mutable std::size_t counter_{0};
 };
 
-std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string cppTypeFromFieldType(const SemanticFieldType& type, const CppFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -1619,9 +1753,9 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
     case SemanticScalarCategory::Byte:
     case SemanticScalarCategory::Utf8:
     case SemanticScalarCategory::UnsignedInt:
-        return unsignedStorageType(type.bitLength);
+        return unsignedStorageType(type.bitLength, file);
     case SemanticScalarCategory::SignedInt:
-        return signedStorageType(type.bitLength);
+        return signedStorageType(type.bitLength, file);
     case SemanticScalarCategory::Float:
         if (type.bitLength == 64U)
         {
@@ -1629,18 +1763,19 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
         }
         return "float";
     case SemanticScalarCategory::Void:
-        return "std::uint8_t";
+        return file.standard("std::uint8_t");
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.cppQualifiedDeclaredTypeName(*type.compositeType);
+            return file.declaredIn(*type.compositeType,
+                                   file.context().cppQualifiedDeclaredTypeName(*type.compositeType));
         }
-        return "std::uint8_t";
+        return file.standard("std::uint8_t");
     }
-    return "std::uint8_t";
+    return file.standard("std::uint8_t");
 }
 
-void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
+void emitArrayMetadata(SourceWriter& w, const SemanticSection& section, const CppFileNames& file)
 {
     const NamingScope constScope = makeSectionConstantScope(Language::Cpp, section, {});
     for (const auto& field : section.fields)
@@ -1654,25 +1789,31 @@ void emitArrayMetadata(SourceWriter& w, const SemanticSection& section)
         };
         // A declared capacity is a fact of the schema, not of the target: on a 32-bit target a
         // capacity past 2^32 does not fit std::size_t.
-        w.line("static constexpr std::uint64_t " + named(ArrayMetadataKind::Capacity) + " = " +
+        w.line("static constexpr " + file.standard("std::uint64_t") + " " + named(ArrayMetadataKind::Capacity) + " = " +
                std::to_string(field.resolvedType.arrayCapacity) + "U;");
         w.line("static constexpr bool " + named(ArrayMetadataKind::IsVariableLength) + " = " +
                std::string(isVariableArray(field.resolvedType.arrayKind) ? "true" : "false") + ";");
     }
 }
 
-void emitFunctionPrototypes(SourceWriter&      w,
-                            const std::string& typeName,
-                            const std::string& declaredName,
-                            const CppFlavor    flavor)
+void emitFunctionPrototypes(SourceWriter&       w,
+                            const std::string&  typeName,
+                            const std::string&  declaredName,
+                            const CppFlavor     flavor,
+                            const CppFileNames& file)
 {
     w.line("struct " + declaredName + ";");
-    w.line("inline std::int8_t " + typeName + "_serialize_(const " + declaredName +
-           "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
-           (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
-    w.line("inline std::int8_t " + typeName + "_deserialize_(" + declaredName +
-           "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
-           (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
+    w.line(
+        "inline " + file.standard("std::int8_t") + " " + typeName + "_serialize_(const " + declaredName + "* obj, " +
+        file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") + "* inout_buffer_size_bytes" +
+        (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
+        ");");
+    w.line(
+        "inline " + file.standard("std::int8_t") + " " + typeName + "_deserialize_(" + declaredName +
+        "* out_obj, const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+        "* inout_buffer_size_bytes" +
+        (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
+        ");");
     w.blank();
 }
 
@@ -1743,7 +1884,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                               const SectionMetadata&                metadata,
                               const InitializerShape&               init,
                               const SemanticSection&                section,
-                              const EmitterContext&                 ctx,
+                              const CppFileNames&                   file,
                               const CppFlavor                       flavor,
                               const AttachedDoc&                    typeDoc,
                               const mlir::dsdl::SerializationPlanOp plan,
@@ -1752,7 +1893,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                               PlanBodyLookups&                      lookups,
                               const bool                            accessorsOnly)
 {
-    const NamingScope fieldScope = makeSectionFieldScope(Language::Cpp, section);
+    const EmitterContext& ctx        = file.context();
+    const NamingScope     fieldScope = makeSectionFieldScope(Language::Cpp, section);
     // Every member's default is what the initialise body stores for it. A field the body does not
     // set has no default this backend may invent.
     llvm::StringMap<const MemberDefault*> defaults;
@@ -1791,7 +1933,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             // A view is a span over the field's bytes in the buffer the object was deserialised
             // from; it allocates nothing and takes no memory resource.
             const auto baseType =
-                field.heldAsView ? spelling.viewType() : cppTypeFromFieldType(field.resolvedType, ctx);
+                field.heldAsView ? spelling.viewType() : cppTypeFromFieldType(field.resolvedType, file);
             emitAttachedDocCpp(w, field.doc);
 
             const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
@@ -1812,14 +1954,14 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             {
                 if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
                 {
-                    w.line("std::array<std::uint8_t, (" + std::to_string(field.resolvedType.arrayCapacity) +
-                           "U + 7U) / 8U> " + member + "{};");
+                    w.line(file.standard("std::array") + "<" + file.standard("std::uint8_t") + ", (" +
+                           std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U> " + member + "{};");
                 }
                 else
                 {
                     // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                    w.line("std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
-                           member + init_ + ";");
+                    w.line(file.standard("std::array") + "<" + baseType + ", " +
+                           std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + init_ + ";");
                     // NOLINTEND(performance-inefficient-string-concatenation)
                 }
                 if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
@@ -1834,7 +1976,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             if (isPmrFlavor(flavor))
             {
                 w.line(
-                    "std::pmr::vector<" +
+                    file.standard("std::pmr::vector") + "<" +
                     std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
                     "> " + member + "{};");
                 variableArrayMembers.push_back(member);
@@ -1846,14 +1988,14 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             else if (isAutosarFlavor(flavor))
             {
                 w.line(
-                    "::llvmdsdl::cpp::autosar::BoundedVector<" +
+                    file.cppRuntime("::llvmdsdl::cpp::autosar::BoundedVector") + "<" +
                     std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
                     ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
             }
             else
             {
                 w.line(
-                    "std::vector<" +
+                    file.standard("std::vector") + "<" +
                     std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
                     "> " + member + "{};");
             }
@@ -1864,7 +2006,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         {
             // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
             // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_{" + std::to_string(init.unionTag) + "U};");
+            w.line(unsignedStorageType(unionTagBits(plan), file) + " _tag_{" + std::to_string(init.unionTag) + "U};");
             ++emitted;
         }
 
@@ -1874,18 +2016,20 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             // structure past the image and, inside a nested image, move every field after it. The
             // resource-taking constructor and the setter stay, so a parent treats every member alike.
             w.line(declaredName + "() = default;");
-            w.line("explicit " + declaredName + "(::llvmdsdl::cpp::MemoryResource*) {}");
-            w.line("void set_memory_resource(::llvmdsdl::cpp::MemoryResource*) {}");
+            w.line("explicit " + declaredName + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "*) {}");
+            w.line("void set_memory_resource(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "*) {}");
         }
         else if (isPmrFlavor(flavor))
         {
-            w.line("::llvmdsdl::cpp::MemoryResource* _memory_resource{::llvmdsdl::cpp::default_memory_resource()};");
+            w.line(file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* _memory_resource{" +
+                   file.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "()};");
             w.line(declaredName + "() = default;");
-            w.line("explicit " + declaredName +
-                   "(::llvmdsdl::cpp::MemoryResource* memory_resource) { set_memory_resource(memory_resource); }");
-            w.open("void set_memory_resource(::llvmdsdl::cpp::MemoryResource* memory_resource) {");
-            w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : "
-                   "::llvmdsdl::cpp::default_memory_resource();");
+            w.line("explicit " + declaredName + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
+                   "* memory_resource) { set_memory_resource(memory_resource); }");
+            w.open("void set_memory_resource(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
+                   "* memory_resource) {");
+            w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : " +
+                   file.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "();");
             for (const auto& member : variableArrayMembers)
             {
                 // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
@@ -1899,7 +2043,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             {
                 const auto i = codegenProjectIdentifier(Language::Cpp, IdentifierRole::LocalName, member + "_index");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
+                w.open("for (" + file.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
+                       ".size(); ++" + i + ") {");
                 w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 w.close("}");
@@ -1908,7 +2053,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             {
                 const auto i = codegenProjectIdentifier(Language::Cpp, IdentifierRole::LocalName, member + "_index");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                w.open("for (std::size_t " + i + " = 0U; " + i + " < " + member + ".size(); ++" + i + ") {");
+                w.open("for (" + file.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
+                       ".size(); ++" + i + ") {");
                 w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 w.close("}");
@@ -1919,7 +2065,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
         if (emitted == 0)
         {
-            w.line("std::uint8_t _dummy_{0U};");
+            w.line(file.standard("std::uint8_t") + " _dummy_{0U};");
         }
     }
 
@@ -1927,9 +2073,10 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     w.line("static constexpr bool IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false") + ";");
     w.line("static constexpr const char* FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
            std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
-    w.line("static constexpr std::size_t EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
-    w.line("static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
-           std::to_string(metadata.serializationBufferSizeBytes) + "U;");
+    w.line("static constexpr " + file.standard("std::size_t") +
+           " EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
+    w.line("static constexpr " + file.standard("std::size_t") +
+           " SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes) + "U;");
     w.line(std::string("static constexpr bool WIRE_FLAT = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
     w.line("static constexpr const char* WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\";");
     w.line(std::string("static constexpr bool HOST_IMAGE = ") + (metadata.hostImage.holds ? "true;" : "false;"));
@@ -1949,17 +2096,18 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
         if (metadata.fixedPortId)
         {
-            w.line("static constexpr std::uint16_t FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId) + "U;");
+            w.line("static constexpr " + file.standard("std::uint16_t") +
+                   " FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId) + "U;");
         }
     }
     if (metadata.isUnion)
     {
-        w.line("static constexpr std::size_t UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) +
-               "U;");
+        w.line("static constexpr " + file.standard("std::size_t") +
+               " UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) + "U;");
         const NamingScope tagScope = makeSectionConstantScope(Language::Cpp, section, {});
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits) + " " +
+            w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits, file) + " " +
                    tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Cpp, option.name)) + " = " +
                    std::to_string(option.tag) + "U;");
         }
@@ -1982,9 +2130,11 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
     if (!accessorsOnly)
     {
-        emitArrayMetadata(w, section);
+        emitArrayMetadata(w, section, file);
 
-        w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
+        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " serialize(" +
+               file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+               "* "
                "inout_buffer_size_bytes) "
                "const {");
         if (isPmrFlavor(flavor))
@@ -1998,7 +2148,9 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         }
         w.close("}");
 
-        w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
+        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") +
+               " deserialize(const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+               "* "
                "inout_buffer_size_bytes) {");
         if (isPmrFlavor(flavor))
         {
@@ -2013,13 +2165,19 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
         if (isPmrFlavor(flavor))
         {
-            w.open("LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
-                   "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
+            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " serialize(" +
+                   file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+                   "* "
+                   "inout_buffer_size_bytes, " +
+                   file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) const {");
             w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
             w.close("}");
 
-            w.open("LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
-                   "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
+            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") +
+                   " deserialize(const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+                   "* "
+                   "inout_buffer_size_bytes, " +
+                   file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) {");
             w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
             w.close("}");
         }
@@ -2042,15 +2200,15 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     if (!accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("static_assert(std::is_standard_layout<" + declaredName + ">::value, \"" + declaredName +
-               ": the structure is not the byte image its serialisation assumes\");");
+        w.line("static_assert(" + file.standard("std::is_standard_layout") + "<" + declaredName + ">::value, \"" +
+               declaredName + ": the structure is not the byte image its serialisation assumes\");");
         w.line("static_assert(sizeof(" + declaredName +
                ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + declaredName +
                ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
             const std::string cppMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
-            w.line("static_assert(offsetof(" + declaredName + ", " + cppMember +
+            w.line("static_assert(" + file.standard("offsetof") + "(" + declaredName + ", " + cppMember +
                    ") == " + std::to_string(member.offsetBytes) + "U, \"" + declaredName + "." + cppMember +
                    ": not at the offset its serialisation assumes\");");
         }
@@ -2078,7 +2236,7 @@ struct SectionBodies final
 };
 
 llvm::Error emitSection(SourceWriter&                         w,
-                        const EmitterContext&                 ctx,
+                        const CppFileNames&                   file,
                         const SemanticDefinition&             def,
                         const std::string&                    typeName,
                         const SectionMetadata&                metadata,
@@ -2090,13 +2248,14 @@ llvm::Error emitSection(SourceWriter&                         w,
                         const SectionBodies&                  bodies,
                         PlanBodyLookups&                      lookups)
 {
-    const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
+    const EmitterContext& ctx          = file.context();
+    const auto            declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     // An accessors-only run has no bodies to declare or read: the struct holds the constants and
     // the accessors, and nothing else.
     InitializerShape init;
     if (!ctx.accessorsOnly())
     {
-        emitFunctionPrototypes(w, typeName, declaredName, flavor);
+        emitFunctionPrototypes(w, typeName, declaredName, flavor, file);
         if (!bodies.initialize)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -2116,7 +2275,7 @@ llvm::Error emitSection(SourceWriter&                         w,
                                      metadata,
                                      init,
                                      section,
-                                     ctx,
+                                     file,
                                      flavor,
                                      docWithDeprecationNotice(typeDoc,
                                                               section.deprecated,
@@ -2188,7 +2347,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-    const CppSpelling                    spelling(module, schema, flavor, ctx.typeNameVersioning(), vocabulary);
+    // The declarations and bodies first, naming what they take from other headers as they write it;
+    // the includes are written after, from what was named.
+    ImportSet                            includes;
+    const CppFileNames                   file(ctx, includes, vocabulary, EmitterContext::relativeHeaderPath(def));
+    const CppSpelling                    spelling(module, schema, flavor, ctx.typeNameVersioning(), file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2229,7 +2392,6 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     }
 
     std::ostringstream out;
-    // The declarations are rendered first, so that the includes can be read off them.
     std::ostringstream body;
     SourceWriter       w            = makeCppWriter(body);
     const auto         guard        = headerGuard(def.info);
@@ -2285,7 +2447,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         w.blank();
 
         if (auto err = emitSection(w,
-                                   ctx,
+                                   file,
                                    def,
                                    requestType,
                                    sectionMetadata(def.info, def.request, schema, "request"),
@@ -2302,7 +2464,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         if (def.response)
         {
             if (auto err = emitSection(w,
-                                       ctx,
+                                       file,
                                        def,
                                        responseType,
                                        sectionMetadata(def.info, *def.response, schema, "response"),
@@ -2319,15 +2481,16 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         }
 
         w.line("using " + baseTypeName + aliasAttribute + " = " + requestDeclared + ";");
-        w.line("constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestDeclared + "::EXTENT_BYTES;");
-        w.line("constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestDeclared +
-               "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+        w.line("constexpr " + file.standard("std::size_t") + " " + baseTypeName + "_EXTENT_BYTES = " + requestDeclared +
+               "::EXTENT_BYTES;");
+        w.line("constexpr " + file.standard("std::size_t") + " " + baseTypeName +
+               "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestDeclared + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
         // The service-ID belongs to the service, and this alias is how the service is named.
         w.line(std::string("constexpr bool ") + baseTypeName +
                "_HAS_FIXED_PORT_ID = " + (def.info.fixedPortId ? "true;" : "false;"));
         if (def.info.fixedPortId)
         {
-            w.line("constexpr std::uint16_t " + baseTypeName +
+            w.line("constexpr " + file.standard("std::uint16_t") + " " + baseTypeName +
                    "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId) + "U;");
         }
         w.blank();
@@ -2335,20 +2498,30 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         // The wrappers call the request's serialisation, which an accessors-only run does not emit.
         if (!ctx.accessorsOnly())
         {
-            w.line("inline std::int8_t " + baseTypeName + "_serialize_(const " + requestDeclared +
-                   "* const obj, std::uint8_t* const buffer, std::size_t* const "
+            w.line("inline " + file.standard("std::int8_t") + " " + baseTypeName + "_serialize_(const " +
+                   requestDeclared + "* const obj, " + file.standard("std::uint8_t") + "* const buffer, " +
+                   file.standard("std::size_t") +
+                   "* const "
                    "inout_buffer_size_bytes" +
-                   (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+                   (isPmrFlavor(flavor)
+                        ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* const memory_resource"
+                        : "") +
+                   ")");
             w.open("{");
             w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
                    (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
             w.close("}");
             w.blank();
 
-            w.line("inline std::int8_t " + baseTypeName + "_deserialize_(" + requestDeclared +
-                   "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
+            w.line("inline " + file.standard("std::int8_t") + " " + baseTypeName + "_deserialize_(" + requestDeclared +
+                   "* const out_obj, const " + file.standard("std::uint8_t") + "* buffer, " +
+                   file.standard("std::size_t") +
+                   "* const "
                    "inout_buffer_size_bytes" +
-                   (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+                   (isPmrFlavor(flavor)
+                        ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* const memory_resource"
+                        : "") +
+                   ")");
             w.open("{");
             w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
                    (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
@@ -2359,7 +2532,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     else
     {
         if (auto err = emitSection(w,
-                                   ctx,
+                                   file,
                                    def,
                                    baseTypeName,
                                    sectionMetadata(def.info, def.request, schema, ""),
@@ -2377,41 +2550,8 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
 
     emitNamespaceClose(w, def.info.namespaceComponents);
 
-    // Each header is included where the declarations take something from it, and a binding's
-    // headers where the spelling named its type. A nested type's header is included where this
-    // header names the type: a field held as a view names none, and an accessors-only header names
-    // none, since its composite getters answer bytes.
-    const std::string                         declarations = body.str();
-    static const std::vector<IncludeProvider> standardHeaders{
-        {"<algorithm>", {"std::min(", "std::max(", "std::copy(", "std::fill(", "std::equal("}},
-        {"<array>", {"std::array<"}},
-        {"<cstddef>", {"std::size_t", "std::ptrdiff_t", "offsetof("}},
-        {"<cstdint>", {"std::int", "std::uint"}},
-        {"<cstring>", {"std::memcpy(", "std::memset(", "std::memcmp(", "std::memmove("}},
-        {"<limits>", {"std::numeric_limits<"}},
-        {"<memory_resource>", {"std::pmr::"}},
-        {"<type_traits>", {"std::is_standard_layout<", "std::is_same<", "std::is_trivially"}},
-        {"<utility>", {"std::move(", "std::forward(", "std::swap(", "std::pair<", "std::exchange("}},
-        {"<vector>", {"std::vector<", "std::pmr::vector<"}},
-        {"\"dsdl_runtime.hpp\"", {"dsdl_runtime_", "::llvmdsdl::cpp::", "DSDL_RUNTIME_", "LLVMDSDL_"}},
-    };
-    std::vector<std::string> headers = includesFor(declarations, standardHeaders);
-    if (spelling.usedSpan())
-    {
-        const auto includes = vocabulary.includes(vocabulary::Concept::Span);
-        headers.insert(headers.end(), includes.begin(), includes.end());
-    }
-    out << orderedIncludeLines(std::move(headers));
-    if (!ctx.accessorsOnly())
-    {
-        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-        {
-            if (const auto* dep = ctx.find(depRef))
-            {
-                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
-            }
-        }
-    }
+    const std::string declarations = body.str();
+    out << renderCppIncludes(includes);
     out << "\n" << declarations;
     out << "\n#endif /* " << guard << " */\n";
     return out.str();

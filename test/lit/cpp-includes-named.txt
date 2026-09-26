@@ -1,0 +1,19 @@
+# A C++ header includes the headers that declare the names it writes. The C runtime's functions are
+# declared in dsdl_runtime.h, and a doc comment that mentions a standard function names nothing.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf '# Named in prose, std::memcpy( and std::vector< are not includes.\nuint8 value\n@sealed\n' > %t/dsdl/ns/Quiet.1.0.dsdl
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl/ns --outdir %t/cpp
+# RUN: cat %t/cpp/ns/Quiet_1_0.hpp | FileCheck %s
+#
+# CHECK:      #include <cstddef>
+# CHECK-NEXT: #include <cstdint>
+# CHECK-NEXT: #include <type_traits>
+# CHECK-EMPTY:
+# CHECK-NEXT: #include <span>
+# CHECK-EMPTY:
+# CHECK-NEXT: #include "dsdl_runtime.h"
+# CHECK-NEXT: #include "dsdl_runtime.hpp"
+# CHECK-EMPTY:
+# CHECK:      // Named in prose, std::memcpy( and std::vector< are not includes.
+# CHECK:      dsdl_runtime_set_uxx(

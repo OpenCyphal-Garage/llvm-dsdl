@@ -298,29 +298,6 @@ public:
         return exported(ref, tsDeserializeFromFn, ImportUse::Value);
     }
 
-    /// @brief The definition @p fullName names at @p major.@p minor.
-    static SemanticTypeRef referenceTo(const llvm::StringRef fullName,
-                                       const std::uint32_t   major,
-                                       const std::uint32_t   minor)
-    {
-        SemanticTypeRef                    ref;
-        llvm::SmallVector<llvm::StringRef> components;
-        fullName.split(components, '.');
-        for (const llvm::StringRef component : components)
-        {
-            ref.namespaceComponents.push_back(component.str());
-        }
-        if (!ref.namespaceComponents.empty())
-        {
-            ref.shortName = ref.namespaceComponents.back();
-            ref.namespaceComponents.pop_back();
-        }
-        ref.fullName     = fullName.str();
-        ref.majorVersion = major;
-        ref.minorVersion = minor;
-        return ref;
-    }
-
 private:
     /// @brief What the definition @p ref exports as @p compose makes of its name, imported from its
     ///        module under the name this file gives it, unless the module is this file.
@@ -1496,9 +1473,7 @@ private:
         {
             llvm::report_fatal_error("TypeScript spelling: a nested call to a body of no schema in the module");
         }
-        const SemanticTypeRef nested = TsFileNames::referenceTo(schema.getFullName(),
-                                                                static_cast<std::uint32_t>(schema.getMajor()),
-                                                                static_cast<std::uint32_t>(schema.getMinor()));
+        const SemanticTypeRef nested = typeRefOf(schema);
         return op.getDirection() == "serialize" ? file_.serializeInto(nested) : file_.deserializeFrom(nested);
     }
 
@@ -1592,10 +1567,7 @@ private:
         case Storage::Object:
             break;
         }
-        mlir::dsdl::IOOp io = member.io;
-        return file_.type(TsFileNames::referenceTo(io.getCompositeFullName().value_or(llvm::StringRef{}),
-                                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
+        return file_.type(typeRefOf(member.io));
     }
 
     std::string memberTsType(const Member& member) const

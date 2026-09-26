@@ -29,6 +29,7 @@ bool runImportSetTests()
     (void) imports.member(ImportOrigin::Standard, "dataclasses", "field");
     (void) imports.member(ImportOrigin::Runtime, "pkg._runtime_loader", "error_message");
     (void) imports.member(ImportOrigin::Definition, "uavcan.node.health_1_0", "Health");
+    (void) imports.module(ImportOrigin::Library, "attrs", {});
 
     if ((health != "Health") || (runtime != "dsdl_runtime") || (field != "field") || (sys != "sys"))
     {
@@ -41,6 +42,7 @@ bool runImportSetTests()
     const std::vector<std::pair<ImportOrigin, std::string>> wantOrder = {
         {ImportOrigin::Standard, "dataclasses"},
         {ImportOrigin::Standard, "sys"},
+        {ImportOrigin::Library, "attrs"},
         {ImportOrigin::Runtime, "pkg._runtime_loader"},
         {ImportOrigin::Definition, "uavcan.node.health_1_0"},
     };
@@ -80,7 +82,7 @@ bool runImportSetTests()
         std::cerr << "import set recorded the module sys wrongly\n";
         return false;
     }
-    if (names(modules[2]) != wantRuntime)
+    if (names(modules[3]) != wantRuntime)
     {
         std::cerr << "import set recorded the runtime's members wrongly\n";
         return false;

@@ -200,13 +200,22 @@ member is used for this, and a member named in type positions alone is imported 
 TypeScript had walked the semantic model for every name a nested definition exports and kept the
 ones a whole-word scan found in the text.
 
-C, C++ and Rust decide their imports as follows, and each is a way a file's text and its imports
-can disagree:
+C++ names through it: a standard name from the header the standard declares it in, a C runtime
+function from `dsdl_runtime.h`, a C++ runtime name from `dsdl_runtime.hpp`, the vocabulary's types
+and operations from the headers the binding names, and a nested type from its own header where a
+declaration or a body names it. C++ had read its includes off the text, where the C runtime's
+functions matched the tokens that included `dsdl_runtime.hpp`, which includes the C runtime and
+declares none of them: `misc-include-cleaner`'s 485. A `pmr` header also included
+`<memory_resource>`, from which it names nothing. The includes are written in three groups set apart
+by blank lines, the standard library's, a bound library's and the generated tree's own, each in the
+order of its paths.
+
+C and Rust decide their imports as follows, and each is a way a file's text and its imports can
+disagree:
 
 | language | standard library | runtime | other definitions |
 |---|---|---|---|
 | C | a token scan in a header; unconditional in a `.c` file | the same | a semantic-model walk in a header; the calls a body spells, recorded, in a `.c` file |
-| C++ | a token scan | a token scan, which names the header that includes the C runtime rather than the one that declares its functions: `misc-include-cleaner`'s 485 | a semantic-model walk; the vocabulary's span, recorded as it is named |
 | Rust | none: every standard and runtime name is a full path | none | a semantic-model walk, into an import scope |
 
 Each moves onto the set in a change of its own. A language that gives an import a local name
@@ -458,7 +467,8 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
-one, and the C++, read at C++20 with the accessors taking spans, to 4,946.
+one, and the C++, read at C++20 with the accessors taking spans, to 4,946. The C++ comes to 4,461
+with each header including the headers that declare what it names.
 
 What is left is per-language.
 
@@ -471,7 +481,6 @@ What is left is per-language.
 | 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
-| 485 | C++ | `misc-include-cleaner` | the C runtime's functions, reached only through `dsdl_runtime.hpp` |
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |

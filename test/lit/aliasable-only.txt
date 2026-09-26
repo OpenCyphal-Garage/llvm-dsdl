@@ -34,6 +34,7 @@
 # RUN: cat %t/cpp/std/fixtures_aliasable/vendor/Pose_1_0.hpp | FileCheck %s --check-prefix=CPP_POSE
 # CPP_POSE: #include <cstddef>
 # CPP_POSE-NEXT: #include <cstdint>
+# CPP_POSE-EMPTY:
 # CPP_POSE-NEXT: #include <span>
 # CPP_POSE-NOT: #include
 # The composite getter answers the nested record's bytes as a span, which carries their count. A
