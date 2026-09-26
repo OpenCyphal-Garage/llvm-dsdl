@@ -513,7 +513,7 @@ const std::vector<ScopeScenario>& scopeScenarios()
         {"struct_body", IdentifierRole::FieldName, {"fooBar", "foo_bar", "FooBar", "break", "break_"}, {}},
         {"struct_body_reserved",
          IdentifierRole::FieldName,
-         {"fooBar", "serialize", "Serialize"},
+         {"fooBar", "serialize", "Serialize", "marshal_binary"},
          {"Serialize", "Deserialize"}},
         {"constants", IdentifierRole::ConstantName, {"fooBar", "foo_bar", "FOO_BAR"}, {}},
         // Claimed names as a scope sees them: the escape happens in the projection, so what the scope

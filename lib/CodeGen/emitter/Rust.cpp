@@ -144,6 +144,11 @@ public:
         return index_.find(ref);
     }
 
+    bool holdsView(const SemanticSection& section) const
+    {
+        return index_.holdsView(section);
+    }
+
     static std::string rustModuleName(const DiscoveredDefinition& info)
     {
         return renderDefinitionFileStem(Language::Rust, info.shortName, info.majorVersion, info.minorVersion);
@@ -342,51 +347,11 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     return "u8";
 }
 
-/// @brief Whether @p section holds a view, directly or through a type it holds.
-///
-/// A view borrows the buffer, so the struct carries a lifetime, and so does every struct that
-/// holds one. DSDL forbids a type reaching itself, so the walk ends.
-bool sectionHoldsView(const SemanticSection&            section,
-                      const EmitterContext&             ctx,
-                      std::set<const SemanticSection*>& visiting)
-{
-    if (!visiting.insert(&section).second)
-    {
-        return false;
-    }
-    bool holds = false;
-    for (const auto& field : section.fields)
-    {
-        if (field.heldAsView)
-        {
-            holds = true;
-            break;
-        }
-        if (field.resolvedType.compositeType)
-        {
-            const auto* nested = ctx.find(*field.resolvedType.compositeType);
-            if ((nested != nullptr) && sectionHoldsView(nested->request, ctx, visiting))
-            {
-                holds = true;
-                break;
-            }
-        }
-    }
-    visiting.erase(&section);
-    return holds;
-}
-
-bool sectionHoldsView(const SemanticSection& section, const EmitterContext& ctx)
-{
-    std::set<const SemanticSection*> visiting;
-    return sectionHoldsView(section, ctx, visiting);
-}
-
 /// @brief The lifetime a type carries when it holds a view: `<'a>`, or nothing.
 std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx)
 {
     const auto* nested = ctx.find(ref);
-    return ((nested != nullptr) && sectionHoldsView(nested->request, ctx)) ? "<'a>" : "";
+    return ((nested != nullptr) && ctx.holdsView(nested->request)) ? "<'a>" : "";
 }
 
 std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -1782,7 +1747,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
     // entry points that read a buffer take it for that lifetime.
-    const bool        holdsView = sectionHoldsView(section, ctx);
+    const bool        holdsView = ctx.holdsView(section);
     const std::string generics  = holdsView ? "<'a>" : "";
     const std::string implHead  = holdsView ? "impl<'a> " : "impl ";
     const std::string borrowed  = holdsView ? "&'a [u8]" : "&[u8]";
@@ -2046,11 +2011,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.fullName.c_str());
     }
     std::set<std::string> lifetimeSections;
-    if (sectionHoldsView(def.request, ctx))
+    if (ctx.holdsView(def.request))
     {
         lifetimeSections.insert(def.isService ? "request" : "");
     }
-    if (def.response && sectionHoldsView(*def.response, ctx))
+    if (def.response && ctx.holdsView(*def.response))
     {
         lifetimeSections.insert("response");
     }
@@ -2243,7 +2208,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         // The alias names the request, so it carries the request's lifetime when the request holds
         // a view.
-        const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
+        const std::string baseGenerics = ctx.holdsView(def.request) ? "<'a>" : "";
         w.line("pub type " + baseType + baseGenerics + " = " + declaredReq + baseGenerics + ";");
     }
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type

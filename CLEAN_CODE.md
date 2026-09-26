@@ -203,7 +203,8 @@ runtime does not define is `Unrecognised`, which carries it.
 **Go.** `type ListRequest struct` in package `file`. Go's own wire interfaces come first:
 `MarshalBinary() ([]byte, error)` and `UnmarshalBinary([]byte) error`, so a generated type satisfies
 `encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler` and drops into anything that already
-speaks them. The buffer-oriented pair stays beside them for the path that allocates nothing:
+speaks them. A type holding a view unmarshals a copy of its data, which the interface asks it not
+to keep. The buffer-oriented pair stays beside them for the path that allocates nothing:
 `func (r *ListRequest) Serialize(buffer []byte) (int, error)`. The error is the runtime's `Error`,
 a code whose named values are constants such as `ErrBufferTooSmall`, as `syscall.Errno` is: a
 returned `error` costs no allocation, and every code has a value.
@@ -551,6 +552,12 @@ still carries its error as the runtime's code: each spelling names the error at 
 reads the code back from a nested call's. Rust's `deserialize_with_consumed`, which answered a code
 and the whole buffer on failure as the C harness reports them, went with them. C, C++, TypeScript,
 Python and the object lane are byte for byte as before, and the Rust and Go judges hold.
+
+Go's types then took `MarshalBinary` and `UnmarshalBinary` over that pair, so each satisfies the
+`encoding` package's interfaces. A type holding a view unmarshals `bytes.Clone(data)`, since its
+views would keep the data the interface asks it not to keep. Whether a section holds a view,
+directly or through a composite it holds, is `DefinitionIndex::holdsView`, which Rust's lifetime
+reads too.
 
 The judges moved with it. TypeScript's `naming-convention` fell from 545 to 81, the `_bound0_` and
 `_result1_` the spelling had invented, and Python's `SIM108` from 164 to none, the branch each call

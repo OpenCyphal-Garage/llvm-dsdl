@@ -13,6 +13,7 @@ package main
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -53,6 +54,18 @@ func main() {
 	out := bytes.Repeat([]byte{0xEE}, 64)
 	n, err = frame.Serialize(out)
 	check("serialise reproduces the wire", err == nil && n == 41 && bytes.Equal(out[:41], wire))
+	// The encoding package's interfaces: the wire image, and a read that keeps nothing of its data.
+	var marshaler encoding.BinaryMarshaler = &frame
+	image, err := marshaler.MarshalBinary()
+	check("MarshalBinary answers the wire", err == nil && bytes.Equal(image, wire))
+	var unmarshaled views.Frame
+	var unmarshaler encoding.BinaryUnmarshaler = &unmarshaled
+	err = unmarshaler.UnmarshalBinary(image)
+	image[4] ^= 0xFF
+	check("UnmarshalBinary keeps nothing of its data", err == nil && len(unmarshaled.Pose) == 24 && unmarshaled.Pose[0] == wire[4])
+	var velocity aliasable.Vec3
+	err = velocity.UnmarshalBinary(wire[28:40])
+	check("UnmarshalBinary reads a type holding no view", err == nil && velocity.Y == 8.0)
 	var short views.Frame
 	_, err = short.Deserialize(wire[:16])
 	check("short deserialise accepted", err == nil)

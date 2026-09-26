@@ -407,6 +407,11 @@ public:
         return index_.find(ref);
     }
 
+    bool holdsView(const SemanticSection& section) const
+    {
+        return index_.holdsView(section);
+    }
+
     static std::string packagePath(const DiscoveredDefinition& info)
     {
         return packagePathFromComponents(info.namespaceComponents);
@@ -2087,6 +2092,27 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         {
             return err;
         }
+        // The encoding package's interfaces, over the pair above. An object holding a view keeps the
+        // bytes it reads, and encoding.BinaryUnmarshaler asks that the data not be kept, so such an
+        // object reads a copy.
+        const bool keepsBuffer = ctx.holdsView(section);
+        w.blank();
+        w.line("// MarshalBinary answers the wire image of obj, as encoding.BinaryMarshaler asks.");
+        w.open("func (obj *" + typeName + ") MarshalBinary() ([]byte, error) {");
+        w.line("buffer := make([]byte, " + meta("SERIALIZATION_BUFFER_SIZE_BYTES") + ")");
+        w.line("n, err := obj.Serialize(buffer)");
+        w.open("if err != nil {");
+        w.line("return nil, err");
+        w.close("}");
+        w.line("return buffer[:n], nil");
+        w.close("}");
+        w.blank();
+        w.line(keepsBuffer ? "// UnmarshalBinary reads obj from a copy of its wire image, which obj's views would keep."
+                           : "// UnmarshalBinary reads obj from its wire image, as encoding.BinaryUnmarshaler asks.");
+        w.open("func (obj *" + typeName + ") UnmarshalBinary(data []byte) error {");
+        w.line(std::string{"_, err := obj.Deserialize("} + (keepsBuffer ? "bytes.Clone(data)" : "data") + ")");
+        w.line("return err");
+        w.close("}");
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
@@ -2270,18 +2296,23 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.blank();
     const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
     const bool usesUnsafe  = llvm::StringRef(body.str()).contains("unsafe.");
-    if (usesRuntime || usesUnsafe || !imports.empty())
+    const bool usesBytes   = llvm::StringRef(body.str()).contains("bytes.Clone(");
+    if (usesRuntime || usesUnsafe || usesBytes || !imports.empty())
     {
         head.open("import (");
         // gofmt sorts the imports within a group, so the standard library's sit in a group of
         // their own, ahead of the module's, and a blank line keeps the two apart.
+        if (usesBytes)
+        {
+            head.line("\"bytes\"");
+        }
         if (usesUnsafe)
         {
             head.line("\"unsafe\"");
-            if (usesRuntime || !imports.empty())
-            {
-                head.blank();
-            }
+        }
+        if ((usesBytes || usesUnsafe) && (usesRuntime || !imports.empty()))
+        {
+            head.blank();
         }
         if (usesRuntime)
         {
