@@ -55,6 +55,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringExtras.h>
@@ -93,17 +94,17 @@ std::string rustMemoryModeVariantPath(const Options& options)
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    return renderUnsignedStorageToken(StorageTokenLanguage::Rust, bitLength);
+    return renderUnsignedStorageToken(Language::Rust, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    return renderSignedStorageToken(StorageTokenLanguage::Rust, bitLength);
+    return renderSignedStorageToken(Language::Rust, bitLength);
 }
 
 std::string rustConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Rust, value, makeConstantTypeInfo(type));
+    return renderConstantLiteral(Language::Rust, value, makeConstantTypeInfo(type));
 }
 
 SourceWriter makeRustWriter(std::ostringstream& out)
@@ -146,15 +147,12 @@ public:
 
     static std::string rustModuleName(const DiscoveredDefinition& info)
     {
-        return renderDefinitionFileStem(CodegenNamingLanguage::Rust,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion);
+        return renderDefinitionFileStem(Language::Rust, info.shortName, info.majorVersion, info.minorVersion);
     }
 
     std::string rustTypeName(const DiscoveredDefinition& info) const
     {
-        return renderDefinitionTypeName(CodegenNamingLanguage::Rust,
+        return renderDefinitionTypeName(Language::Rust,
                                         info.namespaceComponents,
                                         info.shortName,
                                         info.majorVersion,
@@ -252,9 +250,7 @@ public:
         const auto* resolved   = find(ref);
         const bool  deprecated = (resolved != nullptr) && resolved->request.deprecated;
         const auto  compose    = [&](const std::string& raw) {
-            return renderDeclaredTypeName(codegenProjectIdentifier(CodegenNamingLanguage::Rust,
-                                                                   IdentifierRole::TypeName,
-                                                                   raw),
+            return renderDeclaredTypeName(codegenProjectIdentifier(Language::Rust, IdentifierRole::TypeName, raw),
                                           deprecated);
         };
 
@@ -290,7 +286,7 @@ public:
         out << "crate";
         for (const auto& ns : ref.namespaceComponents)
         {
-            out << "::" << codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::NamespaceName, ns);
+            out << "::" << codegenProjectIdentifier(Language::Rust, IdentifierRole::NamespaceName, ns);
         }
 
         if (const auto* def = find(ref))
@@ -526,10 +522,9 @@ std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const st
     std::set<std::string>                            used;
     for (const auto& fieldName : fieldNames)
     {
-        const std::string baseName =
-            "__LLVMDSDL_POOL_CLASS_" +
-            codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, fieldName);
-        std::string constName = baseName;
+        const std::string baseName  = "__LLVMDSDL_POOL_CLASS_" +
+                                      codegenProjectIdentifier(Language::Rust, IdentifierRole::ConstantName, fieldName);
+        std::string       constName = baseName;
         for (std::uint32_t suffix = 1U; !used.insert(constName).second; ++suffix)
         {
             constName = baseName + "_" + std::to_string(suffix);
@@ -560,7 +555,7 @@ public:
         // the module already says. Stripping it leaves what distinguishes one helper of this
         // definition from another -- the kind it answers, the section it belongs to, and for a
         // scalar the field's index and direction.
-        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::Rust, module, schema, helperScope_);
+        helperNames_ = renderSchemaHelperNames(Language::Rust, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -570,7 +565,7 @@ public:
             Plan entry;
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
             entry.lifetime     = lifetimeSections.contains(plan.getSection().value_or(llvm::StringRef{}).str());
-            NamingScope                   scope(CodegenNamingLanguage::Rust);
+            NamingScope                   scope(Language::Rust);
             std::vector<mlir::dsdl::IOOp> fields;
             std::vector<std::string>      variableArrays;
             if (!plan.getBody().empty())
@@ -606,7 +601,7 @@ public:
             // projection folds onto one identifier, which is the case a scope exists for. The tag
             // is declared first, so a union whose options collide with nothing keeps the accessor
             // names it has and the colliding option is the side that moves.
-            NamingScope accessorScope(CodegenNamingLanguage::Rust);
+            NamingScope accessorScope(Language::Rust);
             const auto  accessorKey = [](const llvm::StringRef kind, const llvm::StringRef member) {
                 return kind.str() + "_" + member.str();
             };
@@ -1677,7 +1672,7 @@ private:
 
     /// @brief The scope the module's helper names are declared into, which keeps two that project
     ///        onto one name apart.
-    NamingScope helperScope_{CodegenNamingLanguage::Rust};
+    NamingScope helperScope_{Language::Rust};
 
     /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
     llvm::StringMap<std::string> helperNames_;
@@ -1830,7 +1825,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         init = std::move(*initRead);
     }
-    const NamingScope        fieldScope = makeSectionFieldScope(CodegenNamingLanguage::Rust, section);
+    const NamingScope        fieldScope = makeSectionFieldScope(Language::Rust, section);
     std::vector<std::string> variableArrayFields;
     for (const auto& field : section.fields)
     {
@@ -2033,13 +2028,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     if (metadata.isUnion)
     {
         w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(metadata.unionOptions.size()) + ";");
-        const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section, {});
+        const NamingScope tagScope = makeSectionConstantScope(Language::Rust, section, {});
         for (const auto& option : metadata.unionOptions)
         {
-            w.line(
-                "pub const " +
-                tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Rust, option.name)) +
-                ": " + unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
+            w.line("pub const " +
+                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Rust, option.name)) + ": " +
+                   unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
         }
     }
 
@@ -2049,7 +2043,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     {
         constNames.push_back(c.name);
     }
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Rust, section, {});
+    NamingScope const constScope = makeSectionConstantScope(Language::Rust, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(w, c.doc);
@@ -2197,7 +2191,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
             {
-                const auto sectionType = renderSectionTypeName(CodegenNamingLanguage::Rust, declaredBase, section);
+                const auto sectionType = renderSectionTypeName(Language::Rust, declaredBase, section);
                 ctx.reserveDeclaration(sectionType);
                 ctx.reserveDeclaration(renderDeclaredTypeName(sectionType, def.request.deprecated));
             }
@@ -2261,8 +2255,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::Rust, baseType, "request");
-    const auto respType = renderSectionTypeName(CodegenNamingLanguage::Rust, baseType, "response");
+    const auto reqType  = renderSectionTypeName(Language::Rust, baseType, "request");
+    const auto respType = renderSectionTypeName(Language::Rust, baseType, "response");
 
     if (auto err = emitSectionType(w,
                                    reqType,
@@ -2324,8 +2318,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
-    const auto baseConstPrefix =
-        codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName, baseType);
+    const auto baseConstPrefix = codegenProjectIdentifier(Language::Rust, IdentifierRole::ConstantName, baseType);
     w.line("pub const " + baseConstPrefix +
            "_HAS_FIXED_PORT_ID: bool = " + (def.info.fixedPortId ? "true;" : "false;"));
     if (def.info.fixedPortId)
@@ -2479,7 +2472,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         ns.reserve(def.info.namespaceComponents.size());
         for (const auto& c : def.info.namespaceComponents)
         {
-            ns.push_back(codegenProjectIdentifier(CodegenNamingLanguage::Rust, IdentifierRole::NamespaceName, c));
+            ns.push_back(codegenProjectIdentifier(Language::Rust, IdentifierRole::NamespaceName, c));
         }
 
         std::string dirRel;

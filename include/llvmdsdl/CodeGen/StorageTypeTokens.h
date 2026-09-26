@@ -20,36 +20,22 @@
 #include <cstdint>
 #include <string>
 
+#include "llvmdsdl/Support/Language.h"
+
 namespace llvmdsdl
 {
-
-/// @brief Target language for scalar storage token rendering.
-enum class StorageTokenLanguage
-{
-    /// @brief C token family (`uint32_t`, `int32_t`, ...).
-    C,
-
-    /// @brief C++ token family (`std::uint32_t`, `std::int32_t`, ...).
-    Cpp,
-
-    /// @brief Rust token family (`u32`, `i32`, ...).
-    Rust,
-
-    /// @brief Go token family (`uint32`, `int32`, ...).
-    Go,
-};
 
 /// @brief Returns unsigned scalar storage token for a bit width.
 /// @param[in] language Target language.
 /// @param[in] bitLength Scalar bit width.
 /// @return Backend token name.
-std::string renderUnsignedStorageToken(StorageTokenLanguage language, std::uint32_t bitLength);
+std::string renderUnsignedStorageToken(Language language, std::uint32_t bitLength);
 
 /// @brief Returns signed scalar storage token for a bit width.
 /// @param[in] language Target language.
 /// @param[in] bitLength Scalar bit width.
 /// @return Backend token name.
-std::string renderSignedStorageToken(StorageTokenLanguage language, std::uint32_t bitLength);
+std::string renderSignedStorageToken(Language language, std::uint32_t bitLength);
 
 }  // namespace llvmdsdl
 

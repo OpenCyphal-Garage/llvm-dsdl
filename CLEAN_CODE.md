@@ -14,29 +14,28 @@ This is the plan to bring the declaration half under a contract of its own.
 
 ## The output
 
-Taking `uavcan.file.List.0.2` from the regulated corpus, at `0403f21`:
+Taking `uavcan.file.List.0.2` from the regulated corpus, at `8c2f0a7`:
 
 | | the section type | a synthesised helper |
 |---|---|---|
 | C | `struct uavcan__file__List__Request` | `int8_t llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
 | C++ | `struct uavcan::file::List_Request` | `inline std::int8_t uavcan::file::mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request` |
-| Rust | `pub struct uavcan_file_List_Request` | `fn mlir_llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
-| Go | `type List_Request struct` | `func mlir_llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
-| Python | `class List_Request` | `def mlir_llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
-| TypeScript | `export interface List_Request` | `function mlir_llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
+| Rust | `pub struct Request` in `uavcan::file::list_0_2` | `fn capacity_check_request` |
+| Go | `type ListRequest struct` | `func listCapacityCheckRequest` |
+| Python | `class ListRequest` | `def _capacity_check_request` |
+| TypeScript | `export interface ListRequest` | `function capacityCheckRequest` |
 
-The corpus yields 658 helper symbols, and the same 658 appear in all six languages under a spelling
-that belongs to none of them — C drops the `mlir_` prefix and C++ collapses the doubled underscores
-it reserves, which is the whole of the variation. In C++ they sit at namespace scope, reachable by
-ADL; in Python they sit at module scope with no leading underscore, so `import *` exports them; in
-C they carry external linkage, so a corpus contributes 658 `llvmdsdl_`-prefixed symbols to the
-global namespace and two corpora linked together collide.
+The corpus yields 658 helper symbols. Rust, Go, Python and TypeScript name each by the scope that
+holds it, which phase 1 below records. C and C++ still carry the whole definition in the symbol:
+in C++ the helpers sit at namespace scope, reachable by ADL, and in C they carry external linkage,
+so a corpus contributes 658 `llvmdsdl_`-prefixed symbols to the global namespace and two corpora
+linked together collide.
 
-Each identifier restates the scope that already contains it. `uavcan_file_List_Request` is declared
-in `crate::uavcan::file::list_0_2`; the path is spelled twice. `mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request`
-is declared inside `namespace uavcan::file` beside `List_Request`, and names both again.
+A C++ identifier restates the scope that already contains it.
+`mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request` is declared inside
+`namespace uavcan::file` beside `List_Request`, and names both again.
 
-Beyond the shared mangle, each language carries its own:
+Beyond the helpers, each language carries its own:
 
 **C** is the closest to right, having been rebuilt through the body translator in #40.
 `uavcan__file__List__Request` uses `__` as the separator a language without scopes needs, and the
@@ -47,20 +46,15 @@ internal linkage.
 namespaces. The free `List_Request_serialize_` duplicates the `serialize` member, so one operation
 has two public spellings.
 
-**Rust** emits `#![allow(non_camel_case_types)]`, `#![allow(non_snake_case)]` and
-`#![allow(non_upper_case_globals)]` into every module and the crate root, from
-`lib/CodeGen/emitter/Rust.cpp` at two sites. rustc reports this class of defect by default; the
-generator silences it. `Result<usize, i8>` answers with a bare integer where the language has a
-trait for the purpose.
+**Rust** answers `Result<usize, i8>`, a bare integer where the language has a trait for the purpose.
 
-**Go** spells types `List_Request` and constants `LIST_REQUEST_FULL_NAME`, neither of which is Go,
-and returns `(int8, int)` where the language returns `error`. The receiver is `obj`.
+**Go** returns `(int8, int)` where the language returns `error`. The receiver is `obj`.
 
-**Python** spells classes `List_Request` against PEP 8, and puts the type's facts in module-level
-`DSDL_*` constants rather than on the class they describe.
+**Python** puts the type's facts in module-level `DSDL_*` constants rather than on the class they
+describe.
 
-**TypeScript** exposes `makeList_Request`, `serializeList_RequestInto` and
-`deserializeList_RequestFrom` — free functions carrying the type name, which is how a language
+**TypeScript** exposes `makeListRequest`, `serializeListRequestInto` and
+`deserializeListRequestFrom` — free functions carrying the type name, which is how a language
 without methods does it.
 
 ## A scope is a concept; the tree of scopes is not
@@ -82,23 +76,24 @@ way six times.
 
 The helper name shows the cost twice over. `lib/Transforms/Passes.cpp` mints
 `llvmdsdl_plan_capacity_check__<schema>__<section>` as the MLIR symbol. `renderHelperBindingIdentifier`
-re-mangles that string at render time into `mlir_llvmdsdl_…`, collapsing `__` for C++ alone. The C
-backend uses the first, the other five use the second. One symbol, two spellings, computed in two
-places — which is what happens when a name is decided away from the references to it.
+re-mangles that string at render time into `mlir_llvmdsdl_…`, collapsing `__` for C++ alone. C uses
+the first and C++ the second. One symbol, two spellings, computed in two places — which is what
+happens when a name is decided away from the references to it.
 
 ## Language classification
 
 The classification is the input the surface layer reads. One row per language, stating what the
-language can express, indexed by the questions a declaration's shape depends on.
+language can express, indexed by the questions a declaration's shape depends on. The rows are
+`LanguageTraits` in `llvmdsdl/Support/LanguageTraits.h`, and `LanguageTraitsTests` pins each.
 
-| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants |
-|---|---|---|---|---|---|---|
-| C | none | no | no | `static` | status code | macros in the enclosing scope |
-| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class |
-| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` |
-| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed |
-| Python | class | yes | yes | `_` prefix | exception | class attribute |
-| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` |
+| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | constants and fields one namespace | reserved by underscores |
+|---|---|---|---|---|---|---|---|---|
+| C | none | no | no | `static` | status code | macros in the enclosing scope | no | leading `__`, `_X` |
+| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | yes | those, and `__` anywhere |
+| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | no | none |
+| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none |
+| Python | class | yes | yes | `_` prefix | exception | class attribute | yes | none |
+| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | no | none |
 
 A row is a claim about the language, not a preference, which is what makes it testable and what
 keeps it out of the emitters. Two consequences follow directly and are worth stating because they
@@ -158,10 +153,10 @@ which declarations are public, and where a body is attached. The spelling holds:
 opens a namespace, writes a field, declares a constant, spells a signature, marks a declaration
 internal, and returns an error.
 
-This is where the string emission falls. The six emitters hold 1,077 emission sites between them,
-782 of which are outside the `BodySpelling` subclass — the declaration half — and 358 of those are
-in `Ts.cpp` alone. A signature is assembled by concatenation at every entry point, for every
-profile, in every language:
+This is where the string emission falls. `tools/count_emission_sites.py` counts the calls that write
+generated text. When phase 2 took the count the six emitters held 1,230, 918 of them outside the
+`BodySpelling` subclass — the declaration half — and 412 of those in `Ts.cpp` alone. A signature is assembled by
+concatenation at every entry point, for every profile, in every language:
 
 ```cpp
 w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const " : "_deserialize_(") +
@@ -170,7 +165,9 @@ w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const "
 ```
 
 A signature in the tree is a declaration with typed parameters and a return; the spelling writes
-one parameter list. Those 782 sites are the measure the mechanism phases are gated on.
+one parameter list. `llvmdsdl-emission-sites` holds each emitter's two counts to
+`test/integration/emission-sites.json`, so a count rises only by a retake that says why, and the
+declaration half is the measure the renderer is gated on.
 
 This is not licence to add a template engine. A template is a second statement of the shape, in a
 language the compiler cannot check, and it is what every code generator reaches for — nnvg included,
@@ -226,10 +223,10 @@ does not. Helpers stay module-private and take camelCase names.
 
 ## Phases
 
-Each phase is one change, with a gate that fails against the tree before the phase is written.
+Each phase has a gate that fails against the tree before the phase is written.
 
 Rust landed first, in #41, ahead of the mechanism phases rather than after them. That was not the
-order below and it earned something: phase 3's gate is that the surface tree reproduces today's
+order below and it earned something: phase 4's gate is that the surface tree reproduces today's
 output byte for byte, and today's output is now idiomatic Rust rather than the flat names. A tree
 that reproduces `list_0_2::Request` is tested against the shape it exists to produce; one that
 reproduced `uavcan_file_List_Request` would only have been tested against the shape it replaces.
@@ -239,7 +236,7 @@ reproduced `uavcan_file_List_Request` would only have been tested against the sh
 The compilers already run over the regulated corpus: `RunUavcanRustCargoCheck`
 runs `cargo check`, `RunUavcanGoBuild` runs `go test ./...`, `RunUavcanTsTypecheck` runs `tsc`, and
 the C and C++ generation lanes compile under `-Werror`. What none of them judges is idiom, because
-a compiler accepts an un-idiomatic name by design. Python has no lane of either kind.
+a compiler accepts an un-idiomatic name by design. Python had no lane of either kind.
 
 Rust is the exception, and not in the way it first appears. `RunContainerViews`, `RunAliasableOnly`,
 `RunUnionAccessors` and `RunDeprecationAttributeCompileGate` already compile generated Rust under
@@ -277,8 +274,8 @@ version of whatever `eslint` resolves to, so that arrangement fails rather than 
 The version a judge is pinned at is part of what it reports, so the counts are taken with the
 judges `ts26.4.5` carries and nothing else: `ruff` 0.16.8, `staticcheck` 2025.1.1, `eslint` 10.11.0
 beside `typescript-eslint` 8.70.1 and TypeScript 5.2.2, `clippy` 0.1.93, and `clang-tidy` 22.1.2.
-Each is recorded per
-rule in `test/integration/judge-baselines/`, written by the lane rather than added up by hand.
+Each is recorded per rule in `test/integration/judge-baselines/`, written by the lane rather than
+added up by hand.
 
 Two of those differ from what a local run may have. `clippy` 0.1.95 reports `nonminimal_bool` six
 times where 0.1.93 reports `collapsible_else_if` thirty-four, so a host reading 607 and a lane
@@ -333,8 +330,8 @@ null, and a Rust `&self` or `&mut [u8]` cannot be null, so the guard survived as
 dead `if`, and an error path nothing can reach.
 
 That was a defect of the lowering rather than of any backend, and the fix went where every backend
-inherits it. `dsdl-fold-null-guards` runs after `build-dsdl-plan-bodies` under a `TargetNullability`
-the driver derives from the target: Rust keeps neither test, Go, TypeScript and Python keep the one
+inherits it. `dsdl-fold-null-guards` runs after `build-dsdl-plan-bodies` under the target's
+`TargetNullability`, which its row states: Rust keeps neither test, Go, TypeScript and Python keep the one
 on the object a caller may omit, and C and C++ keep both. It canonicalises the bodies it changed
 rather than waiting for `--optimize-lowered-serdes`, which is off unless a caller asks for it, so a
 guard folded to a constant is never left where a reader would find it. The C and C++ output is
@@ -410,12 +407,13 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 |----------|-------|-----------------:|----:|
 | Rust | clippy | 867 | 641 |
 | Go | staticcheck | 3,241 | 318 |
-| Python | ruff | 4,188 | 1,718 |
+| Python | ruff | 4,188 | 1,708 |
 | TypeScript | eslint | 1,810 | 548 |
-| | | **10,106** | **3,225** |
+| | | **10,106** | **3,215** |
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
-5,437 over the C++ at C++14. Read at C++20, with the accessors taking spans, the C++ comes to 4,949.
+5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
+one, and the C++, read at C++20 with the accessors taking spans, to 4,949.
 
 What is left is per-language.
 
@@ -424,7 +422,7 @@ What is left is per-language.
 | 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
 | 1,907 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
 | 1,500 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
-| 997 | Python | `E501` | long lines |
+| 987 | Python | `E501` | long lines |
 | 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
@@ -457,28 +455,101 @@ TypeScript and Python cannot be handed a null buffer, and their output is unchan
 The `ArrayBound` that remains, in the runtime's bit copy, assumes a whole byte and a partial one in
 a copy of at most eight bits, which cannot both hold.
 
-**2 — The classification.** The capability table, and `LanguageProfile` reading it. Consumed by
-nothing yet. Gate: unit tests pin every row, and the emitters are shown to agree with the row that
-describes them.
+**2 — The classification.** *Landed: every decision on a language reads its row, and a check refuses
+one that does not.*
 
-**3 — The surface tree.** `project-dsdl-surface`, the scope ops, symbol allocation and reference
+`llvmdsdl::Language` is the one enumeration of the languages; the three the naming code, the literal
+renderer and the storage tokens each kept are gone. `LanguageTraits` holds a row per language in
+three parts: the classification above; `BodyInterface`, what the generated interface hands a body,
+which the pipeline takes in place of three positional arguments and which the lowering reads without
+meeting a language; and `Composition`, how the output composes its declarations today. The name is
+not `LanguageProfile`, which this plan used before: a profile here is `std`, `pmr` or `autosar`, and
+stays with the vocabulary.
+
+Everything [Discipline](#discipline) found deciding a capability by a language's name reads the row
+instead: the driver's three capability blocks, the section joiner, where a type's constants go,
+which names a module reserves, the generated constants' `_`, Python's helper prefix, C++'s reserved
+underscores, `Discovery`'s scope and deprecation checks, and the vocabulary's language list.
+`DefinitionNamePolicy` became part of the row, losing a field no row had set. The driver resolves
+a `--target-language` value to its row through the CLI table, and dispatches to a backend by
+switching on the language.
+
+The composition is where the output departs from the classification, and `LanguageTraitsTests`
+names the departure the two columns can show: Python and TypeScript declare a type's constants in
+the module. The rest -- C++'s flat section types, TypeScript's free functions -- are in declarations
+the surface tree takes over.
+
+`tools/check_language_classification.py`, run as `llvmdsdl-language-classification`, refuses a
+comparison with a `Language` enumerator, a `case` on one, or a comparison with a language's
+`--target-language` spelling, outside the spelling tables and the driver's dispatch; the tree before
+this phase has 27. `llvmdsdl-emission-sites` holds each emitter's count of the calls that write text.
+No generated byte changed: over the showroom and the regulated corpus, all seven targets, their
+naming manifests and the MLIR are identical before and after.
+
+**3 — The plan semantics the emitters hold.** The three in [Discipline](#discipline) move out of the
+emitters: whether a body can fail becomes an IR fact, a nested call's adaptation to a callee that
+answers its size or an error moves into the lowering, and a bool array's run of bits gets one
+expansion. Rust's and Go's error types follow on the first, before the next release. Gate: no
+emitter walks the IR to decide what a body means, and the judge findings the three cause fall.
+
+**4 — The surface tree.** `project-dsdl-surface`, the scope ops, symbol allocation and reference
 rewriting. The first profile reproduces today's output exactly, so the whole phase changes no
 generated byte. Gate: the byte-diff oracle over the showroom and the regulated corpus for all seven
 targets, before and against after — zero diff — plus lit tests on the scope structure and a
 verifier that rejects a colliding scope.
 
-**4 — The declaration renderer.** `DeclarationSpelling` and the shared renderer; the hand-assembled
+**5 — The declaration renderer.** `DeclarationSpelling` and the shared renderer; the hand-assembled
 signatures and scope prefixes are deleted from all six emitters. Still no generated byte changes.
-Gate: the same oracle, plus the emission-site count in the declaration half.
+Gate: the same oracle, plus the emission-site count in the declaration half, which must fall.
 
-**5 to 10 — One phase per language**, each flipping its row from *as today* to the target above and
+**6 to 11 — One phase per language**, each flipping its row from *as today* to the target above and
 turning its judge from phase 1 green. Rust's and Go's names landed ahead of the mechanism, in #41
-and #42, and what remains of each is its error type. C is cheapest and can go anywhere. C++ goes
-last of the six: nesting is the largest change to the surface tree any language asks for, and
-taking it after five languages have exercised the tree tests it on the shape that stresses it most.
+and #42, and C++'s accessors in #49 and #54. C is cheapest and can go anywhere. C++ goes last of the
+six: nesting is the largest change to the surface tree any language asks for, and taking it after
+five languages have exercised the tree tests it on the shape that stresses it most.
 
-Nothing in phases 2 to 10 touches a plan body. The wire is fixed by the round-trip, parity and
-cross-language equivalence lanes throughout, and a phase that moves a wire byte has failed.
+Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
+wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
+that moves a wire byte has failed.
+
+## Discipline
+
+A fix belongs as high in the pipeline as it can go. A fact about a plan is an IR fact, stated once by
+the lowering and translated by every backend. A fact about a language is a row in the
+classification, read wherever it is needed. An emitter spells. A fix made lower than it could be is
+made again by every language that meets the same defect, and by every language added later.
+
+The work to #55 was audited against that at `8c2f0a7`. The lowering held: no pass names a language,
+and #45, #47, #51 and #52 changed IR that every backend translates. #47 removed a C-only null test
+from the header wrapper as it went. Three kinds of drift sat around it.
+
+**Capabilities keyed on a language's name.** The driver decided host-image folding,
+`TargetNullability` and `accessorsReturnViews` by comparing `--target-language` with each name, and
+handed the pipeline positional booleans; the block grew in #33, #42, #45 and #49. Five files of
+shared naming answered columns of the classification with `language ==`: the section joiner was the
+nested-types column, `constantsShareTheFieldScope` the type's-own-constants column, `moduleScoped`
+and the manifest's `goLike` the scopes column, and Python's `_` the internal-linkage column. Seven
+places enumerated the languages: `CodegenNamingLanguage`, `ConstantLiteralLanguage`,
+`StorageTokenLanguage`, the vocabulary's `LanguageSpec`, `allTargetLanguages`, `allOutputLanguages`
+and the driver. Phase 2 moved every one onto the row.
+
+**Plan semantics answered in emitters.**
+
+| what | emitters | where it belongs |
+|------|----------|------------------|
+| a nested call's adaptation to a callee that answers its size or an error: the size clamped to the buffer, the result split, the size written back | Go, TypeScript, Python | the lowering; the names each invents are TypeScript's 545 `naming-convention` findings |
+| a bool array's run of bits as a loop over one element per bool, beside `boolContainerOf` recovering the container from the address | C++, Rust, Go, TypeScript, Python | one expansion, where the classification says a target stores a bool per element |
+| whether a body can fail, as `everyReturnIsZero` | Rust | an IR fact; the error types of Go, TypeScript and Python ask it too |
+| whether a size or parameter is read, to declare or name it | C++, Rust, Go, TypeScript, Python | one signature decision |
+
+**The declaration half grows by hand.** Each change to a language's public surface since this plan
+was written -- Rust's in #41, Go's in #42, C++'s accessors in #49 and #54 -- was string code in its
+emitter, and nothing measured it, so the renderer's gate could not fail.
+
+A language added at `8c2f0a7` implements 49 `BodySpelling` hooks, about 1,200 lines with the
+adaptations above among them; writes a declaration half of 1,200 to 1,600 lines by hand; and gains
+a case in the driver's three capability blocks, three enumerations, five naming files, the
+vocabulary and `Discovery`. Phases 2 and 3 are what bring that to a row and a spelling.
 
 ## The adversarial corpus
 
@@ -506,14 +577,16 @@ gates and text assertions are two halves, not alternatives.
 
 | gate | phases | holds |
 |---|---|---|
-| each language's own compiler and linter, at maximum strictness, over the regulated corpus | 1, then 5–10 | the output is accepted by the tools that judge that language |
+| each language's own compiler and linter, at maximum strictness, over the regulated corpus | 1, then 6–11 | the output is accepted by the tools that judge that language |
 | the adversarial corpus, compiled in every backend | 1 onwards | a generated name does not meet another generated name |
 | the name emitted, asserted in lit | 1 onwards | a rule no compiler enforces still holds |
-| byte-diff of all seven targets before and after | 3, 4 | a mechanism change changes no output |
-| emission sites in the declaration half | 4 | the shape is stated once, the syntax six times |
+| byte-diff of all seven targets before and after | 2, 4, 5 | a mechanism change changes no output |
+| no language compared by name outside the classification, `llvmdsdl-language-classification` | 2 onwards | a new language is a row, not a search |
+| no emitter walks the IR to decide what a body means | 3 onwards | a plan's semantics are stated once, in the IR |
+| emission sites per emitter, held to a baseline by `llvmdsdl-emission-sites` | 2 onwards, falling from 5 | the shape is stated once, the syntax six times |
 | round-trip, the C↔language parity lanes, cross-language equivalence | all | the wire is unchanged |
-| naming manifest against the surface tree | 3 onwards | the manifest reports what the backend writes |
-| no in-source diagnostic suppression in generated output | 5–10 | a warning is answered by changing what is emitted |
+| naming manifest against the surface tree | 4 onwards | the manifest reports what the backend writes |
+| no in-source diagnostic suppression in generated output | 6–11 | a warning is answered by changing what is emitted |
 
 The last row is the existing rule, applied where it was not. `#pragma GCC diagnostic ignored` was
 removed from generated C and C++ in #24 for the same reason the three Rust `#![allow]` lines were

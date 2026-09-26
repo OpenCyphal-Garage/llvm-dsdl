@@ -47,6 +47,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/Language.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl
@@ -61,7 +62,7 @@ std::string fieldKind(const SemanticField& f)
 
 std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
 {
-    return renderDefinitionTypeName(CodegenNamingLanguage::C,
+    return renderDefinitionTypeName(Language::C,
                                     info.namespaceComponents,
                                     info.shortName,
                                     info.majorVersion,
@@ -78,22 +79,19 @@ std::string cTypeNameFromRef(const SemanticTypeRef& ref)
         {
             out += "__";
         }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::C,
-                                        IdentifierRole::NamespaceName,
-                                        ref.namespaceComponents[i]);
+        out += codegenProjectIdentifier(Language::C, IdentifierRole::NamespaceName, ref.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += codegenProjectIdentifier(CodegenNamingLanguage::C, IdentifierRole::TypeName, ref.shortName);
+    out += codegenProjectIdentifier(Language::C, IdentifierRole::TypeName, ref.shortName);
     return out;
 }
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
-           ".h";
+    return renderDefinitionFileStem(Language::C, info.shortName, info.majorVersion, info.minorVersion) + ".h";
 }
 
 std::string relativeHeaderPath(const DiscoveredDefinition& info)
@@ -243,11 +241,11 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             {
                 if (sectionName == "request")
                 {
-                    sectionCTypeName = renderSectionTypeName(CodegenNamingLanguage::C, sectionCTypeName, "request");
+                    sectionCTypeName = renderSectionTypeName(Language::C, sectionCTypeName, "request");
                 }
                 else if (sectionName == "response")
                 {
-                    sectionCTypeName = renderSectionTypeName(CodegenNamingLanguage::C, sectionCTypeName, "response");
+                    sectionCTypeName = renderSectionTypeName(Language::C, sectionCTypeName, "response");
                 }
             }
 
@@ -259,7 +257,7 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 // spells the bodies, because only it knows what the struct declaration spells; what
                 // stays here is what keeps hand-driven `dsdl-opt` runs able to name a member at all.
                 fieldState.addAttribute("c_name",
-                                        builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,
+                                        builder.getStringAttr(codegenProjectIdentifier(Language::C,
                                                                                        IdentifierRole::FieldName,
                                                                                        field.name)));
                 fieldState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
@@ -383,9 +381,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 ioState.addAttribute("name", builder.getStringAttr(field.name));
                 // The unscoped default, as on `dsdl.field` above.
                 ioState.addAttribute("c_name",
-                                     builder.getStringAttr(codegenProjectIdentifier(CodegenNamingLanguage::C,
-                                                                                    IdentifierRole::FieldName,
-                                                                                    field.name)));
+                                     builder.getStringAttr(
+                                         codegenProjectIdentifier(Language::C, IdentifierRole::FieldName, field.name)));
                 ioState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (const auto doc = docAttrText(field.doc))
                 {

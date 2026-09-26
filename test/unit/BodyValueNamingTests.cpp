@@ -39,6 +39,7 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Support/Language.h"
 
 #include "UnitTests.h"
 
@@ -901,29 +902,29 @@ bool runBodyValueNamingTests()
     // A role word reaches a body as a local of that name, and the renderers do not strop: the
     // translator bumps a name the function has taken, not one the language has. So no role word
     // may be a keyword anywhere, and that is a property of the vocabulary rather than of a run.
-    static constexpr ValueRole                       EveryRole[]     = {ValueRole::Offset,
-                                                                        ValueRole::Object,
-                                                                        ValueRole::Buffer,
-                                                                        ValueRole::Size,
-                                                                        ValueRole::Length,
-                                                                        ValueRole::Tag,
-                                                                        ValueRole::Scalar,
-                                                                        ValueRole::Error,
-                                                                        ValueRole::Null,
-                                                                        ValueRole::Rejected,
-                                                                        ValueRole::IndexHolds,
-                                                                        ValueRole::Index};
-    static constexpr llvmdsdl::CodegenNamingLanguage EveryLanguage[] = {llvmdsdl::CodegenNamingLanguage::C,
-                                                                        llvmdsdl::CodegenNamingLanguage::Cpp,
-                                                                        llvmdsdl::CodegenNamingLanguage::Rust,
-                                                                        llvmdsdl::CodegenNamingLanguage::Go,
-                                                                        llvmdsdl::CodegenNamingLanguage::TypeScript,
-                                                                        llvmdsdl::CodegenNamingLanguage::Python};
+    static constexpr ValueRole          EveryRole[]     = {ValueRole::Offset,
+                                                           ValueRole::Object,
+                                                           ValueRole::Buffer,
+                                                           ValueRole::Size,
+                                                           ValueRole::Length,
+                                                           ValueRole::Tag,
+                                                           ValueRole::Scalar,
+                                                           ValueRole::Error,
+                                                           ValueRole::Null,
+                                                           ValueRole::Rejected,
+                                                           ValueRole::IndexHolds,
+                                                           ValueRole::Index};
+    static constexpr llvmdsdl::Language EveryLanguage[] = {llvmdsdl::Language::C,
+                                                           llvmdsdl::Language::Cpp,
+                                                           llvmdsdl::Language::Rust,
+                                                           llvmdsdl::Language::Go,
+                                                           llvmdsdl::Language::TypeScript,
+                                                           llvmdsdl::Language::Python};
     for (const ValueRole role : EveryRole)
     {
         for (const std::string& word : {snakeValueName(role, {}, 0), camelValueName(role, {}, 0)})
         {
-            for (const llvmdsdl::CodegenNamingLanguage language : EveryLanguage)
+            for (const llvmdsdl::Language language : EveryLanguage)
             {
                 if (llvmdsdl::codegenIsKeyword(language, word))
                 {

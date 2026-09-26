@@ -101,6 +101,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Version.h"
+#include "llvmdsdl/Support/Language.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl::emitter::c
@@ -110,8 +111,7 @@ namespace
 
 std::string headerFileName(const DiscoveredDefinition& info)
 {
-    return renderDefinitionFileStem(CodegenNamingLanguage::C, info.shortName, info.majorVersion, info.minorVersion) +
-           ".h";
+    return renderDefinitionFileStem(Language::C, info.shortName, info.majorVersion, info.minorVersion) + ".h";
 }
 
 std::string sectionIRFunctionStem(const SemanticDefinition& def, const std::string& sectionName)
@@ -148,27 +148,22 @@ std::string implFileName(const DiscoveredDefinition& info)
 
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    return renderIncludeGuard(CodegenNamingLanguage::C,
-                              "LLVMDSDL_",
-                              info.fullName,
-                              info.majorVersion,
-                              info.minorVersion,
-                              "_H");
+    return renderIncludeGuard(Language::C, "LLVMDSDL_", info.fullName, info.majorVersion, info.minorVersion, "_H");
 }
 
 std::string valueToCExpr(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::C, value, makeConstantTypeInfo(type));
+    return renderConstantLiteral(Language::C, value, makeConstantTypeInfo(type));
 }
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    return renderUnsignedStorageToken(StorageTokenLanguage::C, bitLength);
+    return renderUnsignedStorageToken(Language::C, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    return renderSignedStorageToken(StorageTokenLanguage::C, bitLength);
+    return renderSignedStorageToken(Language::C, bitLength);
 }
 
 class EmitterContext final
@@ -359,19 +354,19 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
     {
         return;
     }
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
+    const NamingScope constScope = makeSectionConstantScope(Language::C, section, {});
     for (const auto& option : metadata.unionOptions)
     {
         w.line("#define " + typeName + "_" +
-               constScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name)) +
-               " " + std::to_string(option.tag) + "U");
+               constScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::C, option.name)) + " " +
+               std::to_string(option.tag) + "U");
     }
     w.blank();
 }
 
 void emitArrayMacros(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
 {
-    const NamingScope constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
+    const NamingScope constScope = makeSectionConstantScope(Language::C, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -379,8 +374,7 @@ void emitArrayMacros(SourceWriter& w, const std::string& typeName, const Semanti
             continue;
         }
         const auto named = [&](const ArrayMetadataKind kind) {
-            return constScope.get(IdentifierRole::MacroName,
-                                  arrayMetadataName(CodegenNamingLanguage::C, field.name, kind));
+            return constScope.get(IdentifierRole::MacroName, arrayMetadataName(Language::C, field.name, kind));
         };
         w.line("#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
                std::to_string(field.resolvedType.arrayCapacity) + "U");
@@ -404,7 +398,7 @@ void emitSectionTypedef(SourceWriter&                         w,
     // One scope for the whole section: the keyword and claimed-name escapes make the projection
     // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serialiser
     // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
-    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
+    const NamingScope fieldScope = makeSectionFieldScope(Language::C, section);
     w.open("typedef struct " + typeName + " {");
 
     std::size_t emitted = 0;
@@ -532,7 +526,7 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     // apart. It does not keep them off the generated metadata macros: those carry a trailing `_`,
     // which is a name a DSDL constant can reach rather than one it cannot, so they are claimed in
     // the policy tables and escaped by the projection this reads back.
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
+    NamingScope const constScope = makeSectionConstantScope(Language::C, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(w, c.doc);
@@ -567,15 +561,14 @@ void emitUnionOptionWrappers(SourceWriter&          w,
     {
         return;
     }
-    const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
-    const NamingScope tagScope   = makeSectionConstantScope(CodegenNamingLanguage::C, section, {});
+    const NamingScope fieldScope = makeSectionFieldScope(Language::C, section);
+    const NamingScope tagScope   = makeSectionConstantScope(Language::C, section, {});
     const std::string objectType = renderCTagSpelling(typeName);
     for (const auto& option : metadata.unionOptions)
     {
         const std::string member = fieldScope.get(IdentifierRole::FieldName, option.name);
         const std::string tag =
-            typeName + "_" +
-            tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::C, option.name));
+            typeName + "_" + tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::C, option.name));
 
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("static inline bool " + typeName + "__is_" + member + "_(const " + objectType + "* const obj)");
@@ -684,7 +677,7 @@ void emitSection(SourceWriter&              w,
                               (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
     if ((metadata.wireFlat.holds && !section.isUnion) || unionFlat)
     {
-        const NamingScope fieldScope = makeSectionFieldScope(CodegenNamingLanguage::C, section);
+        const NamingScope fieldScope = makeSectionFieldScope(Language::C, section);
         struct Subject final
         {
             std::string       name;
@@ -819,10 +812,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     // not, and saying so here beats a cascade of redefinitions from inside generated code.
     if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
     {
-        const auto [anyVersion, thisVersion] = renderVersionSentinelMacros(CodegenNamingLanguage::C,
-                                                                           def.info.fullName,
-                                                                           def.info.majorVersion,
-                                                                           def.info.minorVersion);
+        const auto [anyVersion, thisVersion] =
+            renderVersionSentinelMacros(Language::C, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
         out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
         out << "#  error \"" << def.info.fullName
             << ": two versions of one type in one translation unit, but generated type names are "
@@ -834,8 +825,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 
     if (def.isService)
     {
-        const auto requestType  = renderSectionTypeName(CodegenNamingLanguage::C, baseTypeName, "request");
-        const auto responseType = renderSectionTypeName(CodegenNamingLanguage::C, baseTypeName, "response");
+        const auto requestType  = renderSectionTypeName(Language::C, baseTypeName, "request");
+        const auto responseType = renderSectionTypeName(Language::C, baseTypeName, "response");
 
         for (const auto& line : renderServiceAliasIdentityMacros(baseTypeName,
                                                                  def.info.fullName,

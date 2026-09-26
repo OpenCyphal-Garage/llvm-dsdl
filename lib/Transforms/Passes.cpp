@@ -17,6 +17,7 @@
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
+#include "llvmdsdl/Support/BodyInterface.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -2243,12 +2244,10 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager&    pm,
-                                const bool              optimizeLoweredSerDes,
-                                const bool              targetObjectsAreByteImages,
-                                const bool              accessorsOnly,
-                                const TargetNullability nullability,
-                                const bool              accessorsReturnViews)
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
+                                const bool           optimizeLoweredSerDes,
+                                const BodyInterface& target,
+                                const bool           accessorsOnly)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
@@ -2256,19 +2255,19 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager&    pm,
     // Its own stage, under the target's capability, for the reason the host-image fold is: the
     // three passes above produce one body per plan regardless of target, and that is the pipeline
     // section 4 of DESIGN.md names.
-    if (!nullability.allNullable())
+    if (!target.nullability.allNullable())
     {
-        pm.addPass(createFoldDSDLNullGuardsPass(nullability));
+        pm.addPass(createFoldDSDLNullGuardsPass(target.nullability));
     }
     // Its own stage for the same reason, under a different capability: whether a caller can see the
     // size a getter writes back is a question about the getter's signature, not about nulls.
-    if (accessorsReturnViews)
+    if (target.accessorsReturnViews)
     {
         pm.addPass(createFoldDSDLUnobservedAccessorSizesPass());
     }
     // Its own stage, under the target's capability. Folding inside the optimise stage would make
     // the fast path turn on a flag about simplification, which is a different question.
-    if (targetObjectsAreByteImages)
+    if (target.objectsAreByteImages)
     {
         pm.addPass(createFoldDSDLHostImageBodiesPass());
     }

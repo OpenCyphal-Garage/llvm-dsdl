@@ -18,6 +18,8 @@
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringMap.h>
@@ -50,7 +52,7 @@ std::string collapseUnderscoreRuns(const llvm::StringRef name)
 
 }  // namespace
 
-std::string renderHelperBindingIdentifier(const CodegenNamingLanguage language, const llvm::StringRef helperSymbol)
+std::string renderHelperBindingIdentifier(const Language language, const llvm::StringRef helperSymbol)
 {
     // The MLIR symbol separates its fields with `__`. C++ reserves any identifier containing a double
     // underscore, so for that language the runs are collapsed -- after the prefix is joined, since
@@ -60,7 +62,7 @@ std::string renderHelperBindingIdentifier(const CodegenNamingLanguage language, 
     // collapse touches. No other language reserves an interior double underscore, and none of them
     // carry a leading one here, so they keep the symbol as it is.
     std::string joined = "mlir_" + codegenSanitizeIdentifier(language, helperSymbol);
-    if (language != CodegenNamingLanguage::Cpp)
+    if (languageTraits(language).classification.reservedUnderscores != ReservedUnderscores::LeadingAndInterior)
     {
         return joined;
     }
@@ -68,10 +70,10 @@ std::string renderHelperBindingIdentifier(const CodegenNamingLanguage language, 
     return collapseUnderscoreRuns(joined);
 }
 
-std::string renderScopeLocalHelperName(const CodegenNamingLanguage language,
-                                       const llvm::StringRef       helperSymbol,
-                                       const llvm::StringRef       schemaSymbol,
-                                       const llvm::StringRef       qualifier)
+std::string renderScopeLocalHelperName(const Language        language,
+                                       const llvm::StringRef helperSymbol,
+                                       const llvm::StringRef schemaSymbol,
+                                       const llvm::StringRef qualifier)
 {
     llvm::StringRef rest = helperSymbol;
     rest.consume_front(kPlanHelperSymbolPrefix);
@@ -111,11 +113,11 @@ std::string renderScopeLocalHelperName(const CodegenNamingLanguage language,
     return codegenProjectIdentifier(language, IdentifierRole::InternalFunctionName, trimmed);
 }
 
-llvm::StringMap<std::string> renderSchemaHelperNames(const CodegenNamingLanguage language,
-                                                     const mlir::ModuleOp        module,
-                                                     mlir::dsdl::SchemaOp        schema,
-                                                     NamingScope&                scope,
-                                                     const llvm::StringRef       qualifier)
+llvm::StringMap<std::string> renderSchemaHelperNames(const Language        language,
+                                                     const mlir::ModuleOp  module,
+                                                     mlir::dsdl::SchemaOp  schema,
+                                                     NamingScope&          scope,
+                                                     const llvm::StringRef qualifier)
 {
     llvm::StringMap<std::string> names;
     for (mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -132,7 +134,9 @@ llvm::StringMap<std::string> renderSchemaHelperNames(const CodegenNamingLanguage
         const std::string declared =
             scope.declare(IdentifierRole::InternalFunctionName,
                           renderScopeLocalHelperName(language, symbol, schema.getSymName(), qualifier));
-        names[symbol] = (language == CodegenNamingLanguage::Python) ? "_" + declared : declared;
+        names[symbol] = (languageTraits(language).classification.internalLinkage == InternalLinkage::UnderscorePrefix)
+                            ? "_" + declared
+                            : declared;
     }
     return names;
 }

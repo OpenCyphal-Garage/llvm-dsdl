@@ -13,6 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include <cstdint>
 #include <llvm/ADT/ArrayRef.h>
@@ -23,32 +25,12 @@
 namespace llvmdsdl
 {
 
-const DefinitionNamePolicy& definitionNamePolicy(const CodegenNamingLanguage language)
+const DefinitionNamePolicy& definitionNamePolicy(const Language language)
 {
-    // C flattens the namespace into the identifier. The others let the language carry it: C++ in a
-    // real namespace, Rust in a per-definition module, Go/TypeScript/Python in a per-namespace one.
-    static constexpr DefinitionNamePolicy kC{"__", false, true, false};
-    static constexpr DefinitionNamePolicy kCpp{"", false, true, false};
-    static constexpr DefinitionNamePolicy kRust{"", false, false, true};
-    static constexpr DefinitionNamePolicy kModuleScoped{"", false, true, true};
-
-    switch (language)
-    {
-    case CodegenNamingLanguage::C:
-        return kC;
-    case CodegenNamingLanguage::Cpp:
-        return kCpp;
-    case CodegenNamingLanguage::Rust:
-        return kRust;
-    case CodegenNamingLanguage::Go:
-    case CodegenNamingLanguage::TypeScript:
-    case CodegenNamingLanguage::Python:
-        return kModuleScoped;
-    }
-    return kModuleScoped;
+    return languageTraits(language).composition.definitionName;
 }
 
-std::string renderDefinitionTypeName(const CodegenNamingLanguage       language,
+std::string renderDefinitionTypeName(const Language                    language,
                                      const llvm::ArrayRef<std::string> namespaceComponents,
                                      const llvm::StringRef             shortName,
                                      const std::uint32_t               majorVersion,
@@ -79,18 +61,13 @@ std::string renderDefinitionTypeName(const CodegenNamingLanguage       language,
     {
         out += "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
     }
-
-    if (policy.reprojectComposed)
-    {
-        out = codegenProjectIdentifier(language, IdentifierRole::TypeName, out);
-    }
     return out;
 }
 
-std::string renderDefinitionFileStem(const CodegenNamingLanguage language,
-                                     const llvm::StringRef       shortName,
-                                     const std::uint32_t         majorVersion,
-                                     const std::uint32_t         minorVersion)
+std::string renderDefinitionFileStem(const Language        language,
+                                     const llvm::StringRef shortName,
+                                     const std::uint32_t   majorVersion,
+                                     const std::uint32_t   minorVersion)
 {
     // Projected as one name rather than a projected short name with the version appended. A short
     // name that strops -- `Break`, which reaches Rust's keyword `break` -- gains a trailing `_`,
@@ -107,22 +84,22 @@ std::string renderDefinitionFileStem(const CodegenNamingLanguage language,
     return codegenProjectIdentifier(language, IdentifierRole::FileStem, composed);
 }
 
-std::string renderIncludeGuard(const CodegenNamingLanguage language,
-                               const llvm::StringRef       prefix,
-                               const llvm::StringRef       fullName,
-                               const std::uint32_t         majorVersion,
-                               const std::uint32_t         minorVersion,
-                               const llvm::StringRef       suffix)
+std::string renderIncludeGuard(const Language        language,
+                               const llvm::StringRef prefix,
+                               const llvm::StringRef fullName,
+                               const std::uint32_t   majorVersion,
+                               const std::uint32_t   minorVersion,
+                               const llvm::StringRef suffix)
 {
     const std::string composed = prefix.str() + fullName.str() + "_" + std::to_string(majorVersion) + "_" +
                                  std::to_string(minorVersion) + suffix.str();
     return codegenProjectIdentifier(language, IdentifierRole::MacroName, composed);
 }
 
-std::pair<std::string, std::string> renderVersionSentinelMacros(const CodegenNamingLanguage language,
-                                                                const llvm::StringRef       fullName,
-                                                                const std::uint32_t         majorVersion,
-                                                                const std::uint32_t         minorVersion)
+std::pair<std::string, std::string> renderVersionSentinelMacros(const Language        language,
+                                                                const llvm::StringRef fullName,
+                                                                const std::uint32_t   majorVersion,
+                                                                const std::uint32_t   minorVersion)
 {
     // The generic one carries no version.
     const std::string generic =
@@ -156,41 +133,27 @@ namespace
 /// type name in PascalCase, and an underscore inside one is what `ST1003` and `N801` report and
 /// what `naming-convention` rejects. C separates with `__`, which is the separator it flattens a
 /// whole namespace with; C++ keeps the single underscore it has always had.
-std::string renderSectionTypeSuffix(const CodegenNamingLanguage language, const llvm::StringRef sectionName)
+std::string renderSectionTypeSuffix(const Language language, const llvm::StringRef sectionName)
 {
     if ((sectionName != "request") && (sectionName != "response"))
     {
         return "";
     }
-    const auto separator = [language]() -> llvm::StringRef {
-        switch (language)
-        {
-        case CodegenNamingLanguage::C:
-            return "__";
-        case CodegenNamingLanguage::Cpp:
-            return "_";
-        case CodegenNamingLanguage::Go:
-        case CodegenNamingLanguage::TypeScript:
-        case CodegenNamingLanguage::Python:
-        case CodegenNamingLanguage::Rust:
-            return "";
-        }
-        return "_";
-    }();
-    return separator.str() + ((sectionName == "request") ? "Request" : "Response");
+    return languageTraits(language).composition.sectionJoin.str() +
+           ((sectionName == "request") ? "Request" : "Response");
 }
 
 }  // namespace
 
-std::string renderSectionTypeName(const CodegenNamingLanguage language,
-                                  const llvm::StringRef       baseTypeName,
-                                  const llvm::StringRef       sectionName)
+std::string renderSectionTypeName(const Language        language,
+                                  const llvm::StringRef baseTypeName,
+                                  const llvm::StringRef sectionName)
 {
     if ((sectionName != "request") && (sectionName != "response"))
     {
         return baseTypeName.str();
     }
-    if (language == CodegenNamingLanguage::Rust)
+    if (languageTraits(language).composition.sectionNamedAlone)
     {
         return codegenProjectIdentifier(language, IdentifierRole::TypeName, sectionName);
     }

@@ -31,6 +31,8 @@
 
 #include "llvm/ADT/StringSet.h"
 
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NameCanonicalization.h"
 
 namespace llvmdsdl
@@ -42,7 +44,7 @@ namespace llvmdsdl
 namespace
 {
 
-const llvm::StringSet<>& keywordSet(const CodegenNamingLanguage language)
+const llvm::StringSet<>& keywordSet(const Language language)
 {
     static const llvm::StringSet<> cKeywords =
         {"auto",       "break",     "case",           "char",          "const",    "continue", "default",  "do",
@@ -200,17 +202,17 @@ const llvm::StringSet<>& keywordSet(const CodegenNamingLanguage language)
 
     switch (language)
     {
-    case CodegenNamingLanguage::C:
+    case Language::C:
         return cKeywordsIncludingCpp;
-    case CodegenNamingLanguage::Cpp:
+    case Language::Cpp:
         return cppKeywords;
-    case CodegenNamingLanguage::Rust:
+    case Language::Rust:
         return rustKeywords;
-    case CodegenNamingLanguage::Go:
+    case Language::Go:
         return goKeywords;
-    case CodegenNamingLanguage::TypeScript:
+    case Language::TypeScript:
         return tsKeywords;
-    case CodegenNamingLanguage::Python:
+    case Language::Python:
         return pyKeywords;
     }
     return tsKeywords;
@@ -388,7 +390,7 @@ namespace
 /// DSDL-derived name -- generated helpers and locals are built from mangled type names and
 /// generator-internal spellings -- so nothing exercises them; they exist so that a backend which
 /// starts naming one from DSDL has a defined answer rather than a new decision.
-const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const IdentifierRole role)
+const RolePolicy& rolePolicy(const Language language, const IdentifierRole role)
 {
     static constexpr RolePolicy kPreserve{CaseStyle::Preserve, true, true, false};
     static constexpr RolePolicy kSnake{CaseStyle::Snake, true, true, false};
@@ -403,8 +405,8 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
     // A file name taken from the DSDL short name, untouched.
     static constexpr RolePolicy kVerbatim{CaseStyle::Preserve, false, false, false};
 
-    const bool cLike  = language == CodegenNamingLanguage::C || language == CodegenNamingLanguage::Cpp;
-    const bool goLike = language == CodegenNamingLanguage::Go;
+    const bool cLike  = language == Language::C || language == Language::Cpp;
+    const bool goLike = language == Language::Go;
 
     switch (role)
     {
@@ -425,7 +427,7 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
         {
             return kGoUnexported;
         }
-        return (language == CodegenNamingLanguage::TypeScript) ? kCamel : kSnake;
+        return (language == Language::TypeScript) ? kCamel : kSnake;
     case IdentifierRole::FieldName:
     case IdentifierRole::FunctionName:
         if (cLike)
@@ -475,7 +477,7 @@ const RolePolicy& rolePolicy(const CodegenNamingLanguage language, const Identif
 /// is a test rather than a cross-reference -- `test/lit/naming-stropping.txt` generates a type whose
 /// DSDL constants are named after every entry here, so a name added to an emitter and forgotten here
 /// surfaces as a duplicate declaration in a language that has to compile.
-llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage language, const IdentifierRole role)
+llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const IdentifierRole role)
 {
     // `UNION_OPTION_COUNT` is emitted only for a union, `FIXED_PORT_ID` only for a definition that
     // has one, and the memory-resource pair only under the PMR profile, but all are claimed for
@@ -585,7 +587,7 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
 
     switch (language)
     {
-    case CodegenNamingLanguage::Cpp:
+    case Language::Cpp:
         // The struct holds its fields, its constants and the generated statics and member functions
         // in one scope, so a field competes with all of them.
         if (role == IdentifierRole::FieldName)
@@ -598,13 +600,13 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
-    case CodegenNamingLanguage::Go:
+    case Language::Go:
         // A struct field and a method may not share a name. A Go constant carries the type it
         // belongs to, so none of these tokens is a name on its own and the claim is on the composed
         // one, which the scope that declares it reserves.
         return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kGoMethods)
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
-    case CodegenNamingLanguage::Rust:
+    case Language::Rust:
         // Constants share the inherent impl with the generated ones. Fields do not: fields and
         // methods occupy separate namespaces. A type name competes with the prelude instead.
         if (role == IdentifierRole::TypeName)
@@ -617,17 +619,17 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
         }
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
-    case CodegenNamingLanguage::Python:
+    case Language::Python:
         // A dataclass attribute shadows the method of the same name, so `self.serialize()` would call
         // an int. Constants are safe: the generated ones take a different prefix.
         return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kPyMethods)
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
-    case CodegenNamingLanguage::TypeScript:
+    case Language::TypeScript:
         // A property named `constructor` or `prototype` shadows the one every object has. Constants
         // are safe: the generated ones take a different prefix.
         return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kTsProperties)
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
-    case CodegenNamingLanguage::C:
+    case Language::C:
         // `ConstantName` and `MacroName` are one thing in C -- both name a `<Type>_<TOKEN>` macro --
         // so both are claimed against the same list. Fields need nothing: C adds one member of its
         // own, a union's `_tag_`, which DSDL will not accept as a name.
@@ -647,11 +649,12 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const CodegenNamingLanguage la
 /// offending underscores are replaced with the character encoding, which is injective and therefore
 /// needs no scope to disambiguate afterwards.
 ///
-/// Only C and C++ have such a namespace; the other four return the identifier unchanged.
-std::string encodeReservedNamespace(const CodegenNamingLanguage language, const std::string& identifier, bool& encoded)
+/// A language that reserves no identifier by its underscores returns it unchanged.
+std::string encodeReservedNamespace(const Language language, const std::string& identifier, bool& encoded)
 {
-    encoded = false;
-    if (language != CodegenNamingLanguage::C && language != CodegenNamingLanguage::Cpp)
+    encoded                            = false;
+    const ReservedUnderscores reserved = languageTraits(language).classification.reservedUnderscores;
+    if (reserved == ReservedUnderscores::None)
     {
         return identifier;
     }
@@ -660,7 +663,7 @@ std::string encodeReservedNamespace(const CodegenNamingLanguage language, const 
         return identifier;
     }
 
-    const bool interiorRunsReserved = language == CodegenNamingLanguage::Cpp;
+    const bool interiorRunsReserved = reserved == ReservedUnderscores::LeadingAndInterior;
 
     std::string out;
     out.reserve(identifier.size());
@@ -708,7 +711,7 @@ std::string encodeReservedNamespace(const CodegenNamingLanguage language, const 
 /// @param[in] role The role whose claimed-name set applies, or nullopt for a token this generator
 ///            constructed rather than a DSDL name being named -- those must not pick up names the
 ///            generated code owns.
-ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
+ProjectedIdentifier runPipeline(const Language                      language,
                                 const std::optional<IdentifierRole> role,
                                 const RolePolicy&                   policy,
                                 const llvm::StringRef               name)
@@ -814,7 +817,7 @@ ProjectedIdentifier runPipeline(const CodegenNamingLanguage         language,
 
 }  // namespace
 
-LanguageNamingPolicy::LanguageNamingPolicy(const CodegenNamingLanguage language)
+LanguageNamingPolicy::LanguageNamingPolicy(const Language language)
     : language_(language)
 {
 }
@@ -826,17 +829,17 @@ const RolePolicy& LanguageNamingPolicy::roleFor(const IdentifierRole role) const
 
 llvm::ArrayRef<llvm::StringRef> codegenGeneratedConstantTokens()
 {
-    return runtimeOwnedNames(CodegenNamingLanguage::Rust, IdentifierRole::ConstantName);
+    return runtimeOwnedNames(Language::Rust, IdentifierRole::ConstantName);
 }
 
 std::string codegenToGoExportedIdentifier(const llvm::StringRef name)
 {
-    return codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, name);
+    return codegenProjectIdentifier(Language::Go, IdentifierRole::ConstantName, name);
 }
 
 std::string codegenToGoUnexportedIdentifier(const llvm::StringRef name)
 {
-    return codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::LocalName, name);
+    return codegenProjectIdentifier(Language::Go, IdentifierRole::LocalName, name);
 }
 
 llvm::ArrayRef<llvm::StringRef> LanguageNamingPolicy::runtimeOwned(const IdentifierRole role) const
@@ -856,55 +859,53 @@ std::vector<llvm::StringRef> LanguageNamingPolicy::keywords() const
     return out;
 }
 
-const LanguageNamingPolicy& codegenNamingPolicy(const CodegenNamingLanguage language)
+const LanguageNamingPolicy& codegenNamingPolicy(const Language language)
 {
-    static const LanguageNamingPolicy kC(CodegenNamingLanguage::C);
-    static const LanguageNamingPolicy kCpp(CodegenNamingLanguage::Cpp);
-    static const LanguageNamingPolicy kRust(CodegenNamingLanguage::Rust);
-    static const LanguageNamingPolicy kGo(CodegenNamingLanguage::Go);
-    static const LanguageNamingPolicy kTs(CodegenNamingLanguage::TypeScript);
-    static const LanguageNamingPolicy kPy(CodegenNamingLanguage::Python);
+    static const LanguageNamingPolicy kC(Language::C);
+    static const LanguageNamingPolicy kCpp(Language::Cpp);
+    static const LanguageNamingPolicy kRust(Language::Rust);
+    static const LanguageNamingPolicy kGo(Language::Go);
+    static const LanguageNamingPolicy kTs(Language::TypeScript);
+    static const LanguageNamingPolicy kPy(Language::Python);
 
     switch (language)
     {
-    case CodegenNamingLanguage::C:
+    case Language::C:
         return kC;
-    case CodegenNamingLanguage::Cpp:
+    case Language::Cpp:
         return kCpp;
-    case CodegenNamingLanguage::Rust:
+    case Language::Rust:
         return kRust;
-    case CodegenNamingLanguage::Go:
+    case Language::Go:
         return kGo;
-    case CodegenNamingLanguage::TypeScript:
+    case Language::TypeScript:
         return kTs;
-    case CodegenNamingLanguage::Python:
+    case Language::Python:
         return kPy;
     }
     return kTs;
 }
 
-ProjectedIdentifier codegenProjectIdentifierDetailed(const CodegenNamingLanguage language,
-                                                     const IdentifierRole        role,
-                                                     const llvm::StringRef       name)
+ProjectedIdentifier codegenProjectIdentifierDetailed(const Language        language,
+                                                     const IdentifierRole  role,
+                                                     const llvm::StringRef name)
 {
     return runPipeline(language, role, rolePolicy(language, role), name);
 }
 
-std::string codegenProjectIdentifier(const CodegenNamingLanguage language,
-                                     const IdentifierRole        role,
-                                     const llvm::StringRef       name)
+std::string codegenProjectIdentifier(const Language language, const IdentifierRole role, const llvm::StringRef name)
 {
     return codegenProjectIdentifierDetailed(language, role, name).identifier;
 }
 
-bool codegenIsReservedNamespaceIdentifier(const CodegenNamingLanguage language, const llvm::StringRef identifier)
+bool codegenIsReservedNamespaceIdentifier(const Language language, const llvm::StringRef identifier)
 {
     bool encoded = false;
     (void) encodeReservedNamespace(language, identifier.str(), encoded);
     return encoded;
 }
 
-bool codegenIsKeyword(const CodegenNamingLanguage language, const llvm::StringRef name)
+bool codegenIsKeyword(const Language language, const llvm::StringRef name)
 {
     return keywordSet(language).contains(name);
 }
@@ -919,27 +920,27 @@ std::string escapeIdentifierStart(const llvm::StringRef name)
     return out;
 }
 
-std::string codegenSanitizeIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
+std::string codegenSanitizeIdentifier(const Language language, const llvm::StringRef name)
 {
     return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Preserve, true, true, false}, name).identifier;
 }
 
-std::string codegenToSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
+std::string codegenToSnakeCaseIdentifier(const Language language, const llvm::StringRef name)
 {
     return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, false}, name).identifier;
 }
 
-std::string codegenToPascalCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
+std::string codegenToPascalCaseIdentifier(const Language language, const llvm::StringRef name)
 {
     return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Pascal, true, true, false}, name).identifier;
 }
 
-std::string codegenToUpperSnakeCaseIdentifier(const CodegenNamingLanguage language, const llvm::StringRef name)
+std::string codegenToUpperSnakeCaseIdentifier(const Language language, const llvm::StringRef name)
 {
     return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, true}, name).identifier;
 }
 
-NamingScope::NamingScope(const CodegenNamingLanguage language, const llvm::ArrayRef<llvm::StringRef> reserved)
+NamingScope::NamingScope(const Language language, const llvm::ArrayRef<llvm::StringRef> reserved)
     : language_(language)
 {
     for (const auto& name : reserved)

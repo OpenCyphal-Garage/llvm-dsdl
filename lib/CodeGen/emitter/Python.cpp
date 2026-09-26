@@ -61,6 +61,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -89,7 +90,7 @@ namespace
 
 std::string pyConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Python, value, makeConstantTypeInfo(type));
+    return renderConstantLiteral(Language::Python, value, makeConstantTypeInfo(type));
 }
 
 /// @brief Collision-free attribute names for one section's fields.
@@ -109,7 +110,7 @@ NamingScope makePyFieldIdents(const SemanticSection& section)
     }
     // The generated methods a field attribute must not shadow are claimed by the FieldName role's
     // policy, so the scope only has to keep the fields apart from each other.
-    return makeSectionFieldScope(CodegenNamingLanguage::Python, section);
+    return makeSectionFieldScope(Language::Python, section);
 }
 
 SourceWriter makePyWriter(std::ostringstream& out)
@@ -154,8 +155,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
         {
             if (!current.empty())
             {
-                out.push_back(
-                    codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::NamespaceName, current));
+                out.push_back(codegenProjectIdentifier(Language::Python, IdentifierRole::NamespaceName, current));
                 current.clear();
             }
             continue;
@@ -164,7 +164,7 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
     }
     if (!current.empty())
     {
-        out.push_back(codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::NamespaceName, current));
+        out.push_back(codegenProjectIdentifier(Language::Python, IdentifierRole::NamespaceName, current));
     }
     if (out.empty())
     {
@@ -200,12 +200,12 @@ public:
 
     static std::string namespacePath(const DiscoveredDefinition& info)
     {
-        return renderNamespaceRelativePath(CodegenNamingLanguage::Python, info.namespaceComponents).generic_string();
+        return renderNamespaceRelativePath(Language::Python, info.namespaceComponents).generic_string();
     }
 
     std::string typeName(const DiscoveredDefinition& info) const
     {
-        return renderDefinitionTypeName(CodegenNamingLanguage::Python,
+        return renderDefinitionTypeName(Language::Python,
                                         info.namespaceComponents,
                                         info.shortName,
                                         info.majorVersion,
@@ -229,15 +229,12 @@ public:
 
     static std::string fileStem(const DiscoveredDefinition& info)
     {
-        return renderVersionedFileStem(CodegenNamingLanguage::Python,
-                                       info.shortName,
-                                       info.majorVersion,
-                                       info.minorVersion);
+        return renderVersionedFileStem(Language::Python, info.shortName, info.majorVersion, info.minorVersion);
     }
 
     static std::filesystem::path relativeFilePath(const DiscoveredDefinition& info)
     {
-        return renderRelativeTypeFilePath(CodegenNamingLanguage::Python, info, "py");
+        return renderRelativeTypeFilePath(Language::Python, info, "py");
     }
 
     std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
@@ -247,7 +244,7 @@ public:
             return relativeFilePath(def->info);
         }
 
-        return renderRelativeTypeFilePath(CodegenNamingLanguage::Python, ref, "py");
+        return renderRelativeTypeFilePath(Language::Python, ref, "py");
     }
 
     std::string packageName() const
@@ -430,14 +427,13 @@ void emitUnionOptionTags(SourceWriter&          w,
     {
         return;
     }
-    const auto prefixupper =
-        codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
-    const NamingScope tagScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section, prefixupper);
+    const auto        prefixupper = codegenProjectIdentifier(Language::Python, IdentifierRole::ConstantName, prefix);
+    const NamingScope tagScope    = makeSectionConstantScope(Language::Python, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
         w.line(prefixupper + "_" +
-               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(CodegenNamingLanguage::Python, option.name)) +
-               " = " + std::to_string(option.tag));
+               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Python, option.name)) + " = " +
+               std::to_string(option.tag));
     }
 }
 
@@ -449,9 +445,8 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     {
         constNames.push_back(constant.name);
     }
-    const auto prefixupper =
-        codegenProjectIdentifier(CodegenNamingLanguage::Python, IdentifierRole::ConstantName, prefix);
-    NamingScope const constScope = makeSectionConstantScope(CodegenNamingLanguage::Python, section, prefixupper);
+    const auto        prefixupper = codegenProjectIdentifier(Language::Python, IdentifierRole::ConstantName, prefix);
+    NamingScope const constScope  = makeSectionConstantScope(Language::Python, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(w, constant.doc);
@@ -627,7 +622,7 @@ public:
     {
         // A helper is a module-level function of the definition's own module, so the schema
         // component of the lowered symbol names what the module already says.
-        helperNames_ = renderSchemaHelperNames(CodegenNamingLanguage::Python, module, schema, helperScope_);
+        helperNames_ = renderSchemaHelperNames(Language::Python, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
@@ -635,7 +630,7 @@ public:
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
             Plan                          entry;
-            NamingScope                   scope(CodegenNamingLanguage::Python);
+            NamingScope                   scope(Language::Python);
             std::vector<mlir::dsdl::IOOp> fields;
             if (!plan.getBody().empty())
             {
@@ -1719,7 +1714,7 @@ private:
 
     /// @brief The scope the module's helper names are declared into, which keeps two that project
     ///        onto one name apart.
-    NamingScope helperScope_{CodegenNamingLanguage::Python};
+    NamingScope helperScope_{Language::Python};
 
     /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
     llvm::StringMap<std::string> helperNames_;
@@ -2040,8 +2035,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return out.str();
     }
 
-    const auto reqType  = renderSectionTypeName(CodegenNamingLanguage::Python, baseType, "request");
-    const auto respType = renderSectionTypeName(CodegenNamingLanguage::Python, baseType, "response");
+    const auto reqType  = renderSectionTypeName(Language::Python, baseType, "request");
+    const auto respType = renderSectionTypeName(Language::Python, baseType, "response");
     if (auto err = emitSection(w,
                                reqType,
                                def.request,

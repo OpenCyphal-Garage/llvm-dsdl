@@ -32,7 +32,7 @@ namespace llvmdsdl
 /// @param[in] language Target naming policy language.
 /// @param[in] helperSymbol Canonical lowered helper symbol.
 /// @return Emitted helper-binding identifier.
-std::string renderHelperBindingIdentifier(CodegenNamingLanguage language, llvm::StringRef helperSymbol);
+std::string renderHelperBindingIdentifier(Language language, llvm::StringRef helperSymbol);
 
 /// @brief Renders a helper's name for a scope that already names the definition.
 ///
@@ -52,10 +52,10 @@ std::string renderHelperBindingIdentifier(CodegenNamingLanguage language, llvm::
 ///                      scope with another definition's. Empty where the definition has a scope of
 ///                      its own.
 /// @return The scope-local helper name.
-std::string renderScopeLocalHelperName(CodegenNamingLanguage language,
-                                       llvm::StringRef       helperSymbol,
-                                       llvm::StringRef       schemaSymbol,
-                                       llvm::StringRef       qualifier = {});
+std::string renderScopeLocalHelperName(Language        language,
+                                       llvm::StringRef helperSymbol,
+                                       llvm::StringRef schemaSymbol,
+                                       llvm::StringRef qualifier = {});
 
 /// @brief Names every helper of @p schema as the scope holding it reaches it.
 ///
@@ -78,11 +78,11 @@ std::string renderScopeLocalHelperName(CodegenNamingLanguage language,
 /// @param[in,out] scope The declaring scope, owned by the caller.
 /// @param[in] qualifier A name every helper is prefixed with, or empty.
 /// @return Each helper's lowered symbol, under the name the scope declared it as.
-[[nodiscard]] llvm::StringMap<std::string> renderSchemaHelperNames(CodegenNamingLanguage language,
-                                                                   mlir::ModuleOp        module,
-                                                                   mlir::dsdl::SchemaOp  schema,
-                                                                   NamingScope&          scope,
-                                                                   llvm::StringRef       qualifier = {});
+[[nodiscard]] llvm::StringMap<std::string> renderSchemaHelperNames(Language             language,
+                                                                   mlir::ModuleOp       module,
+                                                                   mlir::dsdl::SchemaOp schema,
+                                                                   NamingScope&         scope,
+                                                                   llvm::StringRef      qualifier = {});
 
 }  // namespace llvmdsdl
 

@@ -69,9 +69,12 @@
 #include "llvmdsdl/Semantics/AliasLayout.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/BodyInterface.h"
 #include "llvmdsdl/Support/CliPath.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -192,40 +195,22 @@ bool isVersionToken(llvm::StringRef arg)
 /// build to fail and they check every language instead -- they are the analysis modes, and a
 /// namespace that would break a Go build is worth saying so about while the user is asking questions
 /// rather than generating. See the decisions section of docs/development/identifier-stropping.md.
-llvm::SmallVector<llvmdsdl::OutputLanguage, 6> namingLanguagesForTarget(const llvm::StringRef language)
+llvm::ArrayRef<llvmdsdl::LanguageTraits> namingLanguagesForTarget(const llvm::StringRef language)
 {
-    using llvmdsdl::CodegenNamingLanguage;
-    if (language == "c")
+    const auto* const entry = llvmdsdl::dsdlc::findTargetLanguage(language);
+    if ((entry != nullptr) && entry->emitsSourceTree && entry->language)
     {
-        return {{CodegenNamingLanguage::C, "c"}};
+        return llvmdsdl::languageTraits(*entry->language);
     }
-    if (language == "cpp")
-    {
-        return {{CodegenNamingLanguage::Cpp, "cpp"}};
-    }
-    if (language == "rust")
-    {
-        return {{CodegenNamingLanguage::Rust, "rust"}};
-    }
-    if (language == "go")
-    {
-        return {{CodegenNamingLanguage::Go, "go"}};
-    }
-    if (language == "ts")
-    {
-        return {{CodegenNamingLanguage::TypeScript, "ts"}};
-    }
-    if (language == "python")
-    {
-        return {{CodegenNamingLanguage::Python, "python"}};
-    }
-    const auto all = llvmdsdl::allOutputLanguages();
-    return {all.begin(), all.end()};
+    return llvmdsdl::allLanguageTraits();
 }
 
+using llvmdsdl::Language;
+using llvmdsdl::dsdlc::emitsSourceIn;
 using llvmdsdl::dsdlc::emitsSourceTree;
 using llvmdsdl::dsdlc::isCodegenLanguage;
 using llvmdsdl::dsdlc::isKnownLanguage;
+using llvmdsdl::dsdlc::traitsOf;
 
 void printUsage()
 {
@@ -1125,30 +1110,33 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
                                        options.targetLanguage.c_str());
     }
 
-    if (auto r = failIf(options.sawCppProfile && language != "cpp", "--cpp-profile", "cpp"); !r)
+    if (auto r = failIf(options.sawCppProfile && !emitsSourceIn(language, Language::Cpp), "--cpp-profile", "cpp"); !r)
     {
         return r.takeError();
     }
     if (auto r = failIf((options.sawRustCrateName || options.sawRustProfile || options.sawRustRuntimeSpecialization ||
                          options.sawRustMemoryMode || options.sawRustInlineThreshold) &&
-                            language != "rust",
+                            !emitsSourceIn(language, Language::Rust),
                         "--rust-*",
                         "rust");
         !r)
     {
         return r.takeError();
     }
-    if (auto r = failIf(options.sawGoModule && language != "go", "--go-module", "go"); !r)
+    if (auto r = failIf(options.sawGoModule && !emitsSourceIn(language, Language::Go), "--go-module", "go"); !r)
     {
         return r.takeError();
     }
-    if (auto r =
-            failIf((options.sawTsModule || options.sawTsRuntimeSpecialization) && language != "ts", "--ts-*", "ts");
+    if (auto r = failIf((options.sawTsModule || options.sawTsRuntimeSpecialization) &&
+                            !emitsSourceIn(language, Language::TypeScript),
+                        "--ts-*",
+                        "ts");
         !r)
     {
         return r.takeError();
     }
-    if (auto r = failIf((options.sawPyPackage || options.sawPyRuntimeSpecialization) && language != "python",
+    if (auto r = failIf((options.sawPyPackage || options.sawPyRuntimeSpecialization) &&
+                            !emitsSourceIn(language, Language::Python),
                         "--py-*",
                         "python");
         !r)
@@ -1931,7 +1919,7 @@ int runDsdlc(int argc, char** argv)
         const auto reservedSemantic = filterSemanticModule(localSemantic, selectedKeys);
         for (const auto& def : reservedSemantic.definitions)
         {
-            const auto report = [&](const llvmdsdl::OutputLanguage& language,
+            const auto report = [&](const llvmdsdl::LanguageTraits& language,
                                     const char* const               what,
                                     const std::string&              name,
                                     const llvmdsdl::IdentifierRole  role) {
@@ -2255,61 +2243,27 @@ int runDsdlc(int argc, char** argv)
         return llvm::Error::success();
     };
 
-    // A target whose objects are byte images of the wire can fold a host-image section's bodies
-    // into one move. That is C, source or object, C++ and Rust, and only where the target orders bytes
-    // as the wire does: on a big-endian host the moved bytes are not the wire's, and the swap back
-    // is per scalar, so the field-wise body stays there.
-    const bool objectTarget = (options.targetLanguage == "c") || (options.targetLanguage == "obj") ||
-                              (options.targetLanguage == "cpp") || (options.targetLanguage == "rust") ||
-                              (options.targetLanguage == "go");
-    const bool littleEndian =
+    // What the target's generated interface lets the lowering assume of a body is its language's
+    // row. `mlir` generates no language and assumes nothing, because what it prints is the neutral
+    // body every backend translates rather than any one target's reading of it.
+    //
+    // A target whose objects are byte images of the wire folds a host-image section's bodies into
+    // one move only where it orders bytes as the wire does: on a big-endian host the moved bytes are
+    // not the wire's, and the swap back is per scalar, so the field-wise body stays there.
+    const llvmdsdl::LanguageTraits* const targetTraits = traitsOf(options.targetLanguage);
+    llvmdsdl::BodyInterface bodyInterface = (targetTraits != nullptr) ? targetTraits->body : llvmdsdl::BodyInterface{};
+    const bool              littleEndian =
         llvm::Triple(options.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : options.targetTriple)
             .isLittleEndian();
-    const bool hostImageFolded = objectTarget && littleEndian;
-
-    // What the selected target can hand a body as null. A body opens by testing its three pointer
-    // arguments, and a target whose references cannot be null never reaches the answer that guard
-    // gives, so the test is a constant and the branch is one nothing takes.
-    //
-    // C is handed pointers and keeps every test. C++ is handed pointers too, except by a field
-    // accessor, which takes a span. Rust is handed a reference, a slice and a local and keeps none.
-    // Go, TypeScript and Python are handed an object a caller may omit, beside a buffer and a local
-    // that cannot be null. `mlir` keeps every test, because what it prints is the neutral body every
-    // backend translates rather than any one target's reading of it.
-    llvmdsdl::TargetNullability nullability;
-    if (options.targetLanguage == "cpp")
-    {
-        nullability = {true, true, false};
-    }
-    else if (options.targetLanguage == "rust")
-    {
-        nullability = {false, false, false};
-    }
-    else if ((options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
-             (options.targetLanguage == "python"))
-    {
-        nullability = {true, false, false};
-    }
-
-    // Whether a composite getter answers a view that carries its own length. C answers a pointer
-    // and passes the length back through another, which the caller reads; the other five answer a
-    // span, a slice, a `memoryview` or a `Uint8Array`, and the length the plan writes back is read
-    // by nothing. `mlir` keeps the write, printing the neutral body rather than a target's reading.
-    const bool accessorsReturnViews = (options.targetLanguage == "cpp") || (options.targetLanguage == "rust") ||
-                                      (options.targetLanguage == "go") || (options.targetLanguage == "ts") ||
-                                      (options.targetLanguage == "python");
+    bodyInterface.objectsAreByteImages = bodyInterface.objectsAreByteImages && littleEndian;
+    const bool hostImageFolded         = bodyInterface.objectsAreByteImages;
 
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
     // over the module they all receive.
     {
         logVerbose(1, "lowering serialisation plans to bodies");
         mlir::PassManager pm(&context);
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm,
-                                             options.optimizeLoweredSerDes,
-                                             hostImageFolded,
-                                             options.aliasableOnly,
-                                             nullability,
-                                             accessorsReturnViews);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes, bodyInterface, options.aliasableOnly);
         if (mlir::failed(pm.run(*mlirModule)))
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";
@@ -2319,34 +2273,41 @@ int runDsdlc(int argc, char** argv)
 
     logVerbose(1, "running backend emission");
 
-    if (options.targetLanguage == "c")
+    // A codegen value names the language it generates, and each backend takes options of its own.
+    const auto* const target = llvmdsdl::dsdlc::findTargetLanguage(options.targetLanguage);
+    if ((target == nullptr) || !target->language)
     {
-        llvmdsdl::emitter::c::Options emitOptions;
-        emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning        = options.typeNameVersioning;
-        emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
-        emitOptions.hostImageFolded           = hostImageFolded;
-        emitOptions.accessorsOnly             = options.aliasableOnly;
-        emitOptions.selectedTypeKeys          = selectedTypeKeys;
-        emitOptions.supportGeneration         = options.supportGeneration;
-        emitOptions.writePolicy               = writePolicy;
-
-        if (auto err = llvmdsdl::emitter::c::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
-        {
-            llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        const std::vector<std::string> regularOutputs = generatedOutputs;
-        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
-        {
-            llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
-        }
-        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
+        llvm::errs() << "Unhandled language path: " << options.targetLanguage << "\n";
+        return 1;
     }
-
-    if (options.targetLanguage == "obj")
+    switch (*target->language)
     {
+    case Language::C: {
+        if (target->emitsSourceTree)
+        {
+            llvmdsdl::emitter::c::Options emitOptions;
+            emitOptions.outDir                    = options.outDir;
+            emitOptions.typeNameVersioning        = options.typeNameVersioning;
+            emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
+            emitOptions.hostImageFolded           = hostImageFolded;
+            emitOptions.accessorsOnly             = options.aliasableOnly;
+            emitOptions.selectedTypeKeys          = selectedTypeKeys;
+            emitOptions.supportGeneration         = options.supportGeneration;
+            emitOptions.writePolicy               = writePolicy;
+
+            if (auto err = llvmdsdl::emitter::c::emit(closureSemantic, *mlirModule, emitOptions, diagnostics))
+            {
+                llvm::errs() << llvm::toString(std::move(err)) << "\n";
+                return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+            }
+            const std::vector<std::string> regularOutputs = generatedOutputs;
+            if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
+            {
+                llvm::errs() << llvm::toString(std::move(err)) << "\n";
+                return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+            }
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
+        }
         llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
@@ -2373,8 +2334,7 @@ int runDsdlc(int argc, char** argv)
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (options.targetLanguage == "cpp")
-    {
+    case Language::Cpp: {
         llvmdsdl::emitter::cpp::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
@@ -2401,8 +2361,7 @@ int runDsdlc(int argc, char** argv)
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (options.targetLanguage == "rust")
-    {
+    case Language::Rust: {
         llvmdsdl::emitter::rust::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
         emitOptions.typeNameVersioning        = options.typeNameVersioning;
@@ -2432,8 +2391,7 @@ int runDsdlc(int argc, char** argv)
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (options.targetLanguage == "go")
-    {
+    case Language::Go: {
         llvmdsdl::emitter::go::Options emitOptions;
         emitOptions.outDir             = options.outDir;
         emitOptions.typeNameVersioning = options.typeNameVersioning;
@@ -2458,8 +2416,7 @@ int runDsdlc(int argc, char** argv)
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (options.targetLanguage == "ts")
-    {
+    case Language::TypeScript: {
         llvmdsdl::emitter::ts::Options emitOptions;
         emitOptions.outDir                = options.outDir;
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
@@ -2484,8 +2441,7 @@ int runDsdlc(int argc, char** argv)
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (options.targetLanguage == "python")
-    {
+    case Language::Python: {
         llvmdsdl::emitter::python::Options emitOptions;
         emitOptions.outDir                = options.outDir;
         emitOptions.typeNameVersioning    = options.typeNameVersioning;
@@ -2508,6 +2464,7 @@ int runDsdlc(int argc, char** argv)
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
+    }
     }
 
     llvm::errs() << "Unhandled language path: " << options.targetLanguage << "\n";

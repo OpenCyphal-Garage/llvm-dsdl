@@ -1478,6 +1478,33 @@ if(LLVMDSDL_PYTHON3_EXE)
             --root "${LLVMDSDL_SOURCE_DIR}")
   set_tests_properties(llvmdsdl-determinism-unordered-iteration PROPERTIES
     LABELS "determinism;contract")
+
+  # A decision about a language belongs in its row of llvmdsdl/Support/LanguageTraits.h. This reads
+  # the sources for one made anywhere else, so a new language stays a row rather than a search.
+  add_test(
+    NAME llvmdsdl-language-classification
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/check_language_classification.py"
+            --root "${LLVMDSDL_SOURCE_DIR}")
+  add_test(
+    NAME llvmdsdl-language-classification-selftest
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/check_language_classification.py"
+            --self-test)
+  set_tests_properties(
+    llvmdsdl-language-classification
+    llvmdsdl-language-classification-selftest
+    PROPERTIES LABELS "contract")
+
+  # Where each emitter writes text, held to test/integration/emission-sites.json: string-built code
+  # in the declaration half is what the renderer of CLEAN_CODE.md replaces, so it may fall and may
+  # rise only by a retake that says why.
+  add_test(
+    NAME llvmdsdl-emission-sites
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/count_emission_sites.py"
+            --baseline "${LLVMDSDL_SOURCE_DIR}/test/integration/emission-sites.json")
+  set_tests_properties(llvmdsdl-emission-sites PROPERTIES LABELS "contract")
 endif()
 
 # Below enable_testing() rather than beside the other examples: the showroom registers ctests for its

@@ -11,6 +11,7 @@ add_library(llvmdsdlSupport
   CliPath.cpp
   DefinitionNaming.cpp
   Diagnostics.cpp
+  LanguageTraits.cpp
   NameCanonicalization.cpp
   NamingPolicy.cpp
   ScalarStorage.cpp

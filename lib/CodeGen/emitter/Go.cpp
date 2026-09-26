@@ -64,6 +64,7 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -106,7 +107,7 @@ NamingScope makeExportedFieldIdents(const SemanticSection& section)
     // The generated methods a field must not collide with are claimed by the FieldName role's policy
     // (Go forbids a field and a method sharing a name), so the scope only has to keep the fields
     // apart from each other.
-    return makeSectionFieldScope(CodegenNamingLanguage::Go, section);
+    return makeSectionFieldScope(Language::Go, section);
 }
 
 std::string packagePathFromComponents(const std::vector<std::string>& components)
@@ -118,7 +119,7 @@ std::string packagePathFromComponents(const std::vector<std::string>& components
         {
             out += "/";
         }
-        out += codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::NamespaceName, c);
+        out += codegenProjectIdentifier(Language::Go, IdentifierRole::NamespaceName, c);
     }
     return out;
 }
@@ -131,7 +132,7 @@ std::string packageNameFromPath(const std::string& path)
     }
     const auto split = path.find_last_of('/');
     const auto leaf  = split == std::string::npos ? path : path.substr(split + 1);
-    auto       out   = codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::NamespaceName, leaf);
+    auto       out   = codegenProjectIdentifier(Language::Go, IdentifierRole::NamespaceName, leaf);
     if (out.empty())
     {
         out = "rootdsdl";
@@ -141,17 +142,17 @@ std::string packageNameFromPath(const std::string& path)
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    return renderUnsignedStorageToken(StorageTokenLanguage::Go, bitLength);
+    return renderUnsignedStorageToken(Language::Go, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    return renderSignedStorageToken(StorageTokenLanguage::Go, bitLength);
+    return renderSignedStorageToken(Language::Go, bitLength);
 }
 
 std::string goConstValue(const TypeExprAST& type, const Value& value)
 {
-    return renderConstantLiteral(ConstantLiteralLanguage::Go, value, makeConstantTypeInfo(type));
+    return renderConstantLiteral(Language::Go, value, makeConstantTypeInfo(type));
 }
 
 // gofmt is not configurable and indents with tabs; generated files that disagree churn in any
@@ -422,7 +423,7 @@ public:
 
     std::string goTypeName(const DiscoveredDefinition& info) const
     {
-        return renderDefinitionTypeName(CodegenNamingLanguage::Go,
+        return renderDefinitionTypeName(Language::Go,
                                         info.namespaceComponents,
                                         info.shortName,
                                         info.majorVersion,
@@ -445,20 +446,13 @@ public:
 
     static std::string goFileName(const DiscoveredDefinition& info)
     {
-        return renderDefinitionFileStem(CodegenNamingLanguage::Go,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion) +
-               ".go";
+        return renderDefinitionFileStem(Language::Go, info.shortName, info.majorVersion, info.minorVersion) + ".go";
     }
 
     /// @brief The file beside a folded type's own that refuses a big-endian architecture.
     static std::string goHostImageGuardFileName(const DiscoveredDefinition& info)
     {
-        return renderDefinitionFileStem(CodegenNamingLanguage::Go,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion) +
+        return renderDefinitionFileStem(Language::Go, info.shortName, info.majorVersion, info.minorVersion) +
                "_host_image.go";
     }
 
@@ -498,7 +492,7 @@ std::map<std::string, std::string> computeImportAliases(const SemanticDefinition
         {
             continue;
         }
-        auto alias = "pkg_" + codegenProjectIdentifier(CodegenNamingLanguage::Go,
+        auto alias = "pkg_" + codegenProjectIdentifier(Language::Go,
                                                        IdentifierRole::NamespaceName,
                                                        llvm::join(ref.namespaceComponents, "_"));
         if (alias == "pkg_")
@@ -613,7 +607,7 @@ public:
         {
             Plan entry;
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
-            NamingScope                   scope(CodegenNamingLanguage::Go);
+            NamingScope                   scope(Language::Go);
             std::vector<mlir::dsdl::IOOp> fields;
             if (!plan.getBody().empty())
             {
@@ -684,9 +678,7 @@ public:
     {
         // The snake rendering, projected as Go names a local: the same fold as every other
         // language's, with Go's initialisms and its case.
-        return codegenProjectIdentifier(CodegenNamingLanguage::Go,
-                                        IdentifierRole::LocalName,
-                                        snakeValueName(role, member, ordinal));
+        return codegenProjectIdentifier(Language::Go, IdentifierRole::LocalName, snakeValueName(role, member, ordinal));
     }
 
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
@@ -2174,8 +2166,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const auto packageName        = packageNameFromPath(currentPackagePath);
     const auto imports            = computeImportAliases(def, ctx);
     const auto baseType           = ctx.goTypeName(def.info);
-    const auto reqType            = renderSectionTypeName(CodegenNamingLanguage::Go, baseType, "request");
-    const auto respType           = renderSectionTypeName(CodegenNamingLanguage::Go, baseType, "response");
+    const auto reqType            = renderSectionTypeName(Language::Go, baseType, "request");
+    const auto respType           = renderSectionTypeName(Language::Go, baseType, "response");
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
                          reqType);
@@ -2184,7 +2176,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     // A helper is private to the package, which holds a whole DSDL namespace, so its name carries
     // the definition's type: the package's scope is what proves two of them cannot meet.
-    spelling.setHelperNames(renderSchemaHelperNames(CodegenNamingLanguage::Go, module, schema, packageScope, baseType));
+    spelling.setHelperNames(renderSchemaHelperNames(Language::Go, module, schema, packageScope, baseType));
 
     // The declarations and bodies first: whether the runtime is imported depends on whether a
     // body calls it, and Go rejects an import nothing uses.
@@ -2351,7 +2343,7 @@ std::string renderHostImageGuard(const SemanticDefinition& def, const EmitterCon
     const std::string version =
         def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
     const std::string ident =
-        codegenProjectIdentifier(CodegenNamingLanguage::Go, IdentifierRole::ConstantName, ctx.goTypeName(def.info));
+        codegenProjectIdentifier(Language::Go, IdentifierRole::ConstantName, ctx.goTypeName(def.info));
     std::ostringstream out;
     SourceWriter       w = makeGoWriter(out);
     w.line(generatedCommentLine("Go backend"));
@@ -2492,7 +2484,7 @@ llvm::Error emit(const SemanticModule& semantic,
                                          options.moduleName,
                                          module,
                                          lookups,
-                                         packageScopes.try_emplace(dirRel, CodegenNamingLanguage::Go).first->second);
+                                         packageScopes.try_emplace(dirRel, Language::Go).first->second);
         if (!file)
         {
             return file.takeError();

@@ -25,30 +25,10 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringRef.h"
 
+#include "llvmdsdl/Support/Language.h"
+
 namespace llvmdsdl
 {
-
-/// @brief Target language for identifier naming projection.
-enum class CodegenNamingLanguage
-{
-    /// @brief C naming policy.
-    C,
-
-    /// @brief C++ naming policy.
-    Cpp,
-
-    /// @brief Rust naming policy.
-    Rust,
-
-    /// @brief Go naming policy.
-    Go,
-
-    /// @brief TypeScript naming policy.
-    TypeScript,
-
-    /// @brief Python naming policy.
-    Python,
-};
 
 /// @brief What an identifier is going to be used as.
 ///
@@ -146,7 +126,7 @@ class LanguageNamingPolicy final
 public:
     /// @brief Builds the policy for @p language.
     /// @param[in] language Naming language.
-    explicit LanguageNamingPolicy(CodegenNamingLanguage language);
+    explicit LanguageNamingPolicy(Language language);
 
     /// @brief Returns how @p role is named in this language.
     /// @param[in] role Identifier role.
@@ -172,13 +152,13 @@ public:
     [[nodiscard]] std::vector<llvm::StringRef> keywords() const;
 
 private:
-    CodegenNamingLanguage language_;
+    Language language_;
 };
 
 /// @brief Returns the naming policy for @p language.
 /// @param[in] language Naming language.
 /// @return A reference to the language's policy, valid for the process lifetime.
-[[nodiscard]] const LanguageNamingPolicy& codegenNamingPolicy(CodegenNamingLanguage language);
+[[nodiscard]] const LanguageNamingPolicy& codegenNamingPolicy(Language language);
 
 /// @brief A projected identifier and whether producing it needed an escape.
 struct ProjectedIdentifier final
@@ -212,9 +192,9 @@ struct ProjectedIdentifier final
 /// @param[in] role What the identifier will be used as.
 /// @param[in] name Source name.
 /// @return The identifier and the escape flag.
-[[nodiscard]] ProjectedIdentifier codegenProjectIdentifierDetailed(CodegenNamingLanguage language,
-                                                                   IdentifierRole        role,
-                                                                   llvm::StringRef       name);
+[[nodiscard]] ProjectedIdentifier codegenProjectIdentifierDetailed(Language        language,
+                                                                   IdentifierRole  role,
+                                                                   llvm::StringRef name);
 
 /// @brief Projects @p name into the identifier @p role calls for in @p language.
 ///
@@ -225,15 +205,13 @@ struct ProjectedIdentifier final
 /// @param[in] role What the identifier will be used as.
 /// @param[in] name Source name.
 /// @return The language-safe identifier for that role.
-[[nodiscard]] std::string codegenProjectIdentifier(CodegenNamingLanguage language,
-                                                   IdentifierRole        role,
-                                                   llvm::StringRef       name);
+[[nodiscard]] std::string codegenProjectIdentifier(Language language, IdentifierRole role, llvm::StringRef name);
 
 /// @brief Returns true when an identifier is a keyword in the target language.
 /// @param[in] language Naming language.
 /// @param[in] name Candidate identifier.
 /// @return True when the identifier is reserved.
-bool codegenIsKeyword(CodegenNamingLanguage language, llvm::StringRef name);
+bool codegenIsKeyword(Language language, llvm::StringRef name);
 
 /// @brief True when @p identifier lies in a namespace @p language reserves for the implementation.
 ///
@@ -246,13 +224,13 @@ bool codegenIsKeyword(CodegenNamingLanguage language, llvm::StringRef name);
 /// @param[in] language Naming language.
 /// @param[in] identifier An identifier, already projected.
 /// @return True when it is reserved.
-[[nodiscard]] bool codegenIsReservedNamespaceIdentifier(CodegenNamingLanguage language, llvm::StringRef identifier);
+[[nodiscard]] bool codegenIsReservedNamespaceIdentifier(Language language, llvm::StringRef identifier);
 
 /// @brief Sanitizes one identifier for the target language.
 /// @param[in] language Naming language.
 /// @param[in] name Candidate identifier.
 /// @return Language-safe identifier.
-std::string codegenSanitizeIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
+std::string codegenSanitizeIdentifier(Language language, llvm::StringRef name);
 
 /// @brief Repairs an identifier that would otherwise begin with a digit.
 ///
@@ -267,19 +245,19 @@ std::string codegenSanitizeIdentifier(CodegenNamingLanguage language, llvm::Stri
 /// @param[in] language Naming language.
 /// @param[in] name Source text.
 /// @return Language-safe snake_case identifier.
-std::string codegenToSnakeCaseIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
+std::string codegenToSnakeCaseIdentifier(Language language, llvm::StringRef name);
 
 /// @brief Projects text into PascalCase and sanitizes for the target language.
 /// @param[in] language Naming language.
 /// @param[in] name Source text.
 /// @return Language-safe PascalCase identifier.
-std::string codegenToPascalCaseIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
+std::string codegenToPascalCaseIdentifier(Language language, llvm::StringRef name);
 
 /// @brief Projects text into UPPER_SNAKE_CASE and sanitizes for the target language.
 /// @param[in] language Naming language.
 /// @param[in] name Source text.
 /// @return Language-safe UPPER_SNAKE_CASE identifier.
-std::string codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage language, llvm::StringRef name);
+std::string codegenToUpperSnakeCaseIdentifier(Language language, llvm::StringRef name);
 
 /// @brief The tokens a definition's generated constants are named by, in every language.
 ///
@@ -312,7 +290,7 @@ public:
     /// @brief Opens a scope for @p language.
     /// @param[in] language Naming language.
     /// @param[in] reserved Identifiers already claimed in this scope by generated code.
-    explicit NamingScope(CodegenNamingLanguage language, llvm::ArrayRef<llvm::StringRef> reserved = {});
+    explicit NamingScope(Language language, llvm::ArrayRef<llvm::StringRef> reserved = {});
 
     /// @brief Claims an identifier for @p sourceName in @p role.
     ///
@@ -344,7 +322,7 @@ private:
     /// @brief Key for the assignment map: one source name may appear in two roles.
     [[nodiscard]] static std::string keyOf(IdentifierRole role, llvm::StringRef sourceName);
 
-    CodegenNamingLanguage        language_;
+    Language                     language_;
     llvm::StringSet<>            used_;
     llvm::StringMap<std::string> assigned_;
 };

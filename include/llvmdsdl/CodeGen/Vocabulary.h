@@ -34,6 +34,8 @@
 #include <utility>
 #include <vector>
 
+#include "llvmdsdl/Support/Language.h"
+
 namespace llvmdsdl::vocabulary
 {
 
@@ -81,7 +83,7 @@ std::optional<Concept> conceptNamed(llvm::StringRef name);
 ///        absent from `bindable` is fixed in that language.
 struct LanguageSpec final
 {
-    llvm::StringRef                 name;
+    Language                        language{};
     llvm::ArrayRef<llvm::StringRef> profiles;
     llvm::ArrayRef<Concept>         bindable;
 };
@@ -89,7 +91,7 @@ struct LanguageSpec final
 /// @brief Every language that has profiles or bindable concepts.
 llvm::ArrayRef<LanguageSpec> languages();
 
-/// @brief The language named @p name, or null.
+/// @brief The language whose `--target-language` spelling is @p name, or null.
 const LanguageSpec* languageNamed(llvm::StringRef name);
 
 /// @brief How one library spells a concept.

@@ -8,35 +8,35 @@
 #include <iostream>
 
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
+#include "llvmdsdl/Support/Language.h"
 
 #include "UnitTests.h"
 
 bool runStorageTypeTokensTests()
 {
-    using llvmdsdl::StorageTokenLanguage;
+    using llvmdsdl::Language;
     using llvmdsdl::renderSignedStorageToken;
     using llvmdsdl::renderUnsignedStorageToken;
 
-    if (renderUnsignedStorageToken(StorageTokenLanguage::C, 9) != "uint16_t" ||
-        renderSignedStorageToken(StorageTokenLanguage::C, 9) != "int16_t")
+    if (renderUnsignedStorageToken(Language::C, 9) != "uint16_t" ||
+        renderSignedStorageToken(Language::C, 9) != "int16_t")
     {
         std::cerr << "C storage token mapping mismatch\n";
         return false;
     }
-    if (renderUnsignedStorageToken(StorageTokenLanguage::Cpp, 33) != "std::uint64_t" ||
-        renderSignedStorageToken(StorageTokenLanguage::Cpp, 33) != "std::int64_t")
+    if (renderUnsignedStorageToken(Language::Cpp, 33) != "std::uint64_t" ||
+        renderSignedStorageToken(Language::Cpp, 33) != "std::int64_t")
     {
         std::cerr << "C++ storage token mapping mismatch\n";
         return false;
     }
-    if (renderUnsignedStorageToken(StorageTokenLanguage::Rust, 32) != "u32" ||
-        renderSignedStorageToken(StorageTokenLanguage::Rust, 32) != "i32")
+    if (renderUnsignedStorageToken(Language::Rust, 32) != "u32" ||
+        renderSignedStorageToken(Language::Rust, 32) != "i32")
     {
         std::cerr << "Rust storage token mapping mismatch\n";
         return false;
     }
-    if (renderUnsignedStorageToken(StorageTokenLanguage::Go, 7) != "uint8" ||
-        renderSignedStorageToken(StorageTokenLanguage::Go, 7) != "int8")
+    if (renderUnsignedStorageToken(Language::Go, 7) != "uint8" || renderSignedStorageToken(Language::Go, 7) != "int8")
     {
         std::cerr << "Go storage token mapping mismatch\n";
         return false;
