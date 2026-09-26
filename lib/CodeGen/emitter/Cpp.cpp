@@ -70,7 +70,6 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Attributes.h>
@@ -957,28 +956,27 @@ public:
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
     {
-        return "static_cast<" + typeName(op.getValue().getType()) + ">(" +
-               memberAccess(op.getObject(), op.getMember(), names) + ")";
+        return loadedValue(memberAccess(op.getObject(), op.getMember(), names), op.getValue().getType());
     }
 
     void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
     {
         const Member member = memberOf(op.getObject(), op.getMember());
         w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
-               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)) + ";");
     }
 
     [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
     {
-        return "static_cast<" + typeName(op.getValue().getType()) + ">(" +
-               elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + ")";
+        return loadedValue(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                           op.getValue().getType());
     }
 
     void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
     {
         const Member member = memberOf(op.getObject(), op.getMember());
         w.line(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
-               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)) + ";");
     }
 
     [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
@@ -988,12 +986,6 @@ public:
 
     [[nodiscard]] std::string elementAddr(mlir::dsdl::ElementAddrOp op, const ValueNames& names) const override
     {
-        // A variable-length bool array is a container of bools with no bytes to address; the bit
-        // copies that read this address loop over its elements instead.
-        if (isBoolContainer(memberOf(op.getObject(), op.getMember())))
-        {
-            return memberAccess(op.getObject(), op.getMember(), names);
-        }
         return "&" + elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names);
     }
 
@@ -1088,43 +1080,30 @@ public:
 
     void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
     {
-        const std::string destination = bytesOf(op.getDestination(), names, /*read=*/false);
-        const std::string offset      = asSize(names(op.getDestinationBitOffset()));
-        const std::string width       = asSize(names(op.getWidth()));
-        if (const auto container = boolContainerOf(op.getSource(), names))
-        {
-            const std::string index = fresh("bit");
-            const std::string bit   = fresh("value");
-            w.open("for (std::size_t " + index + " = 0U; " + index + " < " + width + "; ++" + index + ") {");
-            w.line("const std::uint8_t " + bit + " = static_cast<std::uint8_t>(" + container->first + "[" +
-                   container->second + " + " + asSize(names(op.getSourceBitOffset())) + " + " + index +
-                   "] ? 1U : 0U);");
-            w.line("dsdl_runtime_copy_bits(" + destination + ", " + offset + " + " + index + ", 1U, &" + bit +
-                   ", 0U);");
-            w.close("}");
-            return;
-        }
-        w.line("dsdl_runtime_copy_bits(" + destination + ", " + offset + ", " + width + ", " + names(op.getSource()) +
-               ", " + asSize(names(op.getSourceBitOffset())) + ");");
+        // A fixed bool array is packed into bytes, as on the wire. A variable-length one holds a bool
+        // per element, and its runs reach C++ expanded.
+        w.line("dsdl_runtime_copy_bits(" + bytesOf(op.getDestination(), names, /*read=*/false) + ", " +
+               asSize(names(op.getDestinationBitOffset())) + ", " + asSize(names(op.getWidth())) + ", " +
+               names(op.getSource()) + ", " + asSize(names(op.getSourceBitOffset())) + ");");
     }
 
     void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
     {
-        const std::string buffer =
-            bytesOf(op.getBuffer(), names, /*read=*/true) + ", " + asSize(names(op.getBufferSizeBytes()));
-        const std::string offset = asSize(names(op.getBitOffset()));
-        const std::string width  = asSize(names(op.getWidth()));
-        if (const auto container = boolContainerOf(op.getDestination(), names))
-        {
-            const std::string index = fresh("bit");
-            w.open("for (std::size_t " + index + " = 0U; " + index + " < " + width + "; ++" + index + ") {");
-            w.line(container->first + "[" + container->second + " + " + index + "] = dsdl_runtime_get_bit(" + buffer +
-                   ", " + offset + " + " + index + ");");
-            w.close("}");
-            return;
-        }
-        w.line("dsdl_runtime_get_bits(" + names(op.getDestination()) + ", " + buffer + ", " + offset + ", " + width +
-               ");");
+        w.line("dsdl_runtime_get_bits(" + names(op.getDestination()) + ", " +
+               bytesOf(op.getBuffer(), names, /*read=*/true) + ", " + asSize(names(op.getBufferSizeBytes())) + ", " +
+               asSize(names(op.getBitOffset())) + ", " + asSize(names(op.getWidth())) + ");");
+    }
+
+    void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
+    {
+        w.line("::llvmdsdl::cpp::set_bit(" + bytesOf(op.getBuffer(), names, /*read=*/false) + ", " +
+               asSize(names(op.getBitOffset())) + ", " + names(op.getValue()) + ");");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
+    {
+        return "dsdl_runtime_get_bit(" + bytesOf(op.getBuffer(), names, /*read=*/true) + ", " +
+               asSize(names(op.getBufferSizeBytes())) + ", " + asSize(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1314,33 +1293,6 @@ private:
         return memberAccess(object, member, names) + "[" + asSize(index) + "]";
     }
 
-    /// @brief Whether @p member is held as a container of bools rather than as packed bits.
-    ///
-    /// A fixed bool array is packed into bytes, as in C; a variable-length one is the profile's
-    /// container of `bool`.
-    static bool isBoolContainer(const Member& member)
-    {
-        mlir::dsdl::IOOp io = member.io;
-        return io.getScalarCategory() == "bool" && io.isVariableArray();
-    }
-
-    /// @brief The container expression and element base of a bool container @p address names.
-    std::optional<std::pair<std::string, std::string>> boolContainerOf(const mlir::Value address,
-                                                                       const ValueNames& names) const
-    {
-        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
-        if (!element || !isBoolContainer(memberOf(element.getObject(), element.getMember())))
-        {
-            return std::nullopt;
-        }
-        // The address of element `index` at bit offset zero: the run starts that many elements in.
-        auto              index = element.getIndex().getDefiningOp<mlir::arith::ConstantOp>();
-        const std::string base =
-            index ? std::to_string(mlir::cast<mlir::IntegerAttr>(index.getValue()).getValue().getZExtValue()) + "U"
-                  : std::string{"0U"};
-        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names), base);
-    }
-
     /// @brief The C++ type the struct declares a scalar field or element as.
     static std::string scalarType(mlir::dsdl::IOOp io)
     {
@@ -1398,14 +1350,20 @@ private:
                renderDefinitionTypeName(Language::Cpp, namespaceComponents, shortName, major, minor, versioning_);
     }
 
-    /// @brief @p value converted for storage in a field of @p type.
-    static std::string storedValue(const std::string& value, const std::string& type)
+    /// @brief @p access read as a value of @p type. A bool is read as a bool.
+    [[nodiscard]] std::string loadedValue(const std::string& access, const mlir::Type type) const
     {
-        if (type == "bool")
+        return isBool(type) ? access : "static_cast<" + typeName(type) + ">(" + access + ")";
+    }
+
+    /// @brief @p value, of @p type, converted for storage in a field of @p storage.
+    static std::string storedValue(const std::string& value, const mlir::Type type, const std::string& storage)
+    {
+        if (storage == "bool")
         {
-            return "(" + value + " != 0ULL)";
+            return isBool(type) ? value : "(" + value + " != 0ULL)";
         }
-        return "static_cast<" + type + ">(" + value + ")";
+        return "static_cast<" + storage + ">(" + value + ")";
     }
 
     // Types.

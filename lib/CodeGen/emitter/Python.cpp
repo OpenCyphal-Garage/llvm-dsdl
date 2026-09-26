@@ -1266,28 +1266,27 @@ public:
         return cast(read, mlir::IntegerType::get(op.getContext(), 64), valueType);
     }
 
-    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // A bool array is a list of bools, so a run of its bits goes one element at a time.
-        const auto        container = boolContainerOf(op.getSource(), names);
-        const std::string index     = fresh("bit");
-        open(w, "for " + index + " in range(" + names(op.getWidth()) + "):");
-        line(w,
-             "dsdl_runtime.set_bit(" + names(op.getDestination()) + ", " + names(op.getDestinationBitOffset()) + " + " +
-                 index + ", " + container.first + "[" + container.second + " + " + names(op.getSourceBitOffset()) +
-                 " + " + index + "])");
-        closeBlock(w);
+        // A bool array holds a bool per element, so each of its runs reaches Python expanded.
+        llvm::report_fatal_error("Python spelling: a bool run reaches Python expanded to dsdl.write_bit");
     }
 
-    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const auto        container = boolContainerOf(op.getDestination(), names);
-        const std::string index     = fresh("bit");
-        open(w, "for " + index + " in range(" + names(op.getWidth()) + "):");
+        llvm::report_fatal_error("Python spelling: a bool run reaches Python expanded to dsdl.read_bit");
+    }
+
+    void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
+    {
         line(w,
-             container.first + "[" + container.second + " + " + index + "] = dsdl_runtime.get_bit(" +
-                 names(op.getBuffer()) + ", " + names(op.getBitOffset()) + " + " + index + ")");
-        closeBlock(w);
+             "dsdl_runtime.set_bit(" + names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", " +
+                 names(op.getValue()) + ")");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
+    {
+        return "dsdl_runtime.get_bit(" + names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ")";
     }
 
     void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
@@ -1463,17 +1462,6 @@ private:
                               const ValueNames&     names) const
     {
         return memberAccess(object, member, names) + "[" + index + "]";
-    }
-
-    /// @brief The container expression and element base of the bool array @p address names.
-    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
-    {
-        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
-        if (!element)
-        {
-            llvm::report_fatal_error("Python spelling: a bit copy whose storage is not an array element");
-        }
-        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names), names(element.getIndex()));
     }
 
     // Members.

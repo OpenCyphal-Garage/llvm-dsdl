@@ -309,6 +309,12 @@ public:
     virtual void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const             = 0;
     virtual void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const               = 0;
 
+    /// @brief One bit of a bool array stored a bool per element, which `dsdl-expand-bool-runs`
+    ///        builds. A target that stores its bool arrays packed never receives either, and its
+    ///        spelling says so.
+    virtual void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const   = 0;
+    [[nodiscard]] virtual std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const = 0;
+
     /// @brief One move for a whole payload, where the structure is the wire image.
     ///
     /// Only a target whose objects are byte images of the wire is asked for this; the fold that

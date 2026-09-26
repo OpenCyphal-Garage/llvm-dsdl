@@ -60,6 +60,18 @@ inline const std::uint8_t* readable_bytes(const std::uint8_t* const bytes) noexc
     return (bytes != nullptr) ? bytes : &STAND_IN;
 }
 
+/// @brief Sets the bit at @p bit_offset of @p buffer to @p value, leaving the rest of its byte.
+///
+/// One element of a bool array stored a bool per element, moved to the wire.
+/// @param[out] buffer The wire buffer.
+/// @param[in] bit_offset Where the bit goes, in bits from the start of @p buffer.
+/// @param[in] value The element.
+inline void set_bit(std::uint8_t* const buffer, const std::size_t bit_offset, const bool value) noexcept
+{
+    const std::uint8_t bit = value ? 1U : 0U;
+    dsdl_runtime_copy_bits(buffer, bit_offset, 1U, &bit, 0U);
+}
+
 namespace autosar
 {
 

@@ -1276,32 +1276,26 @@ public:
                prefix + ", uint8(" + std::to_string(width) + ")))";
     }
 
-    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // A bool array is a container of bools, so a run of its bits goes one element at a time.
-        const auto        container = boolContainerOf(op.getSource(), names);
-        const std::string index     = fresh("bit");
-        const std::string at        = fresh("at");
-        const std::string from      = fresh("from");
-        w.open("for " + index + " := 0; " + index + " < " + asInt(names(op.getWidth())) + "; " + index + "++ {");
-        w.line(at + " := " + asInt(names(op.getDestinationBitOffset())) + " + " + index);
-        w.line(from + " := " + container.second + " + " + asInt(names(op.getSourceBitOffset())) + " + " + index);
-        w.line("_ = dsdlruntime.SetBit(" + names(op.getDestination()) + ", " + at + ", " + container.first + "[" +
-               from + "])");
-        w.close("}");
+        // A bool array holds a bool per element, so each of its runs reaches Go expanded.
+        llvm::report_fatal_error("Go spelling: a bool run reaches Go expanded to dsdl.write_bit");
     }
 
-    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const auto        container = boolContainerOf(op.getDestination(), names);
-        const std::string index     = fresh("bit");
-        const std::string at        = fresh("at");
-        const std::string into      = fresh("into");
-        w.open("for " + index + " := 0; " + index + " < " + asInt(names(op.getWidth())) + "; " + index + "++ {");
-        w.line(at + " := " + asInt(names(op.getBitOffset())) + " + " + index);
-        w.line(into + " := " + container.second + " + " + index);
-        w.line(container.first + "[" + into + "] = dsdlruntime.GetBit(" + names(op.getBuffer()) + ", " + at + ")");
-        w.close("}");
+        llvm::report_fatal_error("Go spelling: a bool run reaches Go expanded to dsdl.read_bit");
+    }
+
+    void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
+    {
+        w.line("_ = dsdlruntime.SetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ", " +
+               names(op.getValue()) + ")");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
+    {
+        return "dsdlruntime.GetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1469,18 +1463,6 @@ private:
         return memberAccess(object, member, names) + "[" + asInt(index) + "]";
     }
 
-    /// @brief The container expression and element base of the bool array @p address names.
-    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
-    {
-        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
-        if (!element)
-        {
-            llvm::report_fatal_error("Go spelling: a bit copy whose storage is not an array element");
-        }
-        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
-                              asInt(names(element.getIndex())));
-    }
-
     /// @brief The Go type the struct declares a scalar field or element as.
     static std::string scalarType(mlir::dsdl::IOOp io)
     {
@@ -1504,8 +1486,11 @@ private:
     /// @brief @p access read as a value of @p type.
     static std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type)
     {
-        const mlir::dsdl::IOOp io = member.io;
-        if (scalarType(io) == "bool" && !isBool(type))
+        if (isBool(type))
+        {
+            return access;
+        }
+        if (scalarType(member.io) == "bool")
         {
             return typeName(type) + "(dsdlruntime.BoolToUint64(" + access + "))";
         }

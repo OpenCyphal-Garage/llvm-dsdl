@@ -23,6 +23,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <memory>
 #include <mlir/IR/Attributes.h>
@@ -1507,6 +1508,10 @@ struct FoldDSDLNestedCallSizesPass final
     {
         return "Hand each nested call its space by value and take back what it used as a result";
     }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect>();
+    }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
     void runOnOperation() override
@@ -1569,6 +1574,195 @@ struct FoldDSDLNestedCallSizesPass final
             slot.erase();
         }
     }
+};
+
+/// @brief Expands each bool run a target stores a bool per element into a loop over its elements.
+///
+/// The plan moves a bool array as one run of wire bits between the buffer and the array's packed
+/// bytes, which is how a target storing the array packed copies it. A target storing a bool per
+/// element would otherwise have each spelling recover the array from the run's address and loop
+/// over it on its own. This states the loop once: an `scf.for` over the run's width, moving one
+/// element and one bit per turn with `dsdl.load_element` and `dsdl.write_bit`, or `dsdl.read_bit`
+/// and `dsdl.store_element`, which every backend already translates.
+///
+/// Only serialise and deserialise bodies are expanded. An initialise body's run fills a packed
+/// array from nothing, and the renderer that states a default from it reads the run as it is.
+/// A run whose storage is not an element of a bool array is not one this recognises, and the pass
+/// fails rather than leave a run its target has no spelling for.
+struct ExpandDSDLBoolRunsPass final
+    : public mlir::PassWrapper<ExpandDSDLBoolRunsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    ExpandDSDLBoolRunsPass() = default;
+    ExpandDSDLBoolRunsPass(const ExpandDSDLBoolRunsPass& other)
+        : PassWrapper(other)
+    {
+    }
+    ExpandDSDLBoolRunsPass(ExpandDSDLBoolRunsPass&&)                 = delete;
+    ExpandDSDLBoolRunsPass& operator=(const ExpandDSDLBoolRunsPass&) = delete;
+    ExpandDSDLBoolRunsPass& operator=(ExpandDSDLBoolRunsPass&&)      = delete;
+    ~ExpandDSDLBoolRunsPass() override                               = default;
+    explicit ExpandDSDLBoolRunsPass(const BoolArrayStorage storage)
+    {
+        storage_.setValue(storage);
+    }
+
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-expand-bool-runs";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Expand each bool run a target stores a bool per element into a loop over its elements";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        llvm::SmallVector<mlir::Operation*> runs;
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (!body || ((body.getValue() != "serialize") && (body.getValue() != "deserialize")))
+            {
+                return;
+            }
+            fn.walk([&](mlir::Operation* op) {
+                const auto write = mlir::dyn_cast<mlir::dsdl::BitWriteOp>(op);
+                const auto read  = mlir::dyn_cast<mlir::dsdl::BitReadOp>(op);
+                if ((write && storedPerElement(write)) || (read && storedPerElement(read)))
+                {
+                    runs.push_back(op);
+                }
+            });
+        });
+        for (mlir::Operation* const run : runs)
+        {
+            if (auto write = mlir::dyn_cast<mlir::dsdl::BitWriteOp>(run))
+            {
+                if (mlir::failed(expand(write)))
+                {
+                    signalPassFailure();
+                    return;
+                }
+            }
+            else if (mlir::failed(expand(mlir::cast<mlir::dsdl::BitReadOp>(run))))
+            {
+                signalPassFailure();
+                return;
+            }
+        }
+    }
+
+private:
+    /// @brief Whether the target stores the array @p run moves a bool per element.
+    template <typename Run>
+    bool storedPerElement(Run run) const
+    {
+        return (storage_ == BoolArrayStorage::PerElement) ||
+               ((storage_ == BoolArrayStorage::PackedWhenFixed) && run.getVariableLength());
+    }
+
+    /// @brief The element of a bool array @p storage addresses, or null after reporting that it is not one.
+    static mlir::dsdl::ElementAddrOp elementOf(mlir::Operation* const run, const mlir::Value storage)
+    {
+        auto element = storage.getDefiningOp<mlir::dsdl::ElementAddrOp>();
+        if (!element || (element.getStorageCategory() != "bool"))
+        {
+            run->emitOpError("moves a run whose storage is not an element of a bool array");
+            return {};
+        }
+        return element;
+    }
+
+    /// @brief @p a plus @p b, or @p b alone where @p a is the constant zero.
+    static mlir::Value plus(mlir::OpBuilder& b, const mlir::Location loc, const mlir::Value a, const mlir::Value c)
+    {
+        return mlir::matchPattern(a, mlir::m_Zero()) ? c : mlir::arith::AddIOp::create(b, loc, a, c).getResult();
+    }
+
+    /// @brief A counted loop over @p width, its builder placed inside, and its turn as an `i64`.
+    static mlir::Value openLoop(mlir::OpBuilder& b, const mlir::Location loc, const mlir::Value width)
+    {
+        const mlir::Value zero  = mlir::arith::ConstantIndexOp::create(b, loc, 0);
+        const mlir::Value one   = mlir::arith::ConstantIndexOp::create(b, loc, 1);
+        const mlir::Value bound = mlir::arith::IndexCastOp::create(b, loc, b.getIndexType(), width);
+        auto              loop  = mlir::scf::ForOp::create(b, loc, zero, bound, one);
+        b.setInsertionPoint(loop.getBody()->getTerminator());
+        return mlir::arith::IndexCastOp::create(b, loc, b.getIntegerType(64), loop.getInductionVar());
+    }
+
+    static mlir::LogicalResult expand(mlir::dsdl::BitWriteOp run)
+    {
+        auto element = elementOf(run, run.getSource());
+        if (!element)
+        {
+            return mlir::failure();
+        }
+        mlir::OpBuilder      b(run);
+        const mlir::Location loc  = run.getLoc();
+        const mlir::Value    turn = openLoop(b, loc, run.getWidth());
+        const mlir::Value    at   = plus(b, loc, run.getDestinationBitOffset(), turn);
+        const mlir::Value    from = plus(b, loc, plus(b, loc, element.getIndex(), run.getSourceBitOffset()), turn);
+        const mlir::Value    bit  = mlir::dsdl::LoadElementOp::create(b,
+                                                                      loc,
+                                                                      b.getI1Type(),
+                                                                      element.getObject(),
+                                                                      element.getMemberAttr(),
+                                                                      from,
+                                                                      element.getStorageCategoryAttr(),
+                                                                      element.getStorageBitsAttr());
+        mlir::dsdl::WriteBitOp::create(b, loc, run.getDestination(), at, bit);
+        run.erase();
+        if (element.getAddress().use_empty())
+        {
+            element.erase();
+        }
+        return mlir::success();
+    }
+
+    static mlir::LogicalResult expand(mlir::dsdl::BitReadOp run)
+    {
+        auto element = elementOf(run, run.getDestination());
+        if (!element)
+        {
+            return mlir::failure();
+        }
+        mlir::OpBuilder      b(run);
+        const mlir::Location loc  = run.getLoc();
+        const mlir::Value    turn = openLoop(b, loc, run.getWidth());
+        const mlir::Value    at   = plus(b, loc, run.getBitOffset(), turn);
+        const mlir::Value    bit =
+            mlir::dsdl::ReadBitOp::create(b, loc, b.getI1Type(), run.getBuffer(), run.getBufferSizeBytes(), at);
+        const mlir::Value to = plus(b, loc, element.getIndex(), turn);
+        mlir::dsdl::StoreElementOp::create(b,
+                                           loc,
+                                           element.getObject(),
+                                           element.getMemberAttr(),
+                                           to,
+                                           bit,
+                                           element.getStorageCategoryAttr(),
+                                           element.getStorageBitsAttr());
+        run.erase();
+        if (element.getAddress().use_empty())
+        {
+            element.erase();
+        }
+        return mlir::success();
+    }
+
+    Option<BoolArrayStorage>
+        storage_{*this,
+                 "storage",
+                 llvm::cl::desc("How the target stores a bool array"),
+                 llvm::cl::init(BoolArrayStorage::PerElement),
+                 llvm::cl::values(clEnumValN(BoolArrayStorage::Packed, "packed", "packed into bytes, as on the wire"),
+                                  clEnumValN(BoolArrayStorage::PackedWhenFixed,
+                                             "packed-when-fixed",
+                                             "packed where the length is fixed, a bool per element where it varies"),
+                                  clEnumValN(BoolArrayStorage::PerElement, "per-element", "a bool per element"))};
 };
 
 /// @brief Whether @p fn answers an error code: a plan body, or a setter. A getter answers a value,
@@ -2370,6 +2564,11 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass()
     return std::make_unique<FoldDSDLUnobservedAccessorSizesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(const BoolArrayStorage storage)
+{
+    return std::make_unique<ExpandDSDLBoolRunsPass>(storage);
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass()
 {
     return std::make_unique<FoldDSDLNestedCallSizesPass>();
@@ -2434,6 +2633,11 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     {
         pm.addPass(createFoldDSDLNestedCallSizesPass());
     }
+    // After the host-image fold too, which reads a bool run as the field work it replaces.
+    if (target.boolArrays != BoolArrayStorage::Packed)
+    {
+        pm.addPass(createExpandDSDLBoolRunsPass(target.boolArrays));
+    }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
@@ -2459,6 +2663,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<KeepDSDLAccessorsPass> const        regKeep;
     static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const regInfallible;
     static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const  regNestedSizes;
+    static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const       regBoolRuns;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

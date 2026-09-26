@@ -4,19 +4,19 @@
     "declaration": 118
   },
   "Cpp": {
-    "body": 60,
+    "body": 54,
     "declaration": 106
   },
   "Rust": {
-    "body": 69,
+    "body": 64,
     "declaration": 120
   },
   "Go": {
-    "body": 70,
+    "body": 61,
     "declaration": 79
   },
   "Ts": {
-    "body": 48,
+    "body": 43,
     "declaration": 412
   },
   "Python": {

@@ -301,6 +301,11 @@ public:
     {
         return {};
     }
+    void writeBit(SourceWriter& /*w*/, mlir::dsdl::WriteBitOp /*op*/, const ValueNames& /*names*/) const override {}
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return {};
+    }
     void declareCallSerdesSized(SourceWriter& /*w*/,
                                 llvm::StringRef /*error*/,
                                 llvm::StringRef /*consumed*/,

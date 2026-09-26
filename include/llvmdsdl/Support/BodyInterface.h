@@ -53,6 +53,19 @@ struct TargetNullability final
     }
 };
 
+/// @brief How a target stores a bool array.
+enum class BoolArrayStorage
+{
+    /// @brief Packed, eight to a byte, as on the wire.
+    Packed,
+
+    /// @brief Packed where the array's length is fixed, and a bool per element where it varies.
+    PackedWhenFixed,
+
+    /// @brief A bool per element.
+    PerElement,
+};
+
 /// @brief What a target's generated interface hands a body, and what its objects are.
 struct BodyInterface final
 {
@@ -80,6 +93,13 @@ struct BodyInterface final
     /// nested call as it is. One whose buffer carries its own length has the call folded to
     /// `dsdl.call_serdes_sized`, which states the adaptation once rather than in each spelling.
     bool nestedCallsAnswerSize{false};
+
+    /// @brief How the target stores a bool array.
+    ///
+    /// The plan moves a bool array as one run of wire bits. A run whose array the target stores a
+    /// bool per element is expanded by `dsdl-expand-bool-runs` into a loop over the elements, which
+    /// every backend already translates, rather than each spelling looping on its own.
+    BoolArrayStorage boolArrays{BoolArrayStorage::Packed};
 };
 
 }  // namespace llvmdsdl

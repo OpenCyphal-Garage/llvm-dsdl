@@ -452,6 +452,7 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::UnionTagOp>([](auto) { return Reached{Role{ValueRole::Tag, {}}}; })
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })
         .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
+        .Case<mlir::dsdl::ReadBitOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
         .Case<mlir::dsdl::IsNullOp>([](auto) { return Reached{Role{ValueRole::Null, {}}}; })
         .Case<mlir::dsdl::IndexHoldsOp>([](auto) { return Reached{Role{ValueRole::IndexHolds, {}}}; })
         .Case<mlir::dsdl::LocalOp>([&](auto) { return Reached{Role{ValueRole::Size, memberOfNestedCaller(result)}}; })
@@ -1054,6 +1055,11 @@ private:
                 [&](mlir::dsdl::SetUnionTagOp write) -> void { spelling_.setUnionTag(w_, write, *this); })
             .Case<mlir::dsdl::BitWriteOp>(
                 [&](mlir::dsdl::BitWriteOp write) -> void { spelling_.bitWrite(w_, write, *this); })
+            .Case<mlir::dsdl::WriteBitOp>(
+                [&](mlir::dsdl::WriteBitOp write) -> void { spelling_.writeBit(w_, write, *this); })
+            .Case<mlir::dsdl::ReadBitOp>([&](mlir::dsdl::ReadBitOp read) -> void {
+                define(read.getValue(), spelling_.readBit(read, *this), true);
+            })
             .Case<mlir::dsdl::BitReadOp>(
                 [&](mlir::dsdl::BitReadOp read) -> void { spelling_.bitRead(w_, read, *this); })
             .Case<mlir::dsdl::ImageReadOp>(

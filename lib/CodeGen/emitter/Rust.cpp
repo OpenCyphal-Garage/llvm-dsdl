@@ -1189,27 +1189,27 @@ public:
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names) + " as " + typeName(op.getValue().getType());
+        return loadedValue(memberAccess(op.getObject(), op.getMember(), names), op.getValue().getType());
     }
 
     void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
     {
         const Member member = memberOf(op.getObject(), op.getMember());
         w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
-               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)) + ";");
     }
 
     [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
     {
-        return elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " as " +
-               typeName(op.getValue().getType());
+        return loadedValue(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                           op.getValue().getType());
     }
 
     void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
     {
         const Member member = memberOf(op.getObject(), op.getMember());
         w.line(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
-               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)) + ";");
     }
 
     [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
@@ -1308,26 +1308,26 @@ public:
                prefix + ", " + std::to_string(width) + "u8) as " + result;
     }
 
-    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // A bool array is a container of bools, so a run of its bits goes one element at a time.
-        const auto        container = boolContainerOf(op.getSource(), names);
-        const std::string index     = fresh("bit");
-        w.open("for " + index + " in 0.." + asSize(names(op.getWidth())) + " {");
-        w.line("let _ = crate::dsdl_runtime::set_bit(" + names(op.getDestination()) + ", " +
-               asSize(names(op.getDestinationBitOffset())) + " + " + index + ", " + container.first + "[" +
-               container.second + " + " + asSize(names(op.getSourceBitOffset())) + " + " + index + "]);");
-        w.close("}");
+        // A bool array holds a bool per element, so each of its runs reaches Rust expanded.
+        llvm::report_fatal_error("Rust spelling: a bool run reaches Rust expanded to dsdl.write_bit");
     }
 
-    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const auto        container = boolContainerOf(op.getDestination(), names);
-        const std::string index     = fresh("bit");
-        w.open("for " + index + " in 0.." + asSize(names(op.getWidth())) + " {");
-        w.line(container.first + "[" + container.second + " + " + index + "] = crate::dsdl_runtime::get_bit(" +
-               names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + " + " + index + ");");
-        w.close("}");
+        llvm::report_fatal_error("Rust spelling: a bool run reaches Rust expanded to dsdl.read_bit");
+    }
+
+    void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
+    {
+        w.line("let _ = crate::dsdl_runtime::set_bit(" + names(op.getBuffer()) + ", " +
+               asSize(names(op.getBitOffset())) + ", " + names(op.getValue()) + ");");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
+    {
+        return "crate::dsdl_runtime::get_bit(" + names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1534,18 +1534,6 @@ private:
         return memberAccess(object, member, names) + "[" + asSize(index) + "]";
     }
 
-    /// @brief The container expression and element base of the bool array @p address names.
-    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
-    {
-        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
-        if (!element)
-        {
-            llvm::report_fatal_error("Rust spelling: a bit copy whose storage is not an array element");
-        }
-        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
-                              asSize(names(element.getIndex())));
-    }
-
     /// @brief The Rust type the struct declares a scalar field or element as.
     static std::string scalarType(mlir::dsdl::IOOp io)
     {
@@ -1566,14 +1554,20 @@ private:
         return unsignedStorageType(bits);
     }
 
-    /// @brief @p value converted for storage in a field of @p type.
-    static std::string storedValue(const std::string& value, const std::string& type)
+    /// @brief @p access read as a value of @p type. A bool is read as a bool.
+    static std::string loadedValue(const std::string& access, const mlir::Type type)
     {
-        if (type == "bool")
+        return isBool(type) ? access : access + " as " + typeName(type);
+    }
+
+    /// @brief @p value, of @p type, converted for storage in a field of @p storage.
+    static std::string storedValue(const std::string& value, const mlir::Type type, const std::string& storage)
+    {
+        if (storage == "bool")
         {
-            return value + " != 0u64";
+            return isBool(type) ? value : value + " != 0u64";
         }
-        return value + " as " + type;
+        return value + " as " + storage;
     }
 
     // Types.

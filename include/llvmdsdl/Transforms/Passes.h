@@ -126,6 +126,16 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass();
 
+/// @brief Expands each bool run a target stores a bool per element into a loop over its elements.
+///
+/// Each turn moves one element and one bit, with `dsdl.load_element` and `dsdl.write_bit` or
+/// `dsdl.read_bit` and `dsdl.store_element`. Serialise and deserialise bodies are expanded; an
+/// initialise body's run is left as the renderer that reads it expects. Registered with `dsdl-opt`
+/// as `dsdl-expand-bool-runs`, whose `storage` option defaults to a bool per element.
+/// @param[in] storage How the target stores a bool array.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(BoolArrayStorage storage);
+
 /// @brief Marks each plan body or setter whose every return answers zero as `llvmdsdl.infallible`.
 ///
 /// Whether a body can fail is a fact of the body, and the folds of this pipeline are often what make

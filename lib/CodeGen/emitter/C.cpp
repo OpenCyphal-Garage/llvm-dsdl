@@ -1618,6 +1618,17 @@ public:
                names(op.getWidth()) + ");");
     }
 
+    void writeBit(SourceWriter& /*w*/, mlir::dsdl::WriteBitOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        // A C bool array is packed, so its runs reach C as the plan builds them.
+        llvm::report_fatal_error("C spelling: a bool run expanded for a bool per element");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("C spelling: a bool run expanded for a bool per element");
+    }
+
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
     {
         w.line("dsdl_runtime_image_read(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", (size_t) " +
