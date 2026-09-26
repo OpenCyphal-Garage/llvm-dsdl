@@ -36,6 +36,7 @@ int main()
     ok      = runDefinitionDependenciesTests() && ok;
     ok      = runDefinitionIndexTests() && ok;
     ok      = runDefinitionPathProjectionTests() && ok;
+    ok      = runImportSetTests() && ok;
     ok      = runHelperBodyPlanTests() && ok;
     ok      = runBodyValueNamingTests() && ok;
     ok      = runHelperBindingNamingTests() && ok;

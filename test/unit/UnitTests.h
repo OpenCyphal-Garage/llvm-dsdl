@@ -115,6 +115,10 @@ bool runDefinitionDependenciesTests();
 /// @return True when every case in the suite passed.
 bool runDefinitionIndexTests();
 
+/// @brief Runs the ImportSetTests suite.
+/// @return True when every case in the suite passed.
+bool runImportSetTests();
+
 /// @brief Runs the DefinitionPathProjectionTests suite.
 /// @return True when every case in the suite passed.
 bool runDefinitionPathProjectionTests();

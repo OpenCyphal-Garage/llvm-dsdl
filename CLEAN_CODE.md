@@ -173,6 +173,35 @@ pass reads: adding a language is a row in the table and a spelling, and the shap
 the language can express. Giving up that property to save string concatenation trades the reason
 this compiler exists for a convenience the renderer already provides.
 
+## Imports are named, not found
+
+A generated file's imports are the modules that provide the names it writes, and nothing else.
+`ImportSet`, in `include/llvmdsdl/CodeGen/ImportSet.h`, is where that is decided. The code that
+writes a name from another module names it through the file's set, which records the module and
+answers the spelling; the file is rendered first, and its import block is written from the set. A
+backend states where each of its names comes from and how its language writes an import. It keeps
+no list of imports a file may need, and reads none back off the text it wrote.
+
+Python names through it: `sys` where a body bounds an index, `dataclasses` where a class and its
+defaults are declared, the runtime where a body calls it, and a nested type where the file names
+it. A file that names none of them imports none of them, which took Python's `F401` from 198 to
+none.
+
+The other five decide their imports in four other ways, and each is a way a file's text and its
+imports can disagree:
+
+| language | standard library | runtime | other definitions |
+|---|---|---|---|
+| C | a token scan in a header; unconditional in a `.c` file | the same | a semantic-model walk in a header; the calls a body spells, recorded, in a `.c` file |
+| C++ | a token scan | a token scan, which names the header that includes the C runtime rather than the one that declares its functions: `misc-include-cleaner`'s 485 | a semantic-model walk; the vocabulary's span, recorded as it is named |
+| Rust | none: every standard and runtime name is a full path | none | a semantic-model walk, into an import scope |
+| Go | a token scan, which reads doc comments too, so a comment holding `unsafe.` would import a package the file does not use, which Go refuses to compile | a token scan | a semantic-model walk |
+| TypeScript | none | unconditional, and a token scan in an accessors-only file | a semantic-model walk, filtered by a scan for each name |
+
+Each moves onto the set in a change of its own. A language that gives an import a local name
+records the name the file spells; allocating that name within the file's scope, which Rust does in
+an import scope and TypeScript does not do, belongs to the surface tree.
+
 ## Where each language lands
 
 Named for `uavcan.file.List.0.2` under the versioned scheme, which is what the type names below assume.
@@ -411,9 +440,9 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 |----------|-------|-----------------:|----:|
 | Rust | clippy | 867 | 641 |
 | Go | staticcheck | 3,241 | 318 |
-| Python | ruff | 4,188 | 1,553 |
+| Python | ruff | 4,188 | 1,355 |
 | TypeScript | eslint | 1,810 | 75 |
-| | | **10,106** | **2,587** |
+| | | **10,106** | **2,389** |
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
@@ -434,7 +463,6 @@ What is left is per-language.
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
-| 198 | Python | `F401` | unused imports |
 | 185 | C | `modernize-avoid-c-style-cast` | a cast to the type its operand already has |
 | 181 | Python | `UP037` | quoted annotations |
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |

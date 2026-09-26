@@ -41,7 +41,7 @@
 #include <system_error>
 #include <utility>
 
-#include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
@@ -78,7 +78,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <cmath>
-#include <functional>
 #include <iomanip>
 #include "mlir/IR/BuiltinOps.h"
 
@@ -303,7 +302,133 @@ private:
     bool                     accessorsOnly_{false};
 };
 
-std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
+/// @brief How one Python file names what it takes from outside itself, recording each import.
+///
+/// Every symbol the file writes from another module is named here, so the import block written from
+/// the set once the file is rendered holds what the file names and nothing else.
+class PyFileNames final
+{
+public:
+    PyFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownModule)
+        : ctx_(ctx)
+        , imports_(imports)
+        , ownModule_(std::move(ownModule))
+    {
+    }
+
+    [[nodiscard]] const EmitterContext& context() const
+    {
+        return ctx_;
+    }
+
+    /// @brief The class of the definition @p ref, imported from its module unless the module is
+    ///        this file.
+    [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
+    {
+        const std::string name   = ctx_.typeName(ref);
+        const std::string module = ctx_.modulePath(ref);
+        return (module == ownModule_) ? name : imports_.member(ImportOrigin::Definition, module, name);
+    }
+
+    /// @brief The class of the type @p fullName names at @p major.@p minor.
+    [[nodiscard]] std::string type(const llvm::StringRef fullName,
+                                   const std::uint32_t   major,
+                                   const std::uint32_t   minor) const
+    {
+        SemanticTypeRef                    ref;
+        llvm::SmallVector<llvm::StringRef> components;
+        fullName.split(components, '.');
+        for (const llvm::StringRef component : components)
+        {
+            ref.namespaceComponents.push_back(component.str());
+        }
+        if (!ref.namespaceComponents.empty())
+        {
+            ref.shortName = ref.namespaceComponents.back();
+            ref.namespaceComponents.pop_back();
+        }
+        ref.fullName     = fullName.str();
+        ref.majorVersion = major;
+        ref.minorVersion = minor;
+        return type(ref);
+    }
+
+    /// @brief The standard library's `dataclasses` member @p name.
+    [[nodiscard]] std::string dataclasses(const llvm::StringRef name) const
+    {
+        return imports_.member(ImportOrigin::Standard, "dataclasses", name);
+    }
+
+    /// @brief The standard library's `sys`.
+    [[nodiscard]] std::string sys() const
+    {
+        return imports_.module(ImportOrigin::Standard, "sys", "sys");
+    }
+
+    /// @brief The runtime module the bodies call.
+    [[nodiscard]] std::string runtime() const
+    {
+        return imports_.member(ImportOrigin::Runtime, runtimeLoader(), "runtime", "dsdl_runtime");
+    }
+
+    /// @brief The runtime's message for an error code.
+    [[nodiscard]] std::string errorMessage() const
+    {
+        return imports_.member(ImportOrigin::Runtime, runtimeLoader(), "error_message");
+    }
+
+private:
+    [[nodiscard]] std::string runtimeLoader() const
+    {
+        return ctx_.packageName() + "._runtime_loader";
+    }
+
+    const EmitterContext& ctx_;
+    ImportSet&            imports_;
+    std::string           ownModule_;
+};
+
+/// @brief The import block of a Python file that names @p imports: the standard library's, then the
+///        package's own, each group closed by a blank line.
+std::string renderPythonImports(const ImportSet& imports)
+{
+    // isort's layout: a group per origin, and within one the plain imports ahead of the `from` ones.
+    std::string standardPlain;
+    std::string standardFrom;
+    std::string ownPlain;
+    std::string ownFrom;
+    for (const ImportedModule& module : imports.modules())
+    {
+        const bool   standard = module.origin == ImportOrigin::Standard;
+        std::string& plain    = standard ? standardPlain : ownPlain;
+        std::string& from     = standard ? standardFrom : ownFrom;
+        if (!module.binding.empty())
+        {
+            plain += "import " + module.path + ((module.binding == module.path) ? "" : " as " + module.binding) + "\n";
+        }
+        if (!module.members.empty())
+        {
+            from += "from " + module.path + " import ";
+            for (const auto& [index, member] : llvm::enumerate(module.members))
+            {
+                from += (index == 0) ? "" : ", ";
+                from += member.first + ((member.second == member.first) ? "" : " as " + member.second);
+            }
+            from += "\n";
+        }
+    }
+    std::string out;
+    for (const std::string& group : {standardPlain + standardFrom, ownPlain + ownFrom})
+    {
+        if (!group.empty())
+        {
+            out += group + "\n";
+        }
+    }
+    return out;
+}
+
+std::string pyFieldBaseType(const SemanticFieldType& type, const PyFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -321,16 +446,16 @@ std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext&
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.typeName(*type.compositeType);
+            return file.type(*type.compositeType);
         }
         return "object";
     }
     return "object";
 }
 
-std::string pyFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string pyFieldType(const SemanticFieldType& type, const PyFileNames& file)
 {
-    auto base = pyFieldBaseType(type, ctx);
+    auto base = pyFieldBaseType(type, file);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -338,10 +463,10 @@ std::string pyFieldType(const SemanticFieldType& type, const EmitterContext& ctx
     return "list[" + base + "]";
 }
 
-std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx);
+std::string pyElementDefaultExpr(const SemanticFieldType& type, const PyFileNames& file);
 
 /// @brief The Python literal a stored constant is, for a member of @p type.
-std::string pyStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value, const EmitterContext& ctx)
+std::string pyStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value, const PyFileNames& file)
 {
     if (const auto integer = mlir::dyn_cast_or_null<mlir::IntegerAttr>(value))
     {
@@ -361,39 +486,44 @@ std::string pyStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr
         }
         return text;
     }
-    return pyElementDefaultExpr(type, ctx);
+    return pyElementDefaultExpr(type, file);
 }
 
 /// @brief The dataclass default a field takes, as the initialise body states it.
-std::string pyDefaultFromBody(const SemanticFieldType& type, const MemberDefault& entry, const EmitterContext& ctx)
+std::string pyDefaultFromBody(const SemanticFieldType& type, const MemberDefault& entry, const PyFileNames& file)
 {
+    if (entry.kind == MemberDefault::Kind::Scalar)
+    {
+        return pyStoredLiteral(type, entry.value, file);
+    }
+    // Every other default is a factory, which `dataclasses.field` takes.
+    const std::string factory = file.dataclasses("field") + "(default_factory=";
     switch (entry.kind)
     {
     case MemberDefault::Kind::Scalar:
-        return pyStoredLiteral(type, entry.value, ctx);
+        break;
     case MemberDefault::Kind::FixedScalarArray:
-        return "field(default_factory=lambda: [" + pyStoredLiteral(type, entry.value, ctx) + "] * " +
-               std::to_string(entry.count) + ")";
+        return factory + "lambda: [" + pyStoredLiteral(type, entry.value, file) + "] * " + std::to_string(entry.count) +
+               ")";
     case MemberDefault::Kind::BoolArray:
-        return "field(default_factory=lambda: [False] * " + std::to_string(entry.count) + ")";
+        return factory + "lambda: [False] * " + std::to_string(entry.count) + ")";
     case MemberDefault::Kind::FixedCompositeArray:
-        return "field(default_factory=lambda: [" + pyElementDefaultExpr(type, ctx) + " for _ in range(" +
+        return factory + "lambda: [" + pyElementDefaultExpr(type, file) + " for _ in range(" +
                std::to_string(entry.count) + ")])";
     case MemberDefault::Kind::VariableArrayEmpty:
-        return "field(default_factory=list)";
+        return factory + "list)";
     case MemberDefault::Kind::Composite:
-        return "field(default_factory=lambda: " + pyElementDefaultExpr(type, ctx) + ")";
+        return factory + "lambda: " + pyElementDefaultExpr(type, file) + ")";
     case MemberDefault::Kind::View:
         return (type.arrayKind == ArrayKind::Fixed)
-                   ? "field(default_factory=lambda: [memoryview(b\"\") for _ in range(" +
-                         std::to_string(type.arrayCapacity) + ")])"
-                   : "field(default_factory=lambda: memoryview(b\"\"))";
+                   ? factory + "lambda: [memoryview(b\"\") for _ in range(" + std::to_string(type.arrayCapacity) + ")])"
+                   : factory + "lambda: memoryview(b\"\"))";
     }
-    return pyElementDefaultExpr(type, ctx);
+    return pyElementDefaultExpr(type, file);
 }
 
 /// @brief The default of one element of @p type, or of a scalar or object.
-std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string pyElementDefaultExpr(const SemanticFieldType& type, const PyFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -404,7 +534,7 @@ std::string pyElementDefaultExpr(const SemanticFieldType& type, const EmitterCon
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.typeName(*type.compositeType) + "()";
+            return file.type(*type.compositeType) + "()";
         }
         return "None";
     case SemanticScalarCategory::Void:
@@ -455,15 +585,19 @@ void emitSectionConstants(SourceWriter& w, const std::string& prefix, const Sema
     }
 }
 
-void emitClassMethods(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
+void emitClassMethods(SourceWriter&          w,
+                      const std::string&     typeName,
+                      const SemanticSection& section,
+                      const PyFileNames&     file)
 {
+    const std::string raise = "raise ValueError(" + file.errorMessage() + "(result))";
     // A value serialises into a buffer of the type's largest size; a deserialisation fills a
     // default-constructed object. Each raises on the code a body answers.
     w.open("def serialize(self) -> bytes:");
     w.line("buffer = bytearray(" + std::to_string((section.serializationBufferSizeBits + 7) / 8) + ")");
     w.line("result = self._serialize_into(memoryview(buffer))");
     w.open("if result < 0:");
-    w.line("raise ValueError(error_message(result))");
+    w.line(raise);
     w.dedent();
     w.line("return bytes(buffer[:result])");
     w.dedent();
@@ -474,7 +608,7 @@ void emitClassMethods(SourceWriter& w, const std::string& typeName, const Semant
     w.line("value = cls()");
     w.line("result = value._deserialize_from(memoryview(data).cast(\"B\"))");
     w.open("if result < 0:");
-    w.line("raise ValueError(error_message(result))");
+    w.line(raise);
     w.dedent();
     w.line("return value");
     w.dedent();
@@ -487,13 +621,13 @@ void emitStructSectionType(SourceWriter&           w,
                            const std::string&      typeName,
                            const SemanticSection&  section,
                            const AttachedDoc&      typeDoc,
-                           const EmitterContext&   ctx,
+                           const PyFileNames&      file,
                            const std::string&      fullName,
                            const std::uint32_t     majorVersion,
                            const std::uint32_t     minorVersion)
 {
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
-    w.line("@dataclass(slots=True)");
+    w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
     w.open("class " + typeName + ":");
 
     bool              emittedField = false;
@@ -516,14 +650,14 @@ void emitStructSectionType(SourceWriter&           w,
         w.line(fieldName + ": " +
                (field.heldAsView
                     ? std::string{(field.resolvedType.arrayKind == ArrayKind::None) ? "memoryview" : "list[memoryview]"}
-                    : pyFieldType(field.resolvedType, ctx)) +
-               " = " + pyDefaultFromBody(field.resolvedType, *entry, ctx));
+                    : pyFieldType(field.resolvedType, file)) +
+               " = " + pyDefaultFromBody(field.resolvedType, *entry, file));
     }
     if (emittedField)
     {
         w.blank();
     }
-    emitClassMethods(w, typeName, section);
+    emitClassMethods(w, typeName, section, file);
 }
 
 /// @brief The member named @p name in @p init, or null.
@@ -544,13 +678,13 @@ void emitUnionSectionType(SourceWriter&           w,
                           const std::string&      typeName,
                           const SemanticSection&  section,
                           const AttachedDoc&      typeDoc,
-                          const EmitterContext&   ctx,
+                          const PyFileNames&      file,
                           const std::string&      fullName,
                           const std::uint32_t     majorVersion,
                           const std::uint32_t     minorVersion)
 {
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
-    w.line("@dataclass(slots=True)");
+    w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
     w.open("class " + typeName + ":");
     // A Python union holds one arm: the tag the body stores, and that arm at the default the body
     // gives it. The other arms are absent, which is what `None` says.
@@ -572,12 +706,12 @@ void emitUnionSectionType(SourceWriter&           w,
                                      field.name + "'");
         }
         const bool selected = std::cmp_equal(field.unionOptionIndex, init.unionTag);
-        w.line(fieldName + ": " + pyFieldType(field.resolvedType, ctx) +
-               " | None = " + (selected ? pyDefaultFromBody(field.resolvedType, *entry, ctx) : "None"));
+        w.line(fieldName + ": " + pyFieldType(field.resolvedType, file) +
+               " | None = " + (selected ? pyDefaultFromBody(field.resolvedType, *entry, file) : "None"));
     }
 
     w.blank();
-    emitClassMethods(w, typeName, section);
+    emitClassMethods(w, typeName, section, file);
 }
 
 void emitSectionType(SourceWriter&           w,
@@ -585,18 +719,18 @@ void emitSectionType(SourceWriter&           w,
                      const std::string&      typeName,
                      const SemanticSection&  section,
                      const AttachedDoc&      typeDoc,
-                     const EmitterContext&   ctx,
+                     const PyFileNames&      file,
                      const std::string&      fullName,
                      const std::uint32_t     majorVersion,
                      const std::uint32_t     minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, init, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, init, typeName, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
     else
     {
-        emitStructSectionType(w, init, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
+        emitStructSectionType(w, init, typeName, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
 }
 
@@ -613,12 +747,8 @@ void emitSectionType(SourceWriter&           w,
 class PythonSpelling final : public BodySpelling
 {
 public:
-    /// @brief The name this file gives the type @p fullName names at @p major.@p minor.
-    using TypeNameResolver =
-        std::function<std::string(llvm::StringRef fullName, std::uint32_t major, std::uint32_t minor)>;
-
-    PythonSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
-        : typeNameOf_(std::move(typeNameOf))
+    PythonSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const PyFileNames& file)
+        : file_(file)
     {
         // A helper is a module-level function of the definition's own module, so the schema
         // component of the lowered symbol names what the module already says.
@@ -1083,7 +1213,8 @@ public:
     {
         // An int holds every count; a list holds at most sys.maxsize elements.
         const std::string value = names(op.getValue());
-        return "(-sys.maxsize - 1 <= " + value + " <= sys.maxsize)";
+        const std::string sys   = file_.sys();
+        return "(-" + sys + ".maxsize - 1 <= " + value + " <= " + sys + ".maxsize)";
     }
 
     [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
@@ -1236,14 +1367,14 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdl_runtime.write_float(" + prefix + width + ", " + value + ")";
+            return file_.runtime() + ".write_float(" + prefix + width + ", " + value + ")";
         }
         if (isBool(valueType))
         {
-            return "dsdl_runtime.set_bit(" + prefix + value + ")";
+            return file_.runtime() + ".set_bit(" + prefix + value + ")";
         }
-        return "dsdl_runtime." + std::string(op.getIsSigned() ? "write_signed(" : "write_unsigned(") + prefix + width +
-               ", " + value + ", False)";
+        return file_.runtime() + (op.getIsSigned() ? ".write_signed(" : ".write_unsigned(") + prefix + width + ", " +
+               value + ", False)";
     }
 
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
@@ -1253,10 +1384,10 @@ public:
             names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", " + std::to_string(op.getWidth());
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdl_runtime.read_float(" + arguments + ")";
+            return file_.runtime() + ".read_float(" + arguments + ")";
         }
         const std::string read =
-            "dsdl_runtime." + std::string(op.getIsSigned() ? "read_signed(" : "read_unsigned(") + arguments + ")";
+            file_.runtime() + (op.getIsSigned() ? ".read_signed(" : ".read_unsigned(") + arguments + ")";
         return cast(read, mlir::IntegerType::get(op.getContext(), 64), valueType);
     }
 
@@ -1274,13 +1405,13 @@ public:
     void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
     {
         line(w,
-             "dsdl_runtime.set_bit(" + names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", " +
+             file_.runtime() + ".set_bit(" + names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ", " +
                  names(op.getValue()) + ")");
     }
 
     [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
     {
-        return "dsdl_runtime.get_bit(" + names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ")";
+        return file_.runtime() + ".get_bit(" + names(op.getBuffer()) + ", " + names(op.getBitOffset()) + ")";
     }
 
     void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
@@ -1507,9 +1638,9 @@ private:
             break;
         }
         mlir::dsdl::IOOp io = member.io;
-        return typeNameOf_(io.getCompositeFullName().value_or(llvm::StringRef{}),
-                           static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                           static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))) +
+        return file_.type(io.getCompositeFullName().value_or(llvm::StringRef{}),
+                          static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                          static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))) +
                "()";
     }
 
@@ -1691,7 +1822,7 @@ private:
         return "_" + std::string(stem) + std::to_string(fresh_++) + "_";
     }
 
-    TypeNameResolver      typeNameOf_;
+    const PyFileNames&    file_;
     llvm::StringMap<Plan> plans_;
 
     /// @brief The scope the module's helper names are declared into, which keeps two that project
@@ -1765,14 +1896,14 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SemanticSection&    section,
                         const SectionMetadata&    metadata,
                         const AttachedDoc&        typeDoc,
-                        const EmitterContext&     ctx,
+                        const PyFileNames&        file,
                         const SemanticDefinition& def,
                         const PythonSpelling&     spelling,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
     // An accessors-only run has no bodies: a bare class carries the accessors as static methods.
-    if (ctx.accessorsOnly())
+    if (file.context().accessorsOnly())
     {
         emitAttachedDocPy(w,
                           docWithDeprecationNotice(typeDoc,
@@ -1800,7 +1931,7 @@ llvm::Error emitSection(SourceWriter&             w,
                         typeName,
                         section,
                         typeDoc,
-                        ctx,
+                        file,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
@@ -1852,52 +1983,22 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     std::ostringstream out;
-    SourceWriter       w = makePyWriter(out);
-    w.line(generatedCommentLine("Python backend"));
-    w.line("# Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-           std::to_string(def.info.minorVersion));
-    w.line("from __future__ import annotations");
-    w.blank();
-    w.line("import sys");
-    w.line("from dataclasses import dataclass, field");
-    w.blank();
+    SourceWriter       head = makePyWriter(out);
+    head.line(generatedCommentLine("Python backend"));
+    head.line("# Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
+              std::to_string(def.info.minorVersion));
+    head.line("from __future__ import annotations");
+    head.blank();
 
-    std::map<std::string, std::set<std::string>> importsByModule;
-    const auto                                   addSectionImports = [&](const SemanticSection& section) {
-        const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
-        const auto imports      = projectCompositeImports(
-            dependencies,
-            [&](const SemanticTypeRef& ref) { return ctx.modulePath(ref); },
-            [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
-        for (const auto& importSpec : imports)
-        {
-            importsByModule[importSpec.modulePath].insert(importSpec.typeName);
-        }
+    // The file is rendered first and its imports written after, from what it named.
+    ImportSet          imports;
+    const PyFileNames  file(ctx, imports, ctx.modulePath(def.info));
+    std::ostringstream body;
+    SourceWriter       w        = makePyWriter(body);
+    const auto         assemble = [&]() -> std::string {
+        out << renderPythonImports(imports) << body.str();
+        return out.str();
     };
-    addSectionImports(def.request);
-    if (def.response)
-    {
-        addSectionImports(*def.response);
-    }
-
-    w.line("from " + ctx.packageName() + "._runtime_loader import runtime as dsdl_runtime, error_message");
-    // An accessors-only file names no other type: a composite's getter answers its bytes.
-    for (const auto& [modulePath, names] : ctx.accessorsOnly() ? decltype(importsByModule){} : importsByModule)
-    {
-        std::string importNames;
-        for (const auto& name : names)
-        {
-            if (!importNames.empty())
-            {
-                importNames += ", ";
-            }
-            importNames += name;
-        }
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        w.line("from " + modulePath + " import " + importNames);
-    }
-
-    w.blank();
     const auto baseType = ctx.typeName(def.info);
     w.line("LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\"");
     w.line("DSDL_FULL_NAME = \"" + def.info.fullName + "\"");
@@ -1928,29 +2029,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     w.blank();
 
-    // The spelling names a nested type as this file does.
-    const PythonSpelling                 spelling(module,
-                                                  schema,
-                                                  [&ctx](const llvm::StringRef fullName,
-                                                         const std::uint32_t   major,
-                                                         const std::uint32_t   minor) {
-                                      SemanticTypeRef ref;
-                                      ref.fullName = fullName.str();
-                                      llvm::SmallVector<llvm::StringRef> components;
-                                      fullName.split(components, '.');
-                                      for (const llvm::StringRef component : components)
-                                      {
-                                          ref.namespaceComponents.push_back(component.str());
-                                      }
-                                      if (!ref.namespaceComponents.empty())
-                                      {
-                                          ref.shortName = ref.namespaceComponents.back();
-                                          ref.namespaceComponents.pop_back();
-                                      }
-                                      ref.majorVersion = major;
-                                      ref.minorVersion = minor;
-                                      return ctx.typeName(ref);
-                                                  });
+    // The spelling names a nested type and the runtime as this file does.
+    const PythonSpelling                 spelling(module, schema, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2005,7 +2085,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    def.request,
                                    sectionMetadata(def.info, def.request, schema, ""),
                                    def.doc,
-                                   ctx,
+                                   file,
                                    def,
                                    spelling,
                                    bodies[""],
@@ -2013,7 +2093,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        return out.str();
+        return assemble();
     }
 
     const auto reqType  = renderSectionTypeName(Language::Python, baseType, "request");
@@ -2023,7 +2103,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                def.request,
                                sectionMetadata(def.info, def.request, schema, "request"),
                                def.doc,
-                               ctx,
+                               file,
                                def,
                                spelling,
                                bodies["request"],
@@ -2039,7 +2119,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    *def.response,
                                    sectionMetadata(def.info, *def.response, schema, "response"),
                                    def.doc,
-                                   ctx,
+                                   file,
                                    def,
                                    spelling,
                                    bodies["response"],
@@ -2050,7 +2130,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.blank();
     }
     w.line(baseType + " = " + reqType);
-    return out.str();
+    return assemble();
 }
 
 llvm::Expected<std::string> loadRuntimeFile(const std::string& fileName)

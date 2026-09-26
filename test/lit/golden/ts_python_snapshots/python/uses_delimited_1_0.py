@@ -2,10 +2,9 @@
 # Source: fixtures.vendor.UsesDelimited.1.0
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 
-from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime, error_message
+from fixtures_snapshot_py._runtime_loader import error_message, runtime as dsdl_runtime
 from fixtures_snapshot_py.fixtures.vendor.delimited_1_0 import Delimited
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
