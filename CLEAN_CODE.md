@@ -471,7 +471,8 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
 one, and the C++, read at C++20 with the accessors taking spans, to 4,946. With each file including
-the headers that declare what it names, the C comes to 4,804 and the C++ to 4,461.
+the headers that declare what it names, the C comes to 4,804 and the C++ to 4,461, and the C to
+4,803 once the runtime header includes only what it uses.
 
 What is left is per-language.
 
