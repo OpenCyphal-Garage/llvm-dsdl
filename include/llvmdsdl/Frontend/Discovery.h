@@ -50,13 +50,18 @@ class DiagnosticEngine;
 /// single global scope, C++ in the namespace, Go in the package. Rust, TypeScript and Python give
 /// every definition its own module, so the repeat is unreachable and is not reported.
 ///
+/// A language whose `namespaceJoin` puts the namespace in the identifier has its names checked in
+/// one scope across every namespace. C joins with `__`, which a DSDL name may hold as well, so
+/// `ns.A__B` and `ns.A.B` are both `ns__A__B`.
+///
 /// The check runs after parsing because that is where a definition is known to be a service, and it
 /// composes the section name with @ref renderSectionTypeName, the same call the emitters use.
 ///
 /// @param[in] definitions Parsed definitions to check.
 /// @param[in] outputLanguages Languages whose output names are checked; empty disables the check.
 /// @param[in] versioning Whether generated type names carry the version, which decides the names
-///            compared and whether the diagnostic suggests `--versioned-type-names`.
+///            compared. The diagnostic suggests `--versioned-type-names` where the versioned names
+///            of the two differ.
 /// @param[in,out] diagnostics Diagnostic sink.
 void checkScopedTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
                                    llvm::ArrayRef<LanguageTraits>   outputLanguages,

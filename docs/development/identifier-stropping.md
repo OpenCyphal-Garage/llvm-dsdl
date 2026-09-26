@@ -401,6 +401,17 @@ error: type name collision in generated output: 'ns.Foo' and namespace 'ns.Foo_1
        'ns.Foo_1_0.X', both emit 'Foo_1_0' for target language 'cpp'; rename one of them
 ```
 
+C's single global scope is one key across every namespace, since the row's `namespaceJoin` puts
+the namespace in the identifier. C joins with `__`, which a DSDL name may hold as well, so
+`ns.A__B` and `ns.A.B` are both `ns__A__B`, and `ns.Svc`'s request section and `ns.Svc.Request`
+are both `ns__Svc__Request`. The diagnostic suggests `--versioned-type-names` only where the two
+versioned names differ; `ns.A__B.1.0` and `ns.A.B.1.0` are both `ns__A__B_1_0`:
+
+```
+error: type name collision in generated output: 'ns.A__B' and 'ns.A.B' both emit 'ns__A__B'
+       for target language 'c'; rename one of them
+```
+
 ### 6.1 Macros stay unique by construction
 
 C and C++ macros are global. Every generated macro is `<TypeName>_<MEMBER>`, and type names are

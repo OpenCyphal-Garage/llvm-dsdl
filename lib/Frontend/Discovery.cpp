@@ -273,6 +273,9 @@ struct TypeNameOrigin final
 
     /// @brief For a namespace, the full name of a definition it holds; empty for a type.
     std::string heldBy;
+
+    /// @brief The name it takes under @ref TypeNameVersioning::Versioned.
+    std::string versionedName;
 };
 
 /// @brief Renders an origin as a diagnostic phrase.
@@ -433,9 +436,12 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
         // A namespace is reported against the type it meets, at the type's file.
         const TypeNameOrigin& first  = laterIsNamespace ? it->second : origin;
         const TypeNameOrigin& second = laterIsNamespace ? origin : it->second;
-        const char* const     remedy = (versioning == TypeNameVersioning::Unversioned)
-                                           ? "pass --versioned-type-names, or rename one of them"
-                                           : "rename one of them";
+        // The versioned scheme is suggested where it would part the two: `Foo`'s request section
+        // and `Foo_Request`, but not two definitions of one version whose names meet whole.
+        const bool versioningParts =
+            (versioning == TypeNameVersioning::Unversioned) && (first.versionedName != second.versionedName);
+        const char* const remedy =
+            versioningParts ? "pass --versioned-type-names, or rename one of them" : "rename one of them";
         diagnostics.error({first.filePath, 1, 1},
                           "type name collision in generated output: " + describeOrigin(first) + " and " +
                               describeOrigin(second) + (second.heldBy.empty() ? "" : ",") + " both emit '" + name +
@@ -451,8 +457,7 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
             {
                 continue;
             }
-            // The scope a name has to be unique within. C flattens the namespace into the
-            // identifier and shares one global scope; C++ and Go put the short name in a scope of
+            // The scope a name has to be unique within: C++ and Go put the short name in a scope of
             // their own per namespace, so that namespace is part of the key.
             std::string scope;
             std::string namespaceName;
@@ -464,43 +469,61 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
                 if (language.composition.namespaceAndTypeShareScope &&
                     claimedNamespaces.insert(std::string(language.name) + ":" + namespaceName).second)
                 {
-                    record(language, scope, projected, TypeNameOrigin{namespaceName, "", info.filePath, info.fullName});
+                    record(language,
+                           scope,
+                           projected,
+                           TypeNameOrigin{namespaceName, "", info.filePath, info.fullName, projected});
                 }
                 scope += projected;
                 scope.push_back('.');
                 namespaceName.push_back('.');
             }
-            const std::string base = renderDefinitionTypeName(language.language,
-                                                              info.namespaceComponents,
-                                                              info.shortName,
-                                                              info.majorVersion,
-                                                              info.minorVersion,
-                                                              versioning);
+            // A language that joins the namespace into the identifier declares every definition's in
+            // one global scope. C joins with `__`, which a DSDL name may hold as well, so `ns.A__B`
+            // and `ns.A.B` are both `ns__A__B`.
+            if (!language.composition.definitionName.namespaceJoin.empty())
+            {
+                scope.clear();
+            }
+            const auto claimType =
+                [&](const std::string& name, const std::string& versionedName, const llvm::StringRef section) {
+                    record(language,
+                           scope,
+                           name,
+                           TypeNameOrigin{info.fullName, section.str(), info.filePath, "", versionedName});
+                };
+            const auto renderBase = [&](const TypeNameVersioning scheme) {
+                return renderDefinitionTypeName(language.language,
+                                                info.namespaceComponents,
+                                                info.shortName,
+                                                info.majorVersion,
+                                                info.minorVersion,
+                                                scheme);
+            };
+            const std::string base          = renderBase(versioning);
+            const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
             // A deprecated definition's C++ struct is declared under a name of its own, which a
             // sibling may be called; that name is claimed beside the public one.
             const bool declaredApart = language.composition.deprecatedTypeDeclaredApart && parsed.ast.isDeprecated();
-            record(language, scope, base, TypeNameOrigin{info.fullName, "", info.filePath, ""});
+            claimType(base, versionedBase, "");
             if (!parsed.ast.isService())
             {
                 if (declaredApart)
                 {
-                    record(language,
-                           scope,
-                           renderDeclaredTypeName(base, true),
-                           TypeNameOrigin{info.fullName, "", info.filePath, ""});
+                    claimType(renderDeclaredTypeName(base, true), renderDeclaredTypeName(versionedBase, true), "");
                 }
                 continue;
             }
             for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
             {
-                const std::string sectionName = renderSectionTypeName(language.language, base, section);
-                record(language, scope, sectionName, TypeNameOrigin{info.fullName, section.str(), info.filePath, ""});
+                const std::string sectionName      = renderSectionTypeName(language.language, base, section);
+                const std::string versionedSection = renderSectionTypeName(language.language, versionedBase, section);
+                claimType(sectionName, versionedSection, section);
                 if (declaredApart)
                 {
-                    record(language,
-                           scope,
-                           renderDeclaredTypeName(sectionName, true),
-                           TypeNameOrigin{info.fullName, section.str(), info.filePath, ""});
+                    claimType(renderDeclaredTypeName(sectionName, true),
+                              renderDeclaredTypeName(versionedSection, true),
+                              section);
                 }
             }
         }
