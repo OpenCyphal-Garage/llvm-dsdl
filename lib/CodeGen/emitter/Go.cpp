@@ -20,6 +20,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
@@ -544,10 +545,108 @@ std::map<std::string, std::string> computeImportAliases(const SemanticDefinition
     return out;
 }
 
-std::string goBaseFieldType(const SemanticFieldType&                  type,
-                            const EmitterContext&                     ctx,
-                            const std::string&                        currentPackagePath,
-                            const std::map<std::string, std::string>& importAliases)
+/// @brief How one Go file names what it takes from other packages, recording each import.
+///
+/// Every symbol the file writes from another package is named here, so the import block written
+/// from the set once the file is rendered holds what the file names and nothing else; Go refuses to
+/// compile an import nothing uses.
+class GoFileNames final
+{
+public:
+    GoFileNames(const EmitterContext&              ctx,
+                ImportSet&                         imports,
+                std::string                        moduleName,
+                std::string                        ownPackage,
+                std::map<std::string, std::string> packageAliases)
+        : ctx_(ctx)
+        , imports_(imports)
+        , moduleName_(std::move(moduleName))
+        , ownPackage_(std::move(ownPackage))
+        , packageAliases_(std::move(packageAliases))
+    {
+    }
+
+    /// @brief The type of the definition @p ref, qualified by its package's alias where the package
+    ///        is another.
+    [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
+    {
+        const std::string path = ctx_.packagePath(ref);
+        std::string       name = ctx_.goTypeName(ref);
+        if (path.empty() || (path == ownPackage_))
+        {
+            return name;
+        }
+        const auto alias = packageAliases_.find(path);
+        if (alias == packageAliases_.end())
+        {
+            return name;
+        }
+        return imports_.module(ImportOrigin::Definition, moduleName_ + "/" + path, alias->second) + "." + name;
+    }
+
+    /// @brief The runtime package the bodies call.
+    [[nodiscard]] std::string runtime() const
+    {
+        return imports_.module(ImportOrigin::Runtime, moduleName_ + "/dsdlruntime", "dsdlruntime");
+    }
+
+    /// @brief The standard library's package @p package.
+    [[nodiscard]] std::string standard(const llvm::StringRef package) const
+    {
+        return imports_.module(ImportOrigin::Standard, package, package);
+    }
+
+private:
+    const EmitterContext&              ctx_;
+    ImportSet&                         imports_;
+    std::string                        moduleName_;
+    std::string                        ownPackage_;
+    std::map<std::string, std::string> packageAliases_;
+};
+
+/// @brief Writes the import declaration of a Go file that names @p imports: the standard library's
+///        packages, then the module's own, each group in the order of its paths, as gofmt sorts it.
+void writeGoImports(SourceWriter& w, const ImportSet& imports)
+{
+    std::vector<std::string> standard;
+    std::vector<std::string> own;
+    for (const ImportedModule& module : imports.modules())
+    {
+        if (module.origin == ImportOrigin::Standard)
+        {
+            standard.push_back("\"" + module.path + "\"");
+        }
+        else
+        {
+            own.push_back(module.binding + " \"" + module.path + "\"");
+        }
+    }
+    if (standard.empty() && own.empty())
+    {
+        return;
+    }
+    // A group of the module's own sorts by path, which is past the alias each line opens with.
+    std::ranges::sort(own, [](const std::string& a, const std::string& b) {
+        return a.substr(a.find(' ')) < b.substr(b.find(' '));
+    });
+    w.open("import (");
+    for (const std::string& line : standard)
+    {
+        w.line(line);
+    }
+    if (!standard.empty() && !own.empty())
+    {
+        w.blank();
+    }
+    for (const std::string& line : own)
+    {
+        w.line(line);
+    }
+    w.close(")");
+    w.blank();
+}
+
+std::string goBaseFieldType(const SemanticFieldType& type, const GoFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -566,18 +665,7 @@ std::string goBaseFieldType(const SemanticFieldType&                  type,
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            const auto depPath = ctx.packagePath(*type.compositeType);
-            auto       depType = ctx.goTypeName(*type.compositeType);
-            if (depPath.empty() || depPath == currentPackagePath)
-            {
-                return depType;
-            }
-            const auto it = importAliases.find(depPath);
-            if (it != importAliases.end())
-            {
-                return it->second + "." + depType;
-            }
-            return depType;
+            return file.type(*type.compositeType);
         }
         return "uint8";
     }
@@ -598,12 +686,9 @@ std::string goViewType(const SemanticFieldType& type)
     return "[][]byte";
 }
 
-std::string goFieldType(const SemanticFieldType&                  type,
-                        const EmitterContext&                     ctx,
-                        const std::string&                        currentPackagePath,
-                        const std::map<std::string, std::string>& importAliases)
+std::string goFieldType(const SemanticFieldType& type, const GoFileNames& file)
 {
-    auto base = goBaseFieldType(type, ctx, currentPackagePath, importAliases);
+    auto base = goBaseFieldType(type, file);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -629,7 +714,8 @@ std::string goFieldType(const SemanticFieldType&                  type,
 class GoSpelling final : public BodySpelling
 {
 public:
-    explicit GoSpelling(mlir::dsdl::SchemaOp schema)
+    GoSpelling(mlir::dsdl::SchemaOp schema, const GoFileNames& file)
+        : file_(file)
     {
         if (schema.getBody().empty())
         {
@@ -876,7 +962,7 @@ public:
         {
             if (storage == "bool")
             {
-                w.line("value := dsdlruntime.BoolToUint64(memberValue)");
+                w.line("value := " + file_.runtime() + ".BoolToUint64(memberValue)");
             }
             else if (integer)
             {
@@ -909,7 +995,8 @@ public:
         // A setter answers the runtime's error, and nothing where it is marked unable to fail.
         if (accessor_ == Accessor::Setter)
         {
-            w.line(cannotFail_ ? std::string{"return nil"} : "return dsdlruntime.ErrorOf(" + expr.str() + ")");
+            w.line(cannotFail_ ? std::string{"return nil"}
+                               : "return " + file_.runtime() + ".ErrorOf(" + expr.str() + ")");
             return;
         }
         w.line("return " + expr.str());
@@ -922,7 +1009,7 @@ public:
         if (!cannotFail_)
         {
             w.open("if " + error.str() + " != int8(0) {");
-            w.line("return 0, dsdlruntime.ErrorOf(" + error.str() + ")");
+            w.line("return 0, " + file_.runtime() + ".ErrorOf(" + error.str() + ")");
             w.close("}");
         }
         w.line("return " + used.str() + ", nil");
@@ -1116,7 +1203,7 @@ public:
         if (isBool(from))
         {
             // Go converts no bool to a number; the runtime does.
-            return typeName(to) + "(dsdlruntime.BoolToUint64(" + value.str() + "))";
+            return typeName(to) + "(" + file_.runtime() + ".BoolToUint64(" + value.str() + "))";
         }
         if (conversion == Conversion::SignExtend && !isSignedSpelt(from))
         {
@@ -1177,7 +1264,8 @@ public:
     {
         // The plan bounds its reads and writes itself; a slice past the end would panic first.
         const std::string buffer = names(op.getBuffer());
-        return buffer + "[dsdlruntime.ChooseMin(" + asInt(names(op.getByteOffset())) + ", len(" + buffer + ")):]";
+        return buffer + "[" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getByteOffset())) + ", len(" + buffer +
+               ")):]";
     }
 
     [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
@@ -1248,7 +1336,7 @@ public:
     {
         // Sized to the count the plan validated, with zeroed elements for the plan to store into.
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
-        w.line(access + " = dsdlruntime.Resize(" + access + ", " + asInt(names(op.getValue())) + ")");
+        w.line(access + " = " + file_.runtime() + ".Resize(" + access + ", " + asInt(names(op.getValue())) + ")");
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
@@ -1271,18 +1359,18 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdlruntime.SetF" + std::to_string(width) + "(" + prefix + value + ")";
+            return file_.runtime() + ".SetF" + std::to_string(width) + "(" + prefix + value + ")";
         }
         if (width == 1 && !op.getIsSigned())
         {
-            return "dsdlruntime.SetBit(" + prefix + (isBool(valueType) ? value : value + " != uint64(0)") + ")";
+            return file_.runtime() + ".SetBit(" + prefix + (isBool(valueType) ? value : value + " != uint64(0)") + ")";
         }
         if (op.getIsSigned())
         {
-            return "dsdlruntime.SetIxx(" + prefix + asSigned(value, valueType) + ", uint8(" + std::to_string(width) +
-                   "))";
+            return file_.runtime() + ".SetIxx(" + prefix + asSigned(value, valueType) + ", uint8(" +
+                   std::to_string(width) + "))";
         }
-        return "dsdlruntime.SetUxx(" + prefix + value + ", uint8(" + std::to_string(width) + "))";
+        return file_.runtime() + ".SetUxx(" + prefix + value + ", uint8(" + std::to_string(width) + "))";
     }
 
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
@@ -1292,19 +1380,19 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdlruntime.GetF" + std::to_string(width) + "(" + prefix + ")";
+            return file_.runtime() + ".GetF" + std::to_string(width) + "(" + prefix + ")";
         }
         const std::string result = typeName(valueType);
         if (width == 1 && !op.getIsSigned())
         {
             // The bit read answers a number, which is what the plan holds it as.
-            return result + "(dsdlruntime.GetU8(" + prefix + ", uint8(1)))";
+            return result + "(" + file_.runtime() + ".GetU8(" + prefix + ", uint8(1)))";
         }
         // The runtime answers in the narrowest standard width that holds the field; a signed read
         // arrives sign-extended and keeps its value across the widening.
         const unsigned holder = holderWidthFor(width);
-        return result + "(dsdlruntime.Get" + std::string(op.getIsSigned() ? "I" : "U") + std::to_string(holder) + "(" +
-               prefix + ", uint8(" + std::to_string(width) + ")))";
+        return result + "(" + file_.runtime() + ".Get" + std::string(op.getIsSigned() ? "I" : "U") +
+               std::to_string(holder) + "(" + prefix + ", uint8(" + std::to_string(width) + ")))";
     }
 
     void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
@@ -1320,13 +1408,13 @@ public:
 
     void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
     {
-        w.line("_ = dsdlruntime.SetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ", " +
-               names(op.getValue()) + ")");
+        w.line("_ = " + file_.runtime() + ".SetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) +
+               ", " + names(op.getValue()) + ")");
     }
 
     [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
     {
-        return "dsdlruntime.GetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ")";
+        return file_.runtime() + ".GetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1338,8 +1426,9 @@ public:
         const std::string bytes = std::to_string(op.getBytes());
         const std::string image = fresh("image");
         const std::string avail = fresh("avail");
-        w.line(image + " := unsafe.Slice((*byte)(unsafe.Pointer(" + names(op.getObject()) + ")), " + bytes + ")");
-        w.line(avail + " := dsdlruntime.ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
+        w.line(image + " := " + file_.standard("unsafe") + ".Slice((*byte)(" + file_.standard("unsafe") + ".Pointer(" +
+               names(op.getObject()) + ")), " + bytes + ")");
+        w.line(avail + " := " + file_.runtime() + ".ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
                names(op.getBuffer()) + "))");
         // The object and the buffer may be the same storage, so the bytes present are copied before
         // what follows them is cleared: clearing first would clear the source. `copy` is defined
@@ -1356,8 +1445,8 @@ public:
     {
         // The buffer has been checked to hold the payload by the time this runs.
         const std::string bytes = std::to_string(op.getBytes());
-        w.line("copy(" + names(op.getBuffer()) + "[:" + bytes + "], unsafe.Slice((*byte)(unsafe.Pointer(" +
-               names(op.getObject()) + ")), " + bytes + "))");
+        w.line("copy(" + names(op.getBuffer()) + "[:" + bytes + "], " + file_.standard("unsafe") + ".Slice((*byte)(" +
+               file_.standard("unsafe") + ".Pointer(" + names(op.getObject()) + ")), " + bytes + "))");
     }
 
     // A view member is a slice of the buffer, or one element of an array of them.
@@ -1384,7 +1473,7 @@ public:
     {
         const std::string bytes = names(op.getBytes());
         w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes +
-               "[:dsdlruntime.ChooseMin(" + asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
+               "[:" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1404,8 +1493,8 @@ public:
         const std::string width       = std::to_string(op.getBytes());
         const std::string copied      = fresh("copied");
         const std::string index       = fresh("i");
-        w.line(copied + " := copy(" + destination + "[:" + width + "], " + source + "[:dsdlruntime.ChooseMin(" +
-               asInt(names(op.getSourceSizeBytes())) + ", len(" + source + "))])");
+        w.line(copied + " := copy(" + destination + "[:" + width + "], " + source + "[:" + file_.runtime() +
+               ".ChooseMin(" + asInt(names(op.getSourceSizeBytes())) + ", len(" + source + "))])");
         w.open("for " + index + " := " + copied + "; " + index + " < " + width + "; " + index + "++ {");
         w.line(destination + "[" + index + "] = 0");
         w.close("}");
@@ -1434,13 +1523,13 @@ public:
         // space the plan offers, and answers what it used and its error, which the plan carries as
         // the runtime's code.
         const std::string buffer = names(op.getBuffer());
-        const std::string slice =
-            buffer + "[:dsdlruntime.ChooseMin(" + asInt(names(op.getAvailable())) + ", len(" + buffer + "))]";
+        const std::string slice  = buffer + "[:" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getAvailable())) +
+                                   ", len(" + buffer + "))]";
         const std::string call =
             names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice + ")";
         const std::string used   = consumed.empty() ? std::string{"_"} : consumed.str();
         const std::string bound  = error.empty() ? used + ", _" : error.str() + ", " + used;
-        const std::string answer = error.empty() ? call : "dsdlruntime.Coded(" + call + ")";
+        const std::string answer = error.empty() ? call : file_.runtime() + ".Coded(" + call + ")";
         w.line(bound + ((error.empty() && consumed.empty()) ? " = " : " := ") + answer);
     }
 
@@ -1517,7 +1606,7 @@ private:
     }
 
     /// @brief @p access read as a value of @p type.
-    static std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type)
+    [[nodiscard]] std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type) const
     {
         if (isBool(type))
         {
@@ -1525,7 +1614,7 @@ private:
         }
         if (scalarType(member.io) == "bool")
         {
-            return typeName(type) + "(dsdlruntime.BoolToUint64(" + access + "))";
+            return typeName(type) + "(" + file_.runtime() + ".BoolToUint64(" + access + "))";
         }
         return typeName(type) + "(" + access + ")";
     }
@@ -1753,6 +1842,9 @@ private:
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
 
+    /// @brief How the file names what it takes from other packages.
+    const GoFileNames& file_;
+
     /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
     mutable bool        cannotFail_{false};
     mutable std::size_t counter_{0};
@@ -1870,20 +1962,19 @@ llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::Mo
     return true;
 }
 
-llvm::Error emitSectionType(SourceWriter&                             w,
-                            const EmitterContext&                     ctx,
-                            const std::string&                        typeName,
-                            const SectionMetadata&                    metadata,
-                            const SemanticSection&                    section,
-                            const AttachedDoc&                        typeDoc,
-                            const std::string&                        definitionFullName,
-                            const std::string&                        currentPackagePath,
-                            const std::map<std::string, std::string>& importAliases,
-                            const mlir::dsdl::SerializationPlanOp     plan,
-                            const GoSpelling&                         spelling,
-                            const SectionBodies&                      bodies,
-                            mlir::ModuleOp                            module,
-                            PlanBodyLookups&                          lookups)
+llvm::Error emitSectionType(SourceWriter&                         w,
+                            const EmitterContext&                 ctx,
+                            const std::string&                    typeName,
+                            const SectionMetadata&                metadata,
+                            const SemanticSection&                section,
+                            const AttachedDoc&                    typeDoc,
+                            const std::string&                    definitionFullName,
+                            const GoFileNames&                    file,
+                            const mlir::dsdl::SerializationPlanOp plan,
+                            const GoSpelling&                     spelling,
+                            const SectionBodies&                  bodies,
+                            mlir::ModuleOp                        module,
+                            PlanBodyLookups&                      lookups)
 {
     const NamingScope constScope = makeGoConstantScope(section, typeName);
     const auto        named      = [&constScope](const std::vector<llvm::StringRef>& parts) {
@@ -1957,12 +2048,10 @@ llvm::Error emitSectionType(SourceWriter&                             w,
             {
                 continue;
             }
-            members.push_back(
-                GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
-                               field.heldAsView
-                                   ? goViewType(field.resolvedType)
-                                   : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
-                               field.doc});
+            members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
+                                             field.heldAsView ? goViewType(field.resolvedType)
+                                                              : goFieldType(field.resolvedType, file),
+                                             field.doc});
         }
         if (section.isUnion)
         {
@@ -1984,11 +2073,11 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     if (!ctx.accessorsOnly() && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("var _ = [1]struct{}{}[unsafe.Sizeof(" + typeName + "{})-" +
+        w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Sizeof(" + typeName + "{})-" +
                std::to_string(metadata.serializationBufferSizeBytes) + "]");
         for (const auto& member : metadata.hostImageMembers)
         {
-            w.line("var _ = [1]struct{}{}[unsafe.Offsetof(" + typeName + "{}." +
+            w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Offsetof(" + typeName + "{}." +
                    fieldIdents.get(IdentifierRole::FieldName, member.fieldName) + ")-" +
                    std::to_string(member.offsetBytes) + "]");
         }
@@ -2082,8 +2171,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                         {
                             break;
                         }
-                        const auto made = goConstructorOf(
-                            goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+                        const auto made = goConstructorOf(goBaseFieldType(field.resolvedType, file));
                         if (entry.kind == MemberDefault::Kind::Composite)
                         {
                             w.line(goAssignment(member, " = ", made));
@@ -2131,7 +2219,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                " to buffer, as encoding.BinaryAppender asks.");
         w.open("func (" + receiver + " *" + typeName + ") AppendBinary(buffer []byte) ([]byte, error) {");
         w.line("start := len(buffer)");
-        w.line("grown := slices.Grow(buffer, " + largest + ")");
+        w.line("grown := " + file.standard("slices") + ".Grow(buffer, " + largest + ")");
         w.line("used, err := " + receiver + ".Serialize(grown[start : start+" + largest + "])");
         w.open("if err != nil {");
         w.line("return buffer, err");
@@ -2149,7 +2237,8 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                            : "// UnmarshalBinary reads " + receiver +
                                  " from its wire image, as encoding.BinaryUnmarshaler asks.");
         w.open("func (" + receiver + " *" + typeName + ") UnmarshalBinary(data []byte) error {");
-        w.line("_, err := " + receiver + ".Deserialize(" + (keepsBuffer ? "bytes.Clone(data)" : "data") + ")");
+        w.line("_, err := " + receiver + ".Deserialize(" +
+               (keepsBuffer ? file.standard("bytes") + ".Clone(data)" : "data") + ")");
         w.line("return err");
         w.close("}");
     }
@@ -2179,7 +2268,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-    GoSpelling                           spelling(schema);
+    // The declarations and bodies first, naming what they take from other packages as they write
+    // it; the import declaration is written after, from what was named.
+    ImportSet                            imports;
+    const GoFileNames                    file(ctx,
+                                              imports,
+                                              moduleName,
+                                              EmitterContext::packagePath(def.info),
+                                              computeImportAliases(def, ctx));
+    GoSpelling                           spelling(schema, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2221,7 +2318,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto currentPackagePath = EmitterContext::packagePath(def.info);
     const auto packageName        = packageNameFromPath(currentPackagePath);
-    const auto imports            = computeImportAliases(def, ctx);
     const auto baseType           = ctx.goTypeName(def.info);
     const auto reqType            = renderSectionTypeName(Language::Go, baseType, "request");
     const auto respType           = renderSectionTypeName(Language::Go, baseType, "response");
@@ -2235,8 +2331,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // the definition's type: the package's scope is what proves two of them cannot meet.
     spelling.setHelperNames(renderSchemaHelperNames(Language::Go, module, schema, packageScope, baseType));
 
-    // The declarations and bodies first: whether the runtime is imported depends on whether a
-    // body calls it, and Go rejects an import nothing uses.
     std::ostringstream body;
     SourceWriter       w = makeGoWriter(body);
     for (const mlir::func::FuncOp helper : helpers)
@@ -2256,8 +2350,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.request,
                                        def.doc,
                                        def.info.fullName,
-                                       currentPackagePath,
-                                       imports,
+                                       file,
                                        sectionPlan(schema, ""),
                                        spelling,
                                        bodies[""],
@@ -2276,8 +2369,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.request,
                                        def.doc,
                                        def.info.fullName,
-                                       currentPackagePath,
-                                       imports,
+                                       file,
                                        sectionPlan(schema, "request"),
                                        spelling,
                                        bodies["request"],
@@ -2296,8 +2388,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                            *def.response,
                                            def.doc,
                                            def.info.fullName,
-                                           currentPackagePath,
-                                           imports,
+                                           file,
                                            sectionPlan(schema, "response"),
                                            spelling,
                                            bodies["response"],
@@ -2333,44 +2424,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.blank();
     head.line("package " + packageName);
     head.blank();
-    const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
-    const bool usesUnsafe  = llvm::StringRef(body.str()).contains("unsafe.");
-    const bool usesBytes   = llvm::StringRef(body.str()).contains("bytes.Clone(");
-    const bool usesSlices  = llvm::StringRef(body.str()).contains("slices.Grow(");
-    const bool usesLibrary = usesBytes || usesSlices || usesUnsafe;
-    if (usesRuntime || usesLibrary || !imports.empty())
-    {
-        head.open("import (");
-        // gofmt sorts the imports within a group, so the standard library's sit in a group of
-        // their own, ahead of the module's, and a blank line keeps the two apart.
-        if (usesBytes)
-        {
-            head.line("\"bytes\"");
-        }
-        if (usesSlices)
-        {
-            head.line("\"slices\"");
-        }
-        if (usesUnsafe)
-        {
-            head.line("\"unsafe\"");
-        }
-        if (usesLibrary && (usesRuntime || !imports.empty()))
-        {
-            head.blank();
-        }
-        if (usesRuntime)
-        {
-            head.line("dsdlruntime \"" + moduleName + "/dsdlruntime\"");
-        }
-        for (const auto& [path, alias] : imports)
-        {
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            head.line(alias + " \"" + moduleName + "/" + path + "\"");
-        }
-        head.close(")");
-        head.blank();
-    }
+    writeGoImports(head, imports);
     out << body.str();
     return out.str();
 }

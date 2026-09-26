@@ -187,7 +187,14 @@ defaults are declared, the runtime where a body calls it, and a nested type wher
 it. A file that names none of them imports none of them, which took Python's `F401` from 198 to
 none.
 
-The other five decide their imports in four other ways, and each is a way a file's text and its
+Go names through it too: `unsafe` where a body moves an object as bytes or a layout is asserted,
+`slices` and `bytes` in the encoding methods, the runtime where a body calls it, and a nested type's
+package where a field names it. Go had read its imports off the text, doc comments included, so a
+definition whose comment mentioned `bytes.Clone(` imported a package the file did not use, and Go
+refused to compile it. Its import declaration writes the module's own packages in the order of their
+paths, which is gofmt's.
+
+The other four decide their imports in three other ways, and each is a way a file's text and its
 imports can disagree:
 
 | language | standard library | runtime | other definitions |
@@ -195,12 +202,11 @@ imports can disagree:
 | C | a token scan in a header; unconditional in a `.c` file | the same | a semantic-model walk in a header; the calls a body spells, recorded, in a `.c` file |
 | C++ | a token scan | a token scan, which names the header that includes the C runtime rather than the one that declares its functions: `misc-include-cleaner`'s 485 | a semantic-model walk; the vocabulary's span, recorded as it is named |
 | Rust | none: every standard and runtime name is a full path | none | a semantic-model walk, into an import scope |
-| Go | a token scan, which reads doc comments too, so a comment holding `unsafe.` would import a package the file does not use, which Go refuses to compile | a token scan | a semantic-model walk |
 | TypeScript | none | unconditional, and a token scan in an accessors-only file | a semantic-model walk, filtered by a scan for each name |
 
 Each moves onto the set in a change of its own. A language that gives an import a local name
-records the name the file spells; allocating that name within the file's scope, which Rust does in
-an import scope and TypeScript does not do, belongs to the surface tree.
+records the name the file spells; allocating that name within the file's scope, which Go does with
+its `pkg_` aliases, Rust in an import scope and TypeScript not at all, belongs to the surface tree.
 
 ## Where each language lands
 

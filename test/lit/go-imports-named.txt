@@ -1,0 +1,15 @@
+# A Go file imports the packages it names. A doc comment that mentions a package's function names
+# nothing, and Go refuses to compile an import nothing uses.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf '# Named in prose, bytes.Clone( and dsdlruntime.SetBit( are not imports.\nuint8 value\n@sealed\n' > %t/dsdl/ns/Quiet.1.0.dsdl
+# RUN: %dsdlc --target-language go %t/dsdl/ns --outdir %t/go --go-module m
+# RUN: cat %t/go/ns/quiet_1_0.go | FileCheck %s
+#
+# CHECK:      import (
+# CHECK-NEXT:   "slices"
+# CHECK-NEXT:   "unsafe"
+# CHECK-EMPTY:
+# CHECK-NEXT:   dsdlruntime "m/dsdlruntime"
+# CHECK-NEXT: )
+# CHECK:      // Named in prose, bytes.Clone( and dsdlruntime.SetBit( are not imports.
