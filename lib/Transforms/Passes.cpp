@@ -31,6 +31,7 @@
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
@@ -1483,6 +1484,61 @@ struct FoldDSDLUnobservedAccessorSizesPass
     }
 };
 
+/// @brief Whether @p fn answers an error code: a plan body, or a setter. A getter answers a value,
+///        which may be an `i8` that is zero without meaning success.
+bool answersAnError(mlir::func::FuncOp fn)
+{
+    const auto                           body              = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+    static constexpr llvm::StringLiteral kErrorAnswering[] = {"serialize", "deserialize", "initialize", "set"};
+    return body && llvm::is_contained(kErrorAnswering, body.getValue());
+}
+
+/// @brief Marks each body that cannot fail as `llvmdsdl.infallible`.
+///
+/// Whether a body can fail is a fact of the body, and what makes it one is often a fold of this
+/// pipeline: `dsdl-fold-null-guards` erases the only error a Rust body had. A body whose every
+/// return answers the constant zero has no error to report, and a backend whose idiom reports an
+/// error apart from the result -- a `Result`, an `error`, an exception -- has no failure path to
+/// spell. Stated here, it is read rather than derived again by each backend that asks.
+struct MarkDSDLInfallibleBodiesPass final
+    : public mlir::PassWrapper<MarkDSDLInfallibleBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-mark-infallible-bodies";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Mark each plan body or setter whose every return answers zero as unable to fail";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            if (!answersAnError(fn))
+            {
+                return;
+            }
+            bool zero = !fn.getBody().empty();
+            fn.walk([&](mlir::func::ReturnOp ret) {
+                if ((ret.getNumOperands() != 1) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
+                {
+                    zero = false;
+                }
+            });
+            if (zero)
+            {
+                fn->setAttr("llvmdsdl.infallible", mlir::UnitAttr::get(fn.getContext()));
+            }
+            else
+            {
+                fn->removeAttr("llvmdsdl.infallible");
+            }
+        });
+    }
+};
+
 /// @brief Replaces a host-image section's field-wise body with one move.
 ///
 /// The body it rewrites has a shape every plan body shares: the buffer is taken once, the fields
@@ -2227,6 +2283,11 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass()
     return std::make_unique<FoldDSDLUnobservedAccessorSizesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass()
+{
+    return std::make_unique<MarkDSDLInfallibleBodiesPass>();
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
 {
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
@@ -2281,6 +2342,9 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     {
         addOptimizeLoweredSerDesPipeline(pm);
     }
+    // Last, so what it states is true of the bodies every backend receives: each fold above can
+    // take away the only error a body had.
+    pm.addPass(createMarkDSDLInfallibleBodiesPass());
 }
 
 void registerDSDLPasses()
@@ -2291,11 +2355,12 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> const  reg;
-    static mlir::PassRegistration<LowerDSDLExecPass> const           regExec;
-    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const   regAlias;
-    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const regFold;
-    static mlir::PassRegistration<KeepDSDLAccessorsPass> const       regKeep;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
+    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const    regAlias;
+    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const  regFold;
+    static mlir::PassRegistration<KeepDSDLAccessorsPass> const        regKeep;
+    static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const regInfallible;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

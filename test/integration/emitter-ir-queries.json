@@ -21,10 +21,8 @@
     "getBlock": 1,
     "getDefiningOp": 1,
     "getUsers": 1,
-    "matchPattern": 1,
     "plansReadOfSize": 3,
-    "use_empty": 3,
-    "walk": 1
+    "use_empty": 3
   },
   "Ts.cpp": {
     "getDefiningOp": 1,

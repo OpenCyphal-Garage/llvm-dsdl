@@ -117,6 +117,15 @@ std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nulla
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 
+/// @brief Marks each plan body or setter whose every return answers zero as `llvmdsdl.infallible`.
+///
+/// Whether a body can fail is a fact of the body, and the folds of this pipeline are often what make
+/// it one. A backend whose idiom reports an error apart from the result reads the mark rather than
+/// deriving it again. Registered with `dsdl-opt` as `dsdl-mark-infallible-bodies`, and run last in
+/// `lower-dsdl-bodies`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass();
+
 /// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-verify-alias-layout`
 ///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a
 ///        deserialise function of dialect operations. A backend is a translation of that output

@@ -32,6 +32,13 @@ receives; each plan yields three bodies, serialise, deserialise and initialise; 
 `build-dsdl-plan-bodies`, so it acts on every backend alike. The C and object lanes take each definition's schema, and the functions built for it, from that
 module, and stamp C names on the schema before spelling or converting them.
 
+After `build-dsdl-plan-bodies` the pipeline folds what the target's `BodyInterface` rules out:
+`dsdl-fold-null-guards` a null test the target cannot fail, `dsdl-fold-unobserved-accessor-sizes`
+a size a getter's caller never reads, and `dsdl-fold-host-image-bodies` a field-wise body the target
+can move whole. Last, `dsdl-mark-infallible-bodies` marks each plan body or setter whose every
+return answers zero as `llvmdsdl.infallible`, which a backend whose idiom reports an error apart
+from the result reads rather than derives; `test/lit/mark-infallible-bodies.mlir` holds it.
+
 ## The body IR is target-neutral
 
 A body spells nothing the way C does:

@@ -67,7 +67,6 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -634,7 +633,7 @@ public:
         const auto direction = planBodyDirection(fn);
         inBody_              = direction.has_value();
         accessor_            = Accessor::None;
-        cannotFail_          = everyReturnIsZero(fn);
+        cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
         deferredSize_        = {};
         if (!direction)
         {
@@ -855,9 +854,8 @@ public:
             w.line(expr.str() + returnCast_);
             return;
         }
-        // Where every return of the function is the constant zero the error arm is unreachable, and
-        // spelling the test anyway is the `0i8 == 0i8` that `eq_op` reports. The IR holds no
-        // comparison -- it returns the constant -- so the redundancy is this spelling's to avoid.
+        // Where the body is marked unable to fail the error arm is unreachable, and spelling the test
+        // anyway is the `0i8 == 0i8` that `eq_op` reports.
         if (accessor_ == Accessor::Setter)
         {
             w.line(cannotFail_ ? std::string{"Ok(())"}
@@ -1691,24 +1689,11 @@ private:
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
 
-    /// @brief Whether the function being spelt returns the constant zero on every path.
+    /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
     mutable bool cannotFail_{false};
 
     /// @brief The size argument whose local the body's own write is still to declare, if any.
     mutable mlir::Value deferredSize_;
-
-    /// @brief Returns whether every return of @p fn answers a constant zero.
-    static bool everyReturnIsZero(mlir::func::FuncOp fn)
-    {
-        bool zero = true;
-        fn.walk([&](mlir::func::ReturnOp ret) {
-            if ((ret.getNumOperands() != 1) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
-            {
-                zero = false;
-            }
-        });
-        return zero;
-    }
 
     /// @brief How a plan body uses the size it is handed by pointer.
     struct SizeUse final
