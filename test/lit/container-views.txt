@@ -200,7 +200,7 @@
 # RUST:     impl<'a> Default for Frame<'a> {
 # RUST:     pose: &[],
 # RUST:     impl<'a> Frame<'a> {
-# RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, i8> {
+# RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {
 # RUST:     self.pose = { let _len = core::cmp::min(
 # RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
 # RUN: cat %t/rust/src/fixtures_views/vendor/track_1_0.rs | FileCheck %s --check-prefix=RUST_TRACK
@@ -213,13 +213,27 @@
 # RUST_TRACK-NOT: pose_1_0
 # RUN: %dsdlc --target-language go --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/go/fixtures_views/vendor/frame_1_0.go | FileCheck %s --check-prefix=GO
+# GO:      "bytes"
+# GO-NEXT: "slices"
 # GO:      Pose {{ *}}[]byte
-# GO:      obj.Pose = buf[:dsdlruntime.ChooseMin(
+# GO:      f.Pose = buf[:dsdlruntime.ChooseMin(
+# A view keeps the bytes it reads, so UnmarshalBinary reads a copy, as encoding.BinaryUnmarshaler
+# asks; a type holding no view reads its data as it is.
+# GO:      func (f *Frame) AppendBinary(buffer []byte) ([]byte, error) {
+# GO:      grown := slices.Grow(buffer, FrameSerializationBufferSizeBytes)
+# GO:      func (f *Frame) MarshalBinary() ([]byte, error) {
+# GO-NEXT:   return f.AppendBinary(nil)
+# GO:      func (f *Frame) UnmarshalBinary(data []byte) error {
+# GO-NEXT:   _, err := f.Deserialize(bytes.Clone(data))
+# RUN: cat %t/go/fixtures_aliasable/vendor/vec3_1_0.go | FileCheck %s --check-prefix=GO_PLAIN
+# GO_PLAIN-NOT: "bytes"
+# GO_PLAIN:     func (v *Vec3) UnmarshalBinary(data []byte) error {
+# GO_PLAIN-NEXT:  _, err := v.Deserialize(data)
 # RUN: cat %t/go/fixtures_views/vendor/track_1_0.go | FileCheck %s --check-prefix=GO_TRACK
 # GO_TRACK:      Pair {{ *}}[2][]byte
 # GO_TRACK:      Trail {{ *}}[][]byte
-# GO_TRACK:      obj.Pair[int({{.*}})] = buf[:dsdlruntime.ChooseMin(
-# GO_TRACK:      obj.Trail[int({{.*}})] = buf2[:dsdlruntime.ChooseMin(
+# GO_TRACK:      t.Pair[int({{.*}})] = buf[:dsdlruntime.ChooseMin(
+# GO_TRACK:      t.Trail[int({{.*}})] = buf2[:dsdlruntime.ChooseMin(
 # RUN: %dsdlc --target-language ts --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/ts/fixtures_views/vendor/frame_1_0.ts | FileCheck %s --check-prefix=TS
 # TS-NOT:  pose_1_0

@@ -27,6 +27,7 @@
 
 #include "llvm/ADT/StringRef.h"
 
+#include "llvmdsdl/Support/BodyInterface.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 
@@ -167,6 +168,20 @@ std::string render(const ReservedUnderscores value)
     return "?";
 }
 
+std::string render(const llvmdsdl::BoolArrayStorage value)
+{
+    switch (value)
+    {
+    case llvmdsdl::BoolArrayStorage::Packed:
+        return "packed";
+    case llvmdsdl::BoolArrayStorage::PackedWhenFixed:
+        return "packed-when-fixed";
+    case llvmdsdl::BoolArrayStorage::PerElement:
+        return "per-element";
+    }
+    return "?";
+}
+
 std::string flag(const bool value)
 {
     return value ? "1" : "0";
@@ -185,6 +200,7 @@ std::string render(const LanguageTraits& row)
            " reserved=" + render(c.reservedUnderscores) + " | nullable=" + flag(b.nullability.objectPointer) +
            flag(b.nullability.rawPointer) + flag(b.nullability.accessorBuffer) +
            " views=" + flag(b.accessorsReturnViews) + " images=" + flag(b.objectsAreByteImages) +
+           " answers-size=" + flag(b.bodiesAnswerSize) + " bool-arrays=" + render(b.boolArrays) +
            " | namespace-join='" + d.definitionName.namespaceJoin.str() +
            "' version-in-name=" + flag(d.definitionName.versionInTypeName) +
            " name-reaches-type=" + flag(d.definitionName.typeNameReachesTheType) + " section-join='" +
@@ -217,32 +233,43 @@ bool runLanguageTraitsTests()
     const std::pair<Language, std::string> kExpected[] = {
         {Language::C,
          "c: scopes=000 nested=0 methods=none internal=static errors=status-code constants=enclosing "
-         "constants-share-fields=0 reserved=leading | nullable=111 views=0 images=1 | namespace-join='__' "
+         "constants-share-fields=0 reserved=leading | nullable=111 views=0 images=1 answers-size=0 "
+         "bool-arrays=packed | "
+         "namespace-join='__' "
          "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 "
          "constants=enclosing generated-suffix='_' array-metadata=1 deprecated-apart=0"},
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
-         "constants-share-fields=1 reserved=leading-and-interior | nullable=110 views=1 images=1 | "
+         "constants-share-fields=1 reserved=leading-and-interior | nullable=110 views=1 images=1 answers-size=0 "
+         "bool-arrays=packed-when-fixed "
+         "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
          "namespace-shared=1 constants=type generated-suffix='' array-metadata=1 deprecated-apart=1"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "
-         "constants-share-fields=0 reserved=none | nullable=000 views=1 images=1 | namespace-join='' "
+         "constants-share-fields=0 reserved=none | nullable=000 views=1 images=1 answers-size=1 "
+         "bool-arrays=per-element | "
+         "namespace-join='' "
          "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 "
          "constants=type generated-suffix='' array-metadata=0 deprecated-apart=0"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
-         "constants=package constants-share-fields=0 reserved=none | nullable=100 views=1 images=1 | "
+         "constants=package constants-share-fields=0 reserved=none | nullable=100 views=1 images=1 "
+         "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
          "namespace-shared=1 constants=package generated-suffix='' array-metadata=0 deprecated-apart=0"},
         {Language::TypeScript,
          "ts: scopes=110 nested=1 methods=member internal=not-exported errors=exception constants=type "
-         "constants-share-fields=0 reserved=none | nullable=100 views=1 images=0 | namespace-join='' "
+         "constants-share-fields=0 reserved=none | nullable=100 views=1 images=0 answers-size=1 "
+         "bool-arrays=per-element | "
+         "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 "
          "constants=module generated-suffix='' array-metadata=0 deprecated-apart=0"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
-         "constants-share-fields=1 reserved=none | nullable=100 views=1 images=0 | namespace-join='' "
+         "constants-share-fields=1 reserved=none | nullable=100 views=1 images=0 answers-size=1 "
+         "bool-arrays=per-element | "
+         "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 "
          "constants=module generated-suffix='' array-metadata=0 deprecated-apart=0"},
     };

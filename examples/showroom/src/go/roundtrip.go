@@ -47,15 +47,14 @@ func main() {
 	}
 
 	buffer := make([]byte, health.SystemHealth_1_0SerializationBufferSizeBytes)
-	rc, written := original.Serialize(buffer)
-	if rc != 0 {
-		fail("serialize returned %d", rc)
+	written, err := original.Serialize(buffer)
+	if err != nil {
+		fail("serialize returned %v", err)
 	}
 
 	var restored health.SystemHealth_1_0
-	rc, _ = restored.Deserialize(buffer[:written])
-	if rc != 0 {
-		fail("deserialize returned %d", rc)
+	if _, err := restored.Deserialize(buffer[:written]); err != nil {
+		fail("deserialize returned %v", err)
 	}
 
 	// Generated Go types are plain structs over plain slices, so this is a complete comparison and

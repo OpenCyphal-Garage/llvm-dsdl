@@ -353,7 +353,7 @@ impl NodeApp {
         let mut encoded = vec![0u8; Heartbeat::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = heartbeat
             .serialize(&mut encoded)
-            .map_err(|rc| format!("heartbeat serialisation failed: {}", rc))?;
+            .map_err(|error| format!("heartbeat serialisation failed: {}", error))?;
         encoded.truncate(used);
 
         let deadline = now_usec.saturating_add(TX_DEADLINE_USEC);
@@ -416,7 +416,7 @@ impl NodeApp {
         let mut request = ListRequest::default();
         request
             .deserialize(payload)
-            .map_err(|rc| format!("failed to deserialize register.List request: {}", rc))?;
+            .map_err(|error| format!("failed to deserialize register.List request: {}", error))?;
 
         let mut response = ListResponse::default();
         if (request.index as usize) < self.registers.len() {
@@ -434,7 +434,7 @@ impl NodeApp {
             vec![0u8; ListResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = response
             .serialize(&mut encoded)
-            .map_err(|rc| format!("failed to serialize register.List response: {}", rc))?;
+            .map_err(|error| format!("failed to serialize register.List response: {}", error))?;
         encoded.truncate(used);
 
         self.send_rpc_response(SERVICE_REGISTER_LIST, source_node_id, transfer_id, &encoded)
@@ -449,7 +449,7 @@ impl NodeApp {
         let mut request = AccessRequest::default();
         request
             .deserialize(payload)
-            .map_err(|rc| format!("failed to deserialize register.Access request: {}", rc))?;
+            .map_err(|error| format!("failed to deserialize register.Access request: {}", error))?;
 
         let requested_name = String::from_utf8_lossy(&request.name.name).to_string();
         let mut response = AccessResponse::default();
@@ -481,7 +481,7 @@ impl NodeApp {
             vec![0u8; AccessResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
         let used = response
             .serialize(&mut encoded)
-            .map_err(|rc| format!("failed to serialize register.Access response: {}", rc))?;
+            .map_err(|error| format!("failed to serialize register.Access response: {}", error))?;
         encoded.truncate(used);
 
         self.send_rpc_response(

@@ -20,10 +20,10 @@
 # RUN: cat %t/go/dsdl/mf/m_1_0.go | FileCheck %s --check-prefix=GO
 # GO-DAG: Serialize_ uint8
 # GO-DAG: Deserialize_ uint8
-# GO-DAG: func (obj *M) Serialize(
-# GO-DAG: func (obj *M) Deserialize(
-# GO-DAG: obj.Serialize_
-# GO-DAG: obj.Deserialize_
+# GO-DAG: func (m *M) Serialize(
+# GO-DAG: func (m *M) Deserialize(
+# GO-DAG: m.Serialize_
+# GO-DAG: m.Deserialize_
 
 # Python: attribute escaped so it does not shadow the method; the method still calls self.serialize().
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py

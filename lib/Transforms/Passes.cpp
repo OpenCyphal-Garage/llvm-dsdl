@@ -23,14 +23,17 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <memory>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
@@ -38,6 +41,8 @@
 #include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <algorithm>
 #include <cassert>
@@ -1416,7 +1421,8 @@ private:
     TargetNullability nullability_;
 };
 
-/// @brief Erases the size a composite getter writes back, where the target's getter returns a view.
+/// @brief Erases the size a composite getter writes back, and the parameter it writes it through,
+///        where the target's getter returns a view.
 struct FoldDSDLUnobservedAccessorSizesPass
     : public mlir::PassWrapper<FoldDSDLUnobservedAccessorSizesPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1426,7 +1432,8 @@ struct FoldDSDLUnobservedAccessorSizesPass
     }
     llvm::StringRef getDescription() const final
     {
-        return "Erase the size a composite getter writes back where the target's getter returns a view";
+        return "Erase the size a composite getter writes back, and its parameter, where the target's getter "
+               "returns a view";
     }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
@@ -1435,9 +1442,11 @@ struct FoldDSDLUnobservedAccessorSizesPass
         // A composite getter answers a pointer to the nested type's bytes and writes their length
         // through its last argument. A target whose getter answers a view -- a span, a slice, a
         // `memoryview`, a `Uint8Array` -- hands the caller that length inside the view, so nothing
-        // reads what the pointer receives. The write is erased only where the pointer is never read
-        // back, so a getter that did read it keeps the value it read.
+        // reads what the pointer receives, and the getter's signature has no parameter for it. A
+        // getter that reads the pointer back is not one this recognises, and the pass fails rather
+        // than leave a parameter the target's signature does not have.
         llvm::SmallVector<mlir::func::FuncOp> touched;
+        bool                                  refused = false;
         getOperation().walk([&](mlir::func::FuncOp fn) {
             const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
             if (!body || (body.getValue() != "get") || (fn.getNumArguments() == 0) || (fn.getNumResults() != 1) ||
@@ -1456,20 +1465,29 @@ struct FoldDSDLUnobservedAccessorSizesPass
             {
                 if (!mlir::isa<mlir::dsdl::StoreScalarOp>(user))
                 {
+                    user->emitOpError("reads back the size a getter answering a view writes");
+                    refused = true;
                     return;
                 }
                 writes.push_back(user);
-            }
-            if (writes.empty())
-            {
-                return;
             }
             for (mlir::Operation* write : writes)
             {
                 write->erase();
             }
+            if (mlir::failed(fn.eraseArgument(fn.getNumArguments() - 1)))
+            {
+                fn.emitOpError("keeps the size parameter a getter answering a view has no use for");
+                refused = true;
+                return;
+            }
             touched.push_back(fn);
         });
+        if (refused)
+        {
+            signalPassFailure();
+            return;
+        }
         if (touched.empty())
         {
             return;
@@ -1480,6 +1498,637 @@ struct FoldDSDLUnobservedAccessorSizesPass
         {
             signalPassFailure();
         }
+    }
+};
+
+/// @brief Folds each nested call to the form a target takes when its buffer carries its own length.
+///
+/// The plan hands a nested type the space available through a local and reads back what it used
+/// from the same local, which is how an entry point taking a size by pointer is called. A target
+/// whose entry point takes the space as the length of the buffer it is handed, and answers what it
+/// used, would otherwise have each spelling clamp, call, split the answer and write the local back.
+/// `dsdl.call_serdes_sized` states that once: the space goes in by value, and what the callee used
+/// comes out as a result, converted where the plan reads it to the width the plan counts in.
+///
+/// A slot anything else reads, or reads before the call, is not one this recognises, and the pass
+/// fails rather than leave a call its target has no spelling for.
+struct FoldDSDLNestedCallSizesPass final
+    : public mlir::PassWrapper<FoldDSDLNestedCallSizesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-nested-call-sizes";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Hand each nested call its space by value and take back what it used as a result";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        llvm::SmallVector<mlir::dsdl::CallSerdesOp> calls;
+        getOperation().walk([&](mlir::dsdl::CallSerdesOp call) { calls.push_back(call); });
+        for (mlir::dsdl::CallSerdesOp call : calls)
+        {
+            auto slot = call.getSize().getDefiningOp<mlir::dsdl::LocalOp>();
+            if (!slot)
+            {
+                call.emitOpError("hands its size through something other than a local");
+                signalPassFailure();
+                return;
+            }
+            const mlir::DominanceInfo                   dominance(call->getParentOfType<mlir::func::FuncOp>());
+            llvm::SmallVector<mlir::dsdl::LoadScalarOp> readsBack;
+            for (mlir::Operation* const user : slot.getAddress().getUsers())
+            {
+                if (user == call.getOperation())
+                {
+                    continue;
+                }
+                auto read = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user);
+                if (!read || !dominance.properlyDominates(call.getOperation(), read))
+                {
+                    call.emitOpError("shares its size local with something other than a read after it");
+                    signalPassFailure();
+                    return;
+                }
+                readsBack.push_back(read);
+            }
+
+            mlir::OpBuilder b(call);
+            auto            sized = mlir::dsdl::CallSerdesSizedOp::create(b,
+                                                                          call.getLoc(),
+                                                                          b.getIntegerType(8),
+                                                                          b.getIndexType(),
+                                                                          call.getCalleeAttr(),
+                                                                          call.getMemberAttr(),
+                                                                          call.getDirectionAttr(),
+                                                                          call.getObject(),
+                                                                          call.getBuffer(),
+                                                                          slot.getInit());
+            call.getError().replaceAllUsesWith(sized.getError());
+            if (!readsBack.empty())
+            {
+                b.setInsertionPointAfter(sized);
+                const mlir::Value width = mlir::arith::IndexCastOp::create(b,
+                                                                           call.getLoc(),
+                                                                           readsBack.front().getValue().getType(),
+                                                                           sized.getConsumed());
+                for (mlir::dsdl::LoadScalarOp read : readsBack)
+                {
+                    read.getValue().replaceAllUsesWith(width);
+                    read.erase();
+                }
+            }
+            call.erase();
+            slot.erase();
+        }
+    }
+};
+
+/// @brief Folds each body to the form a target takes when its buffer carries its own length.
+///
+/// A plan body is handed the space available through a size pointer, reads it from there and writes
+/// back what it used, which is how an entry point taking a size by pointer is called. A target whose
+/// entry point takes the buffer alone and answers what it used beside its error would otherwise have
+/// each spelling hold the pointer as a local, read it, assign it and answer it. This states the
+/// signature once: each read of the pointer becomes `dsdl.buffer_length`, and what the body writes
+/// back becomes a second result, an `index` as a nested call's answer is.
+///
+/// The size answered means something only where the error is zero, as it does for
+/// `dsdl.call_serdes_sized`. The write is lifted to the body's top level: what computes the size is
+/// computed unconditionally where every operation computing it can be, and is otherwise answered
+/// through each enclosing `scf.if`, whose other arm answers zero. A body that writes its size back
+/// other than once, from inside a loop, or hands the pointer on is not one this recognises, and the
+/// pass fails rather than leave a body its target has no spelling for.
+struct FoldDSDLBodySizesPass final
+    : public mlir::PassWrapper<FoldDSDLBodySizesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-body-sizes";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Hand each body its space as its buffer's length and take back what it used as a result";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        llvm::SmallVector<mlir::func::FuncOp> bodies;
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (body && ((body.getValue() == "serialize") || (body.getValue() == "deserialize")))
+            {
+                bodies.push_back(fn);
+            }
+        });
+        for (const mlir::func::FuncOp fn : bodies)
+        {
+            if (mlir::failed(fold(fn)))
+            {
+                signalPassFailure();
+                return;
+            }
+        }
+    }
+
+private:
+    /// @brief Whether @p value is defined inside @p op.
+    static bool definedWithin(mlir::Value value, mlir::Operation* const op)
+    {
+        return op->isAncestor(value.getParentBlock()->getParentOp());
+    }
+
+    /// @brief Collects into @p order, operands first, what computes @p value inside @p branch, or
+    ///        answers false where any of it cannot be computed unconditionally.
+    static bool hoistable(const mlir::Value                        value,
+                          mlir::Operation* const                   branch,
+                          llvm::SmallVectorImpl<mlir::Operation*>& order)
+    {
+        if (!definedWithin(value, branch))
+        {
+            return true;
+        }
+        mlir::Operation* const op = value.getDefiningOp();
+        if ((op == nullptr) || !mlir::isPure(op) || (op->getNumRegions() != 0))
+        {
+            return false;
+        }
+        if (llvm::is_contained(order, op))
+        {
+            return true;
+        }
+        for (const mlir::Value operand : op->getOperands())
+        {
+            if (!hoistable(operand, branch, order))
+            {
+                return false;
+            }
+        }
+        order.push_back(op);
+        return true;
+    }
+
+    /// @brief Answers @p value out of @p branch as a new last result: @p arm, the block it was written
+    ///        in, yields it, and the other arm yields @p zero.
+    static mlir::Value answerThrough(mlir::scf::IfOp    branch,
+                                     mlir::Block* const arm,
+                                     const mlir::Value  value,
+                                     const mlir::Value  zero)
+    {
+        mlir::OpBuilder               b(branch);
+        llvm::SmallVector<mlir::Type> types(branch.getResultTypes());
+        types.push_back(value.getType());
+        auto grown = mlir::scf::IfOp::create(b,
+                                             branch.getLoc(),
+                                             types,
+                                             branch.getCondition(),
+                                             /*addThenBlock=*/false,
+                                             /*addElseBlock=*/false);
+        grown.getThenRegion().takeBody(branch.getThenRegion());
+        grown.getElseRegion().takeBody(branch.getElseRegion());
+        if (grown.getElseRegion().empty())
+        {
+            b.createBlock(&grown.getElseRegion());
+            mlir::scf::YieldOp::create(b, branch.getLoc());
+        }
+        for (mlir::Region* const region : {&grown.getThenRegion(), &grown.getElseRegion()})
+        {
+            mlir::Operation* const yield = region->front().getTerminator();
+            yield->insertOperands(yield->getNumOperands(), (&region->front() == arm) ? value : zero);
+        }
+        grown->setAttrs(branch->getAttrs());
+        if (const auto roles = branch->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles"))
+        {
+            llvm::SmallVector<mlir::Attribute> grownRoles(roles.begin(), roles.end());
+            grownRoles.push_back(b.getStringAttr(""));
+            grown->setAttr("llvmdsdl.result_roles", b.getArrayAttr(grownRoles));
+        }
+        branch.replaceAllUsesWith(grown.getResults().take_front(branch.getNumResults()));
+        branch.erase();
+        return grown.getResults().back();
+    }
+
+    /// @brief Erases each `scf.if` the lifted write left with nothing to do, and what only it read.
+    static void eraseEmptied(mlir::func::FuncOp fn)
+    {
+        bool erased = true;
+        while (erased)
+        {
+            erased = false;
+            llvm::SmallVector<mlir::Operation*> dead;
+            fn.walk<mlir::WalkOrder::PostOrder>([&](mlir::Operation* op) {
+                auto       branch  = mlir::dyn_cast<mlir::scf::IfOp>(op);
+                const bool emptied = branch && (branch.getNumResults() == 0) &&
+                                     llvm::all_of(branch->getRegions(), [](mlir::Region& region) {
+                                         return region.empty() || (region.front().getOperations().size() == 1);
+                                     });
+                if (emptied || ((op != fn) && mlir::isOpTriviallyDead(op)))
+                {
+                    dead.push_back(op);
+                }
+            });
+            for (mlir::Operation* const op : dead)
+            {
+                op->erase();
+                erased = true;
+            }
+        }
+    }
+
+    static mlir::LogicalResult fold(mlir::func::FuncOp fn)
+    {
+        const auto pointer = (fn.getNumArguments() == 3)
+                                 ? mlir::dyn_cast<mlir::dsdl::PtrType>(fn.getArgument(2).getType())
+                                 : mlir::dsdl::PtrType{};
+        if (!pointer || !mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()) || (fn.getNumResults() != 1))
+        {
+            return fn.emitOpError("is a body whose signature is not the plan's");
+        }
+        const mlir::Value                           size = fn.getArgument(2);
+        llvm::SmallVector<mlir::dsdl::LoadScalarOp> reads;
+        mlir::dsdl::StoreScalarOp                   write;
+        for (mlir::Operation* const user : size.getUsers())
+        {
+            if (auto read = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user))
+            {
+                reads.push_back(read);
+                continue;
+            }
+            auto store = mlir::dyn_cast<mlir::dsdl::StoreScalarOp>(user);
+            if (!store || write)
+            {
+                return user->emitOpError("handles the size its body is handed other than by reading it and "
+                                         "writing it back once");
+            }
+            write = store;
+        }
+        auto answer = mlir::dyn_cast<mlir::func::ReturnOp>(fn.front().getTerminator());
+        if (!write || !answer)
+        {
+            return fn.emitOpError("answers no size from its top level");
+        }
+
+        mlir::OpBuilder b(fn.getContext());
+        b.setInsertionPointToStart(&fn.front());
+        if (!reads.empty())
+        {
+            const mlir::Value length =
+                mlir::dsdl::BufferLengthOp::create(b, fn.getLoc(), b.getI64Type(), fn.getArgument(1));
+            for (mlir::dsdl::LoadScalarOp read : reads)
+            {
+                read.getValue().replaceAllUsesWith(length);
+                read.erase();
+            }
+        }
+        mlir::Value zero;
+        b.setInsertionPoint(write);
+        mlir::Value used = b.createOrFold<mlir::arith::IndexCastOp>(write.getLoc(), b.getIndexType(), write.getValue());
+        mlir::Block* block = write->getBlock();
+        write.erase();
+        while (block != &fn.front())
+        {
+            auto branch = mlir::dyn_cast<mlir::scf::IfOp>(block->getParentOp());
+            if (!branch)
+            {
+                return block->getParentOp()->emitOpError("holds the write of its body's size, which only an "
+                                                         "scf.if may");
+            }
+            mlir::Block* const                  outer = branch->getBlock();
+            llvm::SmallVector<mlir::Operation*> order;
+            if (!definedWithin(used, branch))
+            {
+                block = outer;
+                continue;
+            }
+            if (hoistable(used, branch, order))
+            {
+                for (mlir::Operation* const op : order)
+                {
+                    op->moveBefore(branch);
+                }
+                block = outer;
+                continue;
+            }
+            if (!zero)
+            {
+                b.setInsertionPointToStart(&fn.front());
+                zero = mlir::arith::ConstantIndexOp::create(b, fn.getLoc(), 0);
+            }
+            used  = answerThrough(branch, block, used, zero);
+            block = outer;
+        }
+
+        b.setInsertionPoint(answer);
+        mlir::func::ReturnOp::create(b, answer.getLoc(), mlir::ValueRange{answer.getOperand(0), used});
+        answer.erase();
+        if (mlir::failed(fn.eraseArgument(2)))
+        {
+            return fn.emitOpError("keeps the size pointer its body no longer reads");
+        }
+        fn.setType(mlir::FunctionType::get(fn.getContext(),
+                                           fn.getArgumentTypes(),
+                                           {fn.getResultTypes().front(), b.getIndexType()}));
+        eraseEmptied(fn);
+        return mlir::success();
+    }
+};
+
+/// @brief Expands each bool run a target stores a bool per element into a loop over its elements.
+///
+/// The plan moves a bool array as one run of wire bits between the buffer and the array's packed
+/// bytes, which is how a target storing the array packed copies it. A target storing a bool per
+/// element would otherwise have each spelling recover the array from the run's address and loop
+/// over it on its own. This states the loop once: an `scf.for` over the run's width, moving one
+/// element and one bit per turn with `dsdl.load_element` and `dsdl.write_bit`, or `dsdl.read_bit`
+/// and `dsdl.store_element`, which every backend already translates.
+///
+/// Only serialise and deserialise bodies are expanded. An initialise body's run fills a packed
+/// array from nothing, and the renderer that states a default from it reads the run as it is.
+/// A run whose storage is not an element of a bool array is not one this recognises, and the pass
+/// fails rather than leave a run its target has no spelling for.
+struct ExpandDSDLBoolRunsPass final
+    : public mlir::PassWrapper<ExpandDSDLBoolRunsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    ExpandDSDLBoolRunsPass() = default;
+    ExpandDSDLBoolRunsPass(const ExpandDSDLBoolRunsPass& other)
+        : PassWrapper(other)
+    {
+    }
+    ExpandDSDLBoolRunsPass(ExpandDSDLBoolRunsPass&&)                 = delete;
+    ExpandDSDLBoolRunsPass& operator=(const ExpandDSDLBoolRunsPass&) = delete;
+    ExpandDSDLBoolRunsPass& operator=(ExpandDSDLBoolRunsPass&&)      = delete;
+    ~ExpandDSDLBoolRunsPass() override                               = default;
+    explicit ExpandDSDLBoolRunsPass(const BoolArrayStorage storage)
+    {
+        storage_.setValue(storage);
+    }
+
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-expand-bool-runs";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Expand each bool run a target stores a bool per element into a loop over its elements";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        llvm::SmallVector<mlir::Operation*> runs;
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (!body || ((body.getValue() != "serialize") && (body.getValue() != "deserialize")))
+            {
+                return;
+            }
+            fn.walk([&](mlir::Operation* op) {
+                const auto write = mlir::dyn_cast<mlir::dsdl::BitWriteOp>(op);
+                const auto read  = mlir::dyn_cast<mlir::dsdl::BitReadOp>(op);
+                if ((write && storedPerElement(write)) || (read && storedPerElement(read)))
+                {
+                    runs.push_back(op);
+                }
+            });
+        });
+        for (mlir::Operation* const run : runs)
+        {
+            if (auto write = mlir::dyn_cast<mlir::dsdl::BitWriteOp>(run))
+            {
+                if (mlir::failed(expand(write)))
+                {
+                    signalPassFailure();
+                    return;
+                }
+            }
+            else if (mlir::failed(expand(mlir::cast<mlir::dsdl::BitReadOp>(run))))
+            {
+                signalPassFailure();
+                return;
+            }
+        }
+    }
+
+private:
+    /// @brief Whether the target stores the array @p run moves a bool per element.
+    template <typename Run>
+    bool storedPerElement(Run run) const
+    {
+        return (storage_ == BoolArrayStorage::PerElement) ||
+               ((storage_ == BoolArrayStorage::PackedWhenFixed) && run.getVariableLength());
+    }
+
+    /// @brief The element of a bool array @p storage addresses, or null after reporting that it is not one.
+    static mlir::dsdl::ElementAddrOp elementOf(mlir::Operation* const run, const mlir::Value storage)
+    {
+        auto element = storage.getDefiningOp<mlir::dsdl::ElementAddrOp>();
+        if (!element || (element.getStorageCategory() != "bool"))
+        {
+            run->emitOpError("moves a run whose storage is not an element of a bool array");
+            return {};
+        }
+        return element;
+    }
+
+    /// @brief @p a plus @p b, or @p b alone where @p a is the constant zero.
+    static mlir::Value plus(mlir::OpBuilder& b, const mlir::Location loc, const mlir::Value a, const mlir::Value c)
+    {
+        return mlir::matchPattern(a, mlir::m_Zero()) ? c : mlir::arith::AddIOp::create(b, loc, a, c).getResult();
+    }
+
+    /// @brief A counted loop over @p width, its builder placed inside, and its turn as an `i64`.
+    static mlir::Value openLoop(mlir::OpBuilder& b, const mlir::Location loc, const mlir::Value width)
+    {
+        const mlir::Value zero  = mlir::arith::ConstantIndexOp::create(b, loc, 0);
+        const mlir::Value one   = mlir::arith::ConstantIndexOp::create(b, loc, 1);
+        const mlir::Value bound = mlir::arith::IndexCastOp::create(b, loc, b.getIndexType(), width);
+        auto              loop  = mlir::scf::ForOp::create(b, loc, zero, bound, one);
+        b.setInsertionPoint(loop.getBody()->getTerminator());
+        return mlir::arith::IndexCastOp::create(b, loc, b.getIntegerType(64), loop.getInductionVar());
+    }
+
+    static mlir::LogicalResult expand(mlir::dsdl::BitWriteOp run)
+    {
+        auto element = elementOf(run, run.getSource());
+        if (!element)
+        {
+            return mlir::failure();
+        }
+        mlir::OpBuilder      b(run);
+        const mlir::Location loc  = run.getLoc();
+        const mlir::Value    turn = openLoop(b, loc, run.getWidth());
+        const mlir::Value    at   = plus(b, loc, run.getDestinationBitOffset(), turn);
+        const mlir::Value    from = plus(b, loc, plus(b, loc, element.getIndex(), run.getSourceBitOffset()), turn);
+        const mlir::Value    bit  = mlir::dsdl::LoadElementOp::create(b,
+                                                                      loc,
+                                                                      b.getI1Type(),
+                                                                      element.getObject(),
+                                                                      element.getMemberAttr(),
+                                                                      from,
+                                                                      element.getStorageCategoryAttr(),
+                                                                      element.getStorageBitsAttr());
+        mlir::dsdl::WriteBitOp::create(b, loc, run.getDestination(), at, bit);
+        run.erase();
+        if (element.getAddress().use_empty())
+        {
+            element.erase();
+        }
+        return mlir::success();
+    }
+
+    static mlir::LogicalResult expand(mlir::dsdl::BitReadOp run)
+    {
+        auto element = elementOf(run, run.getDestination());
+        if (!element)
+        {
+            return mlir::failure();
+        }
+        mlir::OpBuilder      b(run);
+        const mlir::Location loc  = run.getLoc();
+        const mlir::Value    turn = openLoop(b, loc, run.getWidth());
+        const mlir::Value    at   = plus(b, loc, run.getBitOffset(), turn);
+        const mlir::Value    bit =
+            mlir::dsdl::ReadBitOp::create(b, loc, b.getI1Type(), run.getBuffer(), run.getBufferSizeBytes(), at);
+        const mlir::Value to = plus(b, loc, element.getIndex(), turn);
+        mlir::dsdl::StoreElementOp::create(b,
+                                           loc,
+                                           element.getObject(),
+                                           element.getMemberAttr(),
+                                           to,
+                                           bit,
+                                           element.getStorageCategoryAttr(),
+                                           element.getStorageBitsAttr());
+        run.erase();
+        if (element.getAddress().use_empty())
+        {
+            element.erase();
+        }
+        return mlir::success();
+    }
+
+    Option<BoolArrayStorage>
+        storage_{*this,
+                 "storage",
+                 llvm::cl::desc("How the target stores a bool array"),
+                 llvm::cl::init(BoolArrayStorage::PerElement),
+                 llvm::cl::values(clEnumValN(BoolArrayStorage::Packed, "packed", "packed into bytes, as on the wire"),
+                                  clEnumValN(BoolArrayStorage::PackedWhenFixed,
+                                             "packed-when-fixed",
+                                             "packed where the length is fixed, a bool per element where it varies"),
+                                  clEnumValN(BoolArrayStorage::PerElement, "per-element", "a bool per element"))};
+};
+
+/// @brief Whether @p fn answers an error code: a plan body, or a setter. A getter answers a value,
+///        which may be an `i8` that is zero without meaning success.
+bool answersAnError(mlir::func::FuncOp fn)
+{
+    const auto                           body              = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+    static constexpr llvm::StringLiteral kErrorAnswering[] = {"serialize", "deserialize", "initialize", "set"};
+    return body && llvm::is_contained(kErrorAnswering, body.getValue());
+}
+
+/// @brief Marks each body that cannot fail as `llvmdsdl.infallible`.
+///
+/// Whether a body can fail is a fact of the body, and what makes it one is often a fold of this
+/// pipeline: `dsdl-fold-null-guards` erases the only error a Rust body had. A body whose every
+/// return answers the constant zero as its error, the first of what it answers, has no error to
+/// report, and a backend whose idiom reports an
+/// error apart from the result -- a `Result`, an `error`, an exception -- has no failure path to
+/// spell. Stated here, it is read rather than derived again by each backend that asks.
+struct MarkDSDLInfallibleBodiesPass final
+    : public mlir::PassWrapper<MarkDSDLInfallibleBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-mark-infallible-bodies";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Mark each plan body or setter whose every return answers an error of zero as unable to fail";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            if (!answersAnError(fn))
+            {
+                return;
+            }
+            bool zero = !fn.getBody().empty();
+            fn.walk([&](mlir::func::ReturnOp ret) {
+                if ((ret.getNumOperands() == 0) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
+                {
+                    zero = false;
+                }
+            });
+            if (zero)
+            {
+                fn->setAttr("llvmdsdl.infallible", mlir::UnitAttr::get(fn.getContext()));
+            }
+            else
+            {
+                fn->removeAttr("llvmdsdl.infallible");
+            }
+        });
+    }
+};
+
+/// @brief Marks each argument its function never reads as `llvmdsdl.unread`.
+///
+/// A plan's signature is the plan's, and a function may be handed what it has no use for: a helper
+/// that answers without its operand, an accessor whose reads take the buffer alone, a body of a type
+/// with no fields. Whether a parameter is read is a fact of the body the folds of this pipeline
+/// decide, and a backend that must mark or name an unread parameter reads the mark rather than
+/// deriving it again.
+struct MarkDSDLUnreadArgumentsPass final
+    : public mlir::PassWrapper<MarkDSDLUnreadArgumentsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-mark-unread-arguments";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Mark each function argument nothing in the body reads as unread";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            if (fn.getBody().empty())
+            {
+                return;
+            }
+            for (const mlir::BlockArgument argument : fn.getArguments())
+            {
+                if (argument.use_empty())
+                {
+                    fn.setArgAttr(argument.getArgNumber(), "llvmdsdl.unread", mlir::UnitAttr::get(fn.getContext()));
+                }
+                else
+                {
+                    fn.removeArgAttr(argument.getArgNumber(), "llvmdsdl.unread");
+                }
+            }
+        });
     }
 };
 
@@ -2227,6 +2876,31 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass()
     return std::make_unique<FoldDSDLUnobservedAccessorSizesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLBodySizesPass()
+{
+    return std::make_unique<FoldDSDLBodySizesPass>();
+}
+
+std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(const BoolArrayStorage storage)
+{
+    return std::make_unique<ExpandDSDLBoolRunsPass>(storage);
+}
+
+std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass()
+{
+    return std::make_unique<FoldDSDLNestedCallSizesPass>();
+}
+
+std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass()
+{
+    return std::make_unique<MarkDSDLInfallibleBodiesPass>();
+}
+
+std::unique_ptr<mlir::Pass> createMarkDSDLUnreadArgumentsPass()
+{
+    return std::make_unique<MarkDSDLUnreadArgumentsPass>();
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
 {
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
@@ -2276,11 +2950,26 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     {
         pm.addPass(createKeepDSDLAccessorsPass());
     }
+    // After the host-image fold, which recognises a nested call as the plan builds it.
+    if (target.bodiesAnswerSize)
+    {
+        pm.addPass(createFoldDSDLNestedCallSizesPass());
+        pm.addPass(createFoldDSDLBodySizesPass());
+    }
+    // After the host-image fold too, which reads a bool run as the field work it replaces.
+    if (target.boolArrays != BoolArrayStorage::Packed)
+    {
+        pm.addPass(createExpandDSDLBoolRunsPass(target.boolArrays));
+    }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
         addOptimizeLoweredSerDesPipeline(pm);
     }
+    // Last, so what they state is true of the bodies every backend receives: each fold above can
+    // take away the only error a body had, or the only read of a parameter.
+    pm.addPass(createMarkDSDLInfallibleBodiesPass());
+    pm.addPass(createMarkDSDLUnreadArgumentsPass());
 }
 
 void registerDSDLPasses()
@@ -2291,11 +2980,17 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> const  reg;
-    static mlir::PassRegistration<LowerDSDLExecPass> const           regExec;
-    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const   regAlias;
-    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const regFold;
-    static mlir::PassRegistration<KeepDSDLAccessorsPass> const       regKeep;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const          reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const                   regExec;
+    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const           regAlias;
+    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const         regFold;
+    static mlir::PassRegistration<KeepDSDLAccessorsPass> const               regKeep;
+    static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const        regInfallible;
+    static mlir::PassRegistration<MarkDSDLUnreadArgumentsPass> const         regUnread;
+    static mlir::PassRegistration<FoldDSDLUnobservedAccessorSizesPass> const regUnobserved;
+    static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const         regNestedSizes;
+    static mlir::PassRegistration<FoldDSDLBodySizesPass> const               regBodySizes;
+    static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const              regBoolRuns;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

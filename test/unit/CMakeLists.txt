@@ -24,6 +24,7 @@ add_executable(llvmdsdl-unit-tests
   DefinitionDependenciesTests.cpp
   DefinitionIndexTests.cpp
   DefinitionPathProjectionTests.cpp
+  ImportSetTests.cpp
   BodyValueNamingTests.cpp
   HelperBindingNamingTests.cpp
   HelperBodyPlanTests.cpp

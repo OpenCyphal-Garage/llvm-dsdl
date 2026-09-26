@@ -67,7 +67,6 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -143,6 +142,11 @@ public:
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
+    }
+
+    bool holdsView(const SemanticSection& section) const
+    {
+        return index_.holdsView(section);
     }
 
     static std::string rustModuleName(const DiscoveredDefinition& info)
@@ -343,51 +347,11 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     return "u8";
 }
 
-/// @brief Whether @p section holds a view, directly or through a type it holds.
-///
-/// A view borrows the buffer, so the struct carries a lifetime, and so does every struct that
-/// holds one. DSDL forbids a type reaching itself, so the walk ends.
-bool sectionHoldsView(const SemanticSection&            section,
-                      const EmitterContext&             ctx,
-                      std::set<const SemanticSection*>& visiting)
-{
-    if (!visiting.insert(&section).second)
-    {
-        return false;
-    }
-    bool holds = false;
-    for (const auto& field : section.fields)
-    {
-        if (field.heldAsView)
-        {
-            holds = true;
-            break;
-        }
-        if (field.resolvedType.compositeType)
-        {
-            const auto* nested = ctx.find(*field.resolvedType.compositeType);
-            if ((nested != nullptr) && sectionHoldsView(nested->request, ctx, visiting))
-            {
-                holds = true;
-                break;
-            }
-        }
-    }
-    visiting.erase(&section);
-    return holds;
-}
-
-bool sectionHoldsView(const SemanticSection& section, const EmitterContext& ctx)
-{
-    std::set<const SemanticSection*> visiting;
-    return sectionHoldsView(section, ctx, visiting);
-}
-
 /// @brief The lifetime a type carries when it holds a view: `<'a>`, or nothing.
 std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx)
 {
     const auto* nested = ctx.find(ref);
-    return ((nested != nullptr) && sectionHoldsView(nested->request, ctx)) ? "<'a>" : "";
+    return ((nested != nullptr) && ctx.holdsView(nested->request)) ? "<'a>" : "";
 }
 
 std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -632,10 +596,8 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
-        inBody_              = direction.has_value();
         accessor_            = Accessor::None;
-        cannotFail_          = everyReturnIsZero(fn);
-        deferredSize_        = {};
+        cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -657,30 +619,15 @@ public:
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
         const bool lifetime = planOf(fn.getArgument(0)).lifetime;
 
-        // The size a plan is handed by pointer becomes a local, and how it is declared follows the
-        // body's own use of it. A body that reads the size it arrives with binds the slice's
-        // length; one that only writes a size back -- an empty definition writes zero without
-        // reading -- leaves the declaration to that write, since a binding nothing reads before
-        // overwriting is what `unused_assignments` reports and a bare `let` before it is what
-        // `needless_late_init` reports. Where the length goes, the buffer can be left unused, and
-        // Rust names an argument a body ignores with a leading underscore.
-        const SizeUse     size   = sizeUse(fn);
-        const bool        defer  = !size.read && size.writtenOnceAtEntry;
-        const std::string buffer = (defer && fn.getArgument(1).use_empty()) ? "_buffer" : "buffer";
+        // A body of a definition with no fields reads nothing of its buffer, and Rust names an
+        // argument a body ignores with a leading underscore.
+        const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
 
-        w.open(serialize ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> core::result::Result<usize, i8> {"
+        w.open(serialize ? "pub fn serialize(&self, " + buffer +
+                               ": &mut [u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {"
                          : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
-                               "[u8]) -> core::result::Result<usize, i8> {");
-        if (defer)
-        {
-            deferredSize_ = fn.getArgument(2);
-        }
-        else
-        {
-            w.line(std::string{"let "} + (size.written ? "mut " : "") + "inout_buffer_size_bytes: usize = " + buffer +
-                   ".len();");
-        }
-        return {"self", buffer, "inout_buffer_size_bytes"};
+                               "[u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {");
+        return {"self", buffer};
     }
 
     /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
@@ -694,7 +641,7 @@ public:
         const std::string storage   = scalarType(member.io);
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string index     = indexed ? ", index: usize" : "";
@@ -702,14 +649,8 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
-            // length a plan writes back, so the lowering erases the write for this target, and the
-            // size pointer is declared only where a plan still reads it.
+            // The nested type's buffer, as a slice, which carries its own length.
             w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> &[u8] {");
-            if (!fn.getArguments().back().use_empty())
-            {
-                w.line("let mut out_size: usize = 0;");
-            }
         }
         else if (getter)
         {
@@ -726,13 +667,13 @@ public:
         else
         {
             w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage +
-                   ") -> core::result::Result<(), i8> {");
+                   ") -> core::result::Result<(), crate::dsdl_runtime::Error> {");
         }
         // The buffer's size as the plan speaks it, bound where the plan uses it at all. A composite
         // getter does not, once the length it wrote back is erased. A scalar accessor does, but only
         // through reads whose Rust spelling takes the slice alone, which carries its own length --
         // so the name is one the compiler is told not to expect to be read.
-        if (!fn.getArgument(1).use_empty())
+        if (readsArgument(fn, 1))
         {
             w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
         }
@@ -742,11 +683,7 @@ public:
             w.line("let index = index as u64;");
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("out_size");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (integer)
             {
@@ -855,24 +792,34 @@ public:
             w.line(expr.str() + returnCast_);
             return;
         }
-        // Where every return of the function is the constant zero the error arm is unreachable, and
-        // spelling the test anyway is the `0i8 == 0i8` that `eq_op` reports. The IR holds no
-        // comparison -- it returns the constant -- so the redundancy is this spelling's to avoid.
+        // Where the body is marked unable to fail the error arm is unreachable, and spelling the test
+        // anyway is the `0i8 == 0i8` that `eq_op` reports.
         if (accessor_ == Accessor::Setter)
         {
             w.line(cannotFail_ ? std::string{"Ok(())"}
-                               : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
-            return;
-        }
-        // A body answers the runtime's error code; its Rust signature answers the size or the code.
-        if (inBody_)
-        {
-            w.line(cannotFail_ ? std::string{"Ok(inout_buffer_size_bytes)"}
-                               : "if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" +
-                                     expr.str() + ") }");
+                               : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + errorOf(expr) + ") }");
             return;
         }
         w.line(expr.str());
+    }
+
+    void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
+    {
+        // Where the body is marked unable to fail the error arm is unreachable, as for a setter.
+        w.line(cannotFail_
+                   ? "Ok(" + used.str() + ")"
+                   : "if " + error.str() + " == 0i8 { Ok(" + used.str() + ") } else { Err(" + errorOf(error) + ") }");
+    }
+
+    /// @brief The runtime's error for the plan's code @p code.
+    static std::string errorOf(const llvm::StringRef code)
+    {
+        return "crate::dsdl_runtime::Error::from_code(" + code.str() + ")";
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
+    {
+        return names(op.getBuffer()) + ".len() as u64";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1162,58 +1109,50 @@ public:
                (result.getIsConst() ? "&" : "&mut ") + buffer + "[_start..] }";
     }
 
-    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        return names(op.getPointer()) + " as " + typeName(op.getValue().getType());
+        // A body's size reaches Rust as its buffer's length and a second result.
+        llvm::report_fatal_error("Rust spelling: a size pointer reaches Rust only folded");
     }
 
-    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    void storeScalar(SourceWriter& /*w*/, mlir::dsdl::StoreScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const std::string value = asSize(names(op.getValue()));
-        if (op.getPointer() == deferredSize_)
-        {
-            deferredSize_ = {};
-            w.line("let " + names(op.getPointer()) + ": usize = " + value + ";");
-            return;
-        }
-        w.line(names(op.getPointer()) + " = " + value + ";");
+        llvm::report_fatal_error("Rust spelling: a size pointer reaches Rust only folded");
     }
 
-    [[nodiscard]] std::string local(SourceWriter&         w,
-                                    mlir::dsdl::LocalOp   op,
-                                    const llvm::StringRef name,
-                                    const ValueNames&     names) const override
+    [[nodiscard]] std::string local(SourceWriter& /*w*/,
+                                    mlir::dsdl::LocalOp /*op*/,
+                                    const llvm::StringRef /*name*/,
+                                    const ValueNames& /*names*/) const override
     {
-        // The size a nested call is handed bounds the slice it gets; it is written back only
-        // where the plan reads the answer.
-        w.line(std::string("let ") + (plansReadOfSize(op.getAddress()) ? "mut " : "") + name.str() +
-               ": usize = " + asSize(names(op.getInit())) + ";");
-        return name.str();
+        // A body's only local is the size of a nested call, which reaches Rust folded to
+        // `dsdl.call_serdes_sized`.
+        llvm::report_fatal_error("Rust spelling: a local reaches Rust only as a nested call's size");
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
     {
-        return memberAccess(op.getObject(), op.getMember(), names) + " as " + typeName(op.getValue().getType());
+        return loadedValue(memberAccess(op.getObject(), op.getMember(), names), op.getValue().getType());
     }
 
     void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
     {
         const Member member = memberOf(op.getObject(), op.getMember());
         w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
-               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)) + ";");
     }
 
     [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
     {
-        return elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " as " +
-               typeName(op.getValue().getType());
+        return loadedValue(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                           op.getValue().getType());
     }
 
     void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
     {
         const Member member = memberOf(op.getObject(), op.getMember());
         w.line(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
-               storedValue(names(op.getValue()), scalarType(member.io)) + ";");
+               storedValue(names(op.getValue()), op.getValue().getType(), scalarType(member.io)) + ";");
     }
 
     [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
@@ -1247,11 +1186,11 @@ public:
         w.open("if Self::__LLVMDSDL_MEMORY_MODE == crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
         w.line("let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
         w.open("if let Err(_alloc_err) = " + access + ".reserve_with_pool(" + count + ", &mut _pool) {");
-        w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+        w.line("return Err(crate::dsdl_runtime::Error::from(_alloc_err));");
         w.close("}");
         w.midway("} else {");
         w.open("if let Err(_alloc_err) = " + access + ".try_reserve(" + count + ") {");
-        w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+        w.line("return Err(crate::dsdl_runtime::Error::from(_alloc_err));");
         w.close("}");
         w.close("}");
         w.line(access + ".resize(" + count + ", Default::default());");
@@ -1312,26 +1251,26 @@ public:
                prefix + ", " + std::to_string(width) + "u8) as " + result;
     }
 
-    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // A bool array is a container of bools, so a run of its bits goes one element at a time.
-        const auto        container = boolContainerOf(op.getSource(), names);
-        const std::string index     = fresh("bit");
-        w.open("for " + index + " in 0.." + asSize(names(op.getWidth())) + " {");
-        w.line("let _ = crate::dsdl_runtime::set_bit(" + names(op.getDestination()) + ", " +
-               asSize(names(op.getDestinationBitOffset())) + " + " + index + ", " + container.first + "[" +
-               container.second + " + " + asSize(names(op.getSourceBitOffset())) + " + " + index + "]);");
-        w.close("}");
+        // A bool array holds a bool per element, so each of its runs reaches Rust expanded.
+        llvm::report_fatal_error("Rust spelling: a bool run reaches Rust expanded to dsdl.write_bit");
     }
 
-    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const auto        container = boolContainerOf(op.getDestination(), names);
-        const std::string index     = fresh("bit");
-        w.open("for " + index + " in 0.." + asSize(names(op.getWidth())) + " {");
-        w.line(container.first + "[" + container.second + " + " + index + "] = crate::dsdl_runtime::get_bit(" +
-               names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + " + " + index + ");");
-        w.close("}");
+        llvm::report_fatal_error("Rust spelling: a bool run reaches Rust expanded to dsdl.read_bit");
+    }
+
+    void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
+    {
+        w.line("let _ = crate::dsdl_runtime::set_bit(" + names(op.getBuffer()) + ", " +
+               asSize(names(op.getBitOffset())) + ", " + names(op.getValue()) + ");");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
+    {
+        return "crate::dsdl_runtime::get_bit(" + names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1425,20 +1364,43 @@ public:
                destination + ".as_mut_ptr(), _n) }; } " + destination + "[_n.." + width + "].fill(0u8); }");
     }
 
-    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // The nested value serialises itself into the slice from the buffer's offset, bounded by
-        // the size the plan handed in; its answer is the size it used, which the plan reads back
-        // through the local. The bound is taken before the slice is, so the length read ends first.
+        llvm::report_fatal_error("Rust spelling: a nested call reaches Rust folded to dsdl.call_serdes_sized");
+    }
+
+    void declareCallSerdesSized(SourceWriter&                 w,
+                                const llvm::StringRef         error,
+                                const llvm::StringRef         consumed,
+                                mlir::dsdl::CallSerdesSizedOp op,
+                                const ValueNames&             names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by the
+        // space the plan offers, and answers what it used or its code. The bound is taken before
+        // the slice is, so the length read ends first. What it used means something only where
+        // the code is zero.
         const bool        serialize = op.getDirection() == "serialize";
         const std::string buffer    = names(op.getBuffer());
-        const std::string size      = names(op.getSize());
-        const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
-                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
-        const std::string used =
-            plansReadOfSize(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
-        return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
-               used + " Err(_code) => _code }";
+        const std::string slice = "{ let _len = core::cmp::min(" + asSize(names(op.getAvailable())) + ", " + buffer +
+                                  ".len()); " + (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+        const std::string call  = names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ")";
+        if (consumed.empty() && error.empty())
+        {
+            discard(w, call);
+            return;
+        }
+        if (consumed.empty())
+        {
+            declare(w, op.getError().getType(), error, "match " + call + " { Ok(_) => 0i8, Err(e) => e.code() }");
+            return;
+        }
+        if (error.empty())
+        {
+            declare(w, op.getConsumed().getType(), consumed, "match " + call + " { Ok(used) => used, Err(_) => 0 }");
+            return;
+        }
+        w.line("let (" + error.str() + ", " + consumed.str() + ") = match " + call +
+               " { Ok(used) => (0i8, used), Err(e) => (e.code(), 0) };");
     }
 
 private:
@@ -1515,18 +1477,6 @@ private:
         return memberAccess(object, member, names) + "[" + asSize(index) + "]";
     }
 
-    /// @brief The container expression and element base of the bool array @p address names.
-    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
-    {
-        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
-        if (!element)
-        {
-            llvm::report_fatal_error("Rust spelling: a bit copy whose storage is not an array element");
-        }
-        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
-                              asSize(names(element.getIndex())));
-    }
-
     /// @brief The Rust type the struct declares a scalar field or element as.
     static std::string scalarType(mlir::dsdl::IOOp io)
     {
@@ -1547,14 +1497,20 @@ private:
         return unsignedStorageType(bits);
     }
 
-    /// @brief @p value converted for storage in a field of @p type.
-    static std::string storedValue(const std::string& value, const std::string& type)
+    /// @brief @p access read as a value of @p type. A bool is read as a bool.
+    static std::string loadedValue(const std::string& access, const mlir::Type type)
     {
-        if (type == "bool")
+        return isBool(type) ? access : access + " as " + typeName(type);
+    }
+
+    /// @brief @p value, of @p type, converted for storage in a field of @p storage.
+    static std::string storedValue(const std::string& value, const mlir::Type type, const std::string& storage)
+    {
+        if (storage == "bool")
         {
-            return value + " != 0u64";
+            return isBool(type) ? value : value + " != 0u64";
         }
-        return value + " as " + type;
+        return value + " as " + storage;
     }
 
     // Types.
@@ -1679,7 +1635,6 @@ private:
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
     mutable std::size_t                              counter_{0};
-    mutable bool                                     inBody_{false};
 
     /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
     enum class Accessor : std::uint8_t
@@ -1691,62 +1646,8 @@ private:
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
 
-    /// @brief Whether the function being spelt returns the constant zero on every path.
+    /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
     mutable bool cannotFail_{false};
-
-    /// @brief The size argument whose local the body's own write is still to declare, if any.
-    mutable mlir::Value deferredSize_;
-
-    /// @brief Returns whether every return of @p fn answers a constant zero.
-    static bool everyReturnIsZero(mlir::func::FuncOp fn)
-    {
-        bool zero = true;
-        fn.walk([&](mlir::func::ReturnOp ret) {
-            if ((ret.getNumOperands() != 1) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
-            {
-                zero = false;
-            }
-        });
-        return zero;
-    }
-
-    /// @brief How a plan body uses the size it is handed by pointer.
-    struct SizeUse final
-    {
-        /// @brief Whether the body reads the size it arrives with.
-        bool read{};
-        /// @brief Whether the body writes a size back.
-        bool written{};
-        /// @brief Whether that write is a single one in the entry block, so it always happens.
-        bool writtenOnceAtEntry{};
-    };
-
-    /// @brief Returns how the plan body @p fn uses its size argument.
-    static SizeUse sizeUse(mlir::func::FuncOp fn)
-    {
-        const mlir::Value pointer = fn.getArgument(2);
-        SizeUse           out;
-        out.read = plansReadOfSize(pointer);
-
-        unsigned         writes = 0;
-        mlir::Operation* write  = nullptr;
-        for (mlir::Operation* user : pointer.getUsers())
-        {
-            if (mlir::isa<mlir::dsdl::StoreScalarOp>(user))
-            {
-                ++writes;
-                write = user;
-            }
-            else if (!mlir::isa<mlir::dsdl::LoadScalarOp>(user))
-            {
-                // Anything else that holds the pointer may read through it.
-                out.read = true;
-            }
-        }
-        out.written            = writes > 0;
-        out.writtenOnceAtEntry = (writes == 1) && (write->getBlock() == &fn.front());
-        return out;
-    }
 };
 
 std::string rustConstType(const TypeExprAST& type)
@@ -1846,7 +1747,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
     // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
     // entry points that read a buffer take it for that lifetime.
-    const bool        holdsView = sectionHoldsView(section, ctx);
+    const bool        holdsView = ctx.holdsView(section);
     const std::string generics  = holdsView ? "<'a>" : "";
     const std::string implHead  = holdsView ? "impl<'a> " : "impl ";
     const std::string borrowed  = holdsView ? "&'a [u8]" : "&[u8]";
@@ -2064,15 +1965,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             return err;
         }
         w.blank();
-        w.open("pub fn deserialize_with_consumed(&mut self, buffer: " + borrowed + ") -> (i8, usize) {");
-        w.open("match self.deserialize(buffer) {");
-        w.line("Ok(consumed) => (0, consumed),");
-        w.line("Err(rc) => (rc, buffer.len()),");
-        w.close("}");
-        w.close("}");
-        w.blank();
-
-        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
+        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, "
+               "crate::dsdl_runtime::Error> {");
         w.line("let mut buffer = "
                "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
         w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
@@ -2082,7 +1976,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.close("}");
         w.blank();
 
-        w.open("pub fn from_bytes(buffer: " + borrowed + ") -> core::result::Result<(Self, usize), i8> {");
+        w.open("pub fn from_bytes(buffer: " + borrowed +
+               ") -> core::result::Result<(Self, usize), crate::dsdl_runtime::Error> {");
         w.line("let mut out = Self::default();");
         w.line("let used = out.deserialize(buffer)?;");
         w.line("Ok((out, used))");
@@ -2116,11 +2011,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.fullName.c_str());
     }
     std::set<std::string> lifetimeSections;
-    if (sectionHoldsView(def.request, ctx))
+    if (ctx.holdsView(def.request))
     {
         lifetimeSections.insert(def.isService ? "request" : "");
     }
-    if (def.response && sectionHoldsView(*def.response, ctx))
+    if (def.response && ctx.holdsView(*def.response))
     {
         lifetimeSections.insert("response");
     }
@@ -2313,7 +2208,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         // The alias names the request, so it carries the request's lifetime when the request holds
         // a view.
-        const std::string baseGenerics = sectionHoldsView(def.request, ctx) ? "<'a>" : "";
+        const std::string baseGenerics = ctx.holdsView(def.request) ? "<'a>" : "";
         w.line("pub type " + baseType + baseGenerics + " = " + declaredReq + baseGenerics + ";");
     }
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type

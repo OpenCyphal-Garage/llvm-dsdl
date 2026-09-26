@@ -20,6 +20,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
@@ -138,6 +139,33 @@ std::string packageNameFromPath(const std::string& path)
         out = "rootdsdl";
     }
     return out;
+}
+
+/// @brief The receiver of @p typeName's methods: the initial of its head noun, the name's last word,
+///        as Go names a receiver for what its type is. `ListRequest` is `r` and `NodeID` is `i`.
+std::string goReceiverName(const llvm::StringRef typeName)
+{
+    std::size_t last = typeName.size();
+    while ((last > 0) && !llvm::isUpper(typeName[last - 1]))
+    {
+        --last;
+    }
+    if (last == 0)
+    {
+        return "o";
+    }
+    --last;
+    // A capital that a lower-case letter follows starts a word; one that ends the name, or a digit
+    // follows, ends an acronym, which is one word.
+    std::size_t start = last;
+    if ((last + 1 == typeName.size()) || !llvm::isLower(typeName[last + 1]))
+    {
+        while ((start > 0) && llvm::isUpper(typeName[start - 1]))
+        {
+            --start;
+        }
+    }
+    return std::string(1, llvm::toLower(typeName[start]));
 }
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
@@ -407,6 +435,11 @@ public:
         return index_.find(ref);
     }
 
+    bool holdsView(const SemanticSection& section) const
+    {
+        return index_.holdsView(section);
+    }
+
     static std::string packagePath(const DiscoveredDefinition& info)
     {
         return packagePathFromComponents(info.namespaceComponents);
@@ -512,10 +545,108 @@ std::map<std::string, std::string> computeImportAliases(const SemanticDefinition
     return out;
 }
 
-std::string goBaseFieldType(const SemanticFieldType&                  type,
-                            const EmitterContext&                     ctx,
-                            const std::string&                        currentPackagePath,
-                            const std::map<std::string, std::string>& importAliases)
+/// @brief How one Go file names what it takes from other packages, recording each import.
+///
+/// Every symbol the file writes from another package is named here, so the import block written
+/// from the set once the file is rendered holds what the file names and nothing else; Go refuses to
+/// compile an import nothing uses.
+class GoFileNames final
+{
+public:
+    GoFileNames(const EmitterContext&              ctx,
+                ImportSet&                         imports,
+                std::string                        moduleName,
+                std::string                        ownPackage,
+                std::map<std::string, std::string> packageAliases)
+        : ctx_(ctx)
+        , imports_(imports)
+        , moduleName_(std::move(moduleName))
+        , ownPackage_(std::move(ownPackage))
+        , packageAliases_(std::move(packageAliases))
+    {
+    }
+
+    /// @brief The type of the definition @p ref, qualified by its package's alias where the package
+    ///        is another.
+    [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
+    {
+        const std::string path = ctx_.packagePath(ref);
+        std::string       name = ctx_.goTypeName(ref);
+        if (path.empty() || (path == ownPackage_))
+        {
+            return name;
+        }
+        const auto alias = packageAliases_.find(path);
+        if (alias == packageAliases_.end())
+        {
+            return name;
+        }
+        return imports_.module(ImportOrigin::Definition, moduleName_ + "/" + path, alias->second) + "." + name;
+    }
+
+    /// @brief The runtime package the bodies call.
+    [[nodiscard]] std::string runtime() const
+    {
+        return imports_.module(ImportOrigin::Runtime, moduleName_ + "/dsdlruntime", "dsdlruntime");
+    }
+
+    /// @brief The standard library's package @p package.
+    [[nodiscard]] std::string standard(const llvm::StringRef package) const
+    {
+        return imports_.module(ImportOrigin::Standard, package, package);
+    }
+
+private:
+    const EmitterContext&              ctx_;
+    ImportSet&                         imports_;
+    std::string                        moduleName_;
+    std::string                        ownPackage_;
+    std::map<std::string, std::string> packageAliases_;
+};
+
+/// @brief Writes the import declaration of a Go file that names @p imports: the standard library's
+///        packages, then the module's own, each group in the order of its paths, as gofmt sorts it.
+void writeGoImports(SourceWriter& w, const ImportSet& imports)
+{
+    std::vector<std::string> standard;
+    std::vector<std::string> own;
+    for (const ImportedModule& module : imports.modules())
+    {
+        if (module.origin == ImportOrigin::Standard)
+        {
+            standard.push_back("\"" + module.path + "\"");
+        }
+        else
+        {
+            own.push_back(module.binding + " \"" + module.path + "\"");
+        }
+    }
+    if (standard.empty() && own.empty())
+    {
+        return;
+    }
+    // A group of the module's own sorts by path, which is past the alias each line opens with.
+    std::ranges::sort(own, [](const std::string& a, const std::string& b) {
+        return a.substr(a.find(' ')) < b.substr(b.find(' '));
+    });
+    w.open("import (");
+    for (const std::string& line : standard)
+    {
+        w.line(line);
+    }
+    if (!standard.empty() && !own.empty())
+    {
+        w.blank();
+    }
+    for (const std::string& line : own)
+    {
+        w.line(line);
+    }
+    w.close(")");
+    w.blank();
+}
+
+std::string goBaseFieldType(const SemanticFieldType& type, const GoFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -534,18 +665,7 @@ std::string goBaseFieldType(const SemanticFieldType&                  type,
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            const auto depPath = ctx.packagePath(*type.compositeType);
-            auto       depType = ctx.goTypeName(*type.compositeType);
-            if (depPath.empty() || depPath == currentPackagePath)
-            {
-                return depType;
-            }
-            const auto it = importAliases.find(depPath);
-            if (it != importAliases.end())
-            {
-                return it->second + "." + depType;
-            }
-            return depType;
+            return file.type(*type.compositeType);
         }
         return "uint8";
     }
@@ -566,12 +686,9 @@ std::string goViewType(const SemanticFieldType& type)
     return "[][]byte";
 }
 
-std::string goFieldType(const SemanticFieldType&                  type,
-                        const EmitterContext&                     ctx,
-                        const std::string&                        currentPackagePath,
-                        const std::map<std::string, std::string>& importAliases)
+std::string goFieldType(const SemanticFieldType& type, const GoFileNames& file)
 {
-    auto base = goBaseFieldType(type, ctx, currentPackagePath, importAliases);
+    auto base = goBaseFieldType(type, file);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -597,7 +714,8 @@ std::string goFieldType(const SemanticFieldType&                  type,
 class GoSpelling final : public BodySpelling
 {
 public:
-    explicit GoSpelling(mlir::dsdl::SchemaOp schema)
+    GoSpelling(mlir::dsdl::SchemaOp schema, const GoFileNames& file)
+        : file_(file)
     {
         if (schema.getBody().empty())
         {
@@ -640,8 +758,8 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
-        inBody_              = direction.has_value();
         accessor_            = Accessor::None;
+        cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -659,12 +777,11 @@ public:
         {
             return openAccessor(w, fn, *direction == "get");
         }
-        const Plan& plan = planOf(fn.getArgument(0));
-        w.open("func (obj *" + plan.typeName + ") " + (*direction == "serialize" ? "Serialize" : "Deserialize") +
-               "(buffer []byte) (int8, int) {");
-        // The size a plan is handed by pointer, read at entry and written back at the end.
-        w.line("inoutBufferSizeBytes := len(buffer)");
-        return {"obj", "buffer", "inoutBufferSizeBytes"};
+        const Plan&       plan     = planOf(fn.getArgument(0));
+        const std::string receiver = goReceiverName(plan.typeName);
+        w.open("func (" + receiver + " *" + plan.typeName + ") " +
+               (*direction == "serialize" ? "Serialize" : "Deserialize") + "(buffer []byte) (int, error) {");
+        return {receiver, "buffer"};
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -807,7 +924,7 @@ public:
         const std::string name      = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string index     = indexed ? ", elementIndex int" : "";
@@ -815,14 +932,8 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
-            // length a plan writes back, so the lowering erases the write for this target, and the
-            // size pointer is declared only where a plan still reads it.
+            // The nested type's buffer, as a slice, which carries its own length.
             w.open("func " + name + "(buffer []byte" + index + ") []byte {");
-            if (!fn.getArguments().back().use_empty())
-            {
-                w.line("var outSize int");
-            }
         }
         else if (getter)
         {
@@ -839,7 +950,7 @@ public:
         else
         {
             w.open("func " + name + "(buffer []byte" + index + ", " + (integer ? "memberValue " : "value ") + storage +
-                   ") int8 {");
+                   ") error {");
         }
         std::vector<std::string> parameters{"buffer", "uint64(len(buffer))"};
         if (indexed)
@@ -847,15 +958,11 @@ public:
             w.line("index := uint64(elementIndex)");
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("outSize");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (storage == "bool")
             {
-                w.line("value := dsdlruntime.BoolToUint64(memberValue)");
+                w.line("value := " + file_.runtime() + ".BoolToUint64(memberValue)");
             }
             else if (integer)
             {
@@ -885,22 +992,32 @@ public:
             }
             return;
         }
+        // A setter answers the runtime's error, and nothing where it is marked unable to fail.
         if (accessor_ == Accessor::Setter)
         {
-            w.line("return " + expr.str());
-            return;
-        }
-        // A body answers the runtime's error code; its Go signature answers the code and the
-        // size, which is the size used on success and nothing on failure.
-        if (inBody_)
-        {
-            w.open("if " + expr.str() + " == int8(0) {");
-            w.line("return int8(0), inoutBufferSizeBytes");
-            w.close("}");
-            w.line("return " + expr.str() + ", 0");
+            w.line(cannotFail_ ? std::string{"return nil"}
+                               : "return " + file_.runtime() + ".ErrorOf(" + expr.str() + ")");
             return;
         }
         w.line("return " + expr.str());
+    }
+
+    void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
+    {
+        // The runtime's error on failure, and the size used on success. Where the body is marked
+        // unable to fail there is no failure to test for.
+        if (!cannotFail_)
+        {
+            w.open("if " + error.str() + " != int8(0) {");
+            w.line("return 0, " + file_.runtime() + ".ErrorOf(" + error.str() + ")");
+            w.close("}");
+        }
+        w.line("return " + used.str() + ", nil");
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
+    {
+        return "uint64(len(" + names(op.getBuffer()) + "))";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1086,7 +1203,7 @@ public:
         if (isBool(from))
         {
             // Go converts no bool to a number; the runtime does.
-            return typeName(to) + "(dsdlruntime.BoolToUint64(" + value.str() + "))";
+            return typeName(to) + "(" + file_.runtime() + ".BoolToUint64(" + value.str() + "))";
         }
         if (conversion == Conversion::SignExtend && !isSignedSpelt(from))
         {
@@ -1147,26 +1264,29 @@ public:
     {
         // The plan bounds its reads and writes itself; a slice past the end would panic first.
         const std::string buffer = names(op.getBuffer());
-        return buffer + "[dsdlruntime.ChooseMin(" + asInt(names(op.getByteOffset())) + ", len(" + buffer + ")):]";
+        return buffer + "[" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getByteOffset())) + ", len(" + buffer +
+               ")):]";
     }
 
-    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        return typeName(op.getValue().getType()) + "(" + names(op.getPointer()) + ")";
+        // A body's size reaches Go as its buffer's length and a second result.
+        llvm::report_fatal_error("Go spelling: a size pointer reaches Go only folded");
     }
 
-    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    void storeScalar(SourceWriter& /*w*/, mlir::dsdl::StoreScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        w.line(names(op.getPointer()) + " = " + asInt(names(op.getValue())));
+        llvm::report_fatal_error("Go spelling: a size pointer reaches Go only folded");
     }
 
-    [[nodiscard]] std::string local(SourceWriter&         w,
-                                    mlir::dsdl::LocalOp   op,
-                                    const llvm::StringRef name,
-                                    const ValueNames&     names) const override
+    [[nodiscard]] std::string local(SourceWriter& /*w*/,
+                                    mlir::dsdl::LocalOp /*op*/,
+                                    const llvm::StringRef /*name*/,
+                                    const ValueNames& /*names*/) const override
     {
-        w.line(name.str() + " := " + asInt(names(op.getInit())));
-        return name.str();
+        // A body's only local is the size of a nested call, which reaches Go folded to
+        // `dsdl.call_serdes_sized`.
+        llvm::report_fatal_error("Go spelling: a local reaches Go only as a nested call's size");
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
@@ -1216,7 +1336,7 @@ public:
     {
         // Sized to the count the plan validated, with zeroed elements for the plan to store into.
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
-        w.line(access + " = dsdlruntime.Resize(" + access + ", " + asInt(names(op.getValue())) + ")");
+        w.line(access + " = " + file_.runtime() + ".Resize(" + access + ", " + asInt(names(op.getValue())) + ")");
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
@@ -1239,18 +1359,18 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdlruntime.SetF" + std::to_string(width) + "(" + prefix + value + ")";
+            return file_.runtime() + ".SetF" + std::to_string(width) + "(" + prefix + value + ")";
         }
         if (width == 1 && !op.getIsSigned())
         {
-            return "dsdlruntime.SetBit(" + prefix + (isBool(valueType) ? value : value + " != uint64(0)") + ")";
+            return file_.runtime() + ".SetBit(" + prefix + (isBool(valueType) ? value : value + " != uint64(0)") + ")";
         }
         if (op.getIsSigned())
         {
-            return "dsdlruntime.SetIxx(" + prefix + asSigned(value, valueType) + ", uint8(" + std::to_string(width) +
-                   "))";
+            return file_.runtime() + ".SetIxx(" + prefix + asSigned(value, valueType) + ", uint8(" +
+                   std::to_string(width) + "))";
         }
-        return "dsdlruntime.SetUxx(" + prefix + value + ", uint8(" + std::to_string(width) + "))";
+        return file_.runtime() + ".SetUxx(" + prefix + value + ", uint8(" + std::to_string(width) + "))";
     }
 
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
@@ -1260,47 +1380,41 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdlruntime.GetF" + std::to_string(width) + "(" + prefix + ")";
+            return file_.runtime() + ".GetF" + std::to_string(width) + "(" + prefix + ")";
         }
         const std::string result = typeName(valueType);
         if (width == 1 && !op.getIsSigned())
         {
             // The bit read answers a number, which is what the plan holds it as.
-            return result + "(dsdlruntime.GetU8(" + prefix + ", uint8(1)))";
+            return result + "(" + file_.runtime() + ".GetU8(" + prefix + ", uint8(1)))";
         }
         // The runtime answers in the narrowest standard width that holds the field; a signed read
         // arrives sign-extended and keeps its value across the widening.
         const unsigned holder = holderWidthFor(width);
-        return result + "(dsdlruntime.Get" + std::string(op.getIsSigned() ? "I" : "U") + std::to_string(holder) + "(" +
-               prefix + ", uint8(" + std::to_string(width) + ")))";
+        return result + "(" + file_.runtime() + ".Get" + std::string(op.getIsSigned() ? "I" : "U") +
+               std::to_string(holder) + "(" + prefix + ", uint8(" + std::to_string(width) + ")))";
     }
 
-    void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
+    void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // A bool array is a container of bools, so a run of its bits goes one element at a time.
-        const auto        container = boolContainerOf(op.getSource(), names);
-        const std::string index     = fresh("bit");
-        const std::string at        = fresh("at");
-        const std::string from      = fresh("from");
-        w.open("for " + index + " := 0; " + index + " < " + asInt(names(op.getWidth())) + "; " + index + "++ {");
-        w.line(at + " := " + asInt(names(op.getDestinationBitOffset())) + " + " + index);
-        w.line(from + " := " + container.second + " + " + asInt(names(op.getSourceBitOffset())) + " + " + index);
-        w.line("_ = dsdlruntime.SetBit(" + names(op.getDestination()) + ", " + at + ", " + container.first + "[" +
-               from + "])");
-        w.close("}");
+        // A bool array holds a bool per element, so each of its runs reaches Go expanded.
+        llvm::report_fatal_error("Go spelling: a bool run reaches Go expanded to dsdl.write_bit");
     }
 
-    void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
+    void bitRead(SourceWriter& /*w*/, mlir::dsdl::BitReadOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const auto        container = boolContainerOf(op.getDestination(), names);
-        const std::string index     = fresh("bit");
-        const std::string at        = fresh("at");
-        const std::string into      = fresh("into");
-        w.open("for " + index + " := 0; " + index + " < " + asInt(names(op.getWidth())) + "; " + index + "++ {");
-        w.line(at + " := " + asInt(names(op.getBitOffset())) + " + " + index);
-        w.line(into + " := " + container.second + " + " + index);
-        w.line(container.first + "[" + into + "] = dsdlruntime.GetBit(" + names(op.getBuffer()) + ", " + at + ")");
-        w.close("}");
+        llvm::report_fatal_error("Go spelling: a bool run reaches Go expanded to dsdl.read_bit");
+    }
+
+    void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
+    {
+        w.line("_ = " + file_.runtime() + ".SetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) +
+               ", " + names(op.getValue()) + ")");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
+    {
+        return file_.runtime() + ".GetBit(" + names(op.getBuffer()) + ", " + asInt(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1312,8 +1426,9 @@ public:
         const std::string bytes = std::to_string(op.getBytes());
         const std::string image = fresh("image");
         const std::string avail = fresh("avail");
-        w.line(image + " := unsafe.Slice((*byte)(unsafe.Pointer(" + names(op.getObject()) + ")), " + bytes + ")");
-        w.line(avail + " := dsdlruntime.ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
+        w.line(image + " := " + file_.standard("unsafe") + ".Slice((*byte)(" + file_.standard("unsafe") + ".Pointer(" +
+               names(op.getObject()) + ")), " + bytes + ")");
+        w.line(avail + " := " + file_.runtime() + ".ChooseMin(" + asInt(names(op.getBufferSizeBytes())) + ", len(" +
                names(op.getBuffer()) + "))");
         // The object and the buffer may be the same storage, so the bytes present are copied before
         // what follows them is cleared: clearing first would clear the source. `copy` is defined
@@ -1330,8 +1445,8 @@ public:
     {
         // The buffer has been checked to hold the payload by the time this runs.
         const std::string bytes = std::to_string(op.getBytes());
-        w.line("copy(" + names(op.getBuffer()) + "[:" + bytes + "], unsafe.Slice((*byte)(unsafe.Pointer(" +
-               names(op.getObject()) + ")), " + bytes + "))");
+        w.line("copy(" + names(op.getBuffer()) + "[:" + bytes + "], " + file_.standard("unsafe") + ".Slice((*byte)(" +
+               file_.standard("unsafe") + ".Pointer(" + names(op.getObject()) + ")), " + bytes + "))");
     }
 
     // A view member is a slice of the buffer, or one element of an array of them.
@@ -1358,7 +1473,7 @@ public:
     {
         const std::string bytes = names(op.getBytes());
         w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes +
-               "[:dsdlruntime.ChooseMin(" + asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
+               "[:" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getSizeBytes())) + ", len(" + bytes + "))]");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1378,8 +1493,8 @@ public:
         const std::string width       = std::to_string(op.getBytes());
         const std::string copied      = fresh("copied");
         const std::string index       = fresh("i");
-        w.line(copied + " := copy(" + destination + "[:" + width + "], " + source + "[:dsdlruntime.ChooseMin(" +
-               asInt(names(op.getSourceSizeBytes())) + ", len(" + source + "))])");
+        w.line(copied + " := copy(" + destination + "[:" + width + "], " + source + "[:" + file_.runtime() +
+               ".ChooseMin(" + asInt(names(op.getSourceSizeBytes())) + ", len(" + source + "))])");
         w.open("for " + index + " := " + copied + "; " + index + " < " + width + "; " + index + "++ {");
         w.line(destination + "[" + index + "] = 0");
         w.close("}");
@@ -1387,29 +1502,35 @@ public:
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
-        llvm::report_fatal_error("Go spelling: a nested call is a statement");
+        llvm::report_fatal_error("Go spelling: a nested call reaches Go folded to dsdl.call_serdes_sized");
     }
 
-    void declareCallSerdes(SourceWriter&            w,
-                           const llvm::StringRef    name,
-                           mlir::dsdl::CallSerdesOp op,
-                           const ValueNames&        names) const override
+    void declareCallSerdes(SourceWriter& /*w*/,
+                           const llvm::StringRef /*name*/,
+                           mlir::dsdl::CallSerdesOp /*op*/,
+                           const ValueNames& /*names*/) const override
     {
-        // The nested value serialises itself into the slice from the buffer's offset, bounded by
-        // the size the plan handed in; it answers the code and the size it used, and the size is
-        // written back through the local where the plan reads it.
-        const bool        serialize = op.getDirection() == "serialize";
-        const std::string buffer    = names(op.getBuffer());
-        const std::string size      = names(op.getSize());
-        const std::string bound     = fresh("bound");
-        const std::string used      = plansReadOfSize(op.getSize()) ? fresh("used") : "_";
-        w.line(bound + " := dsdlruntime.ChooseMin(" + size + ", len(" + buffer + "))");
-        w.line((name.empty() ? "_" : name.str()) + ", " + used + (name.empty() && used == "_" ? " = " : " := ") +
-               names(op.getObject()) + (serialize ? ".Serialize(" : ".Deserialize(") + buffer + "[:" + bound + "])");
-        if (used != "_")
-        {
-            w.line(size + " = " + used);
-        }
+        llvm::report_fatal_error("Go spelling: a nested call reaches Go folded to dsdl.call_serdes_sized");
+    }
+
+    void declareCallSerdesSized(SourceWriter&                 w,
+                                const llvm::StringRef         error,
+                                const llvm::StringRef         consumed,
+                                mlir::dsdl::CallSerdesSizedOp op,
+                                const ValueNames&             names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by the
+        // space the plan offers, and answers what it used and its error, which the plan carries as
+        // the runtime's code.
+        const std::string buffer = names(op.getBuffer());
+        const std::string slice  = buffer + "[:" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getAvailable())) +
+                                   ", len(" + buffer + "))]";
+        const std::string call =
+            names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice + ")";
+        const std::string used   = consumed.empty() ? std::string{"_"} : consumed.str();
+        const std::string bound  = error.empty() ? used + ", _" : error.str() + ", " + used;
+        const std::string answer = error.empty() ? call : file_.runtime() + ".Coded(" + call + ")";
+        w.line(bound + ((error.empty() && consumed.empty()) ? " = " : " := ") + answer);
     }
 
 private:
@@ -1464,18 +1585,6 @@ private:
         return memberAccess(object, member, names) + "[" + asInt(index) + "]";
     }
 
-    /// @brief The container expression and element base of the bool array @p address names.
-    std::pair<std::string, std::string> boolContainerOf(const mlir::Value address, const ValueNames& names) const
-    {
-        auto element = address.getDefiningOp<mlir::dsdl::ElementAddrOp>();
-        if (!element)
-        {
-            llvm::report_fatal_error("Go spelling: a bit copy whose storage is not an array element");
-        }
-        return std::make_pair(memberAccess(element.getObject(), element.getMember(), names),
-                              asInt(names(element.getIndex())));
-    }
-
     /// @brief The Go type the struct declares a scalar field or element as.
     static std::string scalarType(mlir::dsdl::IOOp io)
     {
@@ -1497,12 +1606,15 @@ private:
     }
 
     /// @brief @p access read as a value of @p type.
-    static std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type)
+    [[nodiscard]] std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type) const
     {
-        const mlir::dsdl::IOOp io = member.io;
-        if (scalarType(io) == "bool" && !isBool(type))
+        if (isBool(type))
         {
-            return typeName(type) + "(dsdlruntime.BoolToUint64(" + access + "))";
+            return access;
+        }
+        if (scalarType(member.io) == "bool")
+        {
+            return typeName(type) + "(" + file_.runtime() + ".BoolToUint64(" + access + "))";
         }
         return typeName(type) + "(" + access + ")";
     }
@@ -1729,8 +1841,13 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
+
+    /// @brief How the file names what it takes from other packages.
+    const GoFileNames& file_;
+
+    /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
+    mutable bool        cannotFail_{false};
     mutable std::size_t counter_{0};
-    mutable bool        inBody_{false};
 };
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
@@ -1845,20 +1962,19 @@ llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::Mo
     return true;
 }
 
-llvm::Error emitSectionType(SourceWriter&                             w,
-                            const EmitterContext&                     ctx,
-                            const std::string&                        typeName,
-                            const SectionMetadata&                    metadata,
-                            const SemanticSection&                    section,
-                            const AttachedDoc&                        typeDoc,
-                            const std::string&                        definitionFullName,
-                            const std::string&                        currentPackagePath,
-                            const std::map<std::string, std::string>& importAliases,
-                            const mlir::dsdl::SerializationPlanOp     plan,
-                            const GoSpelling&                         spelling,
-                            const SectionBodies&                      bodies,
-                            mlir::ModuleOp                            module,
-                            PlanBodyLookups&                          lookups)
+llvm::Error emitSectionType(SourceWriter&                         w,
+                            const EmitterContext&                 ctx,
+                            const std::string&                    typeName,
+                            const SectionMetadata&                metadata,
+                            const SemanticSection&                section,
+                            const AttachedDoc&                    typeDoc,
+                            const std::string&                    definitionFullName,
+                            const GoFileNames&                    file,
+                            const mlir::dsdl::SerializationPlanOp plan,
+                            const GoSpelling&                     spelling,
+                            const SectionBodies&                  bodies,
+                            mlir::ModuleOp                        module,
+                            PlanBodyLookups&                      lookups)
 {
     const NamingScope constScope = makeGoConstantScope(section, typeName);
     const auto        named      = [&constScope](const std::vector<llvm::StringRef>& parts) {
@@ -1932,12 +2048,10 @@ llvm::Error emitSectionType(SourceWriter&                             w,
             {
                 continue;
             }
-            members.push_back(
-                GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
-                               field.heldAsView
-                                   ? goViewType(field.resolvedType)
-                                   : goFieldType(field.resolvedType, ctx, currentPackagePath, importAliases),
-                               field.doc});
+            members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
+                                             field.heldAsView ? goViewType(field.resolvedType)
+                                                              : goFieldType(field.resolvedType, file),
+                                             field.doc});
         }
         if (section.isUnion)
         {
@@ -1959,11 +2073,11 @@ llvm::Error emitSectionType(SourceWriter&                             w,
     if (!ctx.accessorsOnly() && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("var _ = [1]struct{}{}[unsafe.Sizeof(" + typeName + "{})-" +
+        w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Sizeof(" + typeName + "{})-" +
                std::to_string(metadata.serializationBufferSizeBytes) + "]");
         for (const auto& member : metadata.hostImageMembers)
         {
-            w.line("var _ = [1]struct{}{}[unsafe.Offsetof(" + typeName + "{}." +
+            w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Offsetof(" + typeName + "{}." +
                    fieldIdents.get(IdentifierRole::FieldName, member.fieldName) + ")-" +
                    std::to_string(member.offsetBytes) + "]");
         }
@@ -2057,8 +2171,7 @@ llvm::Error emitSectionType(SourceWriter&                             w,
                         {
                             break;
                         }
-                        const auto made = goConstructorOf(
-                            goBaseFieldType(field.resolvedType, ctx, currentPackagePath, importAliases));
+                        const auto made = goConstructorOf(goBaseFieldType(field.resolvedType, file));
                         if (entry.kind == MemberDefault::Kind::Composite)
                         {
                             w.line(goAssignment(member, " = ", made));
@@ -2095,6 +2208,39 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         {
             return err;
         }
+        // The encoding package's interfaces, over the pair above. An object holding a view keeps the
+        // bytes it reads, and encoding.BinaryUnmarshaler asks that the data not be kept, so such an
+        // object reads a copy.
+        const bool        keepsBuffer = ctx.holdsView(section);
+        const std::string receiver    = goReceiverName(typeName);
+        const std::string largest     = meta("SERIALIZATION_BUFFER_SIZE_BYTES");
+        w.blank();
+        w.line("// AppendBinary appends the wire image of " + receiver +
+               " to buffer, as encoding.BinaryAppender asks.");
+        w.open("func (" + receiver + " *" + typeName + ") AppendBinary(buffer []byte) ([]byte, error) {");
+        w.line("start := len(buffer)");
+        w.line("grown := " + file.standard("slices") + ".Grow(buffer, " + largest + ")");
+        w.line("used, err := " + receiver + ".Serialize(grown[start : start+" + largest + "])");
+        w.open("if err != nil {");
+        w.line("return buffer, err");
+        w.close("}");
+        w.line("return grown[:start+used], nil");
+        w.close("}");
+        w.blank();
+        w.line("// MarshalBinary answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks.");
+        w.open("func (" + receiver + " *" + typeName + ") MarshalBinary() ([]byte, error) {");
+        w.line("return " + receiver + ".AppendBinary(nil)");
+        w.close("}");
+        w.blank();
+        w.line(keepsBuffer ? "// UnmarshalBinary reads " + receiver + " from a copy of its wire image, which " +
+                                 receiver + "'s views would keep."
+                           : "// UnmarshalBinary reads " + receiver +
+                                 " from its wire image, as encoding.BinaryUnmarshaler asks.");
+        w.open("func (" + receiver + " *" + typeName + ") UnmarshalBinary(data []byte) error {");
+        w.line("_, err := " + receiver + ".Deserialize(" +
+               (keepsBuffer ? file.standard("bytes") + ".Clone(data)" : "data") + ")");
+        w.line("return err");
+        w.close("}");
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
@@ -2122,7 +2268,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-    GoSpelling                           spelling(schema);
+    // The declarations and bodies first, naming what they take from other packages as they write
+    // it; the import declaration is written after, from what was named.
+    ImportSet                            imports;
+    const GoFileNames                    file(ctx,
+                                              imports,
+                                              moduleName,
+                                              EmitterContext::packagePath(def.info),
+                                              computeImportAliases(def, ctx));
+    GoSpelling                           spelling(schema, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2164,7 +2318,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto currentPackagePath = EmitterContext::packagePath(def.info);
     const auto packageName        = packageNameFromPath(currentPackagePath);
-    const auto imports            = computeImportAliases(def, ctx);
     const auto baseType           = ctx.goTypeName(def.info);
     const auto reqType            = renderSectionTypeName(Language::Go, baseType, "request");
     const auto respType           = renderSectionTypeName(Language::Go, baseType, "response");
@@ -2178,8 +2331,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // the definition's type: the package's scope is what proves two of them cannot meet.
     spelling.setHelperNames(renderSchemaHelperNames(Language::Go, module, schema, packageScope, baseType));
 
-    // The declarations and bodies first: whether the runtime is imported depends on whether a
-    // body calls it, and Go rejects an import nothing uses.
     std::ostringstream body;
     SourceWriter       w = makeGoWriter(body);
     for (const mlir::func::FuncOp helper : helpers)
@@ -2199,8 +2350,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.request,
                                        def.doc,
                                        def.info.fullName,
-                                       currentPackagePath,
-                                       imports,
+                                       file,
                                        sectionPlan(schema, ""),
                                        spelling,
                                        bodies[""],
@@ -2219,8 +2369,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.request,
                                        def.doc,
                                        def.info.fullName,
-                                       currentPackagePath,
-                                       imports,
+                                       file,
                                        sectionPlan(schema, "request"),
                                        spelling,
                                        bodies["request"],
@@ -2239,8 +2388,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                            *def.response,
                                            def.doc,
                                            def.info.fullName,
-                                           currentPackagePath,
-                                           imports,
+                                           file,
                                            sectionPlan(schema, "response"),
                                            spelling,
                                            bodies["response"],
@@ -2276,33 +2424,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.blank();
     head.line("package " + packageName);
     head.blank();
-    const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
-    const bool usesUnsafe  = llvm::StringRef(body.str()).contains("unsafe.");
-    if (usesRuntime || usesUnsafe || !imports.empty())
-    {
-        head.open("import (");
-        // gofmt sorts the imports within a group, so the standard library's sit in a group of
-        // their own, ahead of the module's, and a blank line keeps the two apart.
-        if (usesUnsafe)
-        {
-            head.line("\"unsafe\"");
-            if (usesRuntime || !imports.empty())
-            {
-                head.blank();
-            }
-        }
-        if (usesRuntime)
-        {
-            head.line("dsdlruntime \"" + moduleName + "/dsdlruntime\"");
-        }
-        for (const auto& [path, alias] : imports)
-        {
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            head.line(alias + " \"" + moduleName + "/" + path + "\"");
-        }
-        head.close(")");
-        head.blank();
-    }
+    writeGoImports(head, imports);
     out << body.str();
     return out.str();
 }

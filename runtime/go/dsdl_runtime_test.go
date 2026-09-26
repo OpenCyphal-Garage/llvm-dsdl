@@ -46,6 +46,26 @@ func copyBitsRef(dst []byte, dstOffsetBits, lengthBits int, src []byte, srcOffse
 }
 
 // TestChooseMin validates minimum selection behaviour.
+func TestErrorAnswersTheCodeItWasMadeFrom(t *testing.T) {
+	for code := math.MinInt8; code <= math.MaxInt8; code++ {
+		if got := CodeOf(ErrorOf(int8(code))); got != int8(code) {
+			t.Fatalf("code %d came back as %d", code, got)
+		}
+	}
+	if ErrorOf(DSDL_RUNTIME_SUCCESS) != nil {
+		t.Fatalf("success answered an error")
+	}
+	if ErrorOf(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL) != ErrBufferTooSmall {
+		t.Fatalf("buffer too small is not ErrBufferTooSmall")
+	}
+	if got := Error(-4).Error(); got != "dsdl: unrecognised error code -4" {
+		t.Fatalf("unrecognised code reads %q", got)
+	}
+	if rc, n := Coded(5, ErrBadUnionTag); rc != int8(ErrBadUnionTag) || n != 5 {
+		t.Fatalf("Coded answered (%d, %d)", rc, n)
+	}
+}
+
 func TestChooseMin(t *testing.T) {
 	if got := ChooseMin(2, 9); got != 2 {
 		t.Fatalf("ChooseMin(2,9) = %d, want 2", got)

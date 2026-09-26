@@ -46,10 +46,6 @@ internal linkage.
 namespaces. The free `List_Request_serialize_` duplicates the `serialize` member, so one operation
 has two public spellings.
 
-**Rust** answers `Result<usize, i8>`, a bare integer where the language has a trait for the purpose.
-
-**Go** returns `(int8, int)` where the language returns `error`. The receiver is `obj`.
-
 **Python** puts the type's facts in module-level `DSDL_*` constants rather than on the class they
 describe.
 
@@ -177,6 +173,56 @@ pass reads: adding a language is a row in the table and a spelling, and the shap
 the language can express. Giving up that property to save string concatenation trades the reason
 this compiler exists for a convenience the renderer already provides.
 
+## Imports are named, not found
+
+A generated file's imports are the modules that provide the names it writes, and nothing else.
+`ImportSet`, in `include/llvmdsdl/CodeGen/ImportSet.h`, is where that is decided. The code that
+writes a name from another module names it through the file's set, which records the module and
+answers the spelling; the file is rendered first, and its import block is written from the set. A
+backend states where each of its names comes from and how its language writes an import. It keeps
+no list of imports a file may need, and reads none back off the text it wrote.
+
+Python names through it: `sys` where a body bounds an index, `dataclasses` where a class and its
+defaults are declared, the runtime where a body calls it, and a nested type where the file names
+it. A file that names none of them imports none of them, which took Python's `F401` from 198 to
+none.
+
+Go names through it too: `unsafe` where a body moves an object as bytes or a layout is asserted,
+`slices` and `bytes` in the encoding methods, the runtime where a body calls it, and a nested type's
+package where a field names it. Go had read its imports off the text, doc comments included, so a
+definition whose comment mentioned `bytes.Clone(` imported a package the file did not use, and Go
+refused to compile it. Its import declaration writes the module's own packages in the order of their
+paths, which is gofmt's.
+
+TypeScript names through it as well: the runtime's namespace where a body or entry point calls it,
+and a nested definition's interface as a type and its functions as values. The set records how a
+member is used for this, and a member named in type positions alone is imported with `import type`.
+TypeScript had walked the semantic model for every name a nested definition exports and kept the
+ones a whole-word scan found in the text.
+
+C++ names through it: a standard name from the header the standard declares it in, a C runtime
+function from `dsdl_runtime.h`, a C++ runtime name from `dsdl_runtime.hpp`, the vocabulary's types
+and operations from the headers the binding names, and a nested type from its own header where a
+declaration or a body names it. C++ had read its includes off the text, where the C runtime's
+functions matched the tokens that included `dsdl_runtime.hpp`, which includes the C runtime and
+declares none of them: `misc-include-cleaner`'s 485. A `pmr` header also included
+`<memory_resource>`, from which it names nothing. The includes are written in three groups set apart
+by blank lines, the standard library's, a bound library's and the generated tree's own, each in the
+order of its paths.
+
+C and Rust decide their imports as follows, and each is a way a file's text and its imports can
+disagree:
+
+| language | standard library | runtime | other definitions |
+|---|---|---|---|
+| C | a token scan in a header; unconditional in a `.c` file | the same | a semantic-model walk in a header; the calls a body spells, recorded, in a `.c` file |
+| Rust | none: every standard and runtime name is a full path | none | a semantic-model walk, into an import scope |
+
+Each moves onto the set in a change of its own. A language that gives an import a local name
+records the name the file spells; allocating that name within the file's scope, which Go does with
+its `pkg_` aliases, Rust in an import scope and TypeScript only among the imports themselves,
+belongs to the surface tree.
+
 ## Where each language lands
 
 Named for `uavcan.file.List.0.2` under the versioned scheme, which is what the type names below assume.
@@ -197,16 +243,23 @@ alias existed because a flat scope had no way to say that `Request` belongs to `
 `serialize`, `deserialize` and the type's facts as associated consts. Rust has no type nested in a
 type, so its module is what carries the enclosure C++ gets from nesting. A helper is a private `fn`
 of the module.
-`Result<usize, Error>` replaces `Result<usize, i8>`, over an enum deriving `Debug` and implementing
-`Display` and `core::error::Error` — stable in `core` since 1.81, so `no_std` keeps it. The variants
-are values, so returning one allocates nothing.
+`serialize` and `deserialize` answer `Result<usize, Error>` over the runtime's `Error`, an enum
+deriving `Debug` and implementing `Display` and `core::error::Error` — stable in `core` since 1.81,
+so `no_std` keeps it. The variants are values, so returning one allocates nothing, and a code the
+runtime does not define is `Unrecognised`, which carries it.
 
 **Go.** `type ListRequest struct` in package `file`. Go's own wire interfaces come first:
-`MarshalBinary() ([]byte, error)` and `UnmarshalBinary([]byte) error`, so a generated type satisfies
+`AppendBinary([]byte) ([]byte, error)`, `MarshalBinary() ([]byte, error)` and
+`UnmarshalBinary([]byte) error`, so a generated type satisfies `encoding.BinaryAppender`,
 `encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler` and drops into anything that already
-speaks them. The buffer-oriented pair stays beside them for the path that allocates nothing:
-`func (r *ListRequest) Serialize(buffer []byte) (int, error)`. Errors are package-level sentinels
-built once with `errors.New`, which is how a returned `error` costs no allocation per call.
+speaks them. `AppendBinary` appends to a slice the caller owns and can reuse, which allocates
+nothing once its capacity suffices, and `MarshalBinary` is `AppendBinary(nil)`.
+`encoding.BinaryAppender` is Go 1.24's; the method itself needs nothing newer than the module's
+`go 1.22`. A type holding a view unmarshals a copy of its data, which the interface asks it not to
+keep. The buffer-oriented pair stays beside them, writing into a slice the caller has sized:
+`func (r *ListRequest) Serialize(buffer []byte) (int, error)`. The error is the runtime's `Error`,
+a code whose named values are constants such as `ErrBufferTooSmall`, as `syscall.Errno` is: a
+returned `error` costs no allocation, and every code has a value.
 Constants take a `const` block in Go's own case, not `LIST_REQUEST_EXTENT_BYTES`. Helpers stay in
 the package scope Go gives them and take unexported camelCase names, which is Go's visibility
 mechanism rather than a convention over one.
@@ -340,9 +393,10 @@ unchanged byte for byte.
 Two findings survived the fold as spelling rather than lowering, and both were bodies whose plan
 cannot fail. Rust wrapped the plan's error code in `if err == 0i8 { Ok(..) } else { Err(err) }`
 against an error the fold had made the constant zero, and bound the slice's length to a size local
-that the body overwrote before reading. Neither shape is in the IR, so both are answered in the
-emitter: a function whose every return is a constant zero spells the success arm alone, and a body
-that never reads the size it is handed leaves the local's declaration to its own write.
+that the body overwrote before reading. Both are answered in the lowering:
+`dsdl-mark-infallible-bodies` marks a body whose every return answers an error of zero, whose
+success arm Rust spells alone, and `dsdl-fold-body-sizes` makes the size a body answers a result, so
+no local holds it.
 
 With the other three judges installed beside it, the backlog this phase exists to produce came to
 10,106 findings over the regulated corpus. Fixing what the four of them agreed on took it to 5,499,
@@ -355,7 +409,6 @@ and every one of those fixes was in a single place:
 | `dsdl-fold-null-guards` | reads the fold orphaned, which a canonicaliser keeps | swept to a fixed point, so no arm arrives empty |
 | `BodyTranslator` | an `scf.if` of values spelled as a branch | the select it is |
 | `BodyTranslator` | a null test negated by wrapping its text | `isNotNull`, which each language spells as its own test |
-| `EmitCommon` | `isRead`, in four copies, three of them stale | `plansReadOfSize` |
 | `HelperBindingNaming` | one lowered symbol per helper, in four languages | a name the scope holding it reaches it by |
 | `Ts.cpp` | `interface X {}`, which any non-nullish value satisfies | `Record<string, never>` |
 | `dsdl-fold-unobserved-accessor-sizes` | a composite getter's written-back length, in a local each of four languages suppressed | erased where the getter returns a view that carries its length |
@@ -367,8 +420,9 @@ the length, so the write landed in a local nothing read -- and each language had
 hide it: `_ = outSize`, `void outSize`, a leading underscore. The write is erased in the lowering
 for every language whose getter answers a view, where it is a question about the getter's signature
 and not about nulls, and the canonicaliser takes what fed it, including the subtraction a getter at
-a non-zero offset used. An emitter declares the size only where a plan still reads it. C++ answers
-a span, so the write is erased for it too.
+a non-zero offset used. The parameter goes with the write: the getter's signature has none, and a
+getter that read the size back would fail the fold. C++ answers a span, so the write is erased for
+it too.
 
 The helper naming was the largest of them. A definition's 658 lowered helper symbols reached the
 output verbatim -- `mlir_llvmdsdl_plan_capacity_check__uavcan_diagnostic_Record_1_1` -- which was
@@ -407,39 +461,37 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 |----------|-------|-----------------:|----:|
 | Rust | clippy | 867 | 641 |
 | Go | staticcheck | 3,241 | 318 |
-| Python | ruff | 4,188 | 1,708 |
-| TypeScript | eslint | 1,810 | 548 |
-| | | **10,106** | **3,215** |
+| Python | ruff | 4,188 | 1,355 |
+| TypeScript | eslint | 1,810 | 75 |
+| | | **10,106** | **2,389** |
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
-one, and the C++, read at C++20 with the accessors taking spans, to 4,949.
+one, and the C++, read at C++20 with the accessors taking spans, to 4,946. The C++ comes to 4,461
+with each header including the headers that declare what it names.
 
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
 | 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
-| 1,907 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
-| 1,500 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
-| 987 | Python | `E501` | long lines |
+| 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
+| 1,497 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
+| 996 | Python | `E501` | long lines |
 | 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
-| 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
-| 488 | C++ | `misc-include-cleaner` | the C runtime's functions, reached only through `dsdl_runtime.hpp` |
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
-| 198 | Python | `F401` | unused imports |
 | 185 | C | `modernize-avoid-c-style-cast` | a cast to the type its operand already has |
 | 181 | Python | `UP037` | quoted annotations |
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
 | 168 | C++ | `modernize-concat-nested-namespaces` | `namespace uavcan { namespace node {`, where C++17 writes `namespace uavcan::node {` |
-| 164 | Python | `SIM108` | the remaining branch-not-expression sites |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 123 | C, C++ | `readability-redundant-parentheses` | `!(rejected)`, 123 in each |
+| 75 | TypeScript | `naming-convention` | accessor names that keep a field's underscores (`getScalarMeter_per_second_per_second`) |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
 | 54 | C++ | `modernize-type-traits` | `std::is_standard_layout<T>::value`, where C++17 writes `std::is_standard_layout_v<T>` |
 | 34 | Rust | `collapsible_else_if` | an `else` holding one `if`, which the branch shapes leave behind |
@@ -486,11 +538,87 @@ this phase has 27. `llvmdsdl-emission-sites` holds each emitter's count of the c
 No generated byte changed: over the showroom and the regulated corpus, all seven targets, their
 naming manifests and the MLIR are identical before and after.
 
-**3 — The plan semantics the emitters hold.** The three in [Discipline](#discipline) move out of the
+**3 — The plan semantics the emitters hold.** The four in [Discipline](#discipline) move out of the
 emitters: whether a body can fail becomes an IR fact, a nested call's adaptation to a callee that
-answers its size or an error moves into the lowering, and a bool array's run of bits gets one
-expansion. Rust's and Go's error types follow on the first, before the next release. Gate: no
-emitter walks the IR to decide what a body means, and the judge findings the three cause fall.
+answers its size or an error moves into the lowering, a bool array's run of bits gets one expansion,
+and whether a size or a parameter is read is stated where the signature is decided. C's two walks
+for a definition's dependencies go with them. Rust's and Go's error types follow on the first,
+before the next release.
+
+Gate: `llvmdsdl-emitter-ir-queries` holds each emitter's queries of the IR around the op it spells --
+the uses of a value, the op that defined an operand, every return of a function, the block an op
+sits in -- to an inventory that must match the tree exactly: 28 when the gate was written. A query
+added fails, and a query removed is retaken, so the inventory is always the tree's. The phase is
+done when it is empty, and the judge findings the four cause fall with it.
+
+All four have moved, with C's two walks for a definition's dependencies, and the inventory is
+empty. `dsdl-mark-infallible-bodies` states
+whether a body can fail, and Rust reads it. `dsdl-fold-nested-call-sizes` runs for a target whose
+nested entry point is handed the space as its buffer's length and answers what it used -- a column
+of the row -- and turns the plan's call through a size local into `dsdl.call_serdes_sized`, which
+takes the space by value and answers the error and what was used as two results the shared
+translator names. Go, Rust, TypeScript and Python each spell one call where each had clamped, called,
+split the answer and written a local back under names of its own; C and C++ take the call as the
+plan builds it, byte for byte as before. What a nested call used means something only where its
+error is zero, which is how the four spellings can hold the answer as it came.
+
+`dsdl-expand-bool-runs` runs for a target that stores a bool per element, which the row's
+`boolArrays` column states: every bool array in Rust, Go, TypeScript and Python, and a
+variable-length one in C++. The plan builder marks a run whose array's length varies, and the pass
+turns each run the target stores a bool per element into an `scf.for` moving one element and one
+bit per turn, through `dsdl.load_element` and `dsdl.write_bit` or `dsdl.read_bit` and
+`dsdl.store_element`. Five spellings had each recovered the array from the run's address and
+written the loop under indices of their own. C packs every bool array and takes the run as the plan
+builds it; its output and the object lane's are byte for byte as before.
+
+`dsdl-mark-unread-arguments` runs last and marks each argument its function never reads as
+`llvmdsdl.unread`. C's `(void)` of a helper's operand, the accessor size C++ and Rust bind, and
+Rust's `_buffer` read the mark. `dsdl-fold-unobserved-accessor-sizes` erases the composite getter's
+size parameter with its write, so five spellings no longer ask whether a plan still reads it. No
+generated byte changed.
+
+`dsdl-fold-body-sizes` runs for a target whose body takes a buffer that carries its length and
+answers the size it used, which the row's `bodiesAnswerSize` column states: Rust, Go, TypeScript and
+Python. Each read of the size pointer becomes `dsdl.buffer_length`, and the write back becomes the
+body's second result, an `index` as `dsdl.call_serdes_sized` answers it from the caller's side. What
+computes the size moves to the body's top level where every operation of it is pure, and is
+otherwise answered out of its arm, with zero from the arm that fails. The four spellings drop the
+local each held the pointer in, and Rust its analysis of how the body used it. A conversion a
+language spells as nothing names the value it converts, which is what Python's index conversions
+are. A body of a definition with no fields reads nothing of its buffer, which TypeScript marks with
+`void` and Rust names with a leading underscore, both from `llvmdsdl.unread`. The judges hold
+everywhere, and Python's `E501` falls by one.
+
+C's two walks went after them. The implementation file includes the header of each nested type a body
+calls, and C's spelling records that header as it spells the call, so the bodies are spelt before
+the includes are written and include what they call. The object lane clones the schemas whose
+layouts a definition reaches, which `schemasReachedBy` answers beside the plan steps, resolving a
+composite to its schema by symbol as the plan steps already did. No generated byte changed.
+
+Rust's and Go's error types followed, on the infallible mark. A Rust body answers
+`Result<usize, Error>` and a setter `Result<(), Error>`, over the runtime's `Error` enum; a Go body
+answers `(int, error)` and a setter `error`, over the runtime's `Error`, a code as `syscall.Errno`
+is. A body or setter marked unable to fail answers `Ok` or nil without testing its code. The plan
+still carries its error as the runtime's code: each spelling names the error at the return and
+reads the code back from a nested call's. Rust's `deserialize_with_consumed`, which answered a code
+and the whole buffer on failure as the C harness reports them, went with them. C, C++, TypeScript,
+Python and the object lane are byte for byte as before, and the Rust and Go judges hold.
+
+Go's types then took `AppendBinary`, `MarshalBinary` and `UnmarshalBinary` over that pair, so
+each satisfies the `encoding` package's interfaces, and `MarshalBinary` is `AppendBinary(nil)`. A type holding a view unmarshals `bytes.Clone(data)`, since its
+views would keep the data the interface asks it not to keep. Whether a section holds a view,
+directly or through a composite it holds, is `DefinitionIndex::holdsView`, which Rust's lifetime
+reads too. A method's receiver is the initial of its type's head noun, the name's last word: `r`
+for `ListRequest`, `h` for `Heartbeat`, `i` for `NodeID`.
+
+The judges moved with it. TypeScript's `naming-convention` fell from 545 to 81, the `_bound0_` and
+`_result1_` the spelling had invented, and Python's `SIM108` from 164 to none, the branch each call
+split its answer with. Python's `E501` rose by 14, since a call and its split now take one line where
+they took five.
+
+With the bool runs, TypeScript's `naming-convention` fell to 75, the six `_bitN_` indices, and its
+`no-unused-vars` to none. C++'s `modernize-use-auto` rose by three: the new loops convert their
+index with a cast, which the C++ spelling of a cast declares with its type named twice.
 
 **4 — The surface tree.** `project-dsdl-surface`, the scope ops, symbol allocation and reference
 rewriting. The first profile reproduces today's output exactly, so the whole phase changes no
@@ -582,7 +710,7 @@ gates and text assertions are two halves, not alternatives.
 | the name emitted, asserted in lit | 1 onwards | a rule no compiler enforces still holds |
 | byte-diff of all seven targets before and after | 2, 4, 5 | a mechanism change changes no output |
 | no language compared by name outside the classification, `llvmdsdl-language-classification` | 2 onwards | a new language is a row, not a search |
-| no emitter walks the IR to decide what a body means | 3 onwards | a plan's semantics are stated once, in the IR |
+| no emitter queries the IR to decide what a body means, `llvmdsdl-emitter-ir-queries` | 3 onwards | a plan's semantics are stated once, in the IR |
 | emission sites per emitter, held to a baseline by `llvmdsdl-emission-sites` | 2 onwards, falling from 5 | the shape is stated once, the syntax six times |
 | round-trip, the C↔language parity lanes, cross-language equivalence | all | the wire is unchanged |
 | naming manifest against the surface tree | 4 onwards | the manifest reports what the backend writes |
@@ -628,8 +756,7 @@ classes do not survive the frameworks and serialisation paths TypeScript runs in
 
 **Rust and Go take their languages' conventions**, including the error types, in the same release
 as the naming. Both change every consumer call site once; splitting them across releases changes it
-twice. The names landed in #41 and #42 ahead of the error types, and v0.3.0 predates both, so the
-error types land before the next release.
+twice. The names landed in #41 and #42 and the error types in #57, all after v0.3.0.
 
 **`renderSectionTypeSuffix` leaves the installed headers.** `renderSectionTypeName` replaced it at
 every call site, and the removed function answers `_Request` where Rust now names the section alone.

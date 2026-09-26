@@ -171,6 +171,13 @@ public:
 
     virtual void returnValue(SourceWriter& w, llvm::StringRef expr) const = 0;
 
+    /// @brief Returns a body's error and the size it used, where `dsdl-fold-body-sizes` made the
+    ///        size a second result. The size means something only where the error is zero.
+    virtual void returnWithSize(SourceWriter& w, llvm::StringRef error, llvm::StringRef used) const = 0;
+
+    /// @brief The length of a buffer that carries it, which `dsdl-fold-body-sizes` builds.
+    [[nodiscard]] virtual std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const = 0;
+
     virtual void openIf(SourceWriter& w, llvm::StringRef condition) const = 0;
     virtual void openElse(SourceWriter& w) const                          = 0;
 
@@ -309,6 +316,12 @@ public:
     virtual void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const             = 0;
     virtual void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const               = 0;
 
+    /// @brief One bit of a bool array stored a bool per element, which `dsdl-expand-bool-runs`
+    ///        builds. A target that stores its bool arrays packed never receives either, and its
+    ///        spelling says so.
+    virtual void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const   = 0;
+    [[nodiscard]] virtual std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const = 0;
+
     /// @brief One move for a whole payload, where the structure is the wire image.
     ///
     /// Only a target whose objects are byte images of the wire is asked for this; the fold that
@@ -346,6 +359,19 @@ public:
         }
         declare(w, op.getError().getType(), name, callSerdes(op, names));
     }
+
+    /// @brief Declares what a nested call handed its space by value answers: @p error, its code,
+    ///        and @p consumed, the bytes it used.
+    ///
+    /// `dsdl-fold-nested-call-sizes` builds the op for a target whose nested entry point is handed
+    /// the space as its buffer's length. Either name is empty when the plan does not read that
+    /// value. A target whose entry point takes its size by pointer never receives the op, and its
+    /// spelling says so.
+    virtual void declareCallSerdesSized(SourceWriter&                 w,
+                                        llvm::StringRef               error,
+                                        llvm::StringRef               consumed,
+                                        mlir::dsdl::CallSerdesSizedOp op,
+                                        const ValueNames&             names) const = 0;
 
     /// @brief Declares @p name as the error code a nested initialiser answers with.
     ///
@@ -409,6 +435,9 @@ std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, llvm::Str
 
 /// @brief The direction of a plan body, "serialize" or "deserialize"; nullopt for a helper.
 std::optional<llvm::StringRef> planBodyDirection(mlir::func::FuncOp fn);
+
+/// @brief Whether @p fn reads its argument @p index, as `dsdl-mark-unread-arguments` states it.
+[[nodiscard]] bool readsArgument(mlir::func::FuncOp fn, unsigned index);
 
 }  // namespace llvmdsdl
 

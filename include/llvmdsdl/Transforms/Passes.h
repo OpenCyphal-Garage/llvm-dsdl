@@ -107,15 +107,64 @@ void registerDSDLToLLVMPasses();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nullability);
 
-/// @brief Erases the size a composite getter writes back, for a target whose getter returns a view.
+/// @brief Erases the size a composite getter writes back, and the parameter it writes it through, for
+///        a target whose getter returns a view.
 ///
 /// A composite getter answers a pointer to the nested type's bytes and writes their length through
 /// its last argument. A target that answers a view -- a span, a slice, a `memoryview`, a
 /// `Uint8Array` -- hands that length to the caller inside the view, so the write is observed by
-/// nothing and whatever computed it is dead. A write is erased only where the pointer is never read
-/// back.
+/// nothing, whatever computed it is dead, and the getter's signature has no parameter for it. A
+/// getter that reads the pointer back fails the pass. Registered with `dsdl-opt` as
+/// `dsdl-fold-unobserved-accessor-sizes`.
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
+
+/// @brief Folds each nested call to `dsdl.call_serdes_sized`, for a target whose nested entry point
+///        is handed the space as its buffer's length and answers what it used.
+///
+/// The space goes in by value, and what the callee used comes out as a result, converted where the
+/// plan reads it back. A size local anything else reads fails the pass rather than leave a call the
+/// target cannot spell. Registered with `dsdl-opt` as `dsdl-fold-nested-call-sizes`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass();
+
+/// @brief Folds each serialise and deserialise body to take its buffer alone and answer the size it
+///        used as a second result, for a target whose buffer carries its own length.
+///
+/// Each read of the size pointer becomes `dsdl.buffer_length`, and the write back becomes the
+/// body's second result, an `index` meaningful only where the error is zero. A body that handles
+/// its size pointer otherwise fails the pass. Registered with `dsdl-opt` as `dsdl-fold-body-sizes`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createFoldDSDLBodySizesPass();
+
+/// @brief Expands each bool run a target stores a bool per element into a loop over its elements.
+///
+/// Each turn moves one element and one bit, with `dsdl.load_element` and `dsdl.write_bit` or
+/// `dsdl.read_bit` and `dsdl.store_element`. Serialise and deserialise bodies are expanded; an
+/// initialise body's run is left as the renderer that reads it expects. Registered with `dsdl-opt`
+/// as `dsdl-expand-bool-runs`, whose `storage` option defaults to a bool per element.
+/// @param[in] storage How the target stores a bool array.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(BoolArrayStorage storage);
+
+/// @brief Marks each plan body or setter whose every return answers an error of zero as
+///        `llvmdsdl.infallible`.
+///
+/// Whether a body can fail is a fact of the body, and the folds of this pipeline are often what make
+/// it one. A backend whose idiom reports an error apart from the result reads the mark rather than
+/// deriving it again. Registered with `dsdl-opt` as `dsdl-mark-infallible-bodies`, and run last in
+/// `lower-dsdl-bodies`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass();
+
+/// @brief Marks each argument its function never reads as `llvmdsdl.unread`.
+///
+/// Whether a parameter is read is a fact of the body, and the folds of this pipeline are often what
+/// decide it. A backend that marks or names an unread parameter reads the mark rather than deriving
+/// it again. Registered with `dsdl-opt` as `dsdl-mark-unread-arguments`, and run last in
+/// `lower-dsdl-bodies`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createMarkDSDLUnreadArgumentsPass();
 
 /// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-verify-alias-layout`
 ///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a

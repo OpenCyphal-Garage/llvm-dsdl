@@ -101,10 +101,24 @@ struct Role final
     llvm::StringRef member;
 };
 
+/// @brief The member a nested call reaches, if @p op is one.
+std::optional<llvm::StringRef> memberOfNestedCall(mlir::Operation* const op)
+{
+    if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(op))
+    {
+        return call.getMember();
+    }
+    if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesSizedOp>(op))
+    {
+        return call.getMember();
+    }
+    return std::nullopt;
+}
+
 /// @brief The member the nested calls reading @p value agree on, where they agree.
 ///
-/// A size local and a buffer address are built for a single `dsdl.call_serdes` and carry no
-/// member of their own; the call they are built for names it. Two calls may come to share one
+/// A size local and a buffer address are built for a single nested call and carry no member of
+/// their own; the call they are built for names it. Two calls may come to share one
 /// address -- `dsdl.buffer_at` has no memory effect, so CSE may merge two addressing the same
 /// offset -- and then no member describes it, since naming it after one would say the other does
 /// not reach it. Taking whichever came first would also take whichever the use list happened to
@@ -114,17 +128,17 @@ llvm::StringRef memberOfNestedCaller(const mlir::Value value)
     std::optional<llvm::StringRef> shared;
     for (mlir::Operation* const user : value.getUsers())
     {
-        auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(user);
-        if (!call)
+        const std::optional<llvm::StringRef> member = memberOfNestedCall(user);
+        if (!member)
         {
             continue;
         }
         if (!shared.has_value())
         {
-            shared = call.getMember();
+            shared = member;
             continue;
         }
-        if (*shared != call.getMember())
+        if (*shared != *member)
         {
             return {};
         }
@@ -422,6 +436,15 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::LoadElementOp>([](auto read) { return Reached{Role{ValueRole::Scalar, read.getMember()}}; })
         .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Reached{Role{ValueRole::Length, read.getMember()}}; })
         .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
+        .Case<mlir::dsdl::CallSerdesSizedOp>([&](auto call) {
+            return Reached{Role{result.getResultNumber() == 0 ? ValueRole::Error : ValueRole::Size, call.getMember()}};
+        })
+        // What a nested call used, taken to the width the plan counts in, is still that member's size.
+        // Any other conversion says nothing of what it converts.
+        .Case<mlir::arith::IndexCastOp>([](auto cast) {
+            auto call = cast.getIn().template getDefiningOp<mlir::dsdl::CallSerdesSizedOp>();
+            return call ? Reached{Role{ValueRole::Size, call.getMember()}} : Reached{Role{}};
+        })
         .Case<mlir::dsdl::CallInitializeOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
         .Case<mlir::dsdl::LoadViewOp>([&](auto view) {
             return Reached{Role{result.getResultNumber() == 0 ? ValueRole::Buffer : ValueRole::Size, view.getMember()}};
@@ -429,6 +452,8 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::UnionTagOp>([](auto) { return Reached{Role{ValueRole::Tag, {}}}; })
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })
         .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
+        .Case<mlir::dsdl::ReadBitOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
+        .Case<mlir::dsdl::BufferLengthOp>([](auto) { return Reached{Role{ValueRole::Size, {}}}; })
         .Case<mlir::dsdl::IsNullOp>([](auto) { return Reached{Role{ValueRole::Null, {}}}; })
         .Case<mlir::dsdl::IndexHoldsOp>([](auto) { return Reached{Role{ValueRole::IndexHolds, {}}}; })
         .Case<mlir::dsdl::LocalOp>([&](auto) { return Reached{Role{ValueRole::Size, memberOfNestedCaller(result)}}; })
@@ -814,9 +839,17 @@ private:
 
     void conversion(mlir::Operation* op, const Conversion kind)
     {
-        const mlir::Value result = op->getResult(0);
-        const mlir::Value source = op->getOperand(0);
-        define(result, spelling_.convert(kind, (*this)(source), source.getType(), result.getType()), true);
+        const mlir::Value result    = op->getResult(0);
+        const mlir::Value source    = op->getOperand(0);
+        const std::string from      = (*this)(source);
+        std::string       converted = spelling_.convert(kind, from, source.getType(), result.getType());
+        // A conversion the language spells as nothing is the value it converts, under its name.
+        if (converted == from)
+        {
+            names_[result] = std::move(converted);
+            return;
+        }
+        define(result, std::move(converted), true);
     }
 
     llvm::Error translate(mlir::Operation*            op,
@@ -902,12 +935,17 @@ private:
                        false);
             })
             .Case<mlir::func::ReturnOp>([&](mlir::func::ReturnOp ret) -> void {
+                if (ret.getNumOperands() == 2)
+                {
+                    spelling_.returnWithSize(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
+                    return;
+                }
                 if (ret.getNumOperands() != 1)
                 {
                     outcome = llvm::joinErrors(std::move(outcome),
                                                llvm::createStringError(llvm::inconvertibleErrorCode(),
                                                                        "return with %u operands; the translator "
-                                                                       "spells one",
+                                                                       "spells one, or an error and a size",
                                                                        ret.getNumOperands()));
                     return;
                 }
@@ -991,6 +1029,20 @@ private:
                     names_[call.getResult()] = name;
                 }
             })
+            .Case<mlir::dsdl::CallSerdesSizedOp>([&](mlir::dsdl::CallSerdesSizedOp call) -> void {
+                const std::string error = call.getError().use_empty() ? std::string{} : nameFor(call.getError());
+                const std::string consumed =
+                    call.getConsumed().use_empty() ? std::string{} : nameFor(call.getConsumed());
+                spelling_.declareCallSerdesSized(w_, error, consumed, call, *this);
+                if (!error.empty())
+                {
+                    names_[call.getError()] = error;
+                }
+                if (!consumed.empty())
+                {
+                    names_[call.getConsumed()] = consumed;
+                }
+            })
             .Case<mlir::dsdl::CallInitializeOp>([&](mlir::dsdl::CallInitializeOp call) -> void {
                 const std::string name = call.getResult().use_empty() ? std::string{} : nameFor(call.getResult());
                 spelling_.declareCallInitialize(w_, name, call, *this);
@@ -1017,6 +1069,14 @@ private:
                 [&](mlir::dsdl::SetUnionTagOp write) -> void { spelling_.setUnionTag(w_, write, *this); })
             .Case<mlir::dsdl::BitWriteOp>(
                 [&](mlir::dsdl::BitWriteOp write) -> void { spelling_.bitWrite(w_, write, *this); })
+            .Case<mlir::dsdl::BufferLengthOp>([&](mlir::dsdl::BufferLengthOp length) -> void {
+                define(length.getLength(), spelling_.bufferLength(length, *this), true);
+            })
+            .Case<mlir::dsdl::WriteBitOp>(
+                [&](mlir::dsdl::WriteBitOp write) -> void { spelling_.writeBit(w_, write, *this); })
+            .Case<mlir::dsdl::ReadBitOp>([&](mlir::dsdl::ReadBitOp read) -> void {
+                define(read.getValue(), spelling_.readBit(read, *this), true);
+            })
             .Case<mlir::dsdl::BitReadOp>(
                 [&](mlir::dsdl::BitReadOp read) -> void { spelling_.bitRead(w_, read, *this); })
             .Case<mlir::dsdl::ImageReadOp>(
@@ -1241,6 +1301,11 @@ std::optional<llvm::StringRef> planBodyDirection(mlir::func::FuncOp fn)
         return std::nullopt;
     }
     return direction.getValue();
+}
+
+bool readsArgument(mlir::func::FuncOp fn, const unsigned index)
+{
+    return !fn.getArgAttr(index, "llvmdsdl.unread");
 }
 
 }  // namespace llvmdsdl

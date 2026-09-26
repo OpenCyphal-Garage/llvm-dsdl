@@ -92,7 +92,6 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -893,44 +892,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     return out.str();
 }
 
-/// @brief Clones the schemas @p target reaches, for their layout alone.
-///
-/// A C translation unit needs only the nested type's name, which its header supplies. An object
-/// addresses members by position, so it needs the nested type's layout, and that lives in the
-/// nested type's own schema. Their functions stay behind: the serialisation of a nested type
-/// belongs to the nested type's object.
-void cloneReachableSchemas(mlir::Operation*                         target,
-                           mlir::ModuleOp                           destination,
-                           const llvm::StringMap<mlir::Operation*>& byKey)
-{
-    llvm::SmallVector<mlir::Operation*, 8> pending{target};
-    llvm::StringSet<>                      seen;
-    while (!pending.empty())
-    {
-        mlir::Operation* const at = pending.pop_back_val();
-        at->walk([&](mlir::dsdl::IOOp op) {
-            if (!op.isComposite())
-            {
-                return;
-            }
-            const std::string key = op.getCompositeFullName()->str() + "." + std::to_string(*op.getCompositeMajor()) +
-                                    "." + std::to_string(*op.getCompositeMinor());
-            if (!seen.insert(key).second)
-            {
-                return;
-            }
-            const auto found = byKey.find(key);
-            if (found == byKey.end())
-            {
-                return;
-            }
-            mlir::Operation* const clone = found->second->clone();
-            destination.getBodyRegion().front().push_back(clone);
-            pending.push_back(clone);
-        });
-    }
-}
-
 /// @brief Clones into @p destination the functions the pipeline built for @p schema: its helpers
 ///        and its two bodies, in the order @p source holds them.
 void cloneFunctionsOf(mlir::dsdl::SchemaOp schema, mlir::ModuleOp source, mlir::ModuleOp destination)
@@ -1189,11 +1150,10 @@ public:
         return {object, "buffer", "inout_buffer_size_bytes"};
     }
 
-    /// @brief The header that declares the type @p object points at.
-    [[nodiscard]] std::string headerOf(const mlir::Value object) const
+    /// @brief The headers declaring the nested entry points the bodies spelt so far call.
+    [[nodiscard]] const std::set<std::string>& calledHeaders() const
     {
-        const auto found = headers_.find(entryPointTag(object));
-        return (found == headers_.end()) ? std::string{} : found->second;
+        return called_;
     }
 
     /// @brief The declaration of @p fn, so a body may call one defined after it.
@@ -1303,6 +1263,20 @@ public:
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
         w.line("return " + expr.str() + ";");
+    }
+
+    void returnWithSize(SourceWriter& /*w*/,
+                        const llvm::StringRef /*error*/,
+                        const llvm::StringRef /*used*/) const override
+    {
+        // A C body writes its size back through the pointer it is handed.
+        llvm::report_fatal_error("C spelling: a body folded to answer its size");
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp /*op*/,
+                                           const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("C spelling: a body folded to read its buffer's length");
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1618,6 +1592,17 @@ public:
                names(op.getWidth()) + ");");
     }
 
+    void writeBit(SourceWriter& /*w*/, mlir::dsdl::WriteBitOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        // A C bool array is packed, so its runs reach C as the plan builds them.
+        llvm::report_fatal_error("C spelling: a bool run expanded for a bool per element");
+    }
+
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("C spelling: a bool run expanded for a bool per element");
+    }
+
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
     {
         w.line("dsdl_runtime_image_read(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", (size_t) " +
@@ -1630,9 +1615,20 @@ public:
                std::to_string(op.getBytes()) + "U);");
     }
 
+    void declareCallSerdesSized(SourceWriter& /*w*/,
+                                const llvm::StringRef /*error*/,
+                                const llvm::StringRef /*consumed*/,
+                                mlir::dsdl::CallSerdesSizedOp /*op*/,
+                                const ValueNames& /*names*/) const override
+    {
+        // A C entry point takes its size by pointer, so a nested call reaches C as the plan builds it.
+        llvm::report_fatal_error("C spelling: a nested call handed its size by value");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The nested type's own entry point, as its header publishes it.
+        called_.insert(headerOf(op.getObject()));
         return entryPoint(op.getObject(), op.getDirection()) + "(" + names(op.getObject()) + ", " +
                names(op.getBuffer()) + ", " + names(op.getSize()) + ")";
     }
@@ -1644,6 +1640,7 @@ public:
     {
         // C translates the initialise body as a function, so a nested one is the call its
         // header publishes, answering the same code the rest of the plan carries.
+        called_.insert(headerOf(op.getObject()));
         const std::string invocation = entryPoint(op.getObject(), "initialize") + "(" + names(op.getObject()) + ")";
         if (name.empty())
         {
@@ -1977,7 +1974,7 @@ private:
     {
         for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
         {
-            if (argument.use_empty())
+            if (!readsArgument(fn, argument.getArgNumber()))
             {
                 w.line("(void) " + parameter + ";");
             }
@@ -2029,10 +2026,18 @@ private:
         return "void";
     }
 
-    mlir::ModuleOp               module_;
-    llvm::StringMap<CBodyPlan>   plans_;
-    llvm::StringMap<std::string> tags_;
-    llvm::StringMap<std::string> headers_;
+    /// @brief The header that declares the type @p object points at.
+    [[nodiscard]] std::string headerOf(const mlir::Value object) const
+    {
+        const auto found = headers_.find(entryPointTag(object));
+        return (found == headers_.end()) ? std::string{} : found->second;
+    }
+
+    mlir::ModuleOp                module_;
+    llvm::StringMap<CBodyPlan>    plans_;
+    llvm::StringMap<std::string>  tags_;
+    llvm::StringMap<std::string>  headers_;
+    mutable std::set<std::string> called_;
 };
 
 }  // namespace
@@ -2071,7 +2076,6 @@ llvm::Error emit(const SemanticModule& semantic,
     const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
 
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
-    llvm::StringMap<mlir::Operation*>                 schemaByKey;
     for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
         const auto headerPath = op.getHeaderPath();
@@ -2080,8 +2084,6 @@ llvm::Error emit(const SemanticModule& semantic,
             continue;
         }
         schemaByHeaderPath.emplace(headerPath->str(), op.getOperation());
-        schemaByKey[op.getFullName().str() + "." + std::to_string(op.getMajor()) + "." +
-                    std::to_string(op.getMinor())] = op.getOperation();
     }
 
     unsigned objectSizeBits     = 64U;
@@ -2143,7 +2145,15 @@ llvm::Error emit(const SemanticModule& semantic,
         }
         if (options.artifact == Artifact::Object)
         {
-            cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);
+            // A C translation unit needs only a nested type's name, which its header supplies. An
+            // object addresses members by position, so it needs the nested type's layout, which
+            // lives in the nested type's own schema. Their functions stay behind: the serialisation
+            // of a nested type belongs to the nested type's object.
+            for (const mlir::dsdl::SchemaOp reached :
+                 schemasReachedBy(mlir::cast<mlir::dsdl::SchemaOp>(targetIt->second)))
+            {
+                perDefModule.getBodyRegion().front().push_back(reached->clone());
+            }
             // The clones carry lowering's guesses; the module overload matches each to its own
             // definition, so a nested type's members are named the way its own object named them.
             (void) stampCNames(perDefModule, semantic, options.typeNameVersioning);
@@ -2186,27 +2196,24 @@ llvm::Error emit(const SemanticModule& semantic,
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "no schema in the lowered module");
         }
         std::ostringstream emittedOut;
-        SourceWriter       w = makeCWriter(emittedOut);
+        std::ostringstream bodiesOut;
+        SourceWriter       w      = makeCWriter(emittedOut);
+        SourceWriter       bodies = makeCWriter(bodiesOut);
         {
             const CSpelling                       spelling(perDefModule, schema);
             PlanBodyLookups                       lookups(perDefModule);
             const std::vector<mlir::func::FuncOp> functions = schemaFunctions(perDefModule, schema.getSymName());
-            // A nested type's entry point is declared by its own header, and only the types a
-            // body calls are included: an unused include is lint the consumer has to answer for.
-            std::set<std::string> nestedHeaders;
             for (const mlir::func::FuncOp fn : functions)
             {
-                fn->walk([&](mlir::Operation* op) {
-                    if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(op))
-                    {
-                        nestedHeaders.insert(spelling.headerOf(call.getObject()));
-                    }
-                    else if (auto init = mlir::dyn_cast<mlir::dsdl::CallInitializeOp>(op))
-                    {
-                        nestedHeaders.insert(spelling.headerOf(init.getObject()));
-                    }
-                });
+                if (auto err = translateFunction(fn, spelling, bodies, lookups))
+                {
+                    diagnostics.error({"<mlir>", 1, 1}, llvm::toString(std::move(err)));
+                    return llvm::createStringError(llvm::inconvertibleErrorCode(), "C body translation failed");
+                }
             }
+            // A nested type's entry point is declared by its own header, and only the types a
+            // body calls are included: an unused include is lint the consumer has to answer for.
+            std::set<std::string> nestedHeaders = spelling.calledHeaders();
             nestedHeaders.erase(std::string{});
             nestedHeaders.erase(schema.getHeaderPath().value_or(llvm::StringRef{}).str());
             w.line("#include <stdbool.h>");
@@ -2226,16 +2233,8 @@ llvm::Error emit(const SemanticModule& semantic,
                 w.line(spelling.declarationOf(fn));
             }
             w.blank();
-            for (const mlir::func::FuncOp fn : functions)
-            {
-                if (auto err = translateFunction(fn, spelling, w, lookups))
-                {
-                    diagnostics.error({"<mlir>", 1, 1}, llvm::toString(std::move(err)));
-                    return llvm::createStringError(llvm::inconvertibleErrorCode(), "C body translation failed");
-                }
-            }
         }
-        const std::string emitted = emittedOut.str();
+        const std::string emitted = emittedOut.str() + bodiesOut.str();
 
         std::filesystem::path implDir = outRoot;
         for (const auto& ns : def.info.namespaceComponents)

@@ -556,7 +556,8 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
 
     // `Tag` is the union discriminator; Go alone spells it as an exported field,
     // and an exported field is what a DSDL field named `tag` projects to.
-    static constexpr std::array<llvm::StringRef, 3> kGoMethods = {"Serialize", "Deserialize", "Tag"};
+    static constexpr std::array<llvm::StringRef, 6> kGoMethods =
+        {"Serialize", "Deserialize", "AppendBinary", "MarshalBinary", "UnmarshalBinary", "Tag"};
 
     static constexpr std::array<llvm::StringRef, 4> kPyMethods = {"serialize",
                                                                   "deserialize",

@@ -97,9 +97,9 @@
 # RUN: %dsdlc --target-language rust %t/tagclash --rust-crate-name m --outdir %t/tagclash/rust
 # RUN: cat %t/tagclash/rust/src/tagclash/vendor/clash_1_0.rs | FileCheck %s --check-prefix=TAGCLASH
 # TAGCLASH-DAG: pub fn get_tag_(buffer: &[u8]) -> u8 {
-# TAGCLASH-DAG: pub fn set_tag_(buffer: &mut [u8], value: u8) -> core::result::Result<(), i8> {
+# TAGCLASH-DAG: pub fn set_tag_(buffer: &mut [u8], value: u8) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 # TAGCLASH-DAG: pub fn get_tag_2(buffer: &[u8]) -> u32 {
-# TAGCLASH-DAG: pub fn set_tag_2(buffer: &mut [u8], value: u32) -> core::result::Result<(), i8> {
+# TAGCLASH-DAG: pub fn set_tag_2(buffer: &mut [u8], value: u32) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 
 # ---------------------------------------------------------------------------------------------
 # A service named after its response.
@@ -181,7 +181,7 @@
 # ACCSCOPE-DAG: pub get_foo: u8,
 # ACCSCOPE-DAG: pub fn get_get_foo(buffer: &[u8]) -> u8 {
 # ACCSCOPE-DAG: pub fn get_foo(buffer: &[u8]) -> u8 {
-# ACCSCOPE-DAG: pub fn set_foo(buffer: &mut [u8], value: u8) -> core::result::Result<(), i8> {
+# ACCSCOPE-DAG: pub fn set_foo(buffer: &mut [u8], value: u8) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 # ACCSCOPE-NOT: pub fn get_foo_2(
 
 # ---------------------------------------------------------------------------------------------

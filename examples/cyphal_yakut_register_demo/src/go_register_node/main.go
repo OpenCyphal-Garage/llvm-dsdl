@@ -340,11 +340,11 @@ func updateHeartbeatPeriodFromRegisters(app *nodeApp) {
 	app.heartbeatPeriodUsec = period
 }
 
-func serializeMessage(serializer interface{ Serialize([]byte) (int8, int) }, capacity int) ([]byte, error) {
+func serializeMessage(serializer interface{ Serialize([]byte) (int, error) }, capacity int) ([]byte, error) {
 	buffer := make([]byte, capacity)
-	rc, size := serializer.Serialize(buffer)
-	if rc < 0 {
-		return nil, fmt.Errorf("serialize failed: rc=%d", int(rc))
+	size, err := serializer.Serialize(buffer)
+	if err != nil {
+		return nil, fmt.Errorf("serialize failed: %w", err)
 	}
 	if size < 0 || size > len(buffer) {
 		return nil, fmt.Errorf("serialize produced invalid size: %d", size)
@@ -352,10 +352,9 @@ func serializeMessage(serializer interface{ Serialize([]byte) (int8, int) }, cap
 	return buffer[:size], nil
 }
 
-func deserializeMessage(deserializer interface{ Deserialize([]byte) (int8, int) }, payload []byte) error {
-	rc, _ := deserializer.Deserialize(payload)
-	if rc < 0 {
-		return fmt.Errorf("deserialize failed: rc=%d", int(rc))
+func deserializeMessage(deserializer interface{ Deserialize([]byte) (int, error) }, payload []byte) error {
+	if _, err := deserializer.Deserialize(payload); err != nil {
+		return fmt.Errorf("deserialize failed: %w", err)
 	}
 	return nil
 }

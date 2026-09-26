@@ -2,10 +2,9 @@
 # Source: fixtures.vendor.UnionTag.1.0
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime, error_message
+from fixtures_snapshot_py._runtime_loader import error_message, runtime as dsdl_runtime
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.UnionTag"
@@ -76,29 +75,29 @@ class UnionTag:
         return value
 
     def _serialize_into(self, buffer: memoryview) -> int:
-        inout_buffer_size_bytes = len(buffer)
+        size = len(buffer)
         if self is None:
             err = -2
+            v0 = 0
         else:
-            size = inout_buffer_size_bytes
-            v0 = size * 8
-            err_2 = _capacity_check(v0)
+            v1 = size * 8
+            err_2 = _capacity_check(v1)
             tag = int(self._tag)
             tag_2 = _union_tag_ser(tag)
             err_3 = _validate_union_tag(tag_2)
-            v1 = err_2 == 0
-            v2 = (err_3 if v1 else err_2)
-            v3 = v2 == 0
-            if v3:
+            v2 = err_2 == 0
+            v3 = (err_3 if v2 else err_2)
+            v4 = v3 == 0
+            if v4:
                 err_5 = dsdl_runtime.write_unsigned(buffer, 0, 8, tag_2, False)
                 err_4 = err_5
             else:
-                err_4 = v2
-            v4 = tag_2 == 0
-            v5 = (16 if v4 else 8)
-            if v4:
-                v6 = err_4 == 0
-                if v6:
+                err_4 = v3
+            v5 = tag_2 == 0
+            v6 = (16 if v5 else 8)
+            if v5:
+                v7 = err_4 == 0
+                if v7:
                     first_value = int(self.first)
                     value = _scalar_unsigned_0_ser(first_value)
                     err_8 = dsdl_runtime.write_unsigned(buffer, 8, 8, value, False)
@@ -108,11 +107,11 @@ class UnionTag:
                 err_6 = err_7
             else:
                 err_6 = err_4
-            v7 = tag_2 == 1
-            v8 = (24 if v7 else v5)
-            if v7:
-                v9 = err_4 == 0
-                if v9:
+            v8 = tag_2 == 1
+            v9 = (24 if v8 else v6)
+            if v8:
+                v10 = err_4 == 0
+                if v10:
                     second_value = int(self.second)
                     value_2 = _scalar_unsigned_1_ser(second_value)
                     err_11 = dsdl_runtime.write_unsigned(buffer, 8, 16, value_2, False)
@@ -122,56 +121,52 @@ class UnionTag:
                 err_9 = err_10
             else:
                 err_9 = err_6
-            v10 = err_9 == 0
-            if v10:
-                v11 = v8 // 8
-                inout_buffer_size_bytes = v11
+            v11 = v9 // 8
             err = err_9
+            v0 = v11
         if err == 0:
-            return inout_buffer_size_bytes
+            return v0
         return err
 
     def _deserialize_from(self, buffer: memoryview) -> int:
-        inout_buffer_size_bytes = len(buffer)
+        size = len(buffer)
         if self is None:
             err = -2
+            v0 = 0
         else:
-            size = inout_buffer_size_bytes
             value = dsdl_runtime.read_unsigned(buffer, 0, 8)
             tag = _union_tag_deser(value)
             err_2 = _validate_union_tag(tag)
-            v0 = err_2 == 0
-            if v0:
+            v1 = err_2 == 0
+            if v1:
                 self._tag = tag
                 if tag == 0:
                     self.first = 0
                 elif tag == 1:
                     self.second = 0
-            v1 = tag == 0
-            v2 = (16 if v1 else 8)
-            if v1:
+            v2 = tag == 0
+            v3 = (16 if v2 else 8)
+            if v2:
                 value_2 = dsdl_runtime.read_unsigned(buffer, 8, 8)
                 value_3 = _scalar_unsigned_0_deser(value_2)
                 self.first = value_3
-            v3 = tag == 1
-            v4 = (24 if v3 else v2)
-            if v3:
+            v4 = tag == 1
+            v5 = (24 if v4 else v3)
+            if v4:
                 value_4 = dsdl_runtime.read_unsigned(buffer, 8, 16)
                 value_5 = _scalar_unsigned_1_deser(value_4)
                 self.second = value_5
-            v5 = v4 + 7
-            v6 = v5 // 8
-            v7 = v6 * 8
-            v8 = size * 8
-            v9 = v7 < v8
-            v10 = (v7 if v9 else v8)
-            v11 = err_2 == 0
-            if v11:
-                v12 = v10 // 8
-                inout_buffer_size_bytes = v12
+            v6 = v5 + 7
+            v7 = v6 // 8
+            v8 = v7 * 8
+            v9 = size * 8
+            v10 = v8 < v9
+            v11 = (v8 if v10 else v9)
+            v12 = v11 // 8
             err = err_2
+            v0 = v12
         if err == 0:
-            return inout_buffer_size_bytes
+            return v0
         return err
 
 UNION_TAG_FIRST_OPTION_TAG = 0

@@ -104,7 +104,7 @@
 # CPP_STD_ARRAYS: #include <vector>
 # CPP_PMR-NOT: #include <memory_resource>
 # CPP_PMR: static constexpr bool WIRE_FLAT = true;
-# CPP_PMR_ARRAYS: #include <memory_resource>
+# CPP_PMR_ARRAYS-NOT: #include <memory_resource>
 # CPP_PMR_ARRAYS: #include <vector>
 # CPP_AUTOSAR_SUMMARY: Run summary:
 # CPP_AUTOSAR_SUMMARY: command: cpp
