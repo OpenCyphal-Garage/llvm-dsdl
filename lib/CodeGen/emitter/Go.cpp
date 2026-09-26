@@ -641,6 +641,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         accessor_            = Accessor::None;
+        cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -660,7 +661,7 @@ public:
         }
         const Plan& plan = planOf(fn.getArgument(0));
         w.open("func (obj *" + plan.typeName + ") " + (*direction == "serialize" ? "Serialize" : "Deserialize") +
-               "(buffer []byte) (int8, int) {");
+               "(buffer []byte) (int, error) {");
         return {"obj", "buffer"};
     }
 
@@ -830,7 +831,7 @@ public:
         else
         {
             w.open("func " + name + "(buffer []byte" + index + ", " + (integer ? "memberValue " : "value ") + storage +
-                   ") int8 {");
+                   ") error {");
         }
         std::vector<std::string> parameters{"buffer", "uint64(len(buffer))"};
         if (indexed)
@@ -872,9 +873,10 @@ public:
             }
             return;
         }
+        // A setter answers the runtime's error, and nothing where it is marked unable to fail.
         if (accessor_ == Accessor::Setter)
         {
-            w.line("return " + expr.str());
+            w.line(cannotFail_ ? std::string{"return nil"} : "return dsdlruntime.ErrorOf(" + expr.str() + ")");
             return;
         }
         w.line("return " + expr.str());
@@ -882,11 +884,15 @@ public:
 
     void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
     {
-        // The size used on success, and nothing on failure.
-        w.open("if " + error.str() + " == int8(0) {");
-        w.line("return int8(0), " + used.str());
-        w.close("}");
-        w.line("return " + error.str() + ", 0");
+        // The runtime's error on failure, and the size used on success. Where the body is marked
+        // unable to fail there is no failure to test for.
+        if (!cannotFail_)
+        {
+            w.open("if " + error.str() + " != int8(0) {");
+            w.line("return 0, dsdlruntime.ErrorOf(" + error.str() + ")");
+            w.close("}");
+        }
+        w.line("return " + used.str() + ", nil");
     }
 
     [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
@@ -1392,15 +1398,17 @@ public:
                                 const ValueNames&             names) const override
     {
         // The nested value serialises itself into the slice from the buffer's offset, bounded by the
-        // space the plan offers, and answers its code and what it used as Go's two results.
+        // space the plan offers, and answers what it used and its error, which the plan carries as
+        // the runtime's code.
         const std::string buffer = names(op.getBuffer());
         const std::string slice =
             buffer + "[:dsdlruntime.ChooseMin(" + asInt(names(op.getAvailable())) + ", len(" + buffer + "))]";
-        const bool binds = !error.empty() || !consumed.empty();
-        w.line((error.empty() ? std::string{"_"} : error.str()) + ", " +
-               (consumed.empty() ? std::string{"_"} : consumed.str()) + (binds ? " := " : " = ") +
-               names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice +
-               ")");
+        const std::string call =
+            names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice + ")";
+        const std::string used   = consumed.empty() ? std::string{"_"} : consumed.str();
+        const std::string bound  = error.empty() ? used + ", _" : error.str() + ", " + used;
+        const std::string answer = error.empty() ? call : "dsdlruntime.Coded(" + call + ")";
+        w.line(bound + ((error.empty() && consumed.empty()) ? " = " : " := ") + answer);
     }
 
 private:
@@ -1711,6 +1719,9 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
+
+    /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
+    mutable bool        cannotFail_{false};
     mutable std::size_t counter_{0};
 };
 

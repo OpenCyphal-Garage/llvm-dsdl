@@ -220,8 +220,9 @@ or a view, which carries its count. A field at offset nought answers the buffer 
 handed; in C that includes a null one, with a size of zero. A getter answers what `deserialize_`
 puts in the field, on a short buffer too, where both zero-extend, reads an index at or past the
 array's capacity as zero, and in C reads a null buffer as an empty one whatever size it is handed;
-a setter answers the runtime's error code, refusing such an index, a buffer too short for the
-field, and in C a null buffer. C spells them `<type>__get_<field>_` and
+a setter answers the runtime's error, refusing such an index, a buffer too short for the field,
+and in C a null buffer: a code in C, C++, TypeScript and Python, `Result<(), Error>` in Rust and an
+`error` in Go. C spells them `<type>__get_<field>_` and
 `<type>__set_<field>_`, C++ as static members `get_<field>` and `set_<field>`, Rust as associated
 functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as
 `get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and `set_<field>`.

@@ -29,6 +29,41 @@ use uavcan_dsdl_generated::uavcan::time::synchronized_timestamp_1_0::Synchronize
 
 const MAX_IO_BUFFER: usize = 2048;
 
+/// A deserialisation's outcome as the C harness reports it: the runtime's code, and the size
+/// consumed, which is the whole buffer where it failed.
+trait DeserializeAsC {
+    fn deserialize_as_c(&mut self, buffer: &[u8]) -> (i8, usize);
+}
+
+macro_rules! deserialize_as_c {
+    ($($t:ty),*) => {
+        $(
+            impl DeserializeAsC for $t {
+                fn deserialize_as_c(&mut self, buffer: &[u8]) -> (i8, usize) {
+                    match self.deserialize(buffer) {
+                        Ok(consumed) => (0, consumed),
+                        Err(error) => (error.code(), buffer.len()),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+deserialize_as_c!(
+    Frame,
+    ExecuteCommandRequest,
+    ExecuteCommandResponse,
+    Heartbeat,
+    Health,
+    List,
+    SubjectID,
+    Integer8,
+    Real32,
+    Value,
+    SynchronizedTimestamp
+);
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 struct CCaseResult {
@@ -167,7 +202,7 @@ fn run_case<T>(
     max_serialized: usize,
     c_roundtrip: CRoundtripFn,
     rust_deserialize: fn(&mut T, &[u8]) -> (i8, usize),
-    rust_serialize: fn(&T, &mut [u8]) -> Result<usize, i8>,
+    rust_serialize: fn(&T, &mut [u8]) -> Result<usize, dsdl_runtime::Error>,
     compare_bytes: bool,
     rng_state: &mut u64,
 ) -> Result<(), String>
@@ -235,7 +270,7 @@ where
         let rust_ser_result = rust_serialize(&obj, &mut rust_output[..max_serialized]);
         let (rust_ser_rc, rust_ser_size) = match rust_ser_result {
             Ok(size) => (0i8, size),
-            Err(rc) => (rc, 0usize),
+            Err(error) => (error.code(), 0usize),
         };
 
         let size_mismatch = rust_ser_size != c_result.serialize_size;
@@ -267,18 +302,18 @@ fn heartbeat_deserialize(
     out: &mut Heartbeat,
     buffer: &[u8],
 ) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
-fn heartbeat_serialize(obj: &Heartbeat, buffer: &mut [u8]) -> Result<usize, i8> {
+fn heartbeat_serialize(obj: &Heartbeat, buffer: &mut [u8]) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
 fn health_deserialize(out: &mut Health, buffer: &[u8]) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
-fn health_serialize(obj: &Health, buffer: &mut [u8]) -> Result<usize, i8> {
+fn health_serialize(obj: &Health, buffer: &mut [u8]) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
@@ -286,24 +321,24 @@ fn synchronized_timestamp_deserialize(
     out: &mut SynchronizedTimestamp,
     buffer: &[u8],
 ) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
 fn synchronized_timestamp_serialize(
     obj: &SynchronizedTimestamp,
     buffer: &mut [u8],
-) -> Result<usize, i8> {
+) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
 fn integer8_deserialize(out: &mut Integer8, buffer: &[u8]) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
 fn integer8_serialize(
     obj: &Integer8,
     buffer: &mut [u8],
-) -> Result<usize, i8> {
+) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
@@ -311,13 +346,13 @@ fn execute_request_deserialize(
     out: &mut ExecuteCommandRequest,
     buffer: &[u8],
 ) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
 fn execute_request_serialize(
     obj: &ExecuteCommandRequest,
     buffer: &mut [u8],
-) -> Result<usize, i8> {
+) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
@@ -325,13 +360,13 @@ fn execute_response_deserialize(
     out: &mut ExecuteCommandResponse,
     buffer: &[u8],
 ) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
 fn execute_response_serialize(
     obj: &ExecuteCommandResponse,
     buffer: &mut [u8],
-) -> Result<usize, i8> {
+) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
@@ -339,21 +374,21 @@ fn frame_deserialize(
     out: &mut Frame,
     buffer: &[u8],
 ) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
 fn frame_serialize(
     obj: &Frame,
     buffer: &mut [u8],
-) -> Result<usize, i8> {
+) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
 fn value_deserialize(out: &mut Value, buffer: &[u8]) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    out.deserialize_as_c(buffer)
 }
 
-fn value_serialize(obj: &Value, buffer: &mut [u8]) -> Result<usize, i8> {
+fn value_serialize(obj: &Value, buffer: &mut [u8]) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
@@ -367,7 +402,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = Heartbeat::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[]);
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&[]);
         if rust_rc != 0 {
             return Err(format!(
                 "Rust heartbeat empty-input deserialize unexpectedly failed rc={rust_rc}"
@@ -394,7 +429,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = Frame::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[0xFFu8]);
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&[0xFFu8]);
         if rust_rc >= 0 {
             return Err(format!(
                 "Rust frame bad-union-tag deserialize unexpectedly succeeded consumed={rust_consumed}"
@@ -441,7 +476,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
 
         let mut rust_obj = ExecuteCommandRequest::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&input);
         if rust_rc != 0 {
             return Err(format!(
                 "Rust execute-request truncated-payload deserialize unexpectedly failed rc={rust_rc}"
@@ -459,9 +494,9 @@ fn run_directed_error_cases() -> Result<(), String> {
             vec![0xA5u8; ExecuteCommandRequest::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_ser_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
-            Err(rc) => {
+            Err(error) => {
                 return Err(format!(
-                    "Rust execute-request truncated-payload serialize unexpectedly failed rc={rc}"
+                    "Rust execute-request truncated-payload serialize unexpectedly failed error={error}"
                 ));
             }
         };
@@ -514,7 +549,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             }
 
             let mut rust_obj = <$ty>::default();
-            let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(input);
+            let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(input);
             if rust_rc != 0 {
                 return Err(format!(
                     "Rust {} truncated-image deserialize unexpectedly failed rc={rust_rc}",
@@ -531,9 +566,9 @@ fn run_directed_error_cases() -> Result<(), String> {
             let mut rust_output = vec![0xA5u8; <$ty>::SERIALIZATION_BUFFER_SIZE_BYTES];
             let rust_ser_size = match rust_obj.serialize(&mut rust_output) {
                 Ok(size) => size,
-                Err(rc) => {
+                Err(error) => {
                     return Err(format!(
-                        "Rust {} truncated-image serialize unexpectedly failed rc={rc}",
+                        "Rust {} truncated-image serialize unexpectedly failed error={error}",
                         $label
                     ));
                 }
@@ -605,7 +640,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
 
         let mut rust_obj = ExecuteCommandResponse::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&input);
         if rust_rc != 0 {
             return Err(format!(
                 "Rust execute-response truncated-payload deserialize unexpectedly failed rc={rust_rc}"
@@ -623,9 +658,9 @@ fn run_directed_error_cases() -> Result<(), String> {
             vec![0xA5u8; ExecuteCommandResponse::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_ser_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
-            Err(rc) => {
+            Err(error) => {
                 return Err(format!(
-                    "Rust execute-response truncated-payload serialize unexpectedly failed rc={rc}"
+                    "Rust execute-response truncated-payload serialize unexpectedly failed error={error}"
                 ));
             }
         };
@@ -656,7 +691,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = ExecuteCommandResponse::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[0x00u8, 0xFFu8]);
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&[0x00u8, 0xFFu8]);
         if rust_rc >= 0 {
             return Err(format!(
                 "Rust execute-response bad-array-length deserialize unexpectedly succeeded consumed={rust_consumed}"
@@ -686,7 +721,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
         let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) =
-            rust_obj.deserialize_with_consumed(&[0xFFu8, 0xFFu8, 0xFFu8, 0x7Fu8]);
+            rust_obj.deserialize_as_c(&[0xFFu8, 0xFFu8, 0xFFu8, 0x7Fu8]);
         if rust_rc >= 0 {
             return Err(format!(
                 "Rust list bad-delimiter-header deserialize unexpectedly succeeded consumed={rust_consumed}"
@@ -716,7 +751,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
         let mut rust_obj = List::default();
         let (rust_rc, rust_consumed) =
-            rust_obj.deserialize_with_consumed(&[0x01u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8]);
+            rust_obj.deserialize_as_c(&[0x01u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8]);
         if rust_rc >= 0 {
             return Err(format!(
                 "Rust list nested bad-union-tag deserialize unexpectedly succeeded consumed={rust_consumed}"
@@ -745,7 +780,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = List::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&[
             0x00u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8, 0xFFu8, 0xFFu8, 0x7Fu8,
         ]);
         if rust_rc >= 0 {
@@ -777,7 +812,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = List::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&[
             0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8,
         ]);
         if rust_rc >= 0 {
@@ -808,7 +843,7 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = List::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[
+        let (rust_rc, rust_consumed) = rust_obj.deserialize_as_c(&[
             0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0xFFu8, 0xFFu8,
             0xFFu8, 0x7Fu8,
         ]);
@@ -852,7 +887,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "Rust list nested bad-array-length serialize unexpectedly succeeded size={size}"
                 ));
             }
-            Err(rc) => rc,
+            Err(error) => error.code(),
         };
         let expected = -dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
         if c_result.serialize_rc != rust_rc || rust_rc != expected {
@@ -885,7 +920,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "Rust frame bad-union-tag serialize unexpectedly succeeded size={size}"
                 ));
             }
-            Err(rc) => rc,
+            Err(error) => error.code(),
         };
         let expected = -dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;
         if c_result.serialize_rc != rust_rc || rust_rc != expected {
@@ -915,7 +950,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "Rust execute-response bad-array-length serialize unexpectedly succeeded size={size}"
                 ));
             }
-            Err(rc) => rc,
+            Err(error) => error.code(),
         };
         let expected = -dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
         if c_result.serialize_rc != rust_rc || rust_rc != expected {
@@ -946,7 +981,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "Rust execute-request bad-array-length serialize unexpectedly succeeded size={size}"
                 ));
             }
-            Err(rc) => rc,
+            Err(error) => error.code(),
         };
         let expected = -dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
         if c_result.serialize_rc != rust_rc || rust_rc != expected {
@@ -979,7 +1014,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "Rust execute-request too-small serialize unexpectedly succeeded size={size}"
                 ));
             }
-            Err(rc) => rc,
+            Err(error) => error.code(),
         };
         let expected = -dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;
         if c_result.serialize_rc != rust_rc || rust_rc != expected {
@@ -1009,7 +1044,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                     "Rust heartbeat too-small serialize unexpectedly succeeded size={size}"
                 ));
             }
-            Err(rc) => rc,
+            Err(error) => error.code(),
         };
         let expected = -dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;
         if c_result.serialize_rc != rust_rc || rust_rc != expected {
@@ -1040,9 +1075,9 @@ fn run_directed_error_cases() -> Result<(), String> {
         let mut rust_output = vec![0u8; Health::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
-            Err(rc) => {
+            Err(error) => {
                 return Err(format!(
-                    "Rust health saturated serialize unexpectedly failed rc={rc}"
+                    "Rust health saturated serialize unexpectedly failed error={error}"
                 ));
             }
         };
@@ -1086,9 +1121,9 @@ fn run_directed_error_cases() -> Result<(), String> {
             vec![0u8; SynchronizedTimestamp::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
-            Err(rc) => {
+            Err(error) => {
                 return Err(format!(
-                    "Rust synchronized-timestamp truncated serialize unexpectedly failed rc={rc}"
+                    "Rust synchronized-timestamp truncated serialize unexpectedly failed error={error}"
                 ));
             }
         };
@@ -1133,7 +1168,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 ));
             }
             let mut rust_obj = Integer8::default();
-            let (rust_des_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
+            let (rust_des_rc, rust_consumed) = rust_obj.deserialize_as_c(&input);
             if rust_des_rc != c_result.deserialize_rc
                 || rust_consumed != c_result.deserialize_consumed
             {
@@ -1150,9 +1185,9 @@ fn run_directed_error_cases() -> Result<(), String> {
                 vec![0u8; Integer8::SERIALIZATION_BUFFER_SIZE_BYTES];
             let rust_size = match rust_obj.serialize(&mut rust_output) {
                 Ok(size) => size,
-                Err(rc) => {
+                Err(error) => {
                     return Err(format!(
-                        "Rust Integer8 signed serialize unexpectedly failed input={input_byte:#04X} rc={rc}"
+                        "Rust Integer8 signed serialize unexpectedly failed input={input_byte:#04X} error={error}"
                     ));
                 }
             };
@@ -1200,14 +1235,14 @@ fn run_directed_error_cases() -> Result<(), String> {
             ));
         }
         let mut rust_obj = Real32::default();
-        let (rust_des_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&golden);
+        let (rust_des_rc, rust_consumed) = rust_obj.deserialize_as_c(&golden);
         let mut rust_output =
             vec![0u8; Real32::SERIALIZATION_BUFFER_SIZE_BYTES];
         let rust_size = match rust_obj.serialize(&mut rust_output) {
             Ok(size) => size,
-            Err(rc) => {
+            Err(error) => {
                 return Err(format!(
-                    "Rust real32 signalling-NaN serialize unexpectedly failed rc={rc}"
+                    "Rust real32 signalling-NaN serialize unexpectedly failed error={error}"
                 ));
             }
         };

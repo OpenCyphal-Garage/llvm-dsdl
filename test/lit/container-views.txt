@@ -200,7 +200,7 @@
 # RUST:     impl<'a> Default for Frame<'a> {
 # RUST:     pose: &[],
 # RUST:     impl<'a> Frame<'a> {
-# RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, i8> {
+# RUST:     pub fn deserialize(&mut self, buffer: &'a [u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {
 # RUST:     self.pose = { let _len = core::cmp::min(
 # RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
 # RUN: cat %t/rust/src/fixtures_views/vendor/track_1_0.rs | FileCheck %s --check-prefix=RUST_TRACK

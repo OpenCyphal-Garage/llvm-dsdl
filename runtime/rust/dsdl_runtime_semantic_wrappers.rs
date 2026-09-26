@@ -137,12 +137,90 @@ pub const DSDL_RUNTIME_ERROR_ALLOCATION_POOL_UNAVAILABLE: i8 = 14;
 /// Runtime error code for invalid pool allocation request parameters.
 pub const DSDL_RUNTIME_ERROR_ALLOCATION_INVALID_REQUEST: i8 = 15;
 
-/// Maps a stable allocation error into a runtime error code.
-pub fn allocation_error_to_runtime_code(error: AllocationError) -> i8 {
-    match error.kind {
-        AllocationErrorKind::OutOfMemory => DSDL_RUNTIME_ERROR_ALLOCATION_OUT_OF_MEMORY,
-        AllocationErrorKind::InvalidRequest => DSDL_RUNTIME_ERROR_ALLOCATION_INVALID_REQUEST,
-        AllocationErrorKind::PoolUnavailable => DSDL_RUNTIME_ERROR_ALLOCATION_POOL_UNAVAILABLE,
+/// Why a serialisation, a deserialisation or a field setter failed.
+///
+/// Each variant stands for a runtime error code, which [`Error::code`] answers as the runtime
+/// returns it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Error {
+    /// An argument the call cannot use.
+    InvalidArgument,
+    /// The buffer cannot hold what is serialised into it.
+    BufferTooSmall,
+    /// An array-length value in serialised data is invalid.
+    BadArrayLength,
+    /// A union tag value in serialised data is invalid.
+    BadUnionTag,
+    /// A delimiter header in serialised data is malformed.
+    BadDelimiterHeader,
+    /// An allocation exceeds the pool's capacity.
+    OutOfMemory,
+    /// No pool is available for an allocation.
+    PoolUnavailable,
+    /// An allocation's parameters are invalid.
+    InvalidAllocationRequest,
+    /// A code the runtime does not define.
+    Unrecognised(i8),
+}
+
+impl Error {
+    /// The error a runtime code names, negative as the runtime returns it.
+    pub const fn from_code(code: i8) -> Self {
+        match code.wrapping_neg() {
+            DSDL_RUNTIME_ERROR_INVALID_ARGUMENT => Self::InvalidArgument,
+            DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL => Self::BufferTooSmall,
+            DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH => Self::BadArrayLength,
+            DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG => Self::BadUnionTag,
+            DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER => Self::BadDelimiterHeader,
+            DSDL_RUNTIME_ERROR_ALLOCATION_OUT_OF_MEMORY => Self::OutOfMemory,
+            DSDL_RUNTIME_ERROR_ALLOCATION_POOL_UNAVAILABLE => Self::PoolUnavailable,
+            DSDL_RUNTIME_ERROR_ALLOCATION_INVALID_REQUEST => Self::InvalidAllocationRequest,
+            _ => Self::Unrecognised(code),
+        }
+    }
+
+    /// The runtime code of this error, negative as the runtime returns it.
+    pub const fn code(self) -> i8 {
+        match self {
+            Self::InvalidArgument => -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT,
+            Self::BufferTooSmall => -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL,
+            Self::BadArrayLength => -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH,
+            Self::BadUnionTag => -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG,
+            Self::BadDelimiterHeader => -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER,
+            Self::OutOfMemory => -DSDL_RUNTIME_ERROR_ALLOCATION_OUT_OF_MEMORY,
+            Self::PoolUnavailable => -DSDL_RUNTIME_ERROR_ALLOCATION_POOL_UNAVAILABLE,
+            Self::InvalidAllocationRequest => -DSDL_RUNTIME_ERROR_ALLOCATION_INVALID_REQUEST,
+            Self::Unrecognised(code) => code,
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidArgument => f.write_str("invalid argument"),
+            Self::BufferTooSmall => f.write_str("serialisation buffer too small"),
+            Self::BadArrayLength => f.write_str("bad array length"),
+            Self::BadUnionTag => f.write_str("bad union tag"),
+            Self::BadDelimiterHeader => f.write_str("bad delimiter header"),
+            Self::OutOfMemory => f.write_str("allocation out of memory"),
+            Self::PoolUnavailable => f.write_str("allocation pool unavailable"),
+            Self::InvalidAllocationRequest => f.write_str("invalid allocation request"),
+            Self::Unrecognised(code) => write!(f, "unrecognised error code {code}"),
+        }
+    }
+}
+
+impl core::error::Error for Error {}
+
+impl From<AllocationError> for Error {
+    fn from(error: AllocationError) -> Self {
+        match error.kind {
+            AllocationErrorKind::OutOfMemory => Self::OutOfMemory,
+            AllocationErrorKind::InvalidRequest => Self::InvalidAllocationRequest,
+            AllocationErrorKind::PoolUnavailable => Self::PoolUnavailable,
+        }
     }
 }
 

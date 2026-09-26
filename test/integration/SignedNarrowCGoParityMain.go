@@ -55,6 +55,7 @@ import (
 	"strings"
 	"unsafe"
 
+	dsdlruntime "signed_narrow_generated/dsdlruntime"
 	"signed_narrow_generated/vendor"
 )
 
@@ -234,28 +235,28 @@ func runDirectedChecks() (int, map[string]int, error) {
 
 	int3SatSerialize := func(value int8, out []byte) (int8, int) {
 		obj := vendor.Int3Sat@V1_0@{Value: value}
-		return obj.Serialize(out)
+		return dsdlruntime.Coded(obj.Serialize(out))
 	}
 	int3TruncSerialize := func(value int8, out []byte) (int8, int) {
 		obj := vendor.Int3Trunc@V1_0@{Value: value}
-		return obj.Serialize(out)
+		return dsdlruntime.Coded(obj.Serialize(out))
 	}
 	int3SatRoundtrip := func(input []byte, output []byte) (int8, int, int8, int) {
 		var obj vendor.Int3Sat@V1_0@
-		desRC, consumed := obj.Deserialize(input)
+		desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 		if desRC < 0 {
 			return desRC, consumed, 0, 0
 		}
-		serRC, serSize := obj.Serialize(output)
+		serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 		return desRC, consumed, serRC, serSize
 	}
 	int3TruncRoundtrip := func(input []byte, output []byte) (int8, int, int8, int) {
 		var obj vendor.Int3Trunc@V1_0@
-		desRC, consumed := obj.Deserialize(input)
+		desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 		if desRC < 0 {
 			return desRC, consumed, 0, 0
 		}
-		serRC, serSize := obj.Serialize(output)
+		serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 		return desRC, consumed, serRC, serSize
 	}
 
@@ -485,7 +486,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 			},
 			goValue: func(sample byte) (int8, int8, int) {
 				var obj vendor.Int3Sat@V1_0@
-				rc, consumed := obj.Deserialize([]byte{sample})
+				rc, consumed := dsdlruntime.Coded(obj.Deserialize([]byte{sample}))
 				return rc, obj.Value, consumed
 			},
 		},
@@ -499,7 +500,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 			},
 			goValue: func(sample byte) (int8, int8, int) {
 				var obj vendor.Int3Sat@V1_0@
-				rc, consumed := obj.Deserialize([]byte{sample})
+				rc, consumed := dsdlruntime.Coded(obj.Deserialize([]byte{sample}))
 				return rc, obj.Value, consumed
 			},
 		},
@@ -513,7 +514,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 			},
 			goValue: func(sample byte) (int8, int8, int) {
 				var obj vendor.Int3Trunc@V1_0@
-				rc, consumed := obj.Deserialize([]byte{sample})
+				rc, consumed := dsdlruntime.Coded(obj.Deserialize([]byte{sample}))
 				return rc, obj.Value, consumed
 			},
 		},
@@ -527,7 +528,7 @@ func runDirectedChecks() (int, map[string]int, error) {
 			},
 			goValue: func(sample byte) (int8, int8, int) {
 				var obj vendor.Int3Trunc@V1_0@
-				rc, consumed := obj.Deserialize([]byte{sample})
+				rc, consumed := dsdlruntime.Coded(obj.Deserialize([]byte{sample}))
 				return rc, obj.Value, consumed
 			},
 		},
@@ -582,11 +583,11 @@ func main() {
 		},
 		func(input []byte, output []byte) (int8, int, int8, int) {
 			var obj vendor.Int3Sat@V1_0@
-			desRC, consumed := obj.Deserialize(input)
+			desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 			if desRC < 0 {
 				return desRC, consumed, 0, 0
 			}
-			serRC, serSize := obj.Serialize(output)
+			serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 			return desRC, consumed, serRC, serSize
 		},
 		&rng,
@@ -604,11 +605,11 @@ func main() {
 		},
 		func(input []byte, output []byte) (int8, int, int8, int) {
 			var obj vendor.Int3Trunc@V1_0@
-			desRC, consumed := obj.Deserialize(input)
+			desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 			if desRC < 0 {
 				return desRC, consumed, 0, 0
 			}
-			serRC, serSize := obj.Serialize(output)
+			serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 			return desRC, consumed, serRC, serSize
 		},
 		&rng,

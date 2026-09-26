@@ -43,12 +43,11 @@ import (
 
 // decodeAndRoundTrip runs one type's Deserialize on arbitrary bytes and, if the
 // bytes are accepted, re-serializes into a correctly sized buffer. A panic in
-// either path fails the fuzz test; a negative rc (rejection) is the expected,
-// safe outcome for malformed input.
-func decodeAndRoundTrip[T any](data []byte, bufSize int, deser func(*T, []byte) (int8, int), ser func(*T, []byte) (int8, int)) {
+// either path fails the fuzz test; an error (rejection) is the expected, safe
+// outcome for malformed input.
+func decodeAndRoundTrip[T any](data []byte, bufSize int, deser func(*T, []byte) (int, error), ser func(*T, []byte) (int, error)) {
 	var obj T
-	rc, _ := deser(&obj, data)
-	if rc < 0 {
+	if _, err := deser(&obj, data); err != nil {
 		return
 	}
 	out := make([]byte, bufSize)
@@ -57,32 +56,32 @@ func decodeAndRoundTrip[T any](data []byte, bufSize int, deser func(*T, []byte) 
 
 func fuzzOneInput(data []byte) {
 	decodeAndRoundTrip(data, node.Heartbeat@V1_0@SerializationBufferSizeBytes,
-		func(o *node.Heartbeat@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.Heartbeat@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *node.Heartbeat@V1_0@, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *node.Heartbeat@V1_0@, b []byte) (int, error) { return o.Serialize(b) })
 
 	decodeAndRoundTrip(data, node.Health@V1_0@SerializationBufferSizeBytes,
-		func(o *node.Health@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.Health@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *node.Health@V1_0@, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *node.Health@V1_0@, b []byte) (int, error) { return o.Serialize(b) })
 
 	decodeAndRoundTrip(data, scalar.Integer8@V1_0@SerializationBufferSizeBytes,
-		func(o *scalar.Integer8@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *scalar.Integer8@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *scalar.Integer8@V1_0@, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *scalar.Integer8@V1_0@, b []byte) (int, error) { return o.Serialize(b) })
 
 	decodeAndRoundTrip(data, metacan.Frame@V0_2@SerializationBufferSizeBytes,
-		func(o *metacan.Frame@V0_2@, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *metacan.Frame@V0_2@, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *metacan.Frame@V0_2@, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *metacan.Frame@V0_2@, b []byte) (int, error) { return o.Serialize(b) })
 
 	decodeAndRoundTrip(data, node.ExecuteCommand@V1_3@RequestSerializationBufferSizeBytes,
-		func(o *node.ExecuteCommand@V1_3@Request, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.ExecuteCommand@V1_3@Request, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *node.ExecuteCommand@V1_3@Request, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *node.ExecuteCommand@V1_3@Request, b []byte) (int, error) { return o.Serialize(b) })
 
 	decodeAndRoundTrip(data, node.ExecuteCommand@V1_3@ResponseSerializationBufferSizeBytes,
-		func(o *node.ExecuteCommand@V1_3@Response, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *node.ExecuteCommand@V1_3@Response, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *node.ExecuteCommand@V1_3@Response, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *node.ExecuteCommand@V1_3@Response, b []byte) (int, error) { return o.Serialize(b) })
 
 	decodeAndRoundTrip(data, nodeport.List@V1_0@SerializationBufferSizeBytes,
-		func(o *nodeport.List@V1_0@, b []byte) (int8, int) { return o.Deserialize(b) },
-		func(o *nodeport.List@V1_0@, b []byte) (int8, int) { return o.Serialize(b) })
+		func(o *nodeport.List@V1_0@, b []byte) (int, error) { return o.Deserialize(b) },
+		func(o *nodeport.List@V1_0@, b []byte) (int, error) { return o.Serialize(b) })
 }
 
 func FuzzDecoders(f *testing.F) {

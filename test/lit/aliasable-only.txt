@@ -61,7 +61,7 @@
 # RUST_VEC3-NOT: impl Default
 # RUST_VEC3-NOT: pub fn serialize
 # RUST_VEC3: pub fn get_x(buffer: &[u8]) -> f32 {
-# RUST_VEC3: pub fn set_x(buffer: &mut [u8], value: f32) -> core::result::Result<(), i8> {
+# RUST_VEC3: pub fn set_x(buffer: &mut [u8], value: f32) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 # RUST_VEC3-NOT: pub fn serialize
 # RUN: cat %t/rust/src/fixtures_aliasable/vendor/pose_1_0.rs | FileCheck %s --check-prefix=RUST_POSE
 # RUST_POSE-NOT: use crate::
@@ -74,7 +74,7 @@
 # GO_VEC3-NOT: type Vec3 struct
 # GO_VEC3-NOT: func (obj *Vec3) Serialize(
 # GO_VEC3: func Vec3GetX(buffer []byte) float32 {
-# GO_VEC3: func Vec3SetX(buffer []byte, value float32) int8 {
+# GO_VEC3: func Vec3SetX(buffer []byte, value float32) error {
 # GO_VEC3-NOT: type Vec3 struct
 # GO_VEC3-NOT: func (obj *Vec3) Deserialize(
 

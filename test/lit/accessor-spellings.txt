@@ -58,13 +58,13 @@
 
 # RUST:      pub fn get_b(buffer: &[u8]) -> u16 {
 # RUST:      as u16
-# RUST:      pub fn set_b(buffer: &mut [u8], value: u16) -> core::result::Result<(), i8> {
+# RUST:      pub fn set_b(buffer: &mut [u8], value: u16) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 # RUST-NEXT: let _buffer_size_bytes: u64 = buffer.len() as u64;
 # RUST-NEXT: let value = value as u64;
 
 # GO:      func PaddedGetB(buffer []byte) uint16 {
 # GO:      return uint16(
-# GO:      func PaddedSetB(buffer []byte, memberValue uint16) int8 {
+# GO:      func PaddedSetB(buffer []byte, memberValue uint16) error {
 # GO-NEXT: value := uint64(memberValue)
 
 # TS:      export function getPaddedB(buffer: Uint8Array): number {
@@ -88,9 +88,9 @@
 # CPP_ELEMENT:  static std::uint8_t get_head(const std::span<const std::uint8_t> buffer, const std::size_t element_index)
 # CPP_ELEMENT:  static std::int8_t set_head(const std::span<std::uint8_t> buffer, const std::size_t element_index, const std::uint8_t member_value)
 # RUST_ELEMENT: pub fn get_head(buffer: &[u8], index: usize) -> u8 {
-# RUST_ELEMENT: pub fn set_head(buffer: &mut [u8], index: usize, value: u8) -> core::result::Result<(), i8> {
+# RUST_ELEMENT: pub fn set_head(buffer: &mut [u8], index: usize, value: u8) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 # GO_ELEMENT:   func ArrGetHead(buffer []byte, elementIndex int) uint8 {
-# GO_ELEMENT:   func ArrSetHead(buffer []byte, elementIndex int, memberValue uint8) int8 {
+# GO_ELEMENT:   func ArrSetHead(buffer []byte, elementIndex int, memberValue uint8) error {
 # TS_ELEMENT:   export function getArrHead(buffer: Uint8Array, elementIndex: number): number {
 # TS_ELEMENT:   export function setArrHead(buffer: Uint8Array, elementIndex: number, memberValue: number): number {
 # PY_ELEMENT:   def get_head(buffer: memoryview, index: int) -> int:

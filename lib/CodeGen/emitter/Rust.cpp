@@ -658,9 +658,10 @@ public:
         // argument a body ignores with a leading underscore.
         const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
 
-        w.open(serialize ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> core::result::Result<usize, i8> {"
+        w.open(serialize ? "pub fn serialize(&self, " + buffer +
+                               ": &mut [u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {"
                          : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
-                               "[u8]) -> core::result::Result<usize, i8> {");
+                               "[u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {");
         return {"self", buffer};
     }
 
@@ -701,7 +702,7 @@ public:
         else
         {
             w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage +
-                   ") -> core::result::Result<(), i8> {");
+                   ") -> core::result::Result<(), crate::dsdl_runtime::Error> {");
         }
         // The buffer's size as the plan speaks it, bound where the plan uses it at all. A composite
         // getter does not, once the length it wrote back is erased. A scalar accessor does, but only
@@ -831,7 +832,7 @@ public:
         if (accessor_ == Accessor::Setter)
         {
             w.line(cannotFail_ ? std::string{"Ok(())"}
-                               : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
+                               : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + errorOf(expr) + ") }");
             return;
         }
         w.line(expr.str());
@@ -842,7 +843,13 @@ public:
         // Where the body is marked unable to fail the error arm is unreachable, as for a setter.
         w.line(cannotFail_
                    ? "Ok(" + used.str() + ")"
-                   : "if " + error.str() + " == 0i8 { Ok(" + used.str() + ") } else { Err(" + error.str() + ") }");
+                   : "if " + error.str() + " == 0i8 { Ok(" + used.str() + ") } else { Err(" + errorOf(error) + ") }");
+    }
+
+    /// @brief The runtime's error for the plan's code @p code.
+    static std::string errorOf(const llvm::StringRef code)
+    {
+        return "crate::dsdl_runtime::Error::from_code(" + code.str() + ")";
     }
 
     [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
@@ -1214,11 +1221,11 @@ public:
         w.open("if Self::__LLVMDSDL_MEMORY_MODE == crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
         w.line("let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
         w.open("if let Err(_alloc_err) = " + access + ".reserve_with_pool(" + count + ", &mut _pool) {");
-        w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+        w.line("return Err(crate::dsdl_runtime::Error::from(_alloc_err));");
         w.close("}");
         w.midway("} else {");
         w.open("if let Err(_alloc_err) = " + access + ".try_reserve(" + count + ") {");
-        w.line("return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+        w.line("return Err(crate::dsdl_runtime::Error::from(_alloc_err));");
         w.close("}");
         w.close("}");
         w.line(access + ".resize(" + count + ", Default::default());");
@@ -1419,7 +1426,7 @@ public:
         }
         if (consumed.empty())
         {
-            declare(w, op.getError().getType(), error, "match " + call + " { Ok(_) => 0i8, Err(code) => code }");
+            declare(w, op.getError().getType(), error, "match " + call + " { Ok(_) => 0i8, Err(e) => e.code() }");
             return;
         }
         if (error.empty())
@@ -1428,7 +1435,7 @@ public:
             return;
         }
         w.line("let (" + error.str() + ", " + consumed.str() + ") = match " + call +
-               " { Ok(used) => (0i8, used), Err(code) => (code, 0) };");
+               " { Ok(used) => (0i8, used), Err(e) => (e.code(), 0) };");
     }
 
 private:
@@ -1993,15 +2000,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             return err;
         }
         w.blank();
-        w.open("pub fn deserialize_with_consumed(&mut self, buffer: " + borrowed + ") -> (i8, usize) {");
-        w.open("match self.deserialize(buffer) {");
-        w.line("Ok(consumed) => (0, consumed),");
-        w.line("Err(rc) => (rc, buffer.len()),");
-        w.close("}");
-        w.close("}");
-        w.blank();
-
-        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
+        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, "
+               "crate::dsdl_runtime::Error> {");
         w.line("let mut buffer = "
                "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
         w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
@@ -2011,7 +2011,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.close("}");
         w.blank();
 
-        w.open("pub fn from_bytes(buffer: " + borrowed + ") -> core::result::Result<(Self, usize), i8> {");
+        w.open("pub fn from_bytes(buffer: " + borrowed +
+               ") -> core::result::Result<(Self, usize), crate::dsdl_runtime::Error> {");
         w.line("let mut out = Self::default();");
         w.line("let used = out.deserialize(buffer)?;");
         w.line("Ok((out, used))");

@@ -216,7 +216,8 @@ nested call is handed. The C↔C++ parity lanes and the generation lane accept i
 names members from the scope the struct declaration names them in, and never names a nested type:
 a nested call is a method call on the member. The plan's `i64` is `u64` with wrapping arithmetic,
 which is the plan's arithmetic and cannot panic; a body reads the slice's length where the plan
-reads its size, and answers the size it used in `Ok`. A buffer is a slice, and a pointer
+reads its size, and answers the size it used in `Ok` and the runtime's `Error` in `Err`, which the
+plan's code names. A nested call reads the code back from the `Error` it answers. A buffer is a slice, and a pointer
 into it is a sub-slice clamped to the buffer's end. A fixed-length array is `[T; N]`, which is the
 object the plan addresses without a count; it was a growable container with a length check the
 plan does not state. A variable-length array is sized within its capacity, under the section's
@@ -227,8 +228,10 @@ parity lanes and their variants, the cargo-check lanes and the generation lane a
 **Go** followed. `GoSpelling`, in
 [`lib/CodeGen/emitter/Go.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Go.cpp),
 names members from the scope the struct declaration names them in, and never names a nested type:
-a nested call is a method call on the member, and its two answers, the code and the size it used,
-make it a statement rather than a value. The output is gofmt-clean by construction: each operation
+a nested call is a method call on the member, and its two answers, the size it used and its error,
+make it a statement rather than a value; `dsdlruntime.Coded` turns the error back into the plan's
+code. A body answers the size and `dsdlruntime.ErrorOf` of the plan's code, which is nil for
+success. The output is gofmt-clean by construction: each operation
 is one statement, so no operator sits inside a call argument or an index, and a conditional value
 is an `if` that assigns a declared variable. Go's fixed-width arithmetic wraps, which is the
 plan's arithmetic. A negative literal is spelled in the signed type it is compared in, since a

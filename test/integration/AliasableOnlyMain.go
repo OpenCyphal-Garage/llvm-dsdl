@@ -33,12 +33,12 @@ func main() {
 	shortRead := vendor.Vec3GetZ(buffer[:4])
 	x := vendor.Vec3GetX(vendor.PoseGetPosition(buffer))
 
-	ok := len(orientation) == 12 && y == 5.5 && setResult == 0 && z == 9.5 && shortRead == 0 && x == 1.5
+	ok := len(orientation) == 12 && y == 5.5 && setResult == nil && z == 9.5 && shortRead == 0 && x == 1.5
 	verdict := "ok"
 	if !ok {
 		verdict = "FAILED"
 	}
-	fmt.Printf("aliasable-only Go: %s (orientation %d bytes, y %g, set %d, z %g, short %g, x %g)\n",
+	fmt.Printf("aliasable-only Go: %s (orientation %d bytes, y %g, set %v, z %g, short %g, x %g)\n",
 		verdict, len(orientation), y, setResult, z, shortRead, x)
 	if !ok {
 		os.Exit(1)

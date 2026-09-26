@@ -17,11 +17,9 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use prefixguard_generated::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
+use prefixguard_generated::dsdl_runtime::Error;
 use prefixguard_generated::prefixguard::prefix32_1_0::Prefix32;
 use prefixguard_generated::prefixguard::prefix64_1_0::Prefix64;
-
-const BAD_ARRAY_LENGTH: i8 = -DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;
 
 /// What one decode found.
 #[derive(Debug, PartialEq, Eq)]
@@ -48,13 +46,13 @@ fn with_prefix(prefix: u64, prefix_bytes: usize, payload_bytes: usize) -> Vec<u8
 }
 
 /// The verdict for a decode that has to fail with a bad array length and leave the array empty.
-fn expect_rejected(result: Result<usize, i8>, len_after: usize) -> Verdict {
+fn expect_rejected(result: Result<usize, Error>, len_after: usize) -> Verdict {
     match result {
-        Err(rc) if rc == BAD_ARRAY_LENGTH && len_after == 0 => Verdict::Passed,
-        Err(rc) if rc == BAD_ARRAY_LENGTH => {
+        Err(Error::BadArrayLength) if len_after == 0 => Verdict::Passed,
+        Err(Error::BadArrayLength) => {
             Verdict::Failed(format!("array holds {len_after} elements after rejection"))
         }
-        Err(rc) => Verdict::Failed(format!("rc = {rc}, want {BAD_ARRAY_LENGTH}")),
+        Err(error) => Verdict::Failed(format!("error = {error}, want {}", Error::BadArrayLength)),
         Ok(consumed) => Verdict::Failed(format!(
             "decoded {consumed} bytes into {len_after} elements, want rejection"
         )),
@@ -85,7 +83,7 @@ fn prefix32_accepts_capacity() -> Outcome {
             obj.payload.len()
         )),
         Ok(_) => Verdict::Passed,
-        Err(rc) => Verdict::Failed(format!("rc = {rc}, want success")),
+        Err(error) => Verdict::Failed(format!("error = {error}, want success")),
     };
     Outcome {
         case: "prefix32_accepts_capacity",
@@ -137,7 +135,7 @@ fn prefix64_accepts_small_length() -> Outcome {
             Verdict::Failed(format!("flags = {:?}, want {want:?}", obj.flags.as_slice()))
         }
         Ok(_) => Verdict::Passed,
-        Err(rc) => Verdict::Failed(format!("rc = {rc}, want success")),
+        Err(error) => Verdict::Failed(format!("error = {error}, want success")),
     };
     Outcome {
         case: "prefix64_accepts_small_length",
