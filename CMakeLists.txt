@@ -1505,6 +1505,23 @@ if(LLVMDSDL_PYTHON3_EXE)
             "${LLVMDSDL_SOURCE_DIR}/tools/count_emission_sites.py"
             --baseline "${LLVMDSDL_SOURCE_DIR}/test/integration/emission-sites.json")
   set_tests_properties(llvmdsdl-emission-sites PROPERTIES LABELS "contract")
+
+  # What each emitter decides by querying the IR around the op it spells, held to the inventory in
+  # test/integration/emitter-ir-queries.json exactly. Phase 3 of CLEAN_CODE.md empties it.
+  add_test(
+    NAME llvmdsdl-emitter-ir-queries
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/check_emitter_ir_queries.py"
+            --root "${LLVMDSDL_SOURCE_DIR}")
+  add_test(
+    NAME llvmdsdl-emitter-ir-queries-selftest
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/check_emitter_ir_queries.py"
+            --self-test)
+  set_tests_properties(
+    llvmdsdl-emitter-ir-queries
+    llvmdsdl-emitter-ir-queries-selftest
+    PROPERTIES LABELS "contract")
 endif()
 
 # Below enable_testing() rather than beside the other examples: the showroom registers ctests for its
