@@ -51,19 +51,11 @@ export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Arra
     let err3: number;
     if (v1) {
       const v2 = size - 4n;
-      const nestedSize = Number(v2);
       const v3 = err2 === 0;
       let err4: number;
       if (v3) {
         const nestedBuf = buffer.subarray(Math.min(Number(4n), buffer.length));
-        const _bound0_ = Math.min(nestedSize, nestedBuf.length);
-        const _result1_ = serializeDelimitedInto(obj.nested, nestedBuf.subarray(0, _bound0_));
-        let nestedErr: number;
-        if (_result1_ < 0) {
-          nestedErr = _result1_;
-        } else {
-          nestedErr = 0;
-        }
+        const nestedErr = Math.min(serializeDelimitedInto(obj.nested, nestedBuf.subarray(0, Number(v2))), 0);
         const err5 = validateDelimiterHeader1(1n, v2);
         const v4 = nestedErr === 0;
         const v5 = v4 ? err5 : nestedErr;
@@ -109,21 +101,13 @@ export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Ar
     const v0 = size > 4n;
     const v1 = v0 ? 4n : size;
     const v2 = size - v1;
-    const nestedSize = Number(value);
     const err2 = validateDelimiterHeader1(value, v2);
     const v3 = err2 === 0;
     let offset: bigint;
     let err3: number;
     if (v3) {
       const nestedBuf = buffer.subarray(Math.min(Number(v1), buffer.length));
-      const _bound2_ = Math.min(nestedSize, nestedBuf.length);
-      const _result3_ = deserializeDelimitedFrom(nestedAddr, nestedBuf.subarray(0, _bound2_));
-      let nestedErr: number;
-      if (_result3_ < 0) {
-        nestedErr = _result3_;
-      } else {
-        nestedErr = 0;
-      }
+      const nestedErr = Math.min(deserializeDelimitedFrom(nestedAddr, nestedBuf.subarray(0, Number(value))), 0);
       const v4 = nestedErr === 0;
       let v5: bigint;
       if (v4) {

@@ -1044,15 +1044,14 @@ public:
         w.line(names(op.getPointer()) + " = " + asNumber(op.getValue(), names) + ";");
     }
 
-    [[nodiscard]] std::string local(SourceWriter&         w,
-                                    mlir::dsdl::LocalOp   op,
-                                    const llvm::StringRef name,
-                                    const ValueNames&     names) const override
+    [[nodiscard]] std::string local(SourceWriter& /*w*/,
+                                    mlir::dsdl::LocalOp /*op*/,
+                                    const llvm::StringRef /*name*/,
+                                    const ValueNames& /*names*/) const override
     {
-        // A size the plan reads the answer back into is reassigned; one it only hands out is not.
-        w.line(std::string{plansReadOfSize(op.getAddress()) ? "let " : "const "} + name.str() + " = " +
-               asNumber(op.getInit(), names) + ";");
-        return name.str();
+        // A body's only local is the size of a nested call, which reaches TypeScript folded to
+        // `dsdl.call_serdes_sized`.
+        llvm::report_fatal_error("TypeScript spelling: a local reaches TypeScript only as a nested call's size");
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
@@ -1261,44 +1260,47 @@ public:
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
-        llvm::report_fatal_error("TypeScript spelling: a nested call is a statement");
+        llvm::report_fatal_error(
+            "TypeScript spelling: a nested call reaches TypeScript folded to dsdl.call_serdes_sized");
     }
 
-    void declareCallSerdes(SourceWriter&            w,
-                           const llvm::StringRef    name,
-                           mlir::dsdl::CallSerdesOp op,
-                           const ValueNames&        names) const override
+    void declareCallSerdes(SourceWriter& /*w*/,
+                           const llvm::StringRef /*name*/,
+                           mlir::dsdl::CallSerdesOp /*op*/,
+                           const ValueNames& /*names*/) const override
     {
-        // The nested value serialises itself into the subarray from the buffer's offset, bounded
-        // by the size the plan handed in; it answers the size it used or the code, and the size
-        // is written back through the local where the plan reads it.
+        llvm::report_fatal_error(
+            "TypeScript spelling: a nested call reaches TypeScript folded to dsdl.call_serdes_sized");
+    }
+
+    void declareCallSerdesSized(SourceWriter&                 w,
+                                const llvm::StringRef         error,
+                                const llvm::StringRef         consumed,
+                                mlir::dsdl::CallSerdesSizedOp op,
+                                const ValueNames&             names) const override
+    {
+        // The nested value serialises itself into the subarray from the buffer's offset, which ends
+        // where the space the plan offers does or the buffer does, and answers what it used or a
+        // negative code. What it used means something only where the code is zero, so it holds
+        // the answer as it came, and the code is read off it.
         const std::string buffer = names(op.getBuffer());
-        const std::string size   = names(op.getSize());
-        const std::string bound  = fresh("bound");
-        const std::string result = fresh("result");
-        const bool        read   = plansReadOfSize(op.getSize());
-        w.line("const " + bound + " = Math.min(" + size + ", " + buffer + ".length);");
-        w.line("const " + result + " = " + nestedFunction(op) + "(" + names(op.getObject()) + ", " + buffer +
-               ".subarray(0, " + bound + "));");
-        if (!name.empty())
+        const std::string call =
+            nestedFunction(op) + "(" + names(op.getObject()) + ", " + buffer + ".subarray(0, " +
+            cast(names(op.getAvailable()), op.getAvailable().getType(), mlir::IndexType::get(op.getContext())) + "))";
+        if (consumed.empty() && error.empty())
         {
-            w.line("let " + name.str() + ": number;");
-            w.open("if (" + result + " < 0) {");
-            w.line(name.str() + " = " + result + ";");
-            w.midway("} else {");
-            if (read)
-            {
-                w.line(size + " = " + result + ";");
-            }
-            w.line(name.str() + " = 0;");
-            w.close("}");
+            discard(w, call);
             return;
         }
-        if (read)
+        if (consumed.empty())
         {
-            w.open("if (" + result + " >= 0) {");
-            w.line(size + " = " + result + ";");
-            w.close("}");
+            declare(w, op.getError().getType(), error, "Math.min(" + call + ", 0)");
+            return;
+        }
+        declare(w, op.getConsumed().getType(), consumed, call);
+        if (!error.empty())
+        {
+            declare(w, op.getError().getType(), error, consumed.str() + " < 0 ? " + consumed.str() + " : 0");
         }
     }
 
@@ -1342,7 +1344,7 @@ private:
     }
 
     /// @brief The body function of the nested type a call names.
-    std::string nestedFunction(mlir::dsdl::CallSerdesOp op) const
+    std::string nestedFunction(mlir::dsdl::CallSerdesSizedOp op) const
     {
         auto       body   = symbols_.lookup<mlir::func::FuncOp>(op.getCallee());
         const auto owner  = body ? body->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym") : mlir::StringAttr{};

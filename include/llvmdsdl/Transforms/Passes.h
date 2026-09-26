@@ -117,6 +117,15 @@ std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nulla
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 
+/// @brief Folds each nested call to `dsdl.call_serdes_sized`, for a target whose nested entry point
+///        is handed the space as its buffer's length and answers what it used.
+///
+/// The space goes in by value, and what the callee used comes out as a result, converted where the
+/// plan reads it back. A size local anything else reads fails the pass rather than leave a call the
+/// target cannot spell. Registered with `dsdl-opt` as `dsdl-fold-nested-call-sizes`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass();
+
 /// @brief Marks each plan body or setter whose every return answers zero as `llvmdsdl.infallible`.
 ///
 /// Whether a body can fail is a fact of the body, and the folds of this pipeline are often what make

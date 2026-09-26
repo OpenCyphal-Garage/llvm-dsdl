@@ -9,24 +9,21 @@
   },
   "Go.cpp": {
     "getDefiningOp": 1,
-    "plansReadOfSize": 1,
     "use_empty": 1
   },
   "Python.cpp": {
     "getDefiningOp": 1,
-    "plansReadOfSize": 1,
     "use_empty": 1
   },
   "Rust.cpp": {
     "getBlock": 1,
     "getDefiningOp": 1,
     "getUsers": 1,
-    "plansReadOfSize": 3,
+    "plansReadOfSize": 1,
     "use_empty": 3
   },
   "Ts.cpp": {
     "getDefiningOp": 1,
-    "plansReadOfSize": 2,
     "use_empty": 1
   }
 }

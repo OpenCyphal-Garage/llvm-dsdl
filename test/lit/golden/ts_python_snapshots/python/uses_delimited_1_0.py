@@ -59,16 +59,10 @@ class UsesDelimited:
             v1 = err_2 == 0
             if v1:
                 v2 = size - 4
-                nested_size = v2
                 v3 = err_2 == 0
                 if v3:
                     nested_buf = buffer[min(4, len(buffer)):]
-                    _bound0_ = min(nested_size, len(nested_buf))
-                    _result1_ = self.nested._serialize_into(nested_buf[:_bound0_])
-                    if _result1_ < 0:
-                        nested_err = _result1_
-                    else:
-                        nested_err = 0
+                    nested_err = min(self.nested._serialize_into(nested_buf[:v2]), 0)
                     err_5 = _validate_delimiter_header_1(1, v2)
                     v4 = nested_err == 0
                     v5 = (err_5 if v4 else nested_err)
@@ -104,17 +98,11 @@ class UsesDelimited:
             v0 = size > 4
             v1 = (4 if v0 else size)
             v2 = size - v1
-            nested_size = value
             err_2 = _validate_delimiter_header_1(value, v2)
             v3 = err_2 == 0
             if v3:
                 nested_buf = buffer[min(v1, len(buffer)):]
-                _bound2_ = min(nested_size, len(nested_buf))
-                _result3_ = self.nested._deserialize_from(nested_buf[:_bound2_])
-                if _result3_ < 0:
-                    nested_err = _result3_
-                else:
-                    nested_err = 0
+                nested_err = min(self.nested._deserialize_from(nested_buf[:value]), 0)
                 v4 = nested_err == 0
                 if v4:
                     v6 = value * 8

@@ -1177,16 +1177,14 @@ public:
         w.line(names(op.getPointer()) + " = " + value + ";");
     }
 
-    [[nodiscard]] std::string local(SourceWriter&         w,
-                                    mlir::dsdl::LocalOp   op,
-                                    const llvm::StringRef name,
-                                    const ValueNames&     names) const override
+    [[nodiscard]] std::string local(SourceWriter& /*w*/,
+                                    mlir::dsdl::LocalOp /*op*/,
+                                    const llvm::StringRef /*name*/,
+                                    const ValueNames& /*names*/) const override
     {
-        // The size a nested call is handed bounds the slice it gets; it is written back only
-        // where the plan reads the answer.
-        w.line(std::string("let ") + (plansReadOfSize(op.getAddress()) ? "mut " : "") + name.str() +
-               ": usize = " + asSize(names(op.getInit())) + ";");
-        return name.str();
+        // A body's only local is the size of a nested call, which reaches Rust folded to
+        // `dsdl.call_serdes_sized`.
+        llvm::report_fatal_error("Rust spelling: a local reaches Rust only as a nested call's size");
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
@@ -1423,20 +1421,43 @@ public:
                destination + ".as_mut_ptr(), _n) }; } " + destination + "[_n.." + width + "].fill(0u8); }");
     }
 
-    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
-        // The nested value serialises itself into the slice from the buffer's offset, bounded by
-        // the size the plan handed in; its answer is the size it used, which the plan reads back
-        // through the local. The bound is taken before the slice is, so the length read ends first.
+        llvm::report_fatal_error("Rust spelling: a nested call reaches Rust folded to dsdl.call_serdes_sized");
+    }
+
+    void declareCallSerdesSized(SourceWriter&                 w,
+                                const llvm::StringRef         error,
+                                const llvm::StringRef         consumed,
+                                mlir::dsdl::CallSerdesSizedOp op,
+                                const ValueNames&             names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by the
+        // space the plan offers, and answers what it used or its code. The bound is taken before
+        // the slice is, so the length read ends first. What it used means something only where
+        // the code is zero.
         const bool        serialize = op.getDirection() == "serialize";
         const std::string buffer    = names(op.getBuffer());
-        const std::string size      = names(op.getSize());
-        const std::string slice     = "{ let _len = core::cmp::min(" + size + ", " + buffer + ".len()); " +
-                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
-        const std::string used =
-            plansReadOfSize(op.getSize()) ? "Ok(_used) => { " + size + " = _used; 0i8 }" : "Ok(_) => 0i8,";
-        return "match " + names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ") { " +
-               used + " Err(_code) => _code }";
+        const std::string slice = "{ let _len = core::cmp::min(" + asSize(names(op.getAvailable())) + ", " + buffer +
+                                  ".len()); " + (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+        const std::string call  = names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ")";
+        if (consumed.empty() && error.empty())
+        {
+            discard(w, call);
+            return;
+        }
+        if (consumed.empty())
+        {
+            declare(w, op.getError().getType(), error, "match " + call + " { Ok(_) => 0i8, Err(code) => code }");
+            return;
+        }
+        if (error.empty())
+        {
+            declare(w, op.getConsumed().getType(), consumed, "match " + call + " { Ok(used) => used, Err(_) => 0 }");
+            return;
+        }
+        w.line("let (" + error.str() + ", " + consumed.str() + ") = match " + call +
+               " { Ok(used) => (0i8, used), Err(code) => (code, 0) };");
     }
 
 private:

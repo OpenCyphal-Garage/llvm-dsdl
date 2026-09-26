@@ -1190,6 +1190,16 @@ public:
                asSize(names(op.getSourceSizeBytes())) + ", " + std::to_string(op.getBytes()) + "U);");
     }
 
+    void declareCallSerdesSized(SourceWriter& /*w*/,
+                                const llvm::StringRef /*error*/,
+                                const llvm::StringRef /*consumed*/,
+                                mlir::dsdl::CallSerdesSizedOp /*op*/,
+                                const ValueNames& /*names*/) const override
+    {
+        // A C++ entry point takes its size by pointer, so a nested call reaches C++ as the plan builds it.
+        llvm::report_fatal_error("C++ spelling: a nested call handed its size by value");
+    }
+
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The callee is the nested type's own body, and the type is the schema that body belongs to.

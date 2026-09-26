@@ -101,10 +101,24 @@ struct Role final
     llvm::StringRef member;
 };
 
+/// @brief The member a nested call reaches, if @p op is one.
+std::optional<llvm::StringRef> memberOfNestedCall(mlir::Operation* const op)
+{
+    if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(op))
+    {
+        return call.getMember();
+    }
+    if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesSizedOp>(op))
+    {
+        return call.getMember();
+    }
+    return std::nullopt;
+}
+
 /// @brief The member the nested calls reading @p value agree on, where they agree.
 ///
-/// A size local and a buffer address are built for a single `dsdl.call_serdes` and carry no
-/// member of their own; the call they are built for names it. Two calls may come to share one
+/// A size local and a buffer address are built for a single nested call and carry no member of
+/// their own; the call they are built for names it. Two calls may come to share one
 /// address -- `dsdl.buffer_at` has no memory effect, so CSE may merge two addressing the same
 /// offset -- and then no member describes it, since naming it after one would say the other does
 /// not reach it. Taking whichever came first would also take whichever the use list happened to
@@ -114,17 +128,17 @@ llvm::StringRef memberOfNestedCaller(const mlir::Value value)
     std::optional<llvm::StringRef> shared;
     for (mlir::Operation* const user : value.getUsers())
     {
-        auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesOp>(user);
-        if (!call)
+        const std::optional<llvm::StringRef> member = memberOfNestedCall(user);
+        if (!member)
         {
             continue;
         }
         if (!shared.has_value())
         {
-            shared = call.getMember();
+            shared = member;
             continue;
         }
-        if (*shared != call.getMember())
+        if (*shared != *member)
         {
             return {};
         }
@@ -422,6 +436,15 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::LoadElementOp>([](auto read) { return Reached{Role{ValueRole::Scalar, read.getMember()}}; })
         .Case<mlir::dsdl::ArrayLengthOp>([](auto read) { return Reached{Role{ValueRole::Length, read.getMember()}}; })
         .Case<mlir::dsdl::CallSerdesOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
+        .Case<mlir::dsdl::CallSerdesSizedOp>([&](auto call) {
+            return Reached{Role{result.getResultNumber() == 0 ? ValueRole::Error : ValueRole::Size, call.getMember()}};
+        })
+        // What a nested call used, taken to the width the plan counts in, is still that member's size.
+        // Any other conversion says nothing of what it converts.
+        .Case<mlir::arith::IndexCastOp>([](auto cast) {
+            auto call = cast.getIn().template getDefiningOp<mlir::dsdl::CallSerdesSizedOp>();
+            return call ? Reached{Role{ValueRole::Size, call.getMember()}} : Reached{Role{}};
+        })
         .Case<mlir::dsdl::CallInitializeOp>([](auto call) { return Reached{Role{ValueRole::Error, call.getMember()}}; })
         .Case<mlir::dsdl::LoadViewOp>([&](auto view) {
             return Reached{Role{result.getResultNumber() == 0 ? ValueRole::Buffer : ValueRole::Size, view.getMember()}};
@@ -989,6 +1012,20 @@ private:
                 if (!name.empty())
                 {
                     names_[call.getResult()] = name;
+                }
+            })
+            .Case<mlir::dsdl::CallSerdesSizedOp>([&](mlir::dsdl::CallSerdesSizedOp call) -> void {
+                const std::string error = call.getError().use_empty() ? std::string{} : nameFor(call.getError());
+                const std::string consumed =
+                    call.getConsumed().use_empty() ? std::string{} : nameFor(call.getConsumed());
+                spelling_.declareCallSerdesSized(w_, error, consumed, call, *this);
+                if (!error.empty())
+                {
+                    names_[call.getError()] = error;
+                }
+                if (!consumed.empty())
+                {
+                    names_[call.getConsumed()] = consumed;
                 }
             })
             .Case<mlir::dsdl::CallInitializeOp>([&](mlir::dsdl::CallInitializeOp call) -> void {

@@ -72,6 +72,14 @@ struct BodyInterface final
     /// layout to speak of, it cannot. The row states what the language can do; the driver clears it
     /// for a host that orders bytes other than as the wire does, since the swap back is per scalar.
     bool objectsAreByteImages{false};
+
+    /// @brief Whether a nested type's entry point is handed the bytes available as the length of
+    ///        its buffer, and answers the bytes it consumed beside its error.
+    ///
+    /// A target whose entry point reads and writes the size through a pointer takes the plan's
+    /// nested call as it is. One whose buffer carries its own length has the call folded to
+    /// `dsdl.call_serdes_sized`, which states the adaptation once rather than in each spelling.
+    bool nestedCallsAnswerSize{false};
 };
 
 }  // namespace llvmdsdl

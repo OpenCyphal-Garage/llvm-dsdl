@@ -1136,13 +1136,14 @@ public:
         line(w, names(op.getPointer()) + " = " + names(op.getValue()));
     }
 
-    [[nodiscard]] std::string local(SourceWriter&         w,
-                                    mlir::dsdl::LocalOp   op,
-                                    const llvm::StringRef name,
-                                    const ValueNames&     names) const override
+    [[nodiscard]] std::string local(SourceWriter& /*w*/,
+                                    mlir::dsdl::LocalOp /*op*/,
+                                    const llvm::StringRef /*name*/,
+                                    const ValueNames& /*names*/) const override
     {
-        line(w, name.str() + " = " + names(op.getInit()));
-        return name.str();
+        // A body's only local is the size of a nested call, which reaches Python folded to
+        // `dsdl.call_serdes_sized`.
+        llvm::report_fatal_error("Python spelling: a local reaches Python only as a nested call's size");
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
@@ -1354,45 +1355,44 @@ public:
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
-        llvm::report_fatal_error("Python spelling: a nested call is a statement");
+        llvm::report_fatal_error("Python spelling: a nested call reaches Python folded to dsdl.call_serdes_sized");
     }
 
-    void declareCallSerdes(SourceWriter&            w,
-                           const llvm::StringRef    name,
-                           mlir::dsdl::CallSerdesOp op,
-                           const ValueNames&        names) const override
+    void declareCallSerdes(SourceWriter& /*w*/,
+                           const llvm::StringRef /*name*/,
+                           mlir::dsdl::CallSerdesOp /*op*/,
+                           const ValueNames& /*names*/) const override
     {
-        // The nested value serialises itself into the slice from the buffer's offset, bounded by
-        // the size the plan handed in; it answers the size it used or the code, and the size is
-        // written back through the local where the plan reads it.
-        const bool        serialize = op.getDirection() == "serialize";
-        const std::string buffer    = names(op.getBuffer());
-        const std::string size      = names(op.getSize());
-        const std::string bound     = fresh("bound");
-        const std::string result    = fresh("result");
-        const bool        read      = plansReadOfSize(op.getSize());
-        line(w, bound + " = min(" + size + ", len(" + buffer + "))");
-        line(w,
-             result + " = " + names(op.getObject()) + "." + (serialize ? serializeInto() : deserializeFrom()) + "(" +
-                 buffer + "[:" + bound + "])");
-        if (!name.empty())
+        llvm::report_fatal_error("Python spelling: a nested call reaches Python folded to dsdl.call_serdes_sized");
+    }
+
+    void declareCallSerdesSized(SourceWriter&                 w,
+                                const llvm::StringRef         error,
+                                const llvm::StringRef         consumed,
+                                mlir::dsdl::CallSerdesSizedOp op,
+                                const ValueNames&             names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, which ends
+        // where the space the plan offers does or the buffer does, and answers what it used or a
+        // negative code. What it used means something only where the code is zero, so it holds
+        // the answer as it came, and the code is read off it.
+        const std::string call = names(op.getObject()) + "." +
+                                 (op.getDirection() == "serialize" ? serializeInto() : deserializeFrom()) + "(" +
+                                 names(op.getBuffer()) + "[:" + names(op.getAvailable()) + "])";
+        if (consumed.empty() && error.empty())
         {
-            open(w, "if " + result + " < 0:");
-            line(w, name.str() + " = " + result);
-            openElse(w);
-            if (read)
-            {
-                line(w, size + " = " + result);
-            }
-            line(w, name.str() + " = 0");
-            closeBlock(w);
+            discard(w, call);
             return;
         }
-        if (read)
+        if (consumed.empty())
         {
-            open(w, "if " + result + " >= 0:");
-            line(w, size + " = " + result);
-            closeBlock(w);
+            declare(w, op.getError().getType(), error, "min(" + call + ", 0)");
+            return;
+        }
+        declare(w, op.getConsumed().getType(), consumed, call);
+        if (!error.empty())
+        {
+            declare(w, op.getError().getType(), error, consumed.str() + " if " + consumed.str() + " < 0 else 0");
         }
     }
 

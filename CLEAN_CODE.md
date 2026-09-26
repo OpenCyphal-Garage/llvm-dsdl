@@ -407,9 +407,9 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 |----------|-------|-----------------:|----:|
 | Rust | clippy | 867 | 641 |
 | Go | staticcheck | 3,241 | 318 |
-| Python | ruff | 4,188 | 1,708 |
-| TypeScript | eslint | 1,810 | 548 |
-| | | **10,106** | **3,215** |
+| Python | ruff | 4,188 | 1,558 |
+| TypeScript | eslint | 1,810 | 84 |
+| | | **10,106** | **2,601** |
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
@@ -422,11 +422,10 @@ What is left is per-language.
 | 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
 | 1,907 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
 | 1,500 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
-| 987 | Python | `E501` | long lines |
+| 1,001 | Python | `E501` | long lines |
 | 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
-| 545 | TypeScript | `naming-convention` | `_bound0_` and `_result1_` locals |
 | 488 | C++ | `misc-include-cleaner` | the C runtime's functions, reached only through `dsdl_runtime.hpp` |
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
@@ -437,9 +436,9 @@ What is left is per-language.
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
 | 168 | C++ | `modernize-concat-nested-namespaces` | `namespace uavcan { namespace node {`, where C++17 writes `namespace uavcan::node {` |
-| 164 | Python | `SIM108` | the remaining branch-not-expression sites |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 123 | C, C++ | `readability-redundant-parentheses` | `!(rejected)`, 123 in each |
+| 81 | TypeScript | `naming-convention` | accessor names that keep a field's underscores (`getScalarMeter_per_second_per_second`), and six `_bitN_` loop indices |
 | 59 | Rust | `derivable_impls` | a written-out `Default` that `#[derive(Default)]` covers |
 | 54 | C++ | `modernize-type-traits` | `std::is_standard_layout<T>::value`, where C++17 writes `std::is_standard_layout_v<T>` |
 | 34 | Rust | `collapsible_else_if` | an `else` holding one `if`, which the branch shapes leave behind |
@@ -498,6 +497,21 @@ the uses of a value, the op that defined an operand, every return of a function,
 sits in -- to an inventory that must match the tree exactly: 28 when the gate was written. A query
 added fails, and a query removed is retaken, so the inventory is always the tree's. The phase is
 done when it is empty, and the judge findings the four cause fall with it.
+
+Two of the four have moved, and the inventory stands at 20. `dsdl-mark-infallible-bodies` states
+whether a body can fail, and Rust reads it. `dsdl-fold-nested-call-sizes` runs for a target whose
+nested entry point is handed the space as its buffer's length and answers what it used -- a column
+of the row -- and turns the plan's call through a size local into `dsdl.call_serdes_sized`, which
+takes the space by value and answers the error and what was used as two results the shared
+translator names. Go, Rust, TypeScript and Python each spell one call where each had clamped, called,
+split the answer and written a local back under names of its own; C and C++ take the call as the
+plan builds it, byte for byte as before. What a nested call used means something only where its
+error is zero, which is how the four spellings can hold the answer as it came.
+
+The judges moved with it. TypeScript's `naming-convention` fell from 545 to 81, the `_bound0_` and
+`_result1_` the spelling had invented, and Python's `SIM108` from 164 to none, the branch each call
+split its answer with. Python's `E501` rose by 14, since a call and its split now take one line where
+they took five.
 
 **4 — The surface tree.** `project-dsdl-surface`, the scope ops, symbol allocation and reference
 rewriting. The first profile reproduces today's output exactly, so the whole phase changes no

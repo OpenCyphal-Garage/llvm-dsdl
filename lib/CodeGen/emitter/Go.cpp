@@ -1160,13 +1160,14 @@ public:
         w.line(names(op.getPointer()) + " = " + asInt(names(op.getValue())));
     }
 
-    [[nodiscard]] std::string local(SourceWriter&         w,
-                                    mlir::dsdl::LocalOp   op,
-                                    const llvm::StringRef name,
-                                    const ValueNames&     names) const override
+    [[nodiscard]] std::string local(SourceWriter& /*w*/,
+                                    mlir::dsdl::LocalOp /*op*/,
+                                    const llvm::StringRef /*name*/,
+                                    const ValueNames& /*names*/) const override
     {
-        w.line(name.str() + " := " + asInt(names(op.getInit())));
-        return name.str();
+        // A body's only local is the size of a nested call, which reaches Go folded to
+        // `dsdl.call_serdes_sized`.
+        llvm::report_fatal_error("Go spelling: a local reaches Go only as a nested call's size");
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
@@ -1387,29 +1388,33 @@ public:
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp /*op*/, const ValueNames& /*names*/) const override
     {
-        llvm::report_fatal_error("Go spelling: a nested call is a statement");
+        llvm::report_fatal_error("Go spelling: a nested call reaches Go folded to dsdl.call_serdes_sized");
     }
 
-    void declareCallSerdes(SourceWriter&            w,
-                           const llvm::StringRef    name,
-                           mlir::dsdl::CallSerdesOp op,
-                           const ValueNames&        names) const override
+    void declareCallSerdes(SourceWriter& /*w*/,
+                           const llvm::StringRef /*name*/,
+                           mlir::dsdl::CallSerdesOp /*op*/,
+                           const ValueNames& /*names*/) const override
     {
-        // The nested value serialises itself into the slice from the buffer's offset, bounded by
-        // the size the plan handed in; it answers the code and the size it used, and the size is
-        // written back through the local where the plan reads it.
-        const bool        serialize = op.getDirection() == "serialize";
-        const std::string buffer    = names(op.getBuffer());
-        const std::string size      = names(op.getSize());
-        const std::string bound     = fresh("bound");
-        const std::string used      = plansReadOfSize(op.getSize()) ? fresh("used") : "_";
-        w.line(bound + " := dsdlruntime.ChooseMin(" + size + ", len(" + buffer + "))");
-        w.line((name.empty() ? "_" : name.str()) + ", " + used + (name.empty() && used == "_" ? " = " : " := ") +
-               names(op.getObject()) + (serialize ? ".Serialize(" : ".Deserialize(") + buffer + "[:" + bound + "])");
-        if (used != "_")
-        {
-            w.line(size + " = " + used);
-        }
+        llvm::report_fatal_error("Go spelling: a nested call reaches Go folded to dsdl.call_serdes_sized");
+    }
+
+    void declareCallSerdesSized(SourceWriter&                 w,
+                                const llvm::StringRef         error,
+                                const llvm::StringRef         consumed,
+                                mlir::dsdl::CallSerdesSizedOp op,
+                                const ValueNames&             names) const override
+    {
+        // The nested value serialises itself into the slice from the buffer's offset, bounded by the
+        // space the plan offers, and answers its code and what it used as Go's two results.
+        const std::string buffer = names(op.getBuffer());
+        const std::string slice =
+            buffer + "[:dsdlruntime.ChooseMin(" + asInt(names(op.getAvailable())) + ", len(" + buffer + "))]";
+        const bool binds = !error.empty() || !consumed.empty();
+        w.line((error.empty() ? std::string{"_"} : error.str()) + ", " +
+               (consumed.empty() ? std::string{"_"} : consumed.str()) + (binds ? " := " : " = ") +
+               names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice +
+               ")");
     }
 
 private:

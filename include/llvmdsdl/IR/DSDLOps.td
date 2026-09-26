@@ -530,6 +530,27 @@ def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
   }];
 }
 
+def DSDL_CallSerdesSizedOp : DSDL_Op<"call_serdes_sized"> {
+  let summary = "Invoke a nested type's entry point, handing it a size and "
+                "taking back what it used";
+  let description = [{
+    What `dsdl.call_serdes` becomes for a target whose nested entry point takes the bytes
+    available as the length of the buffer it is handed, and answers the bytes it consumed
+    beside its error, rather than reading and writing a size through a pointer. `available`
+    is what the plan offers. `consumed` is what the callee used, counted as the target counts
+    a length, and means something only where `error` is zero.
+    `dsdl-fold-nested-call-sizes` builds it; the plan builder does not.
+  }];
+  let arguments = (ins FlatSymbolRefAttr:$callee, StrAttr:$member,
+      StrAttr:$direction, DSDL_PtrType:$object, DSDL_PtrType:$buffer,
+      I64:$available);
+  let results = (outs I8:$error, Index:$consumed);
+  let assemblyFormat = [{
+    $callee `(` $object `,` $buffer `,` $available `)` attr-dict `:`
+    type($object) `,` type($buffer)
+  }];
+}
+
 def DSDL_StoreViewOp : DSDL_Op<"store_view"> {
   let summary = "Hold a run of the wire buffer in a member, as a view";
   let description = [{

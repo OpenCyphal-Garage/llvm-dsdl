@@ -29,6 +29,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Matchers.h>
@@ -1484,6 +1485,92 @@ struct FoldDSDLUnobservedAccessorSizesPass
     }
 };
 
+/// @brief Folds each nested call to the form a target takes when its buffer carries its own length.
+///
+/// The plan hands a nested type the space available through a local and reads back what it used
+/// from the same local, which is how an entry point taking a size by pointer is called. A target
+/// whose entry point takes the space as the length of the buffer it is handed, and answers what it
+/// used, would otherwise have each spelling clamp, call, split the answer and write the local back.
+/// `dsdl.call_serdes_sized` states that once: the space goes in by value, and what the callee used
+/// comes out as a result, converted where the plan reads it to the width the plan counts in.
+///
+/// A slot anything else reads, or reads before the call, is not one this recognises, and the pass
+/// fails rather than leave a call its target has no spelling for.
+struct FoldDSDLNestedCallSizesPass final
+    : public mlir::PassWrapper<FoldDSDLNestedCallSizesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-nested-call-sizes";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Hand each nested call its space by value and take back what it used as a result";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        llvm::SmallVector<mlir::dsdl::CallSerdesOp> calls;
+        getOperation().walk([&](mlir::dsdl::CallSerdesOp call) { calls.push_back(call); });
+        for (mlir::dsdl::CallSerdesOp call : calls)
+        {
+            auto slot = call.getSize().getDefiningOp<mlir::dsdl::LocalOp>();
+            if (!slot)
+            {
+                call.emitOpError("hands its size through something other than a local");
+                signalPassFailure();
+                return;
+            }
+            const mlir::DominanceInfo                   dominance(call->getParentOfType<mlir::func::FuncOp>());
+            llvm::SmallVector<mlir::dsdl::LoadScalarOp> readsBack;
+            for (mlir::Operation* const user : slot.getAddress().getUsers())
+            {
+                if (user == call.getOperation())
+                {
+                    continue;
+                }
+                auto read = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user);
+                if (!read || !dominance.properlyDominates(call.getOperation(), read))
+                {
+                    call.emitOpError("shares its size local with something other than a read after it");
+                    signalPassFailure();
+                    return;
+                }
+                readsBack.push_back(read);
+            }
+
+            mlir::OpBuilder b(call);
+            auto            sized = mlir::dsdl::CallSerdesSizedOp::create(b,
+                                                                          call.getLoc(),
+                                                                          b.getIntegerType(8),
+                                                                          b.getIndexType(),
+                                                                          call.getCalleeAttr(),
+                                                                          call.getMemberAttr(),
+                                                                          call.getDirectionAttr(),
+                                                                          call.getObject(),
+                                                                          call.getBuffer(),
+                                                                          slot.getInit());
+            call.getError().replaceAllUsesWith(sized.getError());
+            if (!readsBack.empty())
+            {
+                b.setInsertionPointAfter(sized);
+                const mlir::Value width = mlir::arith::IndexCastOp::create(b,
+                                                                           call.getLoc(),
+                                                                           readsBack.front().getValue().getType(),
+                                                                           sized.getConsumed());
+                for (mlir::dsdl::LoadScalarOp read : readsBack)
+                {
+                    read.getValue().replaceAllUsesWith(width);
+                    read.erase();
+                }
+            }
+            call.erase();
+            slot.erase();
+        }
+    }
+};
+
 /// @brief Whether @p fn answers an error code: a plan body, or a setter. A getter answers a value,
 ///        which may be an `i8` that is zero without meaning success.
 bool answersAnError(mlir::func::FuncOp fn)
@@ -2283,6 +2370,11 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass()
     return std::make_unique<FoldDSDLUnobservedAccessorSizesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass()
+{
+    return std::make_unique<FoldDSDLNestedCallSizesPass>();
+}
+
 std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass()
 {
     return std::make_unique<MarkDSDLInfallibleBodiesPass>();
@@ -2337,6 +2429,11 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     {
         pm.addPass(createKeepDSDLAccessorsPass());
     }
+    // After the host-image fold, which recognises a nested call as the plan builds it.
+    if (target.nestedCallsAnswerSize)
+    {
+        pm.addPass(createFoldDSDLNestedCallSizesPass());
+    }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
@@ -2361,6 +2458,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const  regFold;
     static mlir::PassRegistration<KeepDSDLAccessorsPass> const        regKeep;
     static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const regInfallible;
+    static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const  regNestedSizes;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

@@ -347,6 +347,19 @@ public:
         declare(w, op.getError().getType(), name, callSerdes(op, names));
     }
 
+    /// @brief Declares what a nested call handed its space by value answers: @p error, its code,
+    ///        and @p consumed, the bytes it used.
+    ///
+    /// `dsdl-fold-nested-call-sizes` builds the op for a target whose nested entry point is handed
+    /// the space as its buffer's length. Either name is empty when the plan does not read that
+    /// value. A target whose entry point takes its size by pointer never receives the op, and its
+    /// spelling says so.
+    virtual void declareCallSerdesSized(SourceWriter&                 w,
+                                        llvm::StringRef               error,
+                                        llvm::StringRef               consumed,
+                                        mlir::dsdl::CallSerdesSizedOp op,
+                                        const ValueNames&             names) const = 0;
+
     /// @brief Declares @p name as the error code a nested initialiser answers with.
     ///
     /// The languages that render initialisation declaratively, from the same body, translate no

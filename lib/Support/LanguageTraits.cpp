@@ -46,9 +46,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Handed pointers throughout, and a structure is its bytes.
         .body =
             {
-                .nullability          = {.objectPointer = true, .rawPointer = true, .accessorBuffer = true},
-                .accessorsReturnViews = false,
-                .objectsAreByteImages = true,
+                .nullability           = {.objectPointer = true, .rawPointer = true, .accessorBuffer = true},
+                .accessorsReturnViews  = false,
+                .objectsAreByteImages  = true,
+                .nestedCallsAnswerSize = false,
             },
         // No scope below the file, so a composed name carries the whole path.
         .composition =
@@ -80,9 +81,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Serialise and deserialise take pointers; a field accessor takes a span.
         .body =
             {
-                .nullability          = {.objectPointer = true, .rawPointer = true, .accessorBuffer = false},
-                .accessorsReturnViews = true,
-                .objectsAreByteImages = true,
+                .nullability           = {.objectPointer = true, .rawPointer = true, .accessorBuffer = false},
+                .accessorsReturnViews  = true,
+                .objectsAreByteImages  = true,
+                .nestedCallsAnswerSize = false,
             },
         // A section is flattened into its service's namespace-scope name rather than nested in it.
         .composition =
@@ -114,9 +116,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Handed a reference, a slice and a local, none of which can be null.
         .body =
             {
-                .nullability          = {.objectPointer = false, .rawPointer = false, .accessorBuffer = false},
-                .accessorsReturnViews = true,
-                .objectsAreByteImages = true,
+                .nullability           = {.objectPointer = false, .rawPointer = false, .accessorBuffer = false},
+                .accessorsReturnViews  = true,
+                .objectsAreByteImages  = true,
+                .nestedCallsAnswerSize = true,
             },
         // Each definition and version is a module, which is what encloses a service's sections.
         .composition =
@@ -148,9 +151,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Handed an object a caller may still omit, beside a slice.
         .body =
             {
-                .nullability          = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
-                .accessorsReturnViews = true,
-                .objectsAreByteImages = true,
+                .nullability           = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
+                .accessorsReturnViews  = true,
+                .objectsAreByteImages  = true,
+                .nestedCallsAnswerSize = true,
             },
         // A package holds a whole DSDL namespace, so a constant's name carries its type's.
         .composition =
@@ -182,9 +186,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Handed an object a caller may still omit, beside a `Uint8Array`; an object has no layout.
         .body =
             {
-                .nullability          = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
-                .accessorsReturnViews = true,
-                .objectsAreByteImages = false,
+                .nullability           = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
+                .accessorsReturnViews  = true,
+                .objectsAreByteImages  = false,
+                .nestedCallsAnswerSize = true,
             },
         // A type's constants are the module's, where the classification puts them on the type.
         .composition =
@@ -216,9 +221,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Handed an object a caller may still omit, beside a `memoryview`; an object has no layout.
         .body =
             {
-                .nullability          = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
-                .accessorsReturnViews = true,
-                .objectsAreByteImages = false,
+                .nullability           = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
+                .accessorsReturnViews  = true,
+                .objectsAreByteImages  = false,
+                .nestedCallsAnswerSize = true,
             },
         // A type's constants are the module's, where the classification puts them on the class.
         .composition =
