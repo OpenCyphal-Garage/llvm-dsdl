@@ -807,7 +807,7 @@ public:
         const std::string name      = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string index     = indexed ? ", elementIndex int" : "";
@@ -815,14 +815,8 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
-            // length a plan writes back, so the lowering erases the write for this target, and the
-            // size pointer is declared only where a plan still reads it.
+            // The nested type's buffer, as a slice, which carries its own length.
             w.open("func " + name + "(buffer []byte" + index + ") []byte {");
-            if (!fn.getArguments().back().use_empty())
-            {
-                w.line("var outSize int");
-            }
         }
         else if (getter)
         {
@@ -847,11 +841,7 @@ public:
             w.line("index := uint64(elementIndex)");
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("outSize");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (storage == "bool")
             {

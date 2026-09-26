@@ -636,7 +636,7 @@ public:
         const std::string name      = getter ? a.member->getterName : a.member->setterName;
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string index     = indexed ? ", const std::size_t element_index" : "";
@@ -645,12 +645,7 @@ public:
         returnCast_                 = (getter && integer) ? storage : std::string{};
         if (composite)
         {
-            // The nested type's bytes, as a span, which carries their count. Nothing reads the
-            // count a plan writes back, so the lowering erases the write for this target.
-            if (!fn.getArguments().back().use_empty())
-            {
-                llvm::report_fatal_error("C++ spelling: a composite getter that still writes back its size");
-            }
+            // The nested type's bytes, as a span, which carries their count.
             w.line("static " + readable + " " + name + "(const " + readable + " buffer" + index + ")");
         }
         else if (getter)
@@ -663,7 +658,7 @@ public:
                    ", const " + storage + (integer ? " member_value)" : " value)"));
         }
         w.open("{");
-        if (!fn.getArgument(1).use_empty())
+        if (readsArgument(fn, 1))
         {
             w.line("const std::size_t buffer_size_bytes = " +
                    vocabulary_->operation(vocabulary::Concept::Span, "size", {{"self", "buffer"}}) + ";");
@@ -674,11 +669,7 @@ public:
             w.line("const std::uint64_t index = static_cast<std::uint64_t>(element_index);");
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("out_size");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (integer)
             {

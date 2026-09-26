@@ -1286,4 +1286,9 @@ std::optional<llvm::StringRef> planBodyDirection(mlir::func::FuncOp fn)
     return direction.getValue();
 }
 
+bool readsArgument(mlir::func::FuncOp fn, const unsigned index)
+{
+    return !fn.getArgAttr(index, "llvmdsdl.unread");
+}
+
 }  // namespace llvmdsdl

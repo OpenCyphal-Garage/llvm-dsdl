@@ -841,21 +841,15 @@ public:
             storage = "float";
         }
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const std::string index     = indexed ? ", index: int" : "";
         accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_                 = (getter && storage == "bool") ? "bool" : std::string{};
         line(w, "@staticmethod");
         if (composite)
         {
-            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
-            // length a plan writes back, so the lowering erases the write for this target, and the
-            // size pointer is declared only where a plan still reads it.
+            // The nested type's buffer, as a slice, which carries its own length.
             open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> memoryview:");
-            if (!fn.getArguments().back().use_empty())
-            {
-                line(w, "out_size = 0");
-            }
         }
         else if (getter)
         {
@@ -871,11 +865,7 @@ public:
         {
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("out_size");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (storage != "float")
             {

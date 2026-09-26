@@ -107,13 +107,15 @@ void registerDSDLToLLVMPasses();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nullability);
 
-/// @brief Erases the size a composite getter writes back, for a target whose getter returns a view.
+/// @brief Erases the size a composite getter writes back, and the parameter it writes it through, for
+///        a target whose getter returns a view.
 ///
 /// A composite getter answers a pointer to the nested type's bytes and writes their length through
 /// its last argument. A target that answers a view -- a span, a slice, a `memoryview`, a
 /// `Uint8Array` -- hands that length to the caller inside the view, so the write is observed by
-/// nothing and whatever computed it is dead. A write is erased only where the pointer is never read
-/// back.
+/// nothing, whatever computed it is dead, and the getter's signature has no parameter for it. A
+/// getter that reads the pointer back fails the pass. Registered with `dsdl-opt` as
+/// `dsdl-fold-unobserved-accessor-sizes`.
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 
@@ -144,6 +146,15 @@ std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(BoolArrayStorage storag
 /// `lower-dsdl-bodies`.
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass();
+
+/// @brief Marks each argument its function never reads as `llvmdsdl.unread`.
+///
+/// Whether a parameter is read is a fact of the body, and the folds of this pipeline are often what
+/// decide it. A backend that marks or names an unread parameter reads the mark rather than deriving
+/// it again. Registered with `dsdl-opt` as `dsdl-mark-unread-arguments`, and run last in
+/// `lower-dsdl-bodies`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createMarkDSDLUnreadArgumentsPass();
 
 /// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-verify-alias-layout`
 ///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a

@@ -8,15 +8,15 @@
     "declaration": 106
   },
   "Rust": {
-    "body": 64,
+    "body": 63,
     "declaration": 120
   },
   "Go": {
-    "body": 61,
+    "body": 60,
     "declaration": 79
   },
   "Ts": {
-    "body": 43,
+    "body": 42,
     "declaration": 412
   },
   "Python": {

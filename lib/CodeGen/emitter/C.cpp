@@ -1998,7 +1998,7 @@ private:
     {
         for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
         {
-            if (argument.use_empty())
+            if (!readsArgument(fn, argument.getArgNumber()))
             {
                 w.line("(void) " + parameter + ";");
             }

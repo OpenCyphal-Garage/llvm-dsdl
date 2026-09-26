@@ -1,24 +1,10 @@
 {
   "C.cpp": {
-    "use_empty": 1,
     "walk": 2
-  },
-  "Cpp.cpp": {
-    "use_empty": 2
-  },
-  "Go.cpp": {
-    "use_empty": 1
-  },
-  "Python.cpp": {
-    "use_empty": 1
   },
   "Rust.cpp": {
     "getBlock": 1,
     "getUsers": 1,
-    "plansReadOfSize": 1,
-    "use_empty": 3
-  },
-  "Ts.cpp": {
-    "use_empty": 1
+    "plansReadOfSize": 1
   }
 }

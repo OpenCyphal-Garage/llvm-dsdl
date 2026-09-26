@@ -429,6 +429,9 @@ std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, llvm::Str
 /// @brief The direction of a plan body, "serialize" or "deserialize"; nullopt for a helper.
 std::optional<llvm::StringRef> planBodyDirection(mlir::func::FuncOp fn);
 
+/// @brief Whether @p fn reads its argument @p index, as `dsdl-mark-unread-arguments` states it.
+[[nodiscard]] bool readsArgument(mlir::func::FuncOp fn, unsigned index);
+
 }  // namespace llvmdsdl
 
 #endif  // LLVMDSDL_CODEGEN_BODY_TRANSLATOR_H

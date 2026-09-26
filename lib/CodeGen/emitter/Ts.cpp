@@ -730,21 +730,15 @@ public:
         member[0]                   = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
         const std::string name      = std::string(getter ? "get" : "set") + a.plan->typeName + member;
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const std::string index     = indexed ? ", elementIndex: number" : "";
         const bool        rebind    = (storage == Storage::Number) || (storage == Storage::Boolean);
         accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a subarray, which carries its own length. Nothing reads
-            // the length a plan writes back, so the lowering erases the write for this target, and
-            // the size pointer is declared only where a plan still reads it.
+            // The nested type's buffer, as a subarray, which carries its own length.
             w.open("export function " + name + "(buffer: Uint8Array" + index + "): Uint8Array {");
-            if (!fn.getArguments().back().use_empty())
-            {
-                w.line("let outSize = 0;");
-            }
         }
         else if (getter)
         {
@@ -769,11 +763,7 @@ public:
             w.line("const index: bigint = BigInt(elementIndex);");
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("outSize");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (storage == Storage::Number)
             {

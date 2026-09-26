@@ -1419,7 +1419,8 @@ private:
     TargetNullability nullability_;
 };
 
-/// @brief Erases the size a composite getter writes back, where the target's getter returns a view.
+/// @brief Erases the size a composite getter writes back, and the parameter it writes it through,
+///        where the target's getter returns a view.
 struct FoldDSDLUnobservedAccessorSizesPass
     : public mlir::PassWrapper<FoldDSDLUnobservedAccessorSizesPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1429,7 +1430,8 @@ struct FoldDSDLUnobservedAccessorSizesPass
     }
     llvm::StringRef getDescription() const final
     {
-        return "Erase the size a composite getter writes back where the target's getter returns a view";
+        return "Erase the size a composite getter writes back, and its parameter, where the target's getter "
+               "returns a view";
     }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
@@ -1438,9 +1440,11 @@ struct FoldDSDLUnobservedAccessorSizesPass
         // A composite getter answers a pointer to the nested type's bytes and writes their length
         // through its last argument. A target whose getter answers a view -- a span, a slice, a
         // `memoryview`, a `Uint8Array` -- hands the caller that length inside the view, so nothing
-        // reads what the pointer receives. The write is erased only where the pointer is never read
-        // back, so a getter that did read it keeps the value it read.
+        // reads what the pointer receives, and the getter's signature has no parameter for it. A
+        // getter that reads the pointer back is not one this recognises, and the pass fails rather
+        // than leave a parameter the target's signature does not have.
         llvm::SmallVector<mlir::func::FuncOp> touched;
+        bool                                  refused = false;
         getOperation().walk([&](mlir::func::FuncOp fn) {
             const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
             if (!body || (body.getValue() != "get") || (fn.getNumArguments() == 0) || (fn.getNumResults() != 1) ||
@@ -1459,20 +1463,29 @@ struct FoldDSDLUnobservedAccessorSizesPass
             {
                 if (!mlir::isa<mlir::dsdl::StoreScalarOp>(user))
                 {
+                    user->emitOpError("reads back the size a getter answering a view writes");
+                    refused = true;
                     return;
                 }
                 writes.push_back(user);
-            }
-            if (writes.empty())
-            {
-                return;
             }
             for (mlir::Operation* write : writes)
             {
                 write->erase();
             }
+            if (mlir::failed(fn.eraseArgument(fn.getNumArguments() - 1)))
+            {
+                fn.emitOpError("keeps the size parameter a getter answering a view has no use for");
+                refused = true;
+                return;
+            }
             touched.push_back(fn);
         });
+        if (refused)
+        {
+            signalPassFailure();
+            return;
+        }
         if (touched.empty())
         {
             return;
@@ -1815,6 +1828,48 @@ struct MarkDSDLInfallibleBodiesPass final
             else
             {
                 fn->removeAttr("llvmdsdl.infallible");
+            }
+        });
+    }
+};
+
+/// @brief Marks each argument its function never reads as `llvmdsdl.unread`.
+///
+/// A plan's signature is the plan's, and a function may be handed what it has no use for: a helper
+/// that answers without its operand, an accessor whose reads take the buffer alone, a body of a type
+/// with no fields. Whether a parameter is read is a fact of the body the folds of this pipeline
+/// decide, and a backend that must mark or name an unread parameter reads the mark rather than
+/// deriving it again.
+struct MarkDSDLUnreadArgumentsPass final
+    : public mlir::PassWrapper<MarkDSDLUnreadArgumentsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-mark-unread-arguments";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Mark each function argument nothing in the body reads as unread";
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            if (fn.getBody().empty())
+            {
+                return;
+            }
+            for (const mlir::BlockArgument argument : fn.getArguments())
+            {
+                if (argument.use_empty())
+                {
+                    fn.setArgAttr(argument.getArgNumber(), "llvmdsdl.unread", mlir::UnitAttr::get(fn.getContext()));
+                }
+                else
+                {
+                    fn.removeArgAttr(argument.getArgNumber(), "llvmdsdl.unread");
+                }
             }
         });
     }
@@ -2579,6 +2634,11 @@ std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass()
     return std::make_unique<MarkDSDLInfallibleBodiesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createMarkDSDLUnreadArgumentsPass()
+{
+    return std::make_unique<MarkDSDLUnreadArgumentsPass>();
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLHostImageBodiesPass()
 {
     return std::make_unique<FoldDSDLHostImageBodiesPass>();
@@ -2643,9 +2703,10 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     {
         addOptimizeLoweredSerDesPipeline(pm);
     }
-    // Last, so what it states is true of the bodies every backend receives: each fold above can
-    // take away the only error a body had.
+    // Last, so what they state is true of the bodies every backend receives: each fold above can
+    // take away the only error a body had, or the only read of a parameter.
     pm.addPass(createMarkDSDLInfallibleBodiesPass());
+    pm.addPass(createMarkDSDLUnreadArgumentsPass());
 }
 
 void registerDSDLPasses()
@@ -2656,14 +2717,16 @@ void registerDSDLPasses()
         return;
     }
     once = true;
-    static mlir::PassRegistration<LowerDSDLSerializationPass> const   reg;
-    static mlir::PassRegistration<LowerDSDLExecPass> const            regExec;
-    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const    regAlias;
-    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const  regFold;
-    static mlir::PassRegistration<KeepDSDLAccessorsPass> const        regKeep;
-    static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const regInfallible;
-    static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const  regNestedSizes;
-    static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const       regBoolRuns;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> const          reg;
+    static mlir::PassRegistration<LowerDSDLExecPass> const                   regExec;
+    static mlir::PassRegistration<VerifyDSDLAliasLayoutPass> const           regAlias;
+    static mlir::PassRegistration<FoldDSDLHostImageBodiesPass> const         regFold;
+    static mlir::PassRegistration<KeepDSDLAccessorsPass> const               regKeep;
+    static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const        regInfallible;
+    static mlir::PassRegistration<MarkDSDLUnreadArgumentsPass> const         regUnread;
+    static mlir::PassRegistration<FoldDSDLUnobservedAccessorSizesPass> const regUnobserved;
+    static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const         regNestedSizes;
+    static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const              regBoolRuns;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",

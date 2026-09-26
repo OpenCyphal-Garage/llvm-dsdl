@@ -665,7 +665,7 @@ public:
         // Rust names an argument a body ignores with a leading underscore.
         const SizeUse     size   = sizeUse(fn);
         const bool        defer  = !size.read && size.writtenOnceAtEntry;
-        const std::string buffer = (defer && fn.getArgument(1).use_empty()) ? "_buffer" : "buffer";
+        const std::string buffer = (defer && !readsArgument(fn, 1)) ? "_buffer" : "buffer";
 
         w.open(serialize ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> core::result::Result<usize, i8> {"
                          : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
@@ -693,7 +693,7 @@ public:
         const std::string storage   = scalarType(member.io);
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == ((getter && !composite) ? 3U : 4U);
+        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
         const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
         const bool        integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string index     = indexed ? ", index: usize" : "";
@@ -701,14 +701,8 @@ public:
         returnCast_.clear();
         if (composite)
         {
-            // The nested type's buffer, as a slice, which carries its own length. Nothing reads the
-            // length a plan writes back, so the lowering erases the write for this target, and the
-            // size pointer is declared only where a plan still reads it.
+            // The nested type's buffer, as a slice, which carries its own length.
             w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> &[u8] {");
-            if (!fn.getArguments().back().use_empty())
-            {
-                w.line("let mut out_size: usize = 0;");
-            }
         }
         else if (getter)
         {
@@ -731,7 +725,7 @@ public:
         // getter does not, once the length it wrote back is erased. A scalar accessor does, but only
         // through reads whose Rust spelling takes the slice alone, which carries its own length --
         // so the name is one the compiler is told not to expect to be read.
-        if (!fn.getArgument(1).use_empty())
+        if (readsArgument(fn, 1))
         {
             w.line("let _buffer_size_bytes: u64 = buffer.len() as u64;");
         }
@@ -741,11 +735,7 @@ public:
             w.line("let index = index as u64;");
             parameters.emplace_back("index");
         }
-        if (composite)
-        {
-            parameters.emplace_back("out_size");
-        }
-        else if (!getter)
+        if (!getter)
         {
             if (integer)
             {

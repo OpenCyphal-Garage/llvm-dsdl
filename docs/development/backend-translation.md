@@ -34,7 +34,7 @@ module, and stamp C names on the schema before spelling or converting them.
 
 After `build-dsdl-plan-bodies` the pipeline folds what the target's `BodyInterface` rules out:
 `dsdl-fold-null-guards` a null test the target cannot fail, `dsdl-fold-unobserved-accessor-sizes`
-a size a getter's caller never reads, and `dsdl-fold-host-image-bodies` a field-wise body the target
+a size a getter's caller never reads, with the parameter it went through, and `dsdl-fold-host-image-bodies` a field-wise body the target
 can move whole. For a target whose nested entry point is handed the space as its buffer's length
 and answers what it used, `dsdl-fold-nested-call-sizes` turns each `dsdl.call_serdes`, with the
 local it hands its size through and the reads back of that local, into `dsdl.call_serdes_sized`:
@@ -43,7 +43,9 @@ bool per element, `dsdl-expand-bool-runs` turns each `dsdl.bit_write` and `dsdl.
 a loop moving one element and one bit per turn, through `dsdl.write_bit` and `dsdl.read_bit`.
 Last, `dsdl-mark-infallible-bodies` marks each plan body or setter whose every return answers zero
 as `llvmdsdl.infallible`, which a backend whose idiom reports an error apart from the result reads
-rather than derives; `test/lit/mark-infallible-bodies.mlir` holds it.
+rather than derives; `test/lit/mark-infallible-bodies.mlir` holds it. `dsdl-mark-unread-arguments`
+marks each argument its function never reads as `llvmdsdl.unread`, which a backend that marks or
+names an unread parameter reads.
 
 ## The body IR is target-neutral
 
