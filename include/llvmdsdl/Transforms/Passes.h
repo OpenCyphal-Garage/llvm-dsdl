@@ -128,6 +128,15 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass();
 
+/// @brief Folds each serialise and deserialise body to take its buffer alone and answer the size it
+///        used as a second result, for a target whose buffer carries its own length.
+///
+/// Each read of the size pointer becomes `dsdl.buffer_length`, and the write back becomes the
+/// body's second result, an `index` meaningful only where the error is zero. A body that handles
+/// its size pointer otherwise fails the pass. Registered with `dsdl-opt` as `dsdl-fold-body-sizes`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createFoldDSDLBodySizesPass();
+
 /// @brief Expands each bool run a target stores a bool per element into a loop over its elements.
 ///
 /// Each turn moves one element and one bit, with `dsdl.load_element` and `dsdl.write_bit` or
@@ -138,7 +147,8 @@ std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(BoolArrayStorage storage);
 
-/// @brief Marks each plan body or setter whose every return answers zero as `llvmdsdl.infallible`.
+/// @brief Marks each plan body or setter whose every return answers an error of zero as
+///        `llvmdsdl.infallible`.
 ///
 /// Whether a body can fail is a fact of the body, and the folds of this pipeline are often what make
 /// it one. A backend whose idiom reports an error apart from the result reads the mark rather than

@@ -453,6 +453,7 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
         .Case<mlir::dsdl::WriteBitsOp>([](auto) { return Reached{Role{ValueRole::Error, {}}}; })
         .Case<mlir::dsdl::ReadBitsOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
         .Case<mlir::dsdl::ReadBitOp>([](auto) { return Reached{Role{ValueRole::Scalar, {}}}; })
+        .Case<mlir::dsdl::BufferLengthOp>([](auto) { return Reached{Role{ValueRole::Size, {}}}; })
         .Case<mlir::dsdl::IsNullOp>([](auto) { return Reached{Role{ValueRole::Null, {}}}; })
         .Case<mlir::dsdl::IndexHoldsOp>([](auto) { return Reached{Role{ValueRole::IndexHolds, {}}}; })
         .Case<mlir::dsdl::LocalOp>([&](auto) { return Reached{Role{ValueRole::Size, memberOfNestedCaller(result)}}; })
@@ -838,9 +839,17 @@ private:
 
     void conversion(mlir::Operation* op, const Conversion kind)
     {
-        const mlir::Value result = op->getResult(0);
-        const mlir::Value source = op->getOperand(0);
-        define(result, spelling_.convert(kind, (*this)(source), source.getType(), result.getType()), true);
+        const mlir::Value result    = op->getResult(0);
+        const mlir::Value source    = op->getOperand(0);
+        const std::string from      = (*this)(source);
+        std::string       converted = spelling_.convert(kind, from, source.getType(), result.getType());
+        // A conversion the language spells as nothing is the value it converts, under its name.
+        if (converted == from)
+        {
+            names_[result] = std::move(converted);
+            return;
+        }
+        define(result, std::move(converted), true);
     }
 
     llvm::Error translate(mlir::Operation*            op,
@@ -926,12 +935,17 @@ private:
                        false);
             })
             .Case<mlir::func::ReturnOp>([&](mlir::func::ReturnOp ret) -> void {
+                if (ret.getNumOperands() == 2)
+                {
+                    spelling_.returnWithSize(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
+                    return;
+                }
                 if (ret.getNumOperands() != 1)
                 {
                     outcome = llvm::joinErrors(std::move(outcome),
                                                llvm::createStringError(llvm::inconvertibleErrorCode(),
                                                                        "return with %u operands; the translator "
-                                                                       "spells one",
+                                                                       "spells one, or an error and a size",
                                                                        ret.getNumOperands()));
                     return;
                 }
@@ -1055,6 +1069,9 @@ private:
                 [&](mlir::dsdl::SetUnionTagOp write) -> void { spelling_.setUnionTag(w_, write, *this); })
             .Case<mlir::dsdl::BitWriteOp>(
                 [&](mlir::dsdl::BitWriteOp write) -> void { spelling_.bitWrite(w_, write, *this); })
+            .Case<mlir::dsdl::BufferLengthOp>([&](mlir::dsdl::BufferLengthOp length) -> void {
+                define(length.getLength(), spelling_.bufferLength(length, *this), true);
+            })
             .Case<mlir::dsdl::WriteBitOp>(
                 [&](mlir::dsdl::WriteBitOp write) -> void { spelling_.writeBit(w_, write, *this); })
             .Case<mlir::dsdl::ReadBitOp>([&](mlir::dsdl::ReadBitOp read) -> void {

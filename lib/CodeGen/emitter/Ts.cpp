@@ -601,7 +601,6 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
-        inBody_              = direction.has_value();
         deserialize_         = direction.has_value() && *direction == "deserialize";
         accessor_            = Accessor::None;
         if (direction && (*direction == "get" || *direction == "set"))
@@ -624,9 +623,13 @@ public:
         const Plan& plan = planOf(fn.getArgument(0));
         w.open("export function " + (deserialize_ ? deserializeFrom(plan.typeName) : serializeInto(plan.typeName)) +
                "(obj: " + plan.typeName + ", buffer: Uint8Array): number {");
-        // The size a plan is handed by pointer, read at entry and answered at the end.
-        w.line("let inoutBufferSizeBytes = buffer.length;");
-        return {"obj", "buffer", "inoutBufferSizeBytes"};
+        // A body of a definition with no fields reads nothing of its buffer, and the entry point's
+        // signature is every body's.
+        if (!readsArgument(fn, 1))
+        {
+            w.line("void buffer;");
+        }
+        return {"obj", "buffer"};
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -802,15 +805,21 @@ public:
             w.line("return " + expr.str() + ";");
             return;
         }
-        // A body answers the runtime's error code; its TypeScript signature answers the size
-        // used on success and the code, which is negative, on failure.
-        if (inBody_)
-        {
-            w.open("if (" + expr.str() + " === 0) {");
-            w.line("return inoutBufferSizeBytes;");
-            w.close("}");
-        }
         w.line("return " + expr.str() + ";");
+    }
+
+    void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
+    {
+        // The size used on success, and the code, which is negative, on failure.
+        w.open("if (" + error.str() + " === 0) {");
+        w.line("return " + used.str() + ";");
+        w.close("}");
+        w.line("return " + error.str() + ";");
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
+    {
+        return "BigInt(" + names(op.getBuffer()) + ".length)";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1024,14 +1033,15 @@ public:
         return buffer + ".subarray(Math.min(" + asNumber(op.getByteOffset(), names) + ", " + buffer + ".length))";
     }
 
-    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        return cast(names(op.getPointer()), mlir::IndexType::get(op.getContext()), op.getValue().getType());
+        // A body's size reaches TypeScript as its buffer's length and a second result.
+        llvm::report_fatal_error("TypeScript spelling: a size pointer reaches TypeScript only folded");
     }
 
-    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    void storeScalar(SourceWriter& /*w*/, mlir::dsdl::StoreScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        w.line(names(op.getPointer()) + " = " + asNumber(op.getValue(), names) + ";");
+        llvm::report_fatal_error("TypeScript spelling: a size pointer reaches TypeScript only folded");
     }
 
     [[nodiscard]] std::string local(SourceWriter& /*w*/,
@@ -1685,7 +1695,6 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
-    mutable bool        inBody_{false};
     mutable bool        deserialize_{false};
     mutable unsigned    fresh_{0};
 };

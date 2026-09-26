@@ -640,7 +640,6 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
-        inBody_              = direction.has_value();
         accessor_            = Accessor::None;
         if (!direction)
         {
@@ -662,9 +661,7 @@ public:
         const Plan& plan = planOf(fn.getArgument(0));
         w.open("func (obj *" + plan.typeName + ") " + (*direction == "serialize" ? "Serialize" : "Deserialize") +
                "(buffer []byte) (int8, int) {");
-        // The size a plan is handed by pointer, read at entry and written back at the end.
-        w.line("inoutBufferSizeBytes := len(buffer)");
-        return {"obj", "buffer", "inoutBufferSizeBytes"};
+        return {"obj", "buffer"};
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -880,17 +877,21 @@ public:
             w.line("return " + expr.str());
             return;
         }
-        // A body answers the runtime's error code; its Go signature answers the code and the
-        // size, which is the size used on success and nothing on failure.
-        if (inBody_)
-        {
-            w.open("if " + expr.str() + " == int8(0) {");
-            w.line("return int8(0), inoutBufferSizeBytes");
-            w.close("}");
-            w.line("return " + expr.str() + ", 0");
-            return;
-        }
         w.line("return " + expr.str());
+    }
+
+    void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
+    {
+        // The size used on success, and nothing on failure.
+        w.open("if " + error.str() + " == int8(0) {");
+        w.line("return int8(0), " + used.str());
+        w.close("}");
+        w.line("return " + error.str() + ", 0");
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
+    {
+        return "uint64(len(" + names(op.getBuffer()) + "))";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1140,14 +1141,15 @@ public:
         return buffer + "[dsdlruntime.ChooseMin(" + asInt(names(op.getByteOffset())) + ", len(" + buffer + ")):]";
     }
 
-    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        return typeName(op.getValue().getType()) + "(" + names(op.getPointer()) + ")";
+        // A body's size reaches Go as its buffer's length and a second result.
+        llvm::report_fatal_error("Go spelling: a size pointer reaches Go only folded");
     }
 
-    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    void storeScalar(SourceWriter& /*w*/, mlir::dsdl::StoreScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        w.line(names(op.getPointer()) + " = " + asInt(names(op.getValue())));
+        llvm::report_fatal_error("Go spelling: a size pointer reaches Go only folded");
     }
 
     [[nodiscard]] std::string local(SourceWriter& /*w*/,
@@ -1710,7 +1712,6 @@ private:
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
     mutable std::size_t counter_{0};
-    mutable bool        inBody_{false};
 };
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.

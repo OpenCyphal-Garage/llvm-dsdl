@@ -631,10 +631,8 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
-        inBody_              = direction.has_value();
         accessor_            = Accessor::None;
         cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
-        deferredSize_        = {};
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -656,30 +654,14 @@ public:
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
         const bool lifetime = planOf(fn.getArgument(0)).lifetime;
 
-        // The size a plan is handed by pointer becomes a local, and how it is declared follows the
-        // body's own use of it. A body that reads the size it arrives with binds the slice's
-        // length; one that only writes a size back -- an empty definition writes zero without
-        // reading -- leaves the declaration to that write, since a binding nothing reads before
-        // overwriting is what `unused_assignments` reports and a bare `let` before it is what
-        // `needless_late_init` reports. Where the length goes, the buffer can be left unused, and
-        // Rust names an argument a body ignores with a leading underscore.
-        const SizeUse     size   = sizeUse(fn);
-        const bool        defer  = !size.read && size.writtenOnceAtEntry;
-        const std::string buffer = (defer && !readsArgument(fn, 1)) ? "_buffer" : "buffer";
+        // A body of a definition with no fields reads nothing of its buffer, and Rust names an
+        // argument a body ignores with a leading underscore.
+        const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
 
         w.open(serialize ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> core::result::Result<usize, i8> {"
                          : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
                                "[u8]) -> core::result::Result<usize, i8> {");
-        if (defer)
-        {
-            deferredSize_ = fn.getArgument(2);
-        }
-        else
-        {
-            w.line(std::string{"let "} + (size.written ? "mut " : "") + "inout_buffer_size_bytes: usize = " + buffer +
-                   ".len();");
-        }
-        return {"self", buffer, "inout_buffer_size_bytes"};
+        return {"self", buffer};
     }
 
     /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
@@ -852,15 +834,20 @@ public:
                                : "if " + expr.str() + " == 0i8 { Ok(()) } else { Err(" + expr.str() + ") }");
             return;
         }
-        // A body answers the runtime's error code; its Rust signature answers the size or the code.
-        if (inBody_)
-        {
-            w.line(cannotFail_ ? std::string{"Ok(inout_buffer_size_bytes)"}
-                               : "if " + expr.str() + " == 0i8 { Ok(inout_buffer_size_bytes) } else { Err(" +
-                                     expr.str() + ") }");
-            return;
-        }
         w.line(expr.str());
+    }
+
+    void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
+    {
+        // Where the body is marked unable to fail the error arm is unreachable, as for a setter.
+        w.line(cannotFail_
+                   ? "Ok(" + used.str() + ")"
+                   : "if " + error.str() + " == 0i8 { Ok(" + used.str() + ") } else { Err(" + error.str() + ") }");
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
+    {
+        return names(op.getBuffer()) + ".len() as u64";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1150,21 +1137,15 @@ public:
                (result.getIsConst() ? "&" : "&mut ") + buffer + "[_start..] }";
     }
 
-    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        return names(op.getPointer()) + " as " + typeName(op.getValue().getType());
+        // A body's size reaches Rust as its buffer's length and a second result.
+        llvm::report_fatal_error("Rust spelling: a size pointer reaches Rust only folded");
     }
 
-    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    void storeScalar(SourceWriter& /*w*/, mlir::dsdl::StoreScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        const std::string value = asSize(names(op.getValue()));
-        if (op.getPointer() == deferredSize_)
-        {
-            deferredSize_ = {};
-            w.line("let " + names(op.getPointer()) + ": usize = " + value + ";");
-            return;
-        }
-        w.line(names(op.getPointer()) + " = " + value + ";");
+        llvm::report_fatal_error("Rust spelling: a size pointer reaches Rust only folded");
     }
 
     [[nodiscard]] std::string local(SourceWriter& /*w*/,
@@ -1682,7 +1663,6 @@ private:
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
     mutable std::size_t                              counter_{0};
-    mutable bool                                     inBody_{false};
 
     /// @brief Which accessor, if any, the function being opened is; how its return is spelt.
     enum class Accessor : std::uint8_t
@@ -1696,47 +1676,6 @@ private:
 
     /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
     mutable bool cannotFail_{false};
-
-    /// @brief The size argument whose local the body's own write is still to declare, if any.
-    mutable mlir::Value deferredSize_;
-
-    /// @brief How a plan body uses the size it is handed by pointer.
-    struct SizeUse final
-    {
-        /// @brief Whether the body reads the size it arrives with.
-        bool read{};
-        /// @brief Whether the body writes a size back.
-        bool written{};
-        /// @brief Whether that write is a single one in the entry block, so it always happens.
-        bool writtenOnceAtEntry{};
-    };
-
-    /// @brief Returns how the plan body @p fn uses its size argument.
-    static SizeUse sizeUse(mlir::func::FuncOp fn)
-    {
-        const mlir::Value pointer = fn.getArgument(2);
-        SizeUse           out;
-        out.read = plansReadOfSize(pointer);
-
-        unsigned         writes = 0;
-        mlir::Operation* write  = nullptr;
-        for (mlir::Operation* user : pointer.getUsers())
-        {
-            if (mlir::isa<mlir::dsdl::StoreScalarOp>(user))
-            {
-                ++writes;
-                write = user;
-            }
-            else if (!mlir::isa<mlir::dsdl::LoadScalarOp>(user))
-            {
-                // Anything else that holds the pointer may read through it.
-                out.read = true;
-            }
-        }
-        out.written            = writes > 0;
-        out.writtenOnceAtEntry = (writes == 1) && (write->getBlock() == &fn.front());
-        return out;
-    }
 };
 
 std::string rustConstType(const TypeExprAST& type)

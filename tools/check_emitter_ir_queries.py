@@ -18,7 +18,6 @@ IR or the shared translator.
 These are the queries counted, per emitter:
 
 * `use_empty`, `getUsers`, `getUses`, `hasOneUse`: whether, or how, a value is observed;
-* `plansReadOfSize`: the shared helper that answers the same about a size;
 * `getDefiningOp`, `matchPattern`: recognising the shape of what reached an operand;
 * `walk`: deriving a property from every operation of a region;
 * `getBlock`: where an operation sits.
@@ -56,7 +55,6 @@ QUERIES = {
     "getUsers": re.compile(r"\bgetUsers\s*\("),
     "getUses": re.compile(r"\bgetUses\s*\("),
     "hasOneUse": re.compile(r"\bhasOneUse\s*\("),
-    "plansReadOfSize": re.compile(r"\bplansReadOfSize\s*\("),
     "getDefiningOp": re.compile(r"\bgetDefiningOp\b"),
     "matchPattern": re.compile(r"\bmatchPattern\s*\("),
     "walk": re.compile(r"(?:\.|->)walk\s*\("),
@@ -100,7 +98,7 @@ def self_test() -> int:
     cases = {
         "fn.getArgument(1).use_empty() && x.getDefiningOp<A>()": {"use_empty": 1, "getDefiningOp": 1},
         "fn.walk([&](Op op) {}); fn->walk(f); w->getBlock();": {"walk": 2, "getBlock": 1},
-        "for (auto* u : v.getUsers()) if (plansReadOfSize(p)) {}": {"getUsers": 1, "plansReadOfSize": 1},
+        "for (auto* u : v.getUsers()) if (u->hasOneUse()) {}": {"getUsers": 1, "hasOneUse": 1},
         "mlir::matchPattern(v, mlir::m_Zero())": {"matchPattern": 1},
         "// fn.walk() and v.use_empty() explain, and decide nothing": {},
         'w.line("x.use_empty()");': {},

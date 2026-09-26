@@ -683,7 +683,6 @@ public:
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
-        inBody_              = direction.has_value();
         accessor_            = Accessor::None;
         if (!direction)
         {
@@ -706,9 +705,7 @@ public:
         open(w,
              "def " + (*direction == "serialize" ? serializeInto() : deserializeFrom()) +
                  "(self, buffer: memoryview) -> int:");
-        // The size a plan is handed by pointer, read at entry and answered at the end.
-        line(w, "inout_buffer_size_bytes = len(buffer)");
-        return {"self", "buffer", "inout_buffer_size_bytes"};
+        return {"self", "buffer"};
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -889,15 +886,21 @@ public:
             line(w, "return " + expr.str());
             return;
         }
-        // A body answers the runtime's error code; its Python signature answers the size used
-        // on success and the code, which is negative, on failure.
-        if (inBody_)
-        {
-            open(w, "if " + expr.str() + " == 0:");
-            line(w, "return inout_buffer_size_bytes");
-            closeBlock(w);
-        }
         line(w, "return " + expr.str());
+    }
+
+    void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
+    {
+        // The size used on success, and the code, which is negative, on failure.
+        open(w, "if " + error.str() + " == 0:");
+        line(w, "return " + used.str());
+        closeBlock(w);
+        line(w, "return " + error.str());
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
+    {
+        return "len(" + names(op.getBuffer()) + ")";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1116,14 +1119,15 @@ public:
         return buffer + "[min(" + names(op.getByteOffset()) + ", len(" + buffer + ")):]";
     }
 
-    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp op, const ValueNames& names) const override
+    [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        return names(op.getPointer());
+        // A body's size reaches Python as its buffer's length and a second result.
+        llvm::report_fatal_error("Python spelling: a size pointer reaches Python only folded");
     }
 
-    void storeScalar(SourceWriter& w, mlir::dsdl::StoreScalarOp op, const ValueNames& names) const override
+    void storeScalar(SourceWriter& /*w*/, mlir::dsdl::StoreScalarOp /*op*/, const ValueNames& /*names*/) const override
     {
-        line(w, names(op.getPointer()) + " = " + names(op.getValue()));
+        llvm::report_fatal_error("Python spelling: a size pointer reaches Python only folded");
     }
 
     [[nodiscard]] std::string local(SourceWriter& /*w*/,
@@ -1740,7 +1744,6 @@ private:
     };
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
-    mutable bool        inBody_{false};
     mutable bool        blockEmpty_{false};
     mutable unsigned    fresh_{0};
 };

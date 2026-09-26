@@ -49,11 +49,10 @@ class UsesDelimited:
         return value
 
     def _serialize_into(self, buffer: memoryview) -> int:
-        inout_buffer_size_bytes = len(buffer)
+        size = len(buffer)
         if self is None:
             err = -2
         else:
-            size = inout_buffer_size_bytes
             v0 = size * 8
             err_2 = _capacity_check(v0)
             v1 = err_2 == 0
@@ -80,52 +79,47 @@ class UsesDelimited:
                 err_3 = err_4
             else:
                 err_3 = err_2
-            v9 = err_3 == 0
-            if v9:
-                inout_buffer_size_bytes = 5
             err = err_3
         if err == 0:
-            return inout_buffer_size_bytes
+            return 5
         return err
 
     def _deserialize_from(self, buffer: memoryview) -> int:
-        inout_buffer_size_bytes = len(buffer)
+        size = len(buffer)
         if self is None:
             err = -2
+            v0 = 0
         else:
-            size = inout_buffer_size_bytes
             value = dsdl_runtime.read_unsigned(buffer, 0, 32)
-            v0 = size > 4
-            v1 = (4 if v0 else size)
-            v2 = size - v1
-            err_2 = _validate_delimiter_header_1(value, v2)
-            v3 = err_2 == 0
-            if v3:
-                nested_buf = buffer[min(v1, len(buffer)):]
+            v1 = size > 4
+            v2 = (4 if v1 else size)
+            v3 = size - v2
+            err_2 = _validate_delimiter_header_1(value, v3)
+            v4 = err_2 == 0
+            if v4:
+                nested_buf = buffer[min(v2, len(buffer)):]
                 nested_err = min(self.nested._deserialize_from(nested_buf[:value]), 0)
-                v4 = nested_err == 0
-                if v4:
-                    v6 = value * 8
-                    v7 = v6 + 32
-                    v5 = v7
+                v5 = nested_err == 0
+                if v5:
+                    v7 = value * 8
+                    v8 = v7 + 32
+                    v6 = v8
                 else:
-                    v5 = 32
-                offset = v5
+                    v6 = 32
+                offset = v6
                 err_3 = nested_err
             else:
                 offset = 32
                 err_3 = err_2
-            v8 = offset + 7
-            v9 = v8 // 8
-            v10 = v9 * 8
-            v11 = size * 8
-            v12 = v10 < v11
-            v13 = (v10 if v12 else v11)
-            v14 = err_3 == 0
-            if v14:
-                v15 = v13 // 8
-                inout_buffer_size_bytes = v15
+            v9 = offset + 7
+            v10 = v9 // 8
+            v11 = v10 * 8
+            v12 = size * 8
+            v13 = v11 < v12
+            v14 = (v11 if v13 else v12)
+            v15 = v14 // 8
             err = err_3
+            v0 = v15
         if err == 0:
-            return inout_buffer_size_bytes
+            return v0
         return err

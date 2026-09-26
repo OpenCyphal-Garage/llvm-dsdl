@@ -41,6 +41,8 @@
 #include <mlir/IR/TypeRange.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <algorithm>
 #include <cassert>
@@ -1589,6 +1591,260 @@ struct FoldDSDLNestedCallSizesPass final
     }
 };
 
+/// @brief Folds each body to the form a target takes when its buffer carries its own length.
+///
+/// A plan body is handed the space available through a size pointer, reads it from there and writes
+/// back what it used, which is how an entry point taking a size by pointer is called. A target whose
+/// entry point takes the buffer alone and answers what it used beside its error would otherwise have
+/// each spelling hold the pointer as a local, read it, assign it and answer it. This states the
+/// signature once: each read of the pointer becomes `dsdl.buffer_length`, and what the body writes
+/// back becomes a second result, an `index` as a nested call's answer is.
+///
+/// The size answered means something only where the error is zero, as it does for
+/// `dsdl.call_serdes_sized`. The write is lifted to the body's top level: what computes the size is
+/// computed unconditionally where every operation computing it can be, and is otherwise answered
+/// through each enclosing `scf.if`, whose other arm answers zero. A body that writes its size back
+/// other than once, from inside a loop, or hands the pointer on is not one this recognises, and the
+/// pass fails rather than leave a body its target has no spelling for.
+struct FoldDSDLBodySizesPass final
+    : public mlir::PassWrapper<FoldDSDLBodySizesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-fold-body-sizes";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Hand each body its space as its buffer's length and take back what it used as a result";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::scf::SCFDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        llvm::SmallVector<mlir::func::FuncOp> bodies;
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (body && ((body.getValue() == "serialize") || (body.getValue() == "deserialize")))
+            {
+                bodies.push_back(fn);
+            }
+        });
+        for (const mlir::func::FuncOp fn : bodies)
+        {
+            if (mlir::failed(fold(fn)))
+            {
+                signalPassFailure();
+                return;
+            }
+        }
+    }
+
+private:
+    /// @brief Whether @p value is defined inside @p op.
+    static bool definedWithin(mlir::Value value, mlir::Operation* const op)
+    {
+        return op->isAncestor(value.getParentBlock()->getParentOp());
+    }
+
+    /// @brief Collects into @p order, operands first, what computes @p value inside @p branch, or
+    ///        answers false where any of it cannot be computed unconditionally.
+    static bool hoistable(const mlir::Value                        value,
+                          mlir::Operation* const                   branch,
+                          llvm::SmallVectorImpl<mlir::Operation*>& order)
+    {
+        if (!definedWithin(value, branch))
+        {
+            return true;
+        }
+        mlir::Operation* const op = value.getDefiningOp();
+        if ((op == nullptr) || !mlir::isPure(op) || (op->getNumRegions() != 0))
+        {
+            return false;
+        }
+        if (llvm::is_contained(order, op))
+        {
+            return true;
+        }
+        for (const mlir::Value operand : op->getOperands())
+        {
+            if (!hoistable(operand, branch, order))
+            {
+                return false;
+            }
+        }
+        order.push_back(op);
+        return true;
+    }
+
+    /// @brief Answers @p value out of @p branch as a new last result: @p arm, the block it was written
+    ///        in, yields it, and the other arm yields @p zero.
+    static mlir::Value answerThrough(mlir::scf::IfOp    branch,
+                                     mlir::Block* const arm,
+                                     const mlir::Value  value,
+                                     const mlir::Value  zero)
+    {
+        mlir::OpBuilder               b(branch);
+        llvm::SmallVector<mlir::Type> types(branch.getResultTypes());
+        types.push_back(value.getType());
+        auto grown = mlir::scf::IfOp::create(b,
+                                             branch.getLoc(),
+                                             types,
+                                             branch.getCondition(),
+                                             /*addThenBlock=*/false,
+                                             /*addElseBlock=*/false);
+        grown.getThenRegion().takeBody(branch.getThenRegion());
+        grown.getElseRegion().takeBody(branch.getElseRegion());
+        if (grown.getElseRegion().empty())
+        {
+            b.createBlock(&grown.getElseRegion());
+            mlir::scf::YieldOp::create(b, branch.getLoc());
+        }
+        for (mlir::Region* const region : {&grown.getThenRegion(), &grown.getElseRegion()})
+        {
+            mlir::Operation* const yield = region->front().getTerminator();
+            yield->insertOperands(yield->getNumOperands(), (&region->front() == arm) ? value : zero);
+        }
+        grown->setAttrs(branch->getAttrs());
+        if (const auto roles = branch->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles"))
+        {
+            llvm::SmallVector<mlir::Attribute> grownRoles(roles.begin(), roles.end());
+            grownRoles.push_back(b.getStringAttr(""));
+            grown->setAttr("llvmdsdl.result_roles", b.getArrayAttr(grownRoles));
+        }
+        branch.replaceAllUsesWith(grown.getResults().take_front(branch.getNumResults()));
+        branch.erase();
+        return grown.getResults().back();
+    }
+
+    /// @brief Erases each `scf.if` the lifted write left with nothing to do, and what only it read.
+    static void eraseEmptied(mlir::func::FuncOp fn)
+    {
+        bool erased = true;
+        while (erased)
+        {
+            erased = false;
+            llvm::SmallVector<mlir::Operation*> dead;
+            fn.walk<mlir::WalkOrder::PostOrder>([&](mlir::Operation* op) {
+                auto       branch  = mlir::dyn_cast<mlir::scf::IfOp>(op);
+                const bool emptied = branch && (branch.getNumResults() == 0) &&
+                                     llvm::all_of(branch->getRegions(), [](mlir::Region& region) {
+                                         return region.empty() || (region.front().getOperations().size() == 1);
+                                     });
+                if (emptied || ((op != fn) && mlir::isOpTriviallyDead(op)))
+                {
+                    dead.push_back(op);
+                }
+            });
+            for (mlir::Operation* const op : dead)
+            {
+                op->erase();
+                erased = true;
+            }
+        }
+    }
+
+    static mlir::LogicalResult fold(mlir::func::FuncOp fn)
+    {
+        const auto pointer = (fn.getNumArguments() == 3)
+                                 ? mlir::dyn_cast<mlir::dsdl::PtrType>(fn.getArgument(2).getType())
+                                 : mlir::dsdl::PtrType{};
+        if (!pointer || !mlir::isa<mlir::dsdl::SizeType>(pointer.getPointee()) || (fn.getNumResults() != 1))
+        {
+            return fn.emitOpError("is a body whose signature is not the plan's");
+        }
+        const mlir::Value                           size = fn.getArgument(2);
+        llvm::SmallVector<mlir::dsdl::LoadScalarOp> reads;
+        mlir::dsdl::StoreScalarOp                   write;
+        for (mlir::Operation* const user : size.getUsers())
+        {
+            if (auto read = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user))
+            {
+                reads.push_back(read);
+                continue;
+            }
+            auto store = mlir::dyn_cast<mlir::dsdl::StoreScalarOp>(user);
+            if (!store || write)
+            {
+                return user->emitOpError("handles the size its body is handed other than by reading it and "
+                                         "writing it back once");
+            }
+            write = store;
+        }
+        auto answer = mlir::dyn_cast<mlir::func::ReturnOp>(fn.front().getTerminator());
+        if (!write || !answer)
+        {
+            return fn.emitOpError("answers no size from its top level");
+        }
+
+        mlir::OpBuilder b(fn.getContext());
+        b.setInsertionPointToStart(&fn.front());
+        if (!reads.empty())
+        {
+            const mlir::Value length =
+                mlir::dsdl::BufferLengthOp::create(b, fn.getLoc(), b.getI64Type(), fn.getArgument(1));
+            for (mlir::dsdl::LoadScalarOp read : reads)
+            {
+                read.getValue().replaceAllUsesWith(length);
+                read.erase();
+            }
+        }
+        mlir::Value zero;
+        b.setInsertionPoint(write);
+        mlir::Value used = b.createOrFold<mlir::arith::IndexCastOp>(write.getLoc(), b.getIndexType(), write.getValue());
+        mlir::Block* block = write->getBlock();
+        write.erase();
+        while (block != &fn.front())
+        {
+            auto branch = mlir::dyn_cast<mlir::scf::IfOp>(block->getParentOp());
+            if (!branch)
+            {
+                return block->getParentOp()->emitOpError("holds the write of its body's size, which only an "
+                                                         "scf.if may");
+            }
+            mlir::Block* const                  outer = branch->getBlock();
+            llvm::SmallVector<mlir::Operation*> order;
+            if (!definedWithin(used, branch))
+            {
+                block = outer;
+                continue;
+            }
+            if (hoistable(used, branch, order))
+            {
+                for (mlir::Operation* const op : order)
+                {
+                    op->moveBefore(branch);
+                }
+                block = outer;
+                continue;
+            }
+            if (!zero)
+            {
+                b.setInsertionPointToStart(&fn.front());
+                zero = mlir::arith::ConstantIndexOp::create(b, fn.getLoc(), 0);
+            }
+            used  = answerThrough(branch, block, used, zero);
+            block = outer;
+        }
+
+        b.setInsertionPoint(answer);
+        mlir::func::ReturnOp::create(b, answer.getLoc(), mlir::ValueRange{answer.getOperand(0), used});
+        answer.erase();
+        if (mlir::failed(fn.eraseArgument(2)))
+        {
+            return fn.emitOpError("keeps the size pointer its body no longer reads");
+        }
+        fn.setType(mlir::FunctionType::get(fn.getContext(),
+                                           fn.getArgumentTypes(),
+                                           {fn.getResultTypes().front(), b.getIndexType()}));
+        eraseEmptied(fn);
+        return mlir::success();
+    }
+};
+
 /// @brief Expands each bool run a target stores a bool per element into a loop over its elements.
 ///
 /// The plan moves a bool array as one run of wire bits between the buffer and the array's packed
@@ -1791,7 +2047,8 @@ bool answersAnError(mlir::func::FuncOp fn)
 ///
 /// Whether a body can fail is a fact of the body, and what makes it one is often a fold of this
 /// pipeline: `dsdl-fold-null-guards` erases the only error a Rust body had. A body whose every
-/// return answers the constant zero has no error to report, and a backend whose idiom reports an
+/// return answers the constant zero as its error, the first of what it answers, has no error to
+/// report, and a backend whose idiom reports an
 /// error apart from the result -- a `Result`, an `error`, an exception -- has no failure path to
 /// spell. Stated here, it is read rather than derived again by each backend that asks.
 struct MarkDSDLInfallibleBodiesPass final
@@ -1803,7 +2060,7 @@ struct MarkDSDLInfallibleBodiesPass final
     }
     llvm::StringRef getDescription() const final
     {
-        return "Mark each plan body or setter whose every return answers zero as unable to fail";
+        return "Mark each plan body or setter whose every return answers an error of zero as unable to fail";
     }
 
     // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
@@ -1816,7 +2073,7 @@ struct MarkDSDLInfallibleBodiesPass final
             }
             bool zero = !fn.getBody().empty();
             fn.walk([&](mlir::func::ReturnOp ret) {
-                if ((ret.getNumOperands() != 1) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
+                if ((ret.getNumOperands() == 0) || !mlir::matchPattern(ret.getOperand(0), mlir::m_Zero()))
                 {
                     zero = false;
                 }
@@ -2619,6 +2876,11 @@ std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass()
     return std::make_unique<FoldDSDLUnobservedAccessorSizesPass>();
 }
 
+std::unique_ptr<mlir::Pass> createFoldDSDLBodySizesPass()
+{
+    return std::make_unique<FoldDSDLBodySizesPass>();
+}
+
 std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(const BoolArrayStorage storage)
 {
     return std::make_unique<ExpandDSDLBoolRunsPass>(storage);
@@ -2689,9 +2951,10 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
         pm.addPass(createKeepDSDLAccessorsPass());
     }
     // After the host-image fold, which recognises a nested call as the plan builds it.
-    if (target.nestedCallsAnswerSize)
+    if (target.bodiesAnswerSize)
     {
         pm.addPass(createFoldDSDLNestedCallSizesPass());
+        pm.addPass(createFoldDSDLBodySizesPass());
     }
     // After the host-image fold too, which reads a bool run as the field work it replaces.
     if (target.boolArrays != BoolArrayStorage::Packed)
@@ -2726,6 +2989,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<MarkDSDLUnreadArgumentsPass> const         regUnread;
     static mlir::PassRegistration<FoldDSDLUnobservedAccessorSizesPass> const regUnobserved;
     static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const         regNestedSizes;
+    static mlir::PassRegistration<FoldDSDLBodySizesPass> const               regBodySizes;
     static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const              regBoolRuns;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",

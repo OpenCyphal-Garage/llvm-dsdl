@@ -34,15 +34,18 @@ module, and stamp C names on the schema before spelling or converting them.
 
 After `build-dsdl-plan-bodies` the pipeline folds what the target's `BodyInterface` rules out:
 `dsdl-fold-null-guards` a null test the target cannot fail, `dsdl-fold-unobserved-accessor-sizes`
-a size a getter's caller never reads, with the parameter it went through, and `dsdl-fold-host-image-bodies` a field-wise body the target
-can move whole. For a target whose nested entry point is handed the space as its buffer's length
-and answers what it used, `dsdl-fold-nested-call-sizes` turns each `dsdl.call_serdes`, with the
-local it hands its size through and the reads back of that local, into `dsdl.call_serdes_sized`:
-the space by value in, the error and what was used out. For a target that stores a bool array a
-bool per element, `dsdl-expand-bool-runs` turns each `dsdl.bit_write` and `dsdl.bit_read` of it into
-a loop moving one element and one bit per turn, through `dsdl.write_bit` and `dsdl.read_bit`.
-Last, `dsdl-mark-infallible-bodies` marks each plan body or setter whose every return answers zero
-as `llvmdsdl.infallible`, which a backend whose idiom reports an error apart from the result reads
+a size a getter's caller never reads, with the parameter it went through, and
+`dsdl-fold-host-image-bodies` a field-wise body the target can move whole. For a target whose entry
+point is handed the space as its buffer's length and answers what it used,
+`dsdl-fold-nested-call-sizes` turns each `dsdl.call_serdes`, with the local it hands its size
+through and the reads back of that local, into `dsdl.call_serdes_sized`: the space by value in, the
+error and what was used out. `dsdl-fold-body-sizes` does the same for the body: each read of its
+size pointer becomes `dsdl.buffer_length`, and what it writes back becomes a second result. For a
+target that stores a bool array a bool per element, `dsdl-expand-bool-runs` turns each
+`dsdl.bit_write` and `dsdl.bit_read` of it into a loop moving one element and one bit per turn,
+through `dsdl.write_bit` and `dsdl.read_bit`.
+Last, `dsdl-mark-infallible-bodies` marks each plan body or setter whose every return answers an
+error of zero as `llvmdsdl.infallible`, which a backend whose idiom reports an error apart from the result reads
 rather than derives; `test/lit/mark-infallible-bodies.mlir` holds it. `dsdl-mark-unread-arguments`
 marks each argument its function never reads as `llvmdsdl.unread`, which a backend that marks or
 names an unread parameter reads.
@@ -212,8 +215,8 @@ nested call is handed. The C↔C++ parity lanes and the generation lane accept i
 [`lib/CodeGen/emitter/Rust.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Rust.cpp),
 names members from the scope the struct declaration names them in, and never names a nested type:
 a nested call is a method call on the member. The plan's `i64` is `u64` with wrapping arithmetic,
-which is the plan's arithmetic and cannot panic; the size a plan is handed by pointer is a local
-`usize`, and a nested call's answer is written back to it. A buffer is a slice, and a pointer
+which is the plan's arithmetic and cannot panic; a body reads the slice's length where the plan
+reads its size, and answers the size it used in `Ok`. A buffer is a slice, and a pointer
 into it is a sub-slice clamped to the buffer's end. A fixed-length array is `[T; N]`, which is the
 object the plan addresses without a count; it was a growable container with a length check the
 plan does not state. A variable-length array is sized within its capacity, under the section's

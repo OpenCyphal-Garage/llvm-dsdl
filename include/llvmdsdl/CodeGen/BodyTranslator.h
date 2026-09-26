@@ -171,6 +171,13 @@ public:
 
     virtual void returnValue(SourceWriter& w, llvm::StringRef expr) const = 0;
 
+    /// @brief Returns a body's error and the size it used, where `dsdl-fold-body-sizes` made the
+    ///        size a second result. The size means something only where the error is zero.
+    virtual void returnWithSize(SourceWriter& w, llvm::StringRef error, llvm::StringRef used) const = 0;
+
+    /// @brief The length of a buffer that carries it, which `dsdl-fold-body-sizes` builds.
+    [[nodiscard]] virtual std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const = 0;
+
     virtual void openIf(SourceWriter& w, llvm::StringRef condition) const = 0;
     virtual void openElse(SourceWriter& w) const                          = 0;
 

@@ -86,13 +86,15 @@ struct BodyInterface final
     /// for a host that orders bytes other than as the wire does, since the swap back is per scalar.
     bool objectsAreByteImages{false};
 
-    /// @brief Whether a nested type's entry point is handed the bytes available as the length of
-    ///        its buffer, and answers the bytes it consumed beside its error.
+    /// @brief Whether a serialise or deserialise entry point is handed the bytes available as the
+    ///        length of its buffer, and answers the bytes it used beside its error.
     ///
     /// A target whose entry point reads and writes the size through a pointer takes the plan's
-    /// nested call as it is. One whose buffer carries its own length has the call folded to
-    /// `dsdl.call_serdes_sized`, which states the adaptation once rather than in each spelling.
-    bool nestedCallsAnswerSize{false};
+    /// bodies and nested calls as they are. One whose buffer carries its own length has each body
+    /// folded to take the buffer alone and answer the size as a second result, and each nested call
+    /// folded to `dsdl.call_serdes_sized`, which state the adaptation once rather than in each
+    /// spelling.
+    bool bodiesAnswerSize{false};
 
     /// @brief How the target stores a bool array.
     ///

@@ -1,7 +1,7 @@
 // RUN: %dsdl-opt --dsdl-mark-infallible-bodies %s | FileCheck %s
 
-// A body whose every return answers zero has no error to report, and is marked so a backend whose
-// idiom reports an error apart from the result reads that rather than deriving it again.
+// A body whose every return answers an error of zero has no error to report, and is marked so a
+// backend whose idiom reports an error apart from the result reads that rather than deriving it again.
 
 // CHECK-LABEL: func.func @serialize_always_succeeds(
 // CHECK-SAME:  llvmdsdl.infallible
@@ -15,6 +15,15 @@ func.func @serialize_always_succeeds() -> i8 attributes {llvmdsdl.plan_body = "s
 func.func @setter_always_succeeds() -> i8 attributes {llvmdsdl.plan_body = "set"} {
   %zero = arith.constant 0 : i8
   return %zero : i8
+}
+
+// A body that answers the size it used answers its error first.
+// CHECK-LABEL: func.func @sized_always_succeeds(
+// CHECK-SAME:  llvmdsdl.infallible
+func.func @sized_always_succeeds() -> (i8, index) attributes {llvmdsdl.plan_body = "serialize"} {
+  %zero = arith.constant 0 : i8
+  %used = arith.constant 7 : index
+  return %zero, %used : i8, index
 }
 
 // A body that can answer anything else can fail.

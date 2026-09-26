@@ -536,6 +536,18 @@ def DSDL_BufferAtOp : DSDL_Op<"buffer_at", [NoMemoryEffect]> {
                        "type($buffer) `->` type($address)";
 }
 
+def DSDL_BufferLengthOp : DSDL_Op<"buffer_length", [Pure]> {
+  let summary = "The length in bytes of a buffer that carries it";
+  let description = [{
+    A body handed a slice, a `memoryview` or a `Uint8Array` is handed the bytes available as
+    its length, where the plan reads them through the size pointer. `dsdl-fold-body-sizes`
+    builds it; the plan builder does not.
+  }];
+  let arguments = (ins DSDL_PtrType:$buffer);
+  let results = (outs I64:$length);
+  let assemblyFormat = "$buffer attr-dict `:` type($buffer)";
+}
+
 def DSDL_LocalOp : DSDL_Op<"local"> {
   let summary = "A local holding an initial value, addressed";
   let description = [{

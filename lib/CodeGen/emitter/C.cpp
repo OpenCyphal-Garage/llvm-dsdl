@@ -1305,6 +1305,20 @@ public:
         w.line("return " + expr.str() + ";");
     }
 
+    void returnWithSize(SourceWriter& /*w*/,
+                        const llvm::StringRef /*error*/,
+                        const llvm::StringRef /*used*/) const override
+    {
+        // A C body writes its size back through the pointer it is handed.
+        llvm::report_fatal_error("C spelling: a body folded to answer its size");
+    }
+
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp /*op*/,
+                                           const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error("C spelling: a body folded to read its buffer's length");
+    }
+
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
     {
         w.open("if (" + condition.str() + ") {");
