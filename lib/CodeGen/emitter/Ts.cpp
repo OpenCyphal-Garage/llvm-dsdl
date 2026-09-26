@@ -32,7 +32,6 @@
 #include <filesystem>
 #include <map>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -42,6 +41,7 @@
 
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
@@ -78,7 +78,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <cmath>
-#include <functional>
 #include <iomanip>
 #include "mlir/IR/BuiltinOps.h"
 
@@ -226,7 +225,165 @@ private:
     bool               accessorsOnly_{false};
 };
 
-std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
+/// @brief The factory that makes a type at its defaults: `make` and the type's own name, as the
+///        serialise and deserialise entry points are verb and name.
+std::string tsMakeFn(const std::string& typeName)
+{
+    return "make" + typeName;
+}
+
+/// @brief The body function that serialises a value of @p typeName into a buffer.
+std::string tsSerializeIntoFn(const std::string& typeName)
+{
+    return "serialize" + typeName + "Into";
+}
+
+/// @brief The body function that deserialises a value of @p typeName from a buffer.
+std::string tsDeserializeFromFn(const std::string& typeName)
+{
+    return "deserialize" + typeName + "From";
+}
+
+std::string relativeImportPath(const std::filesystem::path& fromFile, const std::filesystem::path& toFile);
+
+/// @brief How one TypeScript file names what it takes from other modules, recording each import.
+///
+/// Every symbol the file writes from another module is named here, so the imports written from the
+/// set once the file is rendered hold what the file names and nothing else. A nested definition's
+/// interface is named in type positions and imported as a type; its functions are values.
+class TsFileNames final
+{
+public:
+    TsFileNames(const EmitterContext& ctx, ImportSet& imports, std::filesystem::path ownerPath)
+        : ctx_(ctx)
+        , imports_(imports)
+        , ownerPath_(std::move(ownerPath))
+    {
+    }
+
+    [[nodiscard]] const EmitterContext& context() const
+    {
+        return ctx_;
+    }
+
+    /// @brief The runtime module the bodies and entry points call.
+    [[nodiscard]] std::string runtime() const
+    {
+        return imports_.module(ImportOrigin::Runtime,
+                               relativeImportPath(ownerPath_, std::filesystem::path("dsdl_runtime.ts")),
+                               "dsdlRuntime");
+    }
+
+    /// @brief The interface of the definition @p ref.
+    [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
+    {
+        return exported(ref, [](const std::string& name) { return name; }, ImportUse::Type);
+    }
+
+    /// @brief The factory of the definition @p ref.
+    [[nodiscard]] std::string make(const SemanticTypeRef& ref) const
+    {
+        return exported(ref, tsMakeFn, ImportUse::Value);
+    }
+
+    /// @brief The body function that serialises the definition @p ref.
+    [[nodiscard]] std::string serializeInto(const SemanticTypeRef& ref) const
+    {
+        return exported(ref, tsSerializeIntoFn, ImportUse::Value);
+    }
+
+    /// @brief The body function that deserialises the definition @p ref.
+    [[nodiscard]] std::string deserializeFrom(const SemanticTypeRef& ref) const
+    {
+        return exported(ref, tsDeserializeFromFn, ImportUse::Value);
+    }
+
+    /// @brief The definition @p fullName names at @p major.@p minor.
+    static SemanticTypeRef referenceTo(const llvm::StringRef fullName,
+                                       const std::uint32_t   major,
+                                       const std::uint32_t   minor)
+    {
+        SemanticTypeRef                    ref;
+        llvm::SmallVector<llvm::StringRef> components;
+        fullName.split(components, '.');
+        for (const llvm::StringRef component : components)
+        {
+            ref.namespaceComponents.push_back(component.str());
+        }
+        if (!ref.namespaceComponents.empty())
+        {
+            ref.shortName = ref.namespaceComponents.back();
+            ref.namespaceComponents.pop_back();
+        }
+        ref.fullName     = fullName.str();
+        ref.majorVersion = major;
+        ref.minorVersion = minor;
+        return ref;
+    }
+
+private:
+    /// @brief What the definition @p ref exports as @p compose makes of its name, imported from its
+    ///        module under the name this file gives it, unless the module is this file.
+    template <typename Compose>
+    std::string exported(const SemanticTypeRef& ref, Compose compose, const ImportUse use) const
+    {
+        std::string local = compose(ctx_.typeName(ref));
+        const auto* def   = ctx_.find(ref);
+        if (def == nullptr)
+        {
+            return local;
+        }
+        const std::filesystem::path path = EmitterContext::relativeFilePath(def->info);
+        if (path == ownerPath_)
+        {
+            return local;
+        }
+        return imports_.member(ImportOrigin::Definition,
+                               relativeImportPath(ownerPath_, path),
+                               compose(ctx_.typeName(def->info)),
+                               local,
+                               use);
+    }
+
+    const EmitterContext& ctx_;
+    ImportSet&            imports_;
+    std::filesystem::path ownerPath_;
+};
+
+/// @brief The imports of a TypeScript file that names @p imports: the runtime as a namespace, then a
+///        blank line, then each module's values and then each module's types.
+std::string renderTsImports(const ImportSet& imports)
+{
+    std::string runtime;
+    std::string values;
+    std::string types;
+    for (const ImportedModule& module : imports.modules())
+    {
+        if (!module.binding.empty())
+        {
+            runtime += "import * as " + module.binding + " from \"" + module.path + "\";\n";
+        }
+        std::string valueList;
+        std::string typeList;
+        for (const ImportedMember& member : module.members)
+        {
+            std::string& list = (member.use == ImportUse::Type) ? typeList : valueList;
+            list +=
+                (list.empty() ? "" : ", ") + member.name + ((member.local == member.name) ? "" : " as " + member.local);
+        }
+        if (!valueList.empty())
+        {
+            values += "import { " + valueList + " } from \"" + module.path + "\";\n";
+        }
+        if (!typeList.empty())
+        {
+            types += "import type { " + typeList + " } from \"" + module.path + "\";\n";
+        }
+    }
+    return runtime + "\n" + values + types;
+}
+
+std::string tsFieldBaseType(const SemanticFieldType& type, const TsFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -248,23 +405,16 @@ std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext&
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.typeName(*type.compositeType);
+            return file.type(*type.compositeType);
         }
         return "unknown";
     }
     return "unknown";
 }
 
-/// @brief The factory that makes a type at its defaults: `make` and the type's own name, as the
-///        serialise and deserialise entry points are verb and name.
-std::string tsMakeFn(const std::string& typeName)
+std::string tsFieldType(const SemanticFieldType& type, const TsFileNames& file)
 {
-    return "make" + typeName;
-}
-
-std::string tsFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
-{
-    auto base = tsFieldBaseType(type, ctx);
+    auto base = tsFieldBaseType(type, file);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -396,7 +546,7 @@ void emitStructSectionType(SourceWriter&          w,
                            const std::string&     typeName,
                            const SemanticSection& section,
                            const AttachedDoc&     typeDoc,
-                           const EmitterContext&  ctx,
+                           const TsFileNames&     file,
                            const std::string&     fullName,
                            const std::uint32_t    majorVersion,
                            const std::uint32_t    minorVersion,
@@ -428,7 +578,7 @@ void emitStructSectionType(SourceWriter&          w,
         w.line(fieldName + ": " +
                (field.heldAsView
                     ? std::string{(field.resolvedType.arrayKind == ArrayKind::None) ? "Uint8Array" : "Uint8Array[]"}
-                    : tsFieldType(field.resolvedType, ctx)) +
+                    : tsFieldType(field.resolvedType, file)) +
                ";");
     }
     w.close("}");
@@ -438,7 +588,7 @@ void emitUnionSectionType(SourceWriter&          w,
                           const std::string&     typeName,
                           const SemanticSection& section,
                           const AttachedDoc&     typeDoc,
-                          const EmitterContext&  ctx,
+                          const TsFileNames&     file,
                           const std::string&     fullName,
                           const std::uint32_t    majorVersion,
                           const std::uint32_t    minorVersion)
@@ -471,7 +621,7 @@ void emitUnionSectionType(SourceWriter&          w,
         const auto         fieldName = fieldIdents.get(IdentifierRole::FieldName, field->name);
         std::ostringstream variant;
         variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
-                << tsFieldType(field->resolvedType, ctx) << "; }";
+                << tsFieldType(field->resolvedType, file) << "; }";
         const auto* const prefix = "  | ";
         w.line(prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
     }
@@ -481,14 +631,14 @@ void emitSectionType(SourceWriter&          w,
                      const std::string&     typeName,
                      const SemanticSection& section,
                      const AttachedDoc&     typeDoc,
-                     const EmitterContext&  ctx,
+                     const TsFileNames&     file,
                      const std::string&     fullName,
                      const std::uint32_t    majorVersion,
                      const std::uint32_t    minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, typeName, section, typeDoc, ctx, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, typeName, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
     else
     {
@@ -496,7 +646,7 @@ void emitSectionType(SourceWriter&          w,
                               typeName,
                               section,
                               typeDoc,
-                              ctx,
+                              file,
                               fullName,
                               majorVersion,
                               minorVersion,
@@ -527,13 +677,9 @@ std::string tsRuntimeDeserializeFn(const std::string& typeName)
 class TsSpelling final : public BodySpelling
 {
 public:
-    /// @brief The name this file gives the type @p fullName names at @p major.@p minor.
-    using TypeNameResolver =
-        std::function<std::string(llvm::StringRef fullName, std::uint32_t major, std::uint32_t minor)>;
-
-    TsSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, TypeNameResolver typeNameOf)
+    TsSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const TsFileNames& file)
         : symbols_(module)
-        , typeNameOf_(std::move(typeNameOf))
+        , file_(file)
     {
         // A helper is a function of the definition's own module, which is not exported, so the
         // schema component of the lowered symbol names what the module already says.
@@ -587,13 +733,13 @@ public:
     /// @brief The body function that serialises a value of @p typeName into a buffer.
     static std::string serializeInto(const std::string& typeName)
     {
-        return "serialize" + typeName + "Into";
+        return tsSerializeIntoFn(typeName);
     }
 
     /// @brief The body function that deserialises a value of @p typeName from a buffer.
     static std::string deserializeFrom(const std::string& typeName)
     {
-        return "deserialize" + typeName + "From";
+        return tsDeserializeFromFn(typeName);
     }
 
     // Functions.
@@ -726,10 +872,9 @@ public:
     ///        entry and a getter's answer is converted at the return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed    a         = accessed(fn);
-        const Storage     storage   = storageOf(*a.member);
-        const std::string tsType    = elementTsType(*a.member);
-        std::string       member    = a.member->tsName;
+        const Accessed a            = accessed(fn);
+        const Storage  storage      = storageOf(*a.member);
+        std::string    member       = a.member->tsName;
         member[0]                   = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
         const std::string name      = std::string(getter ? "get" : "set") + a.plan->typeName + member;
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
@@ -753,12 +898,12 @@ public:
             {
                 returnCast_ = "boolean";
             }
-            w.open("export function " + name + "(buffer: Uint8Array" + index + "): " + tsType + " {");
+            w.open("export function " + name + "(buffer: Uint8Array" + index + "): " + elementTsType(*a.member) + " {");
         }
         else
         {
             w.open("export function " + name + "(buffer: Uint8Array" + index + ", " +
-                   (rebind ? "memberValue: " : "value: ") + tsType + "): number {");
+                   (rebind ? "memberValue: " : "value: ") + elementTsType(*a.member) + "): number {");
         }
         std::vector<std::string> parameters{"buffer", "BigInt(buffer.length)"};
         if (indexed)
@@ -1128,7 +1273,7 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "dsdlRuntime.toBigIntValue(" + names(op.getObject()) + "._tag)";
+        return file_.runtime() + ".toBigIntValue(" + names(op.getObject()) + "._tag)";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
@@ -1144,14 +1289,14 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asNumber(op.getBitOffset(), names) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdlRuntime.writeFloat(" + prefix + width + ", " + value + ")";
+            return file_.runtime() + ".writeFloat(" + prefix + width + ", " + value + ")";
         }
         if (isBool(valueType))
         {
-            return "dsdlRuntime.setBit(" + prefix + value + ")";
+            return file_.runtime() + ".setBit(" + prefix + value + ")";
         }
-        return "dsdlRuntime." + std::string(op.getIsSigned() ? "writeSigned(" : "writeUnsigned(") + prefix + width +
-               ", " + value + ", false)";
+        return file_.runtime() + "." + std::string(op.getIsSigned() ? "writeSigned(" : "writeUnsigned(") + prefix +
+               width + ", " + value + ", false)";
     }
 
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
@@ -1161,9 +1306,9 @@ public:
             names(op.getBuffer()) + ", " + asNumber(op.getBitOffset(), names) + ", " + std::to_string(op.getWidth());
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "dsdlRuntime.readFloat(" + arguments + ")";
+            return file_.runtime() + ".readFloat(" + arguments + ")";
         }
-        const std::string read = "dsdlRuntime." +
+        const std::string read = file_.runtime() + "." +
                                  std::string(op.getIsSigned() ? "readSignedBigInt(" : "readUnsignedBigInt(") +
                                  arguments + ")";
         return cast(read, mlir::IntegerType::get(op.getContext(), 64), valueType);
@@ -1182,13 +1327,13 @@ public:
 
     void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
     {
-        w.line("dsdlRuntime.setBit(" + names(op.getBuffer()) + ", " + asNumber(op.getBitOffset(), names) + ", " +
+        w.line(file_.runtime() + ".setBit(" + names(op.getBuffer()) + ", " + asNumber(op.getBitOffset(), names) + ", " +
                names(op.getValue()) + ");");
     }
 
     [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
     {
-        return "dsdlRuntime.getBit(" + names(op.getBuffer()) + ", " + asNumber(op.getBitOffset(), names) + ")";
+        return file_.runtime() + ".getBit(" + names(op.getBuffer()) + ", " + asNumber(op.getBitOffset(), names) + ")";
     }
 
     void imageRead(SourceWriter& /*w*/, mlir::dsdl::ImageReadOp /*op*/, const ValueNames& /*names*/) const override
@@ -1351,10 +1496,10 @@ private:
         {
             llvm::report_fatal_error("TypeScript spelling: a nested call to a body of no schema in the module");
         }
-        const std::string nested = typeNameOf_(schema.getFullName(),
-                                               static_cast<std::uint32_t>(schema.getMajor()),
-                                               static_cast<std::uint32_t>(schema.getMinor()));
-        return op.getDirection() == "serialize" ? serializeInto(nested) : deserializeFrom(nested);
+        const SemanticTypeRef nested = TsFileNames::referenceTo(schema.getFullName(),
+                                                                static_cast<std::uint32_t>(schema.getMajor()),
+                                                                static_cast<std::uint32_t>(schema.getMinor()));
+        return op.getDirection() == "serialize" ? file_.serializeInto(nested) : file_.deserializeFrom(nested);
     }
 
     /// @brief The member as the object declares it; an option through the object cast to its shape.
@@ -1448,9 +1593,9 @@ private:
             break;
         }
         mlir::dsdl::IOOp io = member.io;
-        return typeNameOf_(io.getCompositeFullName().value_or(llvm::StringRef{}),
-                           static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                           static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0)));
+        return file_.type(TsFileNames::referenceTo(io.getCompositeFullName().value_or(llvm::StringRef{}),
+                                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
     }
 
     std::string memberTsType(const Member& member) const
@@ -1459,7 +1604,7 @@ private:
     }
 
     /// @brief @p access read as a value of @p type.
-    static std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type)
+    [[nodiscard]] std::string loadedValue(const std::string& access, const Member& member, const mlir::Type type) const
     {
         switch (storageOf(member))
         {
@@ -1473,7 +1618,7 @@ private:
             return isBig(type) ? access : "Number(" + access + ")";
         case Storage::Number:
             // A number a caller stored may be no integer; the runtime rounds it to one.
-            return isBig(type) ? "dsdlRuntime.toBigIntValue(" + access + ")" : "Math.trunc(" + access + ")";
+            return isBig(type) ? file_.runtime() + ".toBigIntValue(" + access + ")" : "Math.trunc(" + access + ")";
         case Storage::Float:
         case Storage::Object:
             break;
@@ -1649,7 +1794,7 @@ private:
     llvm::StringMap<std::string> helperNames_;
 
     mlir::SymbolTable     symbols_;
-    TypeNameResolver      typeNameOf_;
+    const TsFileNames&    file_;
     llvm::StringMap<Plan> plans_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
@@ -1711,14 +1856,18 @@ struct SectionBodies final
 
 /// @brief The entry points a consumer calls, which wrap the translated bodies: a value serialises
 /// into a buffer of the type's largest size, and a deserialisation fills an empty object.
-void emitEntryPoints(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
+void emitEntryPoints(SourceWriter&          w,
+                     const std::string&     typeName,
+                     const SemanticSection& section,
+                     const TsFileNames&     file)
 {
-    const auto bufferBytes = (section.serializationBufferSizeBits + 7) / 8;
+    const std::string raise       = "throw new Error(" + file.runtime() + ".errorMessage(result));";
+    const auto        bufferBytes = (section.serializationBufferSizeBits + 7) / 8;
     w.open("export function " + tsRuntimeSerializeFn(typeName) + "(value: " + typeName + "): Uint8Array {");
     w.line("const buffer = new Uint8Array(" + std::to_string(bufferBytes) + ");");
     w.line("const result = " + TsSpelling::serializeInto(typeName) + "(value, buffer);");
     w.open("if (result < 0) {");
-    w.line("throw new Error(dsdlRuntime.errorMessage(result));");
+    w.line(raise);
     w.close("}");
     w.line("return buffer.subarray(0, result);");
     w.close("}");
@@ -1728,7 +1877,7 @@ void emitEntryPoints(SourceWriter& w, const std::string& typeName, const Semanti
     w.line("const value = " + tsMakeFn(typeName) + "();");
     w.line("const result = " + TsSpelling::deserializeFrom(typeName) + "(value, bytes);");
     w.open("if (result < 0) {");
-    w.line("throw new Error(dsdlRuntime.errorMessage(result));");
+    w.line(raise);
     w.close("}");
     w.line("return { value, consumed: result };");
     w.close("}");
@@ -1761,12 +1910,10 @@ std::string tsStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr
 }
 
 /// @brief The value a member takes in the factory's literal, as the initialise body states it.
-std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& entry, const EmitterContext& ctx)
+std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& entry, const TsFileNames& file)
 {
     const auto& type   = field.resolvedType;
-    const auto  nested = [&]() {
-        return type.compositeType ? tsMakeFn(ctx.typeName(*type.compositeType)) + "()" : "{}";
-    };
+    const auto  nested = [&]() { return type.compositeType ? file.make(*type.compositeType) + "()" : "{}"; };
     switch (entry.kind)
     {
     case MemberDefault::Kind::Scalar:
@@ -1776,7 +1923,7 @@ std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& e
     case MemberDefault::Kind::FixedScalarArray: {
         SemanticFieldType element = type;
         element.arrayKind         = ArrayKind::None;
-        return "new Array<" + tsFieldType(element, ctx) + ">(" + std::to_string(entry.count) + ").fill(" +
+        return "new Array<" + tsFieldType(element, file) + ">(" + std::to_string(entry.count) + ").fill(" +
                tsStoredLiteral(type, entry.value) + ")";
     }
     case MemberDefault::Kind::BoolArray:
@@ -1801,7 +1948,7 @@ void emitMakeFunction(SourceWriter&           w,
                       const std::string&      typeName,
                       const SemanticSection&  section,
                       const InitializerShape& init,
-                      const EmitterContext&   ctx)
+                      const TsFileNames&      file)
 {
     const NamingScope fieldIdents = makeTsFieldIdents(section);
     const auto        entryOf     = [&](const SemanticField& field) -> const MemberDefault& {
@@ -1824,7 +1971,7 @@ void emitMakeFunction(SourceWriter&           w,
             if (!field.isPadding && std::cmp_equal(field.unionOptionIndex, init.unionTag))
             {
                 arm = ", " + fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " +
-                      tsDefaultFromBody(field, entryOf(field), ctx);
+                      tsDefaultFromBody(field, entryOf(field), file);
             }
         }
         w.line("return { _tag: " + std::to_string(init.unionTag) + arm + " };");
@@ -1839,7 +1986,7 @@ void emitMakeFunction(SourceWriter&           w,
                 continue;
             }
             w.line(fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " +
-                   tsDefaultFromBody(field, entryOf(field), ctx) + ",");
+                   tsDefaultFromBody(field, entryOf(field), file) + ",");
         }
         w.close("};");
     }
@@ -1852,14 +1999,14 @@ llvm::Error emitSection(SourceWriter&             w,
                         const SemanticSection&    section,
                         const SectionMetadata&    metadata,
                         const AttachedDoc&        typeDoc,
-                        const EmitterContext&     ctx,
+                        const TsFileNames&        file,
                         const SemanticDefinition& def,
                         const TsSpelling&         spelling,
                         const SectionBodies&      bodies,
                         PlanBodyLookups&          lookups)
 {
     // The object type and its factory, which an accessors-only run leaves out.
-    if (!ctx.accessorsOnly())
+    if (!file.context().accessorsOnly())
     {
         if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
         {
@@ -1876,18 +2023,18 @@ llvm::Error emitSection(SourceWriter&             w,
                         typeName,
                         section,
                         typeDoc,
-                        ctx,
+                        file,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
         w.blank();
-        emitMakeFunction(w, typeName, section, *init, ctx);
+        emitMakeFunction(w, typeName, section, *init, file);
         w.blank();
     }
     emitUnionOptionTags(w, typeName, section, metadata);
     emitSectionConstants(w, typeName, section);
     w.blank();
-    if (!ctx.accessorsOnly())
+    if (!file.context().accessorsOnly())
     {
         if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
         {
@@ -1908,10 +2055,10 @@ llvm::Error emitSection(SourceWriter&             w,
             return err;
         }
     }
-    if (!ctx.accessorsOnly())
+    if (!file.context().accessorsOnly())
     {
         w.blank();
-        emitEntryPoints(w, typeName, section);
+        emitEntryPoints(w, typeName, section, file);
     }
     return llvm::Error::success();
 }
@@ -1991,63 +2138,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         ctx.setImportAliases(std::move(aliases));
     }
 
-    std::map<std::string, std::set<std::pair<std::string, std::string>>> importsByModule;
-    std::map<std::string, std::set<std::pair<std::string, std::string>>> bodyImportsByModule;
-    const auto addSectionImports = [&](const SemanticSection& section) {
-        const auto dependencies = collectCompositeDependencies(section, def.info, /*referencedOnly=*/true);
-        const auto imports      = projectCompositeImports(
-            dependencies,
-            [&](const SemanticTypeRef& ref) { return relativeImportPath(ownerPath, ctx.relativeFilePath(ref)); },
-            [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
-        for (const auto& importSpec : imports)
-        {
-            std::string original = importSpec.typeName;
-            for (const auto& ref : dependencies)
-            {
-                if (const auto* referenced = ctx.find(ref);
-                    referenced != nullptr && ctx.typeName(ref) == importSpec.typeName)
-                {
-                    original = ctx.typeName(referenced->info);
-                    break;
-                }
-            }
-            importsByModule[importSpec.modulePath].emplace(original, importSpec.typeName);
-            // The nested type's bodies, which this file's bodies call.
-            bodyImportsByModule[importSpec.modulePath].emplace(TsSpelling::serializeInto(original),
-                                                               TsSpelling::serializeInto(importSpec.typeName));
-            bodyImportsByModule[importSpec.modulePath].emplace(TsSpelling::deserializeFrom(original),
-                                                               TsSpelling::deserializeFrom(importSpec.typeName));
-            // And its factory, which this file's factory calls for a nested member.
-            bodyImportsByModule[importSpec.modulePath].emplace(tsMakeFn(original), tsMakeFn(importSpec.typeName));
-        }
-    };
-    addSectionImports(def.request);
-    if (def.response)
-    {
-        addSectionImports(*def.response);
-    }
-
-    // The spelling names a nested type as this file does: through the alias table just installed.
-    TsSpelling spelling(module,
-                        schema,
-                        [&ctx](const llvm::StringRef fullName, const std::uint32_t major, const std::uint32_t minor) {
-                            SemanticTypeRef ref;
-                            ref.fullName = fullName.str();
-                            llvm::SmallVector<llvm::StringRef> components;
-                            fullName.split(components, '.');
-                            for (const llvm::StringRef component : components)
-                            {
-                                ref.namespaceComponents.push_back(component.str());
-                            }
-                            if (!ref.namespaceComponents.empty())
-                            {
-                                ref.shortName = ref.namespaceComponents.back();
-                                ref.namespaceComponents.pop_back();
-                            }
-                            ref.majorVersion = major;
-                            ref.minorVersion = minor;
-                            return ctx.typeName(ref);
-                        });
+    // The declarations and bodies first, naming what they take from other modules as they write it;
+    // the imports are written after, from what was named.
+    ImportSet                            imports;
+    const TsFileNames                    file(ctx, imports, ownerPath);
+    TsSpelling                           spelling(module, schema, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2103,77 +2198,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         hw.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
                 std::to_string(def.info.minorVersion));
     }
-    const auto         runtimePath   = relativeImportPath(ownerPath, std::filesystem::path("dsdl_runtime.ts"));
-    const std::string  runtimeImport = "import * as dsdlRuntime from \"" + runtimePath + "\";\n";
     std::ostringstream out;
-    SourceWriter       w = makeTsWriter(out);
-    // The runtime import is written when the body refers to it. An accessors-only file whose
-    // accessors all answer a sub-buffer refers to nothing in it.
-    // `Original as Local`, collapsing to plain `Original` when nothing had to be renamed -- so a
-    // file that references no clashing names looks exactly as it did before aliasing existed. A
-    // name the body does not use is left out: a union's factory makes the selected option alone,
-    // so it calls no other option's factory, and an import nothing uses is a lint diagnostic.
-    const auto usesIdentifier = [](const std::string& text, const std::string& name) {
-        const auto identifierChar = [](const char c) {
-            return (std::isalnum(static_cast<unsigned char>(c)) != 0) || (c == '_') || (c == '$');
-        };
-        for (std::size_t at = text.find(name); at != std::string::npos; at = text.find(name, at + 1))
-        {
-            const bool startsWord = (at == 0) || !identifierChar(text[at - 1]);
-            const bool endsWord   = (at + name.size() >= text.size()) || !identifierChar(text[at + name.size()]);
-            if (startsWord && endsWord)
-            {
-                return true;
-            }
-        }
-        return false;
-    };
-    const auto renderImportList = [&](const std::set<std::pair<std::string, std::string>>& names,
-                                      const std::string&                                   body) {
-        std::string rendered;
-        for (const auto& [original, local] : names)
-        {
-            if (!usesIdentifier(body, local))
-            {
-                continue;
-            }
-            if (!rendered.empty())
-            {
-                rendered += ", ";
-            }
-            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-            rendered += (original == local) ? original : (original + " as " + local);
-        }
-        return rendered;
-    };
-    const auto assemble = [&]() {
-        const std::string body        = out.str();
-        const bool        usesRuntime = !ctx.accessorsOnly() || body.contains("dsdlRuntime.");
-        std::string       imports;
-        // An accessors-only file names no other type: a composite's getter answers its bytes.
-        if (!ctx.accessorsOnly())
-        {
-            for (const auto& [modulePath, names] : bodyImportsByModule)
-            {
-                if (const std::string list = renderImportList(names, body); !list.empty())
-                {
-                    imports.append("import { ").append(list).append(" } from \"").append(modulePath).append("\";\n");
-                }
-            }
-            for (const auto& [modulePath, names] : importsByModule)
-            {
-                if (const std::string list = renderImportList(names, body); !list.empty())
-                {
-                    imports.append("import type { ")
-                        .append(list)
-                        .append(" } from \"")
-                        .append(modulePath)
-                        .append("\";\n");
-                }
-            }
-        }
-        return head.str() + (usesRuntime ? runtimeImport : std::string{}) + "\n" + imports + body;
-    };
+    SourceWriter       w        = makeTsWriter(out);
+    const auto         assemble = [&]() { return head.str() + renderTsImports(imports) + out.str(); };
 
     w.line("export const LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\";");
     w.line("export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
@@ -2220,7 +2247,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    def.request,
                                    sectionMetadata(def.info, def.request, schema, ""),
                                    def.doc,
-                                   ctx,
+                                   file,
                                    def,
                                    spelling,
                                    bodies[""],
@@ -2236,7 +2263,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                def.request,
                                sectionMetadata(def.info, def.request, schema, "request"),
                                def.doc,
-                               ctx,
+                               file,
                                def,
                                spelling,
                                bodies["request"],
@@ -2253,7 +2280,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                    *def.response,
                                    sectionMetadata(def.info, *def.response, schema, "response"),
                                    def.doc,
-                                   ctx,
+                                   file,
                                    def,
                                    spelling,
                                    bodies["response"],

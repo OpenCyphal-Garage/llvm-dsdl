@@ -57,11 +57,20 @@ bool runImportSetTests()
             return false;
         }
     }
+    const auto names = [](const llvmdsdl::ImportedModule& module) {
+        std::vector<std::pair<std::string, std::string>> out;
+        out.reserve(module.members.size());
+        for (const auto& member : module.members)
+        {
+            out.emplace_back(member.name, member.local);
+        }
+        return out;
+    };
     const std::vector<std::pair<std::string, std::string>> wantDataclasses = {{"dataclass", "dataclass"},
                                                                               {"field", "field"}};
     const std::vector<std::pair<std::string, std::string>> wantRuntime     = {{"error_message", "error_message"},
                                                                               {"runtime", "dsdl_runtime"}};
-    if ((modules[0].members != wantDataclasses) || !modules[0].binding.empty())
+    if ((names(modules[0]) != wantDataclasses) || !modules[0].binding.empty())
     {
         std::cerr << "import set recorded dataclasses' members wrongly\n";
         return false;
@@ -71,9 +80,24 @@ bool runImportSetTests()
         std::cerr << "import set recorded the module sys wrongly\n";
         return false;
     }
-    if (modules[2].members != wantRuntime)
+    if (names(modules[2]) != wantRuntime)
     {
         std::cerr << "import set recorded the runtime's members wrongly\n";
+        return false;
+    }
+
+    // A member named in type positions alone is a type; named once as a value, it is a value.
+    llvmdsdl::ImportSet uses;
+    (void) uses.member(ImportOrigin::Definition, "./a", "A", {}, llvmdsdl::ImportUse::Type);
+    (void) uses.member(ImportOrigin::Definition, "./a", "makeA", {}, llvmdsdl::ImportUse::Value);
+    (void) uses.member(ImportOrigin::Definition, "./b", "B", {}, llvmdsdl::ImportUse::Type);
+    (void) uses.member(ImportOrigin::Definition, "./b", "B", {}, llvmdsdl::ImportUse::Value);
+    const auto used = uses.modules();
+    if ((used.size() != 2) || (used[0].members[0].use != llvmdsdl::ImportUse::Type) ||
+        (used[0].members[1].use != llvmdsdl::ImportUse::Value) ||
+        (used[1].members[0].use != llvmdsdl::ImportUse::Value))
+    {
+        std::cerr << "import set recorded a member's use wrongly\n";
         return false;
     }
 

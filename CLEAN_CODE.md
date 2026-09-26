@@ -194,19 +194,25 @@ definition whose comment mentioned `bytes.Clone(` imported a package the file di
 refused to compile it. Its import declaration writes the module's own packages in the order of their
 paths, which is gofmt's.
 
-The other four decide their imports in three other ways, and each is a way a file's text and its
-imports can disagree:
+TypeScript names through it as well: the runtime's namespace where a body or entry point calls it,
+and a nested definition's interface as a type and its functions as values. The set records how a
+member is used for this, and a member named in type positions alone is imported with `import type`.
+TypeScript had walked the semantic model for every name a nested definition exports and kept the
+ones a whole-word scan found in the text.
+
+C, C++ and Rust decide their imports as follows, and each is a way a file's text and its imports
+can disagree:
 
 | language | standard library | runtime | other definitions |
 |---|---|---|---|
 | C | a token scan in a header; unconditional in a `.c` file | the same | a semantic-model walk in a header; the calls a body spells, recorded, in a `.c` file |
 | C++ | a token scan | a token scan, which names the header that includes the C runtime rather than the one that declares its functions: `misc-include-cleaner`'s 485 | a semantic-model walk; the vocabulary's span, recorded as it is named |
 | Rust | none: every standard and runtime name is a full path | none | a semantic-model walk, into an import scope |
-| TypeScript | none | unconditional, and a token scan in an accessors-only file | a semantic-model walk, filtered by a scan for each name |
 
 Each moves onto the set in a change of its own. A language that gives an import a local name
 records the name the file spells; allocating that name within the file's scope, which Go does with
-its `pkg_` aliases, Rust in an import scope and TypeScript not at all, belongs to the surface tree.
+its `pkg_` aliases, Rust in an import scope and TypeScript only among the imports themselves,
+belongs to the surface tree.
 
 ## Where each language lands
 

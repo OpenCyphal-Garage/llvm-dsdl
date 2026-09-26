@@ -45,6 +45,27 @@ enum class ImportOrigin : std::uint8_t
     Definition,
 };
 
+/// @brief How a file uses a member it names, where the language imports a type apart from a value.
+enum class ImportUse : std::uint8_t
+{
+    /// @brief The member is named where a value is: a call, an initialiser.
+    Value,
+
+    /// @brief The member is named in type positions alone: an annotation, a cast.
+    Type,
+};
+
+/// @brief One member a generated file names from a module.
+struct ImportedMember final
+{
+    std::string name;
+
+    /// @brief The local name the file spells the member by.
+    std::string local;
+
+    ImportUse use{ImportUse::Value};
+};
+
 /// @brief One module a generated file imports, and what it names from it.
 struct ImportedModule final
 {
@@ -57,9 +78,8 @@ struct ImportedModule final
     ///        members.
     std::string binding;
 
-    /// @brief Each member the file names, and the local name it spells the member by, in the order
-    ///        of the members' names.
-    std::vector<std::pair<std::string, std::string>> members;
+    /// @brief Each member the file names, in the order of their names.
+    std::vector<ImportedMember> members;
 };
 
 /// @brief What one generated file names from outside itself.
@@ -71,9 +91,13 @@ public:
     std::string module(ImportOrigin origin, llvm::StringRef path, llvm::StringRef binding);
 
     /// @brief Records that the file names @p name from the module @p path, spelled @p local, or
-    ///        @p name where @p local is empty.
+    ///        @p name where @p local is empty. A member named once as a value is a value.
     /// @return How the file spells the member.
-    std::string member(ImportOrigin origin, llvm::StringRef path, llvm::StringRef name, llvm::StringRef local = {});
+    std::string member(ImportOrigin    origin,
+                       llvm::StringRef path,
+                       llvm::StringRef name,
+                       llvm::StringRef local = {},
+                       ImportUse       use   = ImportUse::Value);
 
     /// @brief The modules recorded, by origin and then by path.
     [[nodiscard]] std::vector<ImportedModule> modules() const;
@@ -81,9 +105,9 @@ public:
 private:
     struct Entry final
     {
-        ImportOrigin                       origin{ImportOrigin::Standard};
-        std::string                        binding;
-        std::map<std::string, std::string> members;
+        ImportOrigin                          origin{ImportOrigin::Standard};
+        std::string                           binding;
+        std::map<std::string, ImportedMember> members;
     };
 
     /// @brief The entry for @p path, which is always named from one origin.

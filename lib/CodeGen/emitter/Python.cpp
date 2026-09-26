@@ -412,7 +412,7 @@ std::string renderPythonImports(const ImportSet& imports)
             for (const auto& [index, member] : llvm::enumerate(module.members))
             {
                 from += (index == 0) ? "" : ", ";
-                from += member.first + ((member.second == member.first) ? "" : " as " + member.second);
+                from += member.name + ((member.local == member.name) ? "" : " as " + member.local);
             }
             from += "\n";
         }

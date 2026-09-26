@@ -58,16 +58,24 @@ std::string ImportSet::module(const ImportOrigin origin, const llvm::StringRef p
 std::string ImportSet::member(const ImportOrigin    origin,
                               const llvm::StringRef path,
                               const llvm::StringRef name,
-                              const llvm::StringRef local)
+                              const llvm::StringRef local,
+                              const ImportUse       use)
 {
     Entry&            entry    = entryFor(origin, path);
     const std::string spelling = local.empty() ? name.str() : local.str();
-    const auto [it, inserted]  = entry.members.try_emplace(name.str(), spelling);
-    if (!inserted && (it->second != spelling))
+    const auto [it, inserted]  = entry.members.try_emplace(name.str(), ImportedMember{name.str(), spelling, use});
+    if (!inserted)
     {
-        llvm::report_fatal_error(llvm::Twine("import set: ") + name + " from " + path + " is spelled two ways");
+        if (it->second.local != spelling)
+        {
+            llvm::report_fatal_error(llvm::Twine("import set: ") + name + " from " + path + " is spelled two ways");
+        }
+        if (use == ImportUse::Value)
+        {
+            it->second.use = ImportUse::Value;
+        }
     }
-    return it->second;
+    return it->second.local;
 }
 
 std::vector<ImportedModule> ImportSet::modules() const
@@ -80,7 +88,10 @@ std::vector<ImportedModule> ImportSet::modules() const
         module.origin  = entry.origin;
         module.path    = path;
         module.binding = entry.binding;
-        module.members.assign(entry.members.begin(), entry.members.end());
+        for (const auto& [name, member] : entry.members)
+        {
+            module.members.push_back(member);
+        }
         out.push_back(std::move(module));
     }
     std::ranges::stable_sort(out, [](const ImportedModule& a, const ImportedModule& b) {
