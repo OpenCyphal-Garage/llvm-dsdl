@@ -103,10 +103,6 @@ bool runCodegenDiagnosticTextTests();
 /// @return True when every case in the suite passed.
 bool runConstantLiteralRenderTests();
 
-/// @brief Runs the CompositeImportGraphTests suite.
-/// @return True when every case in the suite passed.
-bool runCompositeImportGraphTests();
-
 /// @brief Runs the DefinitionDependenciesTests suite.
 /// @return True when every case in the suite passed.
 bool runDefinitionDependenciesTests();
@@ -114,6 +110,10 @@ bool runDefinitionDependenciesTests();
 /// @brief Runs the DefinitionIndexTests suite.
 /// @return True when every case in the suite passed.
 bool runDefinitionIndexTests();
+
+/// @brief Runs the ImportNameScopeTests suite.
+/// @return True when every case in the suite passed.
+bool runImportNameScopeTests();
 
 /// @brief Runs the ImportSetTests suite.
 /// @return True when every case in the suite passed.

@@ -40,7 +40,8 @@
 #include <utility>
 
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
-#include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
+#include "llvmdsdl/CodeGen/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -2050,61 +2051,45 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto ownerPath = EmitterContext::relativeFilePath(def.info);
 
-    // Disambiguate before anything is rendered.
-    //
-    // Two types from different namespaces can share a short name -- `uavcan.si.unit.velocity.Vector3`
-    // and `uavcan.si.unit.angular_velocity.Vector3` are both `Vector3_1_0` -- and a file that
-    // references both would import the same identifier twice, which `tsc` rejects outright as a
-    // duplicate identifier. So the referenced set is collected first, short-name clashes are found,
-    // and the clashing types are given namespace-qualified local names. Installing the table on the
-    // context before any rendering is what keeps the import list, the type annotations, and the
-    // serialise/deserialize call names in agreement: they all resolve through ctx.typeName().
+    // Each definition the file may import claims its local name before anything is rendered, and the
+    // table installed on the context is what keeps the imports, the type annotations and the
+    // serialise and deserialise calls in agreement: they all resolve through ctx.typeName(). An
+    // import of a type brings its factory and its two body functions beside it, so a clash is
+    // judged on all four, against one another and against what the file declares: each section
+    // type with the functions named after it, and a service's alias.
+    const auto baseType = ctx.typeName(def.info);
+    const auto reqType  = renderSectionTypeName(Language::TypeScript, baseType, "request");
+    const auto respType = renderSectionTypeName(Language::TypeScript, baseType, "response");
     {
-        std::map<std::string, std::vector<const DiscoveredDefinition*>> byShortName;
-        const auto collectReferenced = [&](const SemanticSection& section) {
-            for (const auto& ref : collectCompositeDependencies(section, def.info, /*referencedOnly=*/true))
-            {
-                if (const auto* referenced = ctx.find(ref))
-                {
-                    auto&      bucket = byShortName[ctx.typeName(referenced->info)];
-                    const auto key    = EmitterContext::importAliasKey(referenced->info);
-                    const bool seen   = std::ranges::any_of(bucket, [&](const auto* other) {
-                        return EmitterContext::importAliasKey(*other) == key;
-                    });
-                    if (!seen)
-                    {
-                        bucket.push_back(&referenced->info);
-                    }
-                }
-            }
-        };
-        collectReferenced(def.request);
-        if (def.response)
+        ImportNameScope importNames(Language::TypeScript, [](const std::string& type) {
+            return std::vector<std::string>{type, tsMakeFn(type), tsSerializeIntoFn(type), tsDeserializeFromFn(type)};
+        });
+        for (const std::string& type :
+             def.isService ? std::vector<std::string>{reqType, respType} : std::vector<std::string>{baseType})
         {
-            collectReferenced(*def.response);
+            for (const std::string& name : {type,
+                                            tsMakeFn(type),
+                                            tsSerializeIntoFn(type),
+                                            tsDeserializeFromFn(type),
+                                            tsRuntimeSerializeFn(type),
+                                            tsRuntimeDeserializeFn(type)})
+            {
+                importNames.reserve(name);
+            }
         }
+        importNames.reserve(baseType);
 
         std::map<std::string, std::string> aliases;
-        for (const auto& [shortName, definitions] : byShortName)
+        for (const SemanticTypeRef& ref : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
         {
-            if (definitions.size() < 2U)
+            if (const auto* referenced = ctx.find(ref))
             {
-                continue;
-            }
-            for (const auto* info : definitions)
-            {
-                // Namespace as a suffix rather than a prefix. The serialise and deserialise call
-                // names are built by sticking a verb on the front of this, and a leading lowercase
-                // namespace would run the two together -- `deserializeuavcan_si_unit_...`. Keeping
-                // the type name where it has always been leaves those readable and leaves the
-                // recognisable part of the identifier first.
-                std::string qualified = shortName + "__";
-                for (const auto& component : info->namespaceComponents)
+                const std::string exported = ctx.typeName(referenced->info);
+                const std::string local    = importNames.claim(ref, exported, /*deprecated=*/false);
+                if (local != exported)
                 {
-                    qualified += component + "_";
+                    aliases.emplace(EmitterContext::importAliasKey(referenced->info), local);
                 }
-                qualified.pop_back();
-                aliases.emplace(EmitterContext::importAliasKey(*info), qualified);
             }
         }
         ctx.setImportAliases(std::move(aliases));
@@ -2154,9 +2139,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
     }
 
-    const auto baseType = ctx.typeName(def.info);
-    const auto reqType  = renderSectionTypeName(Language::TypeScript, baseType, "request");
-    const auto respType = renderSectionTypeName(Language::TypeScript, baseType, "response");
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
     spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
                          reqType);

@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
@@ -190,91 +191,6 @@ public:
         return rustTypeName(ref);
     }
 
-    /// @brief Forgets the imports of the module last rendered.
-    ///
-    /// A module's imports are its own: the same composite reached from two definitions may be
-    /// imported under one name in the first and an aliased one in the second.
-    void beginModuleImports() const
-    {
-        importAliases_.clear();
-        moduleDeclarations_.clear();
-    }
-
-    /// @brief Reserves @p name for a type the module being rendered declares itself.
-    ///
-    /// An import shares one namespace with the module's own items, so a definition whose composite
-    /// has the same short name -- `foo.Owner` holding a `bar.Owner` -- would import `Owner` beside
-    /// `pub struct Owner`. Reserving the declarations before any import is allocated is what moves
-    /// the import instead of the declaration: the declaration's name is the type's public API, and
-    /// the import's is private to the module.
-    /// @param[in] name A type name the module declares.
-    void reserveDeclaration(const llvm::StringRef name) const
-    {
-        moduleDeclarations_.insert(name.str());
-    }
-
-    /// @brief Claims a local name for @p ref in the module being rendered, and answers it.
-    ///
-    /// Two composites of different namespaces can share a short name -- `angular_velocity::Vector3`
-    /// and `velocity::Vector3` -- and a module that holds fields of both imports two `Vector3`.
-    /// A clash takes as much of its namespace, from the nearest component outwards, as tells it
-    /// apart. The namespace is Pascal-cased into the name rather than joined with an underscore,
-    /// since the alias is a type name like any other.
-    ///
-    /// The namespace runs out before the candidates do: a module holding three versions of one
-    /// type of a one-component namespace asks for `Foo`, then `NsFoo`, and then has nothing left to
-    /// qualify with. An ordinal follows, so a name is always reached.
-    std::string declareImport(const SemanticTypeRef& ref) const
-    {
-        const std::string path = rustTypePath(ref);
-        const std::string bare = rustDeclaredTypeName(ref);
-        if (const auto found = importAliases_.find(path); found != importAliases_.end())
-        {
-            return found->second;
-        }
-        const auto taken = [this](const std::string& candidate) {
-            return moduleDeclarations_.contains(candidate) ||
-                   llvm::any_of(importAliases_, [&](const auto& entry) { return entry.second == candidate; });
-        };
-        // A candidate is composed from the raw parts and projected once, so the projection decides
-        // the casing of the whole alias rather than of each part separately. Projecting a part on
-        // its own leaves its separator behind: a namespace component the prelude claims contributes
-        // `Default_`, and a deprecated dependency is imported by the name its implementation struct
-        // carries, which ends in `_`. Either way the alias reads `Default_Foo` or `Foo_2` -- legal,
-        // and not what a Rust type name looks like. The deprecation marker is re-applied after the
-        // projection, since it is a suffix the projection would fold away.
-        const auto* resolved   = find(ref);
-        const bool  deprecated = (resolved != nullptr) && resolved->request.deprecated;
-        const auto  compose    = [&](const std::string& raw) {
-            return renderDeclaredTypeName(codegenProjectIdentifier(Language::Rust, IdentifierRole::TypeName, raw),
-                                          deprecated);
-        };
-
-        std::string local = bare;
-        for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
-        {
-            std::string raw;
-            for (const auto& component : llvm::ArrayRef<std::string>(ref.namespaceComponents).take_back(depth))
-            {
-                raw += component + "_";
-            }
-            local = compose(raw + ref.shortName);
-        }
-        for (unsigned ordinal = 2U; taken(local); ++ordinal)
-        {
-            local = compose(ref.shortName + "_" + std::to_string(ordinal));
-        }
-        importAliases_[path] = local;
-        return local;
-    }
-
-    /// @brief The name the module being rendered spells @p ref by: its import's local name.
-    std::string rustLocalTypeName(const SemanticTypeRef& ref) const
-    {
-        const auto found = importAliases_.find(rustTypePath(ref));
-        return (found == importAliases_.end()) ? rustDeclaredTypeName(ref) : found->second;
-    }
-
     /// @brief The `use` path of the struct the definition @p ref names.
     std::string rustTypePath(const SemanticTypeRef& ref) const
     {
@@ -307,12 +223,6 @@ public:
 private:
     DefinitionIndex    index_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-
-    /// @brief The local name each imported type path is spelled by, in the module being rendered.
-    mutable std::map<std::string, std::string> importAliases_;
-
-    /// @brief The type names the module being rendered declares itself.
-    mutable std::set<std::string> moduleDeclarations_;
 };
 
 /// @brief How one Rust module names what it takes from other modules, recording each import.
@@ -324,9 +234,10 @@ private:
 class RustFileNames final
 {
 public:
-    RustFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownKey)
+    RustFileNames(const EmitterContext& ctx, ImportSet& imports, const ImportNameScope& names, std::string ownKey)
         : ctx_(ctx)
         , imports_(imports)
+        , names_(names)
         , ownKey_(std::move(ownKey))
     {
     }
@@ -351,7 +262,7 @@ public:
     /// @brief The struct of the definition @p ref, by the name this module imports it under.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        std::string local = ctx_.rustLocalTypeName(ref);
+        std::string local = names_.localName(ref, ctx_.rustDeclaredTypeName(ref));
         const auto* def   = ctx_.find(ref);
         if ((def != nullptr) && (definitionTypeKey(def->info) == ownKey_))
         {
@@ -364,9 +275,10 @@ public:
     }
 
 private:
-    const EmitterContext& ctx_;
-    ImportSet&            imports_;
-    std::string           ownKey_;
+    const EmitterContext&  ctx_;
+    ImportSet&             imports_;
+    const ImportNameScope& names_;
+    std::string            ownKey_;
 };
 
 /// @brief The `use` declarations of a module that names @p imports, in the order of their paths.
@@ -2104,7 +2016,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // The declarations and bodies first, naming what they take from other modules as they write
     // it; the `use` declarations are written after, from what was named.
     ImportSet                            imports;
-    const RustFileNames                  file(ctx, imports, definitionTypeKey(def.info));
+    ImportNameScope                      importNames(Language::Rust);
+    const RustFileNames                  file(ctx, imports, importNames, definitionTypeKey(def.info));
     const RustSpelling                   spelling(module, schema, lifetimeSections);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
@@ -2165,20 +2078,19 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     const auto selfKey = definitionTypeKey(def.info);
 
-    // What a previous module aliased says nothing here. The module's own declarations are reserved
-    // first, so a composite whose short name meets one of them is the side that takes an alias.
-    ctx.beginModuleImports();
+    // The module's own declarations are reserved first, so a composite whose short name meets one
+    // of them is the side that takes an alias.
     {
         const auto declaredBase = ctx.rustDeclaredTypeName(def);
-        ctx.reserveDeclaration(declaredBase);
-        ctx.reserveDeclaration(ctx.rustTypeName(def.info));
+        importNames.reserve(declaredBase);
+        importNames.reserve(ctx.rustTypeName(def.info));
         if (def.isService)
         {
             for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
             {
                 const auto sectionType = renderSectionTypeName(Language::Rust, declaredBase, section);
-                ctx.reserveDeclaration(sectionType);
-                ctx.reserveDeclaration(renderDeclaredTypeName(sectionType, def.request.deprecated));
+                importNames.reserve(sectionType);
+                importNames.reserve(renderDeclaredTypeName(sectionType, def.request.deprecated));
             }
         }
     }
@@ -2191,13 +2103,16 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             continue;
         }
 
-        SemanticTypeRef ref = depRef;
-        if (const auto* resolved = ctx.find(depRef))
+        SemanticTypeRef ref      = depRef;
+        const auto*     resolved = ctx.find(depRef);
+        if (resolved != nullptr)
         {
             ref.namespaceComponents = resolved->info.namespaceComponents;
             ref.shortName           = resolved->info.shortName;
         }
-        (void) ctx.declareImport(ref);
+        (void) importNames.claim(ref,
+                                 ctx.rustDeclaredTypeName(ref),
+                                 (resolved != nullptr) && resolved->request.deprecated);
     }
 
     // The helpers the plans call, ahead of the types whose bodies call them.

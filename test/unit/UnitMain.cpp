@@ -32,10 +32,10 @@ int main()
     ok      = runCHeaderRenderTests() && ok;
     ok      = runCodegenDiagnosticTextTests() && ok;
     ok      = runConstantLiteralRenderTests() && ok;
-    ok      = runCompositeImportGraphTests() && ok;
     ok      = runDefinitionDependenciesTests() && ok;
     ok      = runDefinitionIndexTests() && ok;
     ok      = runDefinitionPathProjectionTests() && ok;
+    ok      = runImportNameScopeTests() && ok;
     ok      = runImportSetTests() && ok;
     ok      = runHelperBodyPlanTests() && ok;
     ok      = runBodyValueNamingTests() && ok;

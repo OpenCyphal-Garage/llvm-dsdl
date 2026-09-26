@@ -227,9 +227,14 @@ needs no import, and `RustFileNames` is where that is decided. Rust had imported
 semantic-model walk found, in the walk's order. Its `use` declarations are in the order of their
 paths, which is rustfmt's.
 
-A language that gives an import a local name records the name the file spells; allocating that name
-within the file's scope, which Go does with its `pkg_` aliases, Rust in an import scope and
-TypeScript only among the imports themselves, belongs to the surface tree.
+A language that gives an import a local name records the name the file spells. Rust, TypeScript and
+Python claim it in one `ImportNameScope`, in `include/llvmdsdl/CodeGen/ImportNameScope.h`, which
+reserves what the file declares before any import is claimed, so the import is what moves, and
+qualifies a clash with as much of its namespace as tells it apart: `TemperatureScalar`. A TypeScript
+type brings its factory and its two body functions with it, so a clash there is judged on all four
+names. Python had claimed no name at all: a module holding three `Scalar`s imported each under one
+name, and every field was built as the last of them. Go aliases a package rather than a type, with
+`pkg_`. The scope, and Go's aliases with it, belongs to the surface tree.
 
 ## Where each language lands
 
@@ -710,6 +715,11 @@ root namespace and reported nothing. A rule the language states and no compiler 
 assertion on the name emitted, which is what `naming-stropping.txt` carries for that one. Compile
 gates and text assertions are two halves, not alternatives.
 
+Python diagnoses least. A module that imports three classes under one name, or a class under the
+name of the class it declares, byte-compiles and imports, and every use after the second binding
+reaches the wrong class. The gate reads each Python module's top-level bindings, and a name bound
+twice fails it.
+
 ## Acceptance
 
 | gate | phases | holds |
@@ -729,17 +739,6 @@ The last row is the existing rule, applied where it was not. `#pragma GCC diagno
 removed from generated C and C++ in #24 for the same reason the three Rust `#![allow]` lines were
 removed in #41: a suppression moves a build-policy decision into source the consumer compiles, and
 hides whatever else lands inside it.
-
-## Known uncovered
-
-**TypeScript does not survive a definition whose own name is its dependency's.**
-`adv.shadow.outer.Owner` holding an `adv.shadow.inner.Owner` imports `Owner`, `makeOwner` and the
-two body functions beside the ones it declares, and tsc answers `TS2440`. `projectCompositeImports`
-allocates no local name for an import, so TypeScript has no import scope at all -- the thing Rust
-was given in this branch. The axis is in the adversarial corpus behind `--include-self-shadow`,
-which is the reproduction; the gate leaves it off, so the gap is stated rather than gated.
-
-Giving TypeScript an import scope is the first piece of its own phase.
 
 ## Decisions
 

@@ -41,6 +41,8 @@
 #include <system_error>
 #include <utility>
 
+#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
+#include "llvmdsdl/CodeGen/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -309,9 +311,10 @@ private:
 class PyFileNames final
 {
 public:
-    PyFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownModule)
+    PyFileNames(const EmitterContext& ctx, ImportSet& imports, const ImportNameScope& names, std::string ownModule)
         : ctx_(ctx)
         , imports_(imports)
+        , names_(names)
         , ownModule_(std::move(ownModule))
     {
     }
@@ -321,13 +324,17 @@ public:
         return ctx_;
     }
 
-    /// @brief The class of the definition @p ref, imported from its module unless the module is
-    ///        this file.
+    /// @brief The class of the definition @p ref, imported from its module under the local name
+    ///        claimed for it, unless the module is this file.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        const std::string name   = ctx_.typeName(ref);
+        std::string       name   = ctx_.typeName(ref);
         const std::string module = ctx_.modulePath(ref);
-        return (module == ownModule_) ? name : imports_.member(ImportOrigin::Definition, module, name);
+        if (module == ownModule_)
+        {
+            return name;
+        }
+        return imports_.member(ImportOrigin::Definition, module, name, names_.localName(ref, name));
     }
 
     /// @brief The class of the type @p fullName names at @p major.@p minor.
@@ -383,9 +390,10 @@ private:
         return ctx_.packageName() + "._runtime_loader";
     }
 
-    const EmitterContext& ctx_;
-    ImportSet&            imports_;
-    std::string           ownModule_;
+    const EmitterContext&  ctx_;
+    ImportSet&             imports_;
+    const ImportNameScope& names_;
+    std::string            ownModule_;
 };
 
 /// @brief The import block of a Python file that names @p imports: the standard library's, then the
@@ -1990,16 +1998,28 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.line("from __future__ import annotations");
     head.blank();
 
-    // The file is rendered first and its imports written after, from what it named.
+    // The file is rendered first and its imports written after, from what it named. Each definition
+    // the file may import claims its local name before, apart from the classes the file declares.
+    const auto      baseType = ctx.typeName(def.info);
+    ImportNameScope importNames(Language::Python);
+    importNames.reserve(baseType);
+    if (def.isService)
+    {
+        importNames.reserve(renderSectionTypeName(Language::Python, baseType, "request"));
+        importNames.reserve(renderSectionTypeName(Language::Python, baseType, "response"));
+    }
+    for (const SemanticTypeRef& ref : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+    {
+        (void) importNames.claim(ref, ctx.typeName(ref), /*deprecated=*/false);
+    }
     ImportSet          imports;
-    const PyFileNames  file(ctx, imports, ctx.modulePath(def.info));
+    const PyFileNames  file(ctx, imports, importNames, ctx.modulePath(def.info));
     std::ostringstream body;
     SourceWriter       w        = makePyWriter(body);
     const auto         assemble = [&]() -> std::string {
         out << renderPythonImports(imports) << body.str();
         return out.str();
     };
-    const auto baseType = ctx.typeName(def.info);
     w.line("LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\"");
     w.line("DSDL_FULL_NAME = \"" + def.info.fullName + "\"");
     w.line("DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "True" : "False"));
