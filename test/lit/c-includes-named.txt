@@ -1,6 +1,7 @@
 # A C file includes the headers that declare the names it writes. A doc comment that mentions a
 # standard function names nothing, and an implementation file includes its own header first and the
-# runtime where a body calls it.
+# runtime where a body calls it. The own header declares the bodies, so the implementation file
+# declares only its helpers.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf '# Named in prose, memcpy( and memset( are not includes.\nuint8 value\n@sealed\n' > %t/dsdl/ns/Quiet.1.0.dsdl
@@ -26,6 +27,7 @@
 # SOURCE-EMPTY:
 # SOURCE-NEXT: #include "dsdl_runtime.h"
 # SOURCE-EMPTY:
+# SOURCE-NOT:  {{^[^ ].*_ir_\(.*\);$}}
 # SOURCE:      dsdl_runtime_
 #
 # EMPTY:      #include "ns/Empty_1_0.h"

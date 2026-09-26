@@ -1167,43 +1167,17 @@ public:
         return {object, "buffer", "inout_buffer_size_bytes"};
     }
 
-    /// @brief The declaration of @p fn, so a body may call one defined after it.
-    [[nodiscard]] std::string declarationOf(mlir::func::FuncOp fn) const
+    /// @brief The declaration of the helper @p fn, so a body may call it before it is defined.
+    [[nodiscard]] std::string helperDeclaration(mlir::func::FuncOp fn) const
     {
-        const auto               direction = planBodyDirection(fn);
-        const std::string        name      = fn.getSymName().str();
-        std::string              rendered;
-        std::vector<std::string> parameters;
-        if (!direction)
+        std::string parameters;
+        for (const mlir::BlockArgument argument : fn.getArguments())
         {
-            for (const mlir::BlockArgument argument : fn.getArguments())
-            {
-                parameters.push_back("p" + std::to_string(argument.getArgNumber()));
-            }
+            parameters += (parameters.empty() ? "" : ", ") + typeName(argument.getType()) + " p" +
+                          std::to_string(argument.getArgNumber());
         }
-        else if ((*direction == "get") || (*direction == "set"))
-        {
-            parameters = accessorParameters(fn, *direction == "get");
-        }
-        else
-        {
-            parameters.emplace_back((*direction == "serialize") ? "obj" : "out_obj");
-            if (*direction != "initialize")
-            {
-                parameters.emplace_back("buffer");
-                parameters.emplace_back("inout_buffer_size_bytes");
-            }
-        }
-        const bool accessor = direction && ((*direction == "get") || (*direction == "set"));
-        for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
-        {
-            rendered += (rendered.empty() ? "" : ", ") +
-                        (accessor ? accessorTypeName(argument.getType()) : typeName(argument.getType())) + " " +
-                        parameter;
-        }
-        const mlir::Type result = fn.getFunctionType().getResult(0);
-        return (accessor ? accessorTypeName(result) : typeName(result)) + " " + name + "(" +
-               (rendered.empty() ? "void" : rendered) + ");";
+        return typeName(fn.getFunctionType().getResult(0)) + " " + fn.getSymName().str() + "(" +
+               (parameters.empty() ? "void" : parameters) + ");";
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -2246,13 +2220,21 @@ llvm::Error emit(const SemanticModule& semantic,
                     return llvm::createStringError(llvm::inconvertibleErrorCode(), "C body translation failed");
                 }
             }
-            // Declared before any of them is defined: a body calls a helper, and a helper the
-            // lowering built may be defined after the body that reaches it.
+            // A helper is declared before any function is defined, since the lowering may define
+            // it after the body that calls it. The file's own header declares the bodies.
+            bool declared = false;
             for (const mlir::func::FuncOp fn : functions)
             {
-                declarations.line(spelling.declarationOf(fn));
+                if (!planBodyDirection(fn))
+                {
+                    declarations.line(spelling.helperDeclaration(fn));
+                    declared = true;
+                }
             }
-            declarations.blank();
+            if (declared)
+            {
+                declarations.blank();
+            }
         }
         const std::string others  = renderIncludeLines(includes);
         const std::string emitted = "#include \"" + ownHeader + "\"\n\n" + (others.empty() ? "" : others + "\n") +

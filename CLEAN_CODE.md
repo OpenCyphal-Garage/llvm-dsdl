@@ -217,8 +217,9 @@ runtime included it, which `misc-include-cleaner` reported.
 
 C and C++ write their includes alike, in `c::renderIncludeLines`: three groups set apart by blank
 lines, the standard library's, a bound library's and the generated tree's own, each in the order of
-its paths. An implementation file includes its own header ahead of them, which declares every
-function it defines.
+its paths. An implementation file includes its own header ahead of them, which declares the bodies
+it defines; the file itself declares only its helpers, which the lowering may define after the body
+that calls them.
 
 Rust names through it: a nested definition's struct where a field or its default names it, under
 the local name its import is given. A standard or runtime name is written as its full path, which
@@ -476,7 +477,8 @@ The C and C++ judge was installed after the sweep, and read 4,808 findings over 
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
 one, and the C++, read at C++20 with the accessors taking spans, to 4,946. With each file including
 the headers that declare what it names, the C comes to 4,804 and the C++ to 4,461, and the C to
-4,803 once the runtime header includes only what it uses.
+4,803 once the runtime header includes only what it uses. An implementation file that declares only
+its helpers, and leaves its bodies to its header, takes the C to 3,990.
 
 What is left is per-language.
 
@@ -486,7 +488,6 @@ What is left is per-language.
 | 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
 | 1,497 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
 | 996 | Python | `E501` | long lines |
-| 813 | C | `readability-redundant-declaration` | a `.c` file declares again the bodies its header declares |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |

@@ -9,7 +9,6 @@
     "readability-identifier-naming": 2167,
     "readability-non-const-parameter": 5,
     "readability-redundant-casting": 92,
-    "readability-redundant-declaration": 813,
     "readability-redundant-parentheses": 123
   }
 }
