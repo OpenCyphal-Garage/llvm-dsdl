@@ -140,6 +140,33 @@ std::string packageNameFromPath(const std::string& path)
     return out;
 }
 
+/// @brief The receiver of @p typeName's methods: the initial of its head noun, the name's last word,
+///        as Go names a receiver for what its type is. `ListRequest` is `r` and `NodeID` is `i`.
+std::string goReceiverName(const llvm::StringRef typeName)
+{
+    std::size_t last = typeName.size();
+    while ((last > 0) && !llvm::isUpper(typeName[last - 1]))
+    {
+        --last;
+    }
+    if (last == 0)
+    {
+        return "o";
+    }
+    --last;
+    // A capital that a lower-case letter follows starts a word; one that ends the name, or a digit
+    // follows, ends an acronym, which is one word.
+    std::size_t start = last;
+    if ((last + 1 == typeName.size()) || !llvm::isLower(typeName[last + 1]))
+    {
+        while ((start > 0) && llvm::isUpper(typeName[start - 1]))
+        {
+            --start;
+        }
+    }
+    return std::string(1, llvm::toLower(typeName[start]));
+}
+
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
     return renderUnsignedStorageToken(Language::Go, bitLength);
@@ -664,10 +691,11 @@ public:
         {
             return openAccessor(w, fn, *direction == "get");
         }
-        const Plan& plan = planOf(fn.getArgument(0));
-        w.open("func (obj *" + plan.typeName + ") " + (*direction == "serialize" ? "Serialize" : "Deserialize") +
-               "(buffer []byte) (int, error) {");
-        return {"obj", "buffer"};
+        const Plan&       plan     = planOf(fn.getArgument(0));
+        const std::string receiver = goReceiverName(plan.typeName);
+        w.open("func (" + receiver + " *" + plan.typeName + ") " +
+               (*direction == "serialize" ? "Serialize" : "Deserialize") + "(buffer []byte) (int, error) {");
+        return {receiver, "buffer"};
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -2095,22 +2123,25 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         // The encoding package's interfaces, over the pair above. An object holding a view keeps the
         // bytes it reads, and encoding.BinaryUnmarshaler asks that the data not be kept, so such an
         // object reads a copy.
-        const bool keepsBuffer = ctx.holdsView(section);
+        const bool        keepsBuffer = ctx.holdsView(section);
+        const std::string receiver    = goReceiverName(typeName);
         w.blank();
-        w.line("// MarshalBinary answers the wire image of obj, as encoding.BinaryMarshaler asks.");
-        w.open("func (obj *" + typeName + ") MarshalBinary() ([]byte, error) {");
+        w.line("// MarshalBinary answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks.");
+        w.open("func (" + receiver + " *" + typeName + ") MarshalBinary() ([]byte, error) {");
         w.line("buffer := make([]byte, " + meta("SERIALIZATION_BUFFER_SIZE_BYTES") + ")");
-        w.line("n, err := obj.Serialize(buffer)");
+        w.line("used, err := " + receiver + ".Serialize(buffer)");
         w.open("if err != nil {");
         w.line("return nil, err");
         w.close("}");
-        w.line("return buffer[:n], nil");
+        w.line("return buffer[:used], nil");
         w.close("}");
         w.blank();
-        w.line(keepsBuffer ? "// UnmarshalBinary reads obj from a copy of its wire image, which obj's views would keep."
-                           : "// UnmarshalBinary reads obj from its wire image, as encoding.BinaryUnmarshaler asks.");
-        w.open("func (obj *" + typeName + ") UnmarshalBinary(data []byte) error {");
-        w.line(std::string{"_, err := obj.Deserialize("} + (keepsBuffer ? "bytes.Clone(data)" : "data") + ")");
+        w.line(keepsBuffer ? "// UnmarshalBinary reads " + receiver + " from a copy of its wire image, which " +
+                                 receiver + "'s views would keep."
+                           : "// UnmarshalBinary reads " + receiver +
+                                 " from its wire image, as encoding.BinaryUnmarshaler asks.");
+        w.open("func (" + receiver + " *" + typeName + ") UnmarshalBinary(data []byte) error {");
+        w.line("_, err := " + receiver + ".Deserialize(" + (keepsBuffer ? "bytes.Clone(data)" : "data") + ")");
         w.line("return err");
         w.close("}");
     }

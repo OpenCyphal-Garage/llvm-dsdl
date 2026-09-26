@@ -71,13 +71,13 @@
 # GO_NESTED:      var _ = [1]struct{}{}[unsafe.Sizeof(Nested{})-12]
 # GO_NESTED-NEXT: var _ = [1]struct{}{}[unsafe.Offsetof(Nested{}.Inner)-0]
 # GO_NESTED-NEXT: var _ = [1]struct{}{}[unsafe.Offsetof(Nested{}.Code)-8]
-# GO_NESTED:      func (obj *Nested) Serialize(
+# GO_NESTED:      func (n *Nested) Serialize(
 # GO_NESTED-NOT:  dsdlruntime.Set
-# GO_NESTED:      copy(buffer[:12], unsafe.Slice((*byte)(unsafe.Pointer(obj)), 12))
+# GO_NESTED:      copy(buffer[:12], unsafe.Slice((*byte)(unsafe.Pointer(n)), 12))
 # GO_NESTED-NOT:  dsdlruntime.Set
-# GO_NESTED:      func (obj *Nested) Deserialize(
+# GO_NESTED:      func (n *Nested) Deserialize(
 # GO_NESTED-NOT:  dsdlruntime.Get
-# GO_NESTED:      unsafe.Slice((*byte)(unsafe.Pointer(obj)), 12)
+# GO_NESTED:      unsafe.Slice((*byte)(unsafe.Pointer(n)), 12)
 # GO_NESTED-NOT:  dsdlruntime.Get
 # GO_NESTED:      func NestedGetCode(buffer []byte)
 

@@ -238,7 +238,8 @@ plan's arithmetic. A negative literal is spelled in the signed type it is compar
 constant conversion that overflows is a compile error. A `bool` member read as an integer goes
 through the runtime's `BoolToUint64`; a variable-length array is sized within its capacity by the
 runtime's `Resize`, which names no element type. A buffer is a slice, and a pointer into it is a
-sub-slice clamped to the buffer's end. Each type implements `encoding.BinaryMarshaler` and
+sub-slice clamped to the buffer's end. A method's receiver is the initial of its type's head noun,
+the name's last word. Each type implements `encoding.BinaryMarshaler` and
 `encoding.BinaryUnmarshaler` over `Serialize` and `Deserialize`; one holding a view, which
 `DefinitionIndex::holdsView` decides as it decides Rust's lifetime, unmarshals a copy of its data.
 The helpers are functions of the package. The C↔Go parity

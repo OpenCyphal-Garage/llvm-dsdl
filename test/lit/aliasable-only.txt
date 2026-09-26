@@ -72,11 +72,11 @@
 # Go: package-level accessors and no struct.
 # RUN: cat %t/go/fixtures_aliasable/vendor/vec3_1_0.go | FileCheck %s --check-prefix=GO_VEC3
 # GO_VEC3-NOT: type Vec3 struct
-# GO_VEC3-NOT: func (obj *Vec3) Serialize(
+# GO_VEC3-NOT: func (v *Vec3) Serialize(
 # GO_VEC3: func Vec3GetX(buffer []byte) float32 {
 # GO_VEC3: func Vec3SetX(buffer []byte, value float32) error {
 # GO_VEC3-NOT: type Vec3 struct
-# GO_VEC3-NOT: func (obj *Vec3) Deserialize(
+# GO_VEC3-NOT: func (v *Vec3) Deserialize(
 
 # The endianness guard belongs to the folded bodies, so the mode's file set has no `_host_image.go`.
 # RUN: %dsdlc --target-language go --list-outputs %S/fixtures_aliasable --outdir %t/go-all 2>&1 | FileCheck %s --check-prefix=GO_ALL

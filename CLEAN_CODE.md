@@ -46,8 +46,6 @@ internal linkage.
 namespaces. The free `List_Request_serialize_` duplicates the `serialize` member, so one operation
 has two public spellings.
 
-**Go** names the receiver `obj`.
-
 **Python** puts the type's facts in module-level `DSDL_*` constants rather than on the class they
 describe.
 
@@ -557,7 +555,8 @@ Go's types then took `MarshalBinary` and `UnmarshalBinary` over that pair, so ea
 `encoding` package's interfaces. A type holding a view unmarshals `bytes.Clone(data)`, since its
 views would keep the data the interface asks it not to keep. Whether a section holds a view,
 directly or through a composite it holds, is `DefinitionIndex::holdsView`, which Rust's lifetime
-reads too.
+reads too. A method's receiver is the initial of its type's head noun, the name's last word: `r`
+for `ListRequest`, `h` for `Heartbeat`, `i` for `NodeID`.
 
 The judges moved with it. TypeScript's `naming-convention` fell from 545 to 81, the `_bound0_` and
 `_result1_` the spelling had invented, and Python's `SIM108` from 164 to none, the branch each call
