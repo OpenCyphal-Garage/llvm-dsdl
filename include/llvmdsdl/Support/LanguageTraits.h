@@ -212,6 +212,11 @@ struct Composition final
     /// Rust declares either as a `mod`, and Python imports either as its package's attribute.
     bool fileAndDirectoryAreOneModule{};
 
+    /// @brief Whether a namespace is declared in the scope that holds its parent namespace's types.
+    ///
+    /// C++ declares `namespace Foo` beside `struct Foo`, and the two may not share a name.
+    bool namespaceAndTypeShareScope{};
+
     /// @brief Where a type's constants are declared.
     ConstantsScope constants{};
 

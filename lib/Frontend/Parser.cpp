@@ -1551,7 +1551,7 @@ llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      
     // is missing from the set, so the check would be reporting on a partial picture.
     if (!diagnostics.hasErrors())
     {
-        checkServiceSectionTypeNameCollisions(module.definitions, outputLanguages, typeNameVersioning, diagnostics);
+        checkScopedTypeNameCollisions(module.definitions, outputLanguages, typeNameVersioning, diagnostics);
     }
 
     if (diagnostics.hasErrors())

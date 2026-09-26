@@ -32,7 +32,7 @@ class DiagnosticEngine;
 /// @file
 /// @brief Discovery routines for locating and loading DSDL definitions.
 
-/// @brief Rejects a service section whose generated type name collides with another type's.
+/// @brief Rejects a generated type name that another name declared in its scope also takes.
 ///
 /// A service emits a type per section, named after the service with a suffix -- `Foo` gives
 /// `Foo_Request`. A sibling definition may be *called* `Foo_Request`, which is conformant DSDL, and
@@ -41,6 +41,10 @@ class DiagnosticEngine;
 ///
 /// A deprecated definition's C++ struct is declared as `<name>_`, with `<name>` a deprecated alias of
 /// it (@ref renderDeclaredTypeName), so that name is claimed as well.
+///
+/// Where the row's `namespaceAndTypeShareScope` is set, each namespace is claimed in its parent's
+/// scope beside the types: `ns.Foo` and a namespace `ns.Foo` are both C++'s `ns::Foo`, and so are
+/// `ns.Foo.1.0` and a namespace `ns.Foo_1_0` under @ref TypeNameVersioning::Versioned.
 ///
 /// Only where a language shares one scope across a namespace does this break a build -- C in its
 /// single global scope, C++ in the namespace, Go in the package. Rust, TypeScript and Python give
@@ -51,13 +55,13 @@ class DiagnosticEngine;
 ///
 /// @param[in] definitions Parsed definitions to check.
 /// @param[in] outputLanguages Languages whose output names are checked; empty disables the check.
-/// @param[in] versioning Whether generated type names carry the version. Under
-///            @ref TypeNameVersioning::Versioned the two names differ and nothing is reported.
+/// @param[in] versioning Whether generated type names carry the version, which decides the names
+///            compared and whether the diagnostic suggests `--versioned-type-names`.
 /// @param[in,out] diagnostics Diagnostic sink.
-void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
-                                           llvm::ArrayRef<LanguageTraits>   outputLanguages,
-                                           TypeNameVersioning               versioning,
-                                           DiagnosticEngine&                diagnostics);
+void checkScopedTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
+                                   llvm::ArrayRef<LanguageTraits>   outputLanguages,
+                                   TypeNameVersioning               versioning,
+                                   DiagnosticEngine&                diagnostics);
 
 /// @brief Discovers and loads every DSDL definition reachable from the given roots.
 ///
@@ -96,7 +100,7 @@ void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> defi
 ///
 /// It does *not* catch a service section colliding with a sibling type, because that needs to know
 /// which definitions are services and this runs before parsing. See
-/// @ref checkServiceSectionTypeNameCollisions.
+/// @ref checkScopedTypeNameCollisions.
 ///
 /// A rename that changes a path -- an escaped file or namespace name -- is reported as a note rather
 /// than silently applied, since it changes what a build has to reference.

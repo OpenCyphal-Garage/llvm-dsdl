@@ -391,6 +391,16 @@ the check cannot compute a name different from the one written. That call is als
 decides whether a section is named after the service at all: Rust reaches a section through the
 definition's module, so the section word alone is the name.
 
+The same pass claims each namespace in its parent's scope where the row's
+`namespaceAndTypeShareScope` is set. C++ declares a namespace beside the structs of its parent, so
+`ns.Foo` and a namespace `ns.Foo` are both `ns::Foo`, as are `ns.Foo.1.0` and a namespace
+`ns.Foo_1_0` under `--versioned-type-names`:
+
+```
+error: type name collision in generated output: 'ns.Foo' and namespace 'ns.Foo_1_0', which holds
+       'ns.Foo_1_0.X', both emit 'Foo_1_0' for target language 'cpp'; rename one of them
+```
+
 ### 6.1 Macros stay unique by construction
 
 C and C++ macros are global. Every generated macro is `<TypeName>_<MEMBER>`, and type names are
