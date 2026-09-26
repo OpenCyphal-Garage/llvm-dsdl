@@ -7,14 +7,38 @@
 
 #include <iostream>
 #include <optional>
+#include <string>
+#include <vector>
 
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CIncludes.h"
 
 #include "UnitTests.h"
 
+namespace
+{
+
+/// @brief The paths of the headers @p includes recorded, in its order.
+std::vector<std::string> pathsOf(const llvmdsdl::ImportSet& includes)
+{
+    std::vector<std::string> paths;
+    for (const auto& module : includes.modules())
+    {
+        paths.push_back(module.path);
+    }
+    return paths;
+}
+
+}  // namespace
+
 bool runCHeaderRenderTests()
 {
+    // The text names what it takes from other headers through the file it is written into.
+    llvmdsdl::ImportSet                    metadataIncludes;
+    const llvmdsdl::emitter::c::CFileNames metadataFile(metadataIncludes, "uavcan/node/Heartbeat_1_0.h");
+
     llvmdsdl::SectionMetadata metadata;
     metadata.fullName                     = "uavcan.node.Heartbeat";
     metadata.majorVersion                 = 1;
@@ -24,7 +48,8 @@ bool runCHeaderRenderTests()
     metadata.wireFlat                     = {true, "flat"};
     metadata.hostImage                    = {false, "storage-width"};
 
-    const auto metadataLines = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
+    const auto metadataLines =
+        llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata, metadataFile);
     if (metadataLines.size() != 10U)
     {
         std::cerr << "renderTypeMetadataMacros expected 10 lines\n";
@@ -68,8 +93,9 @@ bool runCHeaderRenderTests()
     }
 
     // A message that has a subject-ID declares it beside the flag that says it has one.
-    metadata.fixedPortId  = 7509U;
-    const auto withPortId = llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata);
+    metadata.fixedPortId = 7509U;
+    const auto withPortId =
+        llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata, metadataFile);
     if ((withPortId.size() != 11U) || (withPortId[10] != "#define uavcan__node__Heartbeat_FIXED_PORT_ID_ 7509U"))
     {
         std::cerr << "renderTypeMetadataMacros port-ID value mismatch\n";
@@ -78,7 +104,7 @@ bool runCHeaderRenderTests()
 
     // A service's request is not the type the service is reached through, so it declares neither.
     metadata.declaresPortId = false;
-    if (llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata).size() != 9U)
+    if (llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata, metadataFile).size() != 9U)
     {
         std::cerr << "renderTypeMetadataMacros emitted a port-ID for a section that declares none\n";
         return false;
@@ -88,7 +114,8 @@ bool runCHeaderRenderTests()
                                                                                       "uavcan.srv.NodeInfo",
                                                                                       2,
                                                                                       1,
-                                                                                      std::nullopt);
+                                                                                      std::nullopt,
+                                                                                      metadataFile);
     if (aliasIdentity.size() != 3U)
     {
         std::cerr << "renderServiceAliasIdentityMacros expected 3 lines\n";
@@ -111,7 +138,8 @@ bool runCHeaderRenderTests()
                                                                                         "uavcan.node.ExecuteCommand",
                                                                                         1,
                                                                                         3,
-                                                                                        435U);
+                                                                                        435U,
+                                                                                        metadataFile);
     if (aliasWithPortId.size() != 4U)
     {
         std::cerr << "renderServiceAliasIdentityMacros expected 4 lines with a port-ID\n";
@@ -159,8 +187,23 @@ bool runCHeaderRenderTests()
         return false;
     }
 
-    const auto wrappers =
-        llvmdsdl::emitter::c::renderServiceAliasWrapperLines("uavcan__srv__NodeInfo", "uavcan__srv__NodeInfo__Request");
+    // The verdicts and flags are `true` and `false`, which only <stdbool.h> declares.
+    if (pathsOf(metadataIncludes) != std::vector<std::string>{"<stdbool.h>"})
+    {
+        std::cerr << "renderTypeMetadataMacros recorded includes other than <stdbool.h>\n";
+        return false;
+    }
+
+    llvmdsdl::ImportSet                    wrapperIncludes;
+    const llvmdsdl::emitter::c::CFileNames wrapperFile(wrapperIncludes, "uavcan/srv/NodeInfo_1_0.h");
+    const auto wrappers = llvmdsdl::emitter::c::renderServiceAliasWrapperLines("uavcan__srv__NodeInfo",
+                                                                               "uavcan__srv__NodeInfo__Request",
+                                                                               wrapperFile);
+    if (pathsOf(wrapperIncludes) != std::vector<std::string>{"<stddef.h>", "<stdint.h>"})
+    {
+        std::cerr << "renderServiceAliasWrapperLines recorded includes other than <stddef.h> and <stdint.h>\n";
+        return false;
+    }
     // Serialise, deserialise and initialise, four lines each.
     if (wrappers.size() != 12U)
     {

@@ -28,12 +28,11 @@
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CIncludes.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
-#include <algorithm>
-#include <array>
 #include <cassert>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
@@ -469,49 +468,6 @@ private:
     const vocabulary::Vocabulary& vocabulary_;
     std::string                   ownHeader_;
 };
-
-/// @brief The group of a header's include block that a header from @p origin is written in.
-std::size_t includeGroup(const ImportOrigin origin)
-{
-    switch (origin)
-    {
-    case ImportOrigin::Standard:
-        return 0U;
-    case ImportOrigin::Library:
-        return 1U;
-    case ImportOrigin::Runtime:
-    case ImportOrigin::Definition:
-        return 2U;
-    }
-    llvm::report_fatal_error("C++ backend: an include from no origin");
-}
-
-/// @brief The `#include` lines of a header that names @p includes: the standard library's headers,
-///        then a bound library's, then the generated tree's own, each group in the order of its
-///        paths and set apart from the next by a blank line.
-std::string renderCppIncludes(const ImportSet& includes)
-{
-    std::array<std::vector<std::string>, 3> groups;
-    for (const ImportedModule& module : includes.modules())
-    {
-        groups.at(includeGroup(module.origin)).push_back(module.path);
-    }
-    std::string lines;
-    for (std::vector<std::string>& group : groups)
-    {
-        if (group.empty())
-        {
-            continue;
-        }
-        std::ranges::sort(group);
-        lines += lines.empty() ? "" : "\n";
-        for (const std::string& path : group)
-        {
-            lines += "#include " + path + "\n";
-        }
-    }
-    return lines;
-}
 
 std::string unsignedStorageType(const std::uint32_t bitLength, const CppFileNames& file)
 {
@@ -2551,7 +2507,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     emitNamespaceClose(w, def.info.namespaceComponents);
 
     const std::string declarations = body.str();
-    out << renderCppIncludes(includes);
+    out << llvmdsdl::emitter::c::renderIncludeLines(includes);
     out << "\n" << declarations;
     out << "\n#endif /* " << guard << " */\n";
     return out.str();

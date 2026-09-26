@@ -206,22 +206,25 @@ and operations from the headers the binding names, and a nested type from its ow
 declaration or a body names it. C++ had read its includes off the text, where the C runtime's
 functions matched the tokens that included `dsdl_runtime.hpp`, which includes the C runtime and
 declares none of them: `misc-include-cleaner`'s 485. A `pmr` header also included
-`<memory_resource>`, from which it names nothing. The includes are written in three groups set apart
-by blank lines, the standard library's, a bound library's and the generated tree's own, each in the
-order of its paths.
+`<memory_resource>`, from which it names nothing.
 
-C and Rust decide their imports as follows, and each is a way a file's text and its imports can
-disagree:
+C names through it: a standard name from the header the standard declares it in, a runtime name
+from `dsdl_runtime.h`, and a nested type or entry point from its own header where a declaration or a
+body names it. The header and the implementation file each record their own. C had read a header's
+includes off its text and walked the semantic model for its nested types, and included the standard
+library and the runtime in every implementation file, so the two whose bodies call nothing from the
+runtime included it, which `misc-include-cleaner` reported.
 
-| language | standard library | runtime | other definitions |
-|---|---|---|---|
-| C | a token scan in a header; unconditional in a `.c` file | the same | a semantic-model walk in a header; the calls a body spells, recorded, in a `.c` file |
-| Rust | none: every standard and runtime name is a full path | none | a semantic-model walk, into an import scope |
+C and C++ write their includes alike, in `c::renderIncludeLines`: three groups set apart by blank
+lines, the standard library's, a bound library's and the generated tree's own, each in the order of
+its paths. An implementation file includes its own header ahead of them, which declares every
+function it defines.
 
-Each moves onto the set in a change of its own. A language that gives an import a local name
-records the name the file spells; allocating that name within the file's scope, which Go does with
-its `pkg_` aliases, Rust in an import scope and TypeScript only among the imports themselves,
-belongs to the surface tree.
+Rust decides its imports apart from the set: every standard and runtime name is a full path, and a
+nested definition is found by a semantic-model walk into an import scope. It moves onto the set in a
+change of its own. A language that gives an import a local name records the name the file spells;
+allocating that name within the file's scope, which Go does with its `pkg_` aliases, Rust in an
+import scope and TypeScript only among the imports themselves, belongs to the surface tree.
 
 ## Where each language lands
 
@@ -467,8 +470,8 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
-one, and the C++, read at C++20 with the accessors taking spans, to 4,946. The C++ comes to 4,461
-with each header including the headers that declare what it names.
+one, and the C++, read at C++20 with the accessors taking spans, to 4,946. With each file including
+the headers that declare what it names, the C comes to 4,804 and the C++ to 4,461.
 
 What is left is per-language.
 

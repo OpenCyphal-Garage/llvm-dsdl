@@ -43,6 +43,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
@@ -53,7 +54,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinAttributeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <set>
 #include <utility>
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
@@ -61,6 +61,8 @@
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CIncludes.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -155,14 +157,14 @@ std::string valueToCExpr(const TypeExprAST& type, const Value& value)
     return renderConstantLiteral(Language::C, value, makeConstantTypeInfo(type));
 }
 
-std::string unsignedStorageType(const std::uint32_t bitLength)
+std::string unsignedStorageType(const std::uint32_t bitLength, const CFileNames& file)
 {
-    return renderUnsignedStorageToken(Language::C, bitLength);
+    return file.standard(renderUnsignedStorageToken(Language::C, bitLength));
 }
 
-std::string signedStorageType(const std::uint32_t bitLength)
+std::string signedStorageType(const std::uint32_t bitLength, const CFileNames& file)
 {
-    return renderSignedStorageToken(Language::C, bitLength);
+    return file.standard(renderSignedStorageToken(Language::C, bitLength));
 }
 
 class EmitterContext final
@@ -313,18 +315,18 @@ void emitAttachedDocC(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
-std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterContext& ctx, const CFileNames& file)
 {
     switch (type.scalarCategory)
     {
     case SemanticScalarCategory::Bool:
-        return "bool";
+        return file.standard("bool");
     case SemanticScalarCategory::Byte:
     case SemanticScalarCategory::Utf8:
     case SemanticScalarCategory::UnsignedInt:
-        return unsignedStorageType(type.bitLength);
+        return unsignedStorageType(type.bitLength, file);
     case SemanticScalarCategory::SignedInt:
-        return signedStorageType(type.bitLength);
+        return signedStorageType(type.bitLength, file);
     case SemanticScalarCategory::Float:
         if (type.bitLength == 64U)
         {
@@ -332,15 +334,17 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
         }
         return "float";
     case SemanticScalarCategory::Void:
-        return "uint8_t";
+        return file.standard("uint8_t");
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return renderCTagSpelling(ctx.cTypeName(*type.compositeType));
+            const auto* nested = ctx.find(*type.compositeType);
+            return file.declaredIn(nested ? EmitterContext::relativeHeaderPath(*nested) : std::string{},
+                                   renderCTagSpelling(ctx.cTypeName(*type.compositeType)));
         }
-        return "uint8_t";
+        return file.standard("uint8_t");
     }
-    return "uint8_t";
+    return file.standard("uint8_t");
 }
 
 /// @brief Declares the tag value that selects each of a union's options.
@@ -363,7 +367,10 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
     w.blank();
 }
 
-void emitArrayMacros(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
+void emitArrayMacros(SourceWriter&          w,
+                     const std::string&     typeName,
+                     const SemanticSection& section,
+                     const CFileNames&      file)
 {
     const NamingScope constScope = makeSectionConstantScope(Language::C, section, {});
     for (const auto& field : section.fields)
@@ -378,7 +385,7 @@ void emitArrayMacros(SourceWriter& w, const std::string& typeName, const Semanti
         w.line("#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
                std::to_string(field.resolvedType.arrayCapacity) + "U");
         w.line("#define " + typeName + "_" + named(ArrayMetadataKind::IsVariableLength) + " " +
-               (isVariableArray(field.resolvedType.arrayKind) ? "true" : "false"));
+               (isVariableArray(field.resolvedType.arrayKind) ? file.standard("true") : file.standard("false")));
     }
     if (!section.fields.empty())
     {
@@ -392,7 +399,8 @@ void emitSectionTypedef(SourceWriter&                         w,
                         const SectionMetadata&                metadata,
                         const EmitterContext&                 ctx,
                         const bool                            deprecatedAttribute,
-                        const mlir::dsdl::SerializationPlanOp plan)
+                        const mlir::dsdl::SerializationPlanOp plan,
+                        const CFileNames&                     file)
 {
     // One scope for the whole section: the keyword and claimed-name escapes make the projection
     // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serialiser
@@ -410,8 +418,8 @@ void emitSectionTypedef(SourceWriter&                         w,
 
         const auto cMember    = fieldScope.get(IdentifierRole::FieldName, field.name);
         const bool viewMember = std::ranges::find(metadata.viewMembers, field.name) != metadata.viewMembers.end();
-        const auto baseType =
-            viewMember ? std::string{"dsdl_runtime_view_t"} : cTypeFromFieldType(field.resolvedType, ctx);
+        const auto baseType   = viewMember ? std::string{file.runtime("dsdl_runtime_view_t")}
+                                           : cTypeFromFieldType(field.resolvedType, ctx, file);
 
         emitAttachedDocC(w, field.doc);
         if (viewMember)
@@ -434,8 +442,8 @@ void emitSectionTypedef(SourceWriter&                         w,
         {
             if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
             {
-                w.line("uint8_t " + cMember + "[(" + std::to_string(field.resolvedType.arrayCapacity) +
-                       "U + 7U) / 8U];");
+                w.line(file.standard("uint8_t") + " " + cMember + "[(" +
+                       std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U];");
             }
             else
             {
@@ -450,13 +458,14 @@ void emitSectionTypedef(SourceWriter&                         w,
         w.open("struct {");
         if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
         {
-            w.line("uint8_t bitpacked[(" + std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U];");
+            w.line(file.standard("uint8_t") + " bitpacked[(" + std::to_string(field.resolvedType.arrayCapacity) +
+                   "U + 7U) / 8U];");
         }
         else
         {
             w.line(baseType + " elements[" + std::to_string(field.resolvedType.arrayCapacity) + "U];");
         }
-        w.line("size_t count;");
+        w.line(file.standard("size_t") + " count;");
         w.close("} " + cMember + ";");
         ++emitted;
     }
@@ -465,13 +474,13 @@ void emitSectionTypedef(SourceWriter&                         w,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8_t truncates a wide tag and mis-dispatches.
-        w.line(unsignedStorageType(unionTagBits(plan)) + " _tag_;");
+        w.line(unsignedStorageType(unionTagBits(plan), file) + " _tag_;");
         ++emitted;
     }
 
     if (emitted == 0)
     {
-        w.line("uint8_t _dummy_;");
+        w.line(file.standard("uint8_t") + " _dummy_;");
     }
 
     if (deprecatedAttribute)
@@ -497,14 +506,14 @@ void emitSectionTypedef(SourceWriter&                         w,
     {
         const std::string tag = renderCTagSpelling(typeName);
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("DSDL_RUNTIME_STATIC_ASSERT(sizeof(" + tag +
+        w.line(file.runtime("DSDL_RUNTIME_STATIC_ASSERT") + "(sizeof(" + tag +
                ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + typeName +
                ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
             const std::string cMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
-            w.line("DSDL_RUNTIME_STATIC_ASSERT(offsetof(" + tag + ", " + cMember +
-                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + typeName + "." + cMember +
+            w.line(file.runtime("DSDL_RUNTIME_STATIC_ASSERT") + "(" + file.standard("offsetof") + "(" + tag + ", " +
+                   cMember + ") == " + std::to_string(member.offsetBytes) + "U, \"" + typeName + "." + cMember +
                    ": not at the offset its serialisation assumes\");");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
@@ -518,7 +527,10 @@ void emitSectionTypedef(SourceWriter&                         w,
     }
 }
 
-void emitSectionConstants(SourceWriter& w, const std::string& typeName, const SemanticSection& section)
+void emitSectionConstants(SourceWriter&          w,
+                          const std::string&     typeName,
+                          const SemanticSection& section,
+                          const CFileNames&      file)
 {
     // Two DSDL constants can project onto one macro token -- `foo_bar` and `FOO_BAR` both upper-case
     // to FOO_BAR -- and a duplicate `#define` silently takes the second value. The scope keeps them
@@ -529,8 +541,9 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     for (const auto& c : section.constants)
     {
         emitAttachedDocC(w, c.doc);
+        const std::string literal = valueToCExpr(c.type, c.value);
         w.line("#define " + typeName + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " (" +
-               valueToCExpr(c.type, c.value) + ")");
+               (std::holds_alternative<bool>(c.value.data) ? file.standard(literal) : literal) + ")");
     }
     if (!section.constants.empty())
     {
@@ -538,9 +551,12 @@ void emitSectionConstants(SourceWriter& w, const std::string& typeName, const Se
     }
 }
 
-void emitSectionMetadata(SourceWriter& w, const std::string& typeName, const SectionMetadata& metadata)
+void emitSectionMetadata(SourceWriter&          w,
+                         const std::string&     typeName,
+                         const SectionMetadata& metadata,
+                         const CFileNames&      file)
 {
-    for (const auto& line : renderTypeMetadataMacros(typeName, metadata))
+    for (const auto& line : renderTypeMetadataMacros(typeName, metadata, file))
     {
         w.line(line);
     }
@@ -554,7 +570,8 @@ void emitSectionMetadata(SourceWriter& w, const std::string& typeName, const Sec
 void emitUnionOptionWrappers(SourceWriter&          w,
                              const std::string&     typeName,
                              const SemanticSection& section,
-                             const SectionMetadata& metadata)
+                             const SectionMetadata& metadata,
+                             const CFileNames&      file)
 {
     if (!metadata.isUnion)
     {
@@ -570,10 +587,11 @@ void emitUnionOptionWrappers(SourceWriter&          w,
             typeName + "_" + tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::C, option.name));
 
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("static inline bool " + typeName + "__is_" + member + "_(const " + objectType + "* const obj)");
+        w.line("static inline " + file.standard("bool") + " " + typeName + "__is_" + member + "_(const " + objectType +
+               "* const obj)");
         // NOLINTEND(performance-inefficient-string-concatenation)
         w.open("{");
-        w.line("return (obj != NULL) && (obj->_tag_ == " + tag + ");");
+        w.line("return (obj != " + file.standard("NULL") + ") && (obj->_tag_ == " + tag + ");");
         w.close("}");
         w.blank();
 
@@ -581,7 +599,7 @@ void emitUnionOptionWrappers(SourceWriter&          w,
         w.line("static inline void " + typeName + "__select_" + member + "_(" + objectType + "* const obj)");
         // NOLINTEND(performance-inefficient-string-concatenation)
         w.open("{");
-        w.open("if (obj != NULL) {");
+        w.open("if (obj != " + file.standard("NULL") + ") {");
         w.line("obj->_tag_ = " + tag + ";");
         w.close("}");
         w.close("}");
@@ -591,6 +609,7 @@ void emitUnionOptionWrappers(SourceWriter&          w,
 
 void emitSection(SourceWriter&              w,
                  const EmitterContext&      ctx,
+                 const CFileNames&          file,
                  const SemanticDefinition&  def,
                  const std::string&         typeName,
                  const std::string&         sectionName,
@@ -600,7 +619,7 @@ void emitSection(SourceWriter&              w,
 {
     const SectionMetadata                 metadata = sectionMetadata(def.info, section, schema, sectionName);
     const mlir::dsdl::SerializationPlanOp plan     = sectionPlan(schema, sectionName);
-    emitSectionMetadata(w, typeName, metadata);
+    emitSectionMetadata(w, typeName, metadata, file);
     // A folded body moves the object as the wire's bytes, which holds only where the host orders
     // them as the wire does. This source is compiled for a target the generator did not see.
     if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
@@ -611,12 +630,12 @@ void emitSection(SourceWriter&              w,
         }
         w.blank();
     }
-    emitSectionConstants(w, typeName, section);
+    emitSectionConstants(w, typeName, section, file);
     const auto irStem = sectionIRFunctionStem(def, sectionName);
     // The object type and its serialisation, which an accessors-only run leaves out.
     if (!ctx.accessorsOnly())
     {
-        emitArrayMacros(w, typeName, section);
+        emitArrayMacros(w, typeName, section, file);
         emitUnionOptionTagMacros(w, typeName, section, metadata);
         emitAttachedDocC(w,
                          docWithDeprecationNotice(typeDoc,
@@ -630,35 +649,41 @@ void emitSection(SourceWriter&              w,
                            metadata,
                            ctx,
                            section.deprecated && ctx.emitDeprecationAttributes(),
-                           plan);
+                           plan,
+                           file);
 
         const auto objectType = renderCTagSpelling(typeName);
-        w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
-               "* obj, uint8_t* buffer, size_t* "
+        w.line(file.standard("int8_t") + " " + irStem + "__serialize_ir_(const " + objectType + "* obj, " +
+               file.standard("uint8_t") + "* buffer, " + file.standard("size_t") +
+               "* "
                "inout_buffer_size_bytes);");
-        w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
-               "* out_obj, const uint8_t* buffer, size_t* "
+        w.line(file.standard("int8_t") + " " + irStem + "__deserialize_ir_(" + objectType + "* out_obj, const " +
+               file.standard("uint8_t") + "* buffer, " + file.standard("size_t") +
+               "* "
                "inout_buffer_size_bytes);");
-        w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
+        w.line(file.standard("int8_t") + " " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
         w.blank();
 
-        w.line("static inline int8_t " + typeName + "__serialize_(const " + objectType +
-               "* const obj, uint8_t* const buffer, size_t* const "
+        w.line("static inline " + file.standard("int8_t") + " " + typeName + "__serialize_(const " + objectType +
+               "* const obj, " + file.standard("uint8_t") + "* const buffer, " + file.standard("size_t") +
+               "* const "
                "inout_buffer_size_bytes)");
         w.open("{");
         w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
         w.close("}");
         w.blank();
 
-        w.line("static inline int8_t " + typeName + "__deserialize_(" + objectType +
-               "* const out_obj, const uint8_t* buffer, size_t* const "
+        w.line("static inline " + file.standard("int8_t") + " " + typeName + "__deserialize_(" + objectType +
+               "* const out_obj, const " + file.standard("uint8_t") + "* buffer, " + file.standard("size_t") +
+               "* const "
                "inout_buffer_size_bytes)");
         w.open("{");
         w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
         w.close("}");
         w.blank();
 
-        w.line("static inline int8_t " + typeName + "__initialize_(" + objectType + "* const out_obj)");
+        w.line("static inline " + file.standard("int8_t") + " " + typeName + "__initialize_(" + objectType +
+               "* const out_obj)");
         w.open("{");
         w.line("return " + irStem + "__initialize_ir_(out_obj);");
         w.close("}");
@@ -707,26 +732,28 @@ void emitSection(SourceWriter&              w,
                 continue;
             }
             const bool        indexed   = kind == ArrayKind::Fixed;
-            const std::string irIndex   = indexed ? ", int64_t index" : "";
-            const std::string cIndex    = indexed ? ", const size_t index" : "";
-            const std::string passIndex = indexed ? ", (int64_t) index" : "";
-            const std::string size      = "(int64_t) buffer_size_bytes";
+            const std::string irIndex   = indexed ? ", " + file.standard("int64_t") + " index" : "";
+            const std::string cIndex    = indexed ? ", const " + file.standard("size_t") + " index" : "";
+            const std::string passIndex = indexed ? ", (" + file.standard("int64_t") + ") index" : "";
+            const std::string size      = "(" + file.standard("int64_t") + ") buffer_size_bytes";
             if (type.scalarCategory == SemanticScalarCategory::Composite)
             {
                 // A nested composite's getter answers the buffer from the field's offset and, through
                 // the pointer, what remains of this one, for the nested type's own accessors.
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 const std::string irGet = irStem + "__get_" + name + "_ir_";
-                w.line("const uint8_t* " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex +
-                       ", size_t* out_size);");
+                w.line("const " + file.standard("uint8_t") + "* " + irGet + "(const " + file.standard("uint8_t") +
+                       "* buffer, " + file.standard("int64_t") + " buffer_size_bytes" + irIndex + ", " +
+                       file.standard("size_t") + "* out_size);");
                 w.blank();
-                w.line("static inline const uint8_t* " + typeName + "__get_" + cMember +
-                       "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex +
-                       ", size_t* const out_size)");
+                w.line("static inline const " + file.standard("uint8_t") + "* " + typeName + "__get_" + cMember +
+                       "_(const " + file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
+                       " buffer_size_bytes" + cIndex + ", " + file.standard("size_t") + "* const out_size)");
                 w.open("{");
-                w.line("size_t               sub_size = 0;");
-                w.line("const uint8_t* const sub      = " + irGet + "(buffer, " + size + passIndex + ", &sub_size);");
-                w.line("if (out_size != NULL)");
+                w.line(file.standard("size_t") + "               sub_size = 0;");
+                w.line("const " + file.standard("uint8_t") + "* const sub      = " + irGet + "(buffer, " + size +
+                       passIndex + ", &sub_size);");
+                w.line("if (out_size != " + file.standard("NULL") + ")");
                 w.open("{");
                 w.line("*out_size = sub_size;");
                 w.close("}");
@@ -738,21 +765,23 @@ void emitSection(SourceWriter&              w,
             }
             const bool  isFloat = type.scalarCategory == SemanticScalarCategory::Float;
             const bool  isBool  = type.scalarCategory == SemanticScalarCategory::Bool;
-            std::string irType  = "int64_t";
+            std::string irType  = file.standard("int64_t");
             if (isFloat)
             {
                 irType = (type.bitLength <= 32) ? "float" : "double";
             }
-            const std::string cType = cTypeFromFieldType(type, ctx);
+            const std::string cType = cTypeFromFieldType(type, ctx, file);
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
             const std::string irGet = irStem + "__get_" + name + "_ir_";
             const std::string irSet = irStem + "__set_" + name + "_ir_";
-            w.line(irType + " " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ");");
-            w.line("int8_t " + irSet + "(uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ", " + irType +
-                   " value);");
+            w.line(irType + " " + irGet + "(const " + file.standard("uint8_t") + "* buffer, " +
+                   file.standard("int64_t") + " buffer_size_bytes" + irIndex + ");");
+            w.line(file.standard("int8_t") + " " + irSet + "(" + file.standard("uint8_t") + "* buffer, " +
+                   file.standard("int64_t") + " buffer_size_bytes" + irIndex + ", " + irType + " value);");
             w.blank();
-            w.line("static inline " + cType + " " + typeName + "__get_" + cMember +
-                   "_(const uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ")");
+            w.line("static inline " + cType + " " + typeName + "__get_" + cMember + "_(const " +
+                   file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
+                   " buffer_size_bytes" + cIndex + ")");
             w.open("{");
             if (isBool)
             {
@@ -764,11 +793,12 @@ void emitSection(SourceWriter&              w,
             }
             w.close("}");
             w.blank();
-            w.line("static inline int8_t " + typeName + "__set_" + cMember +
-                   "_(uint8_t* const buffer, const size_t buffer_size_bytes" + cIndex + ", const " + cType + " value)");
+            w.line("static inline " + file.standard("int8_t") + " " + typeName + "__set_" + cMember + "_(" +
+                   file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
+                   " buffer_size_bytes" + cIndex + ", const " + cType + " value)");
             w.open("{");
-            w.line("return " + irSet + "(buffer, (int64_t) buffer_size_bytes" + passIndex + ", (" + irType + ") " +
-                   (isBool ? std::string("(value ? 1 : 0)") : std::string("value")) + ");");
+            w.line("return " + irSet + "(buffer, (" + file.standard("int64_t") + ") buffer_size_bytes" + passIndex +
+                   ", (" + irType + ") " + (isBool ? std::string("(value ? 1 : 0)") : std::string("value")) + ");");
             w.close("}");
             w.blank();
             // NOLINTEND(performance-inefficient-string-concatenation)
@@ -777,7 +807,7 @@ void emitSection(SourceWriter&              w,
 
     if (!ctx.accessorsOnly())
     {
-        emitUnionOptionWrappers(w, typeName, section, metadata);
+        emitUnionOptionWrappers(w, typeName, section, metadata, file);
     }
 }
 
@@ -794,7 +824,10 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
 {
     const mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     std::ostringstream         out;
-    // The declarations are rendered first, so that the includes can be read off them.
+    // The declarations first, naming what they take from other headers as they write it; the
+    // includes are written after, from what was named.
+    ImportSet          includes;
+    const CFileNames   file(includes, EmitterContext::relativeHeaderPath(def));
     std::ostringstream body;
     SourceWriter       w            = makeCWriter(body);
     const auto         guard        = headerGuard(def.info);
@@ -831,16 +864,17 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                                                                  def.info.fullName,
                                                                  def.info.majorVersion,
                                                                  def.info.minorVersion,
-                                                                 def.info.fixedPortId))
+                                                                 def.info.fixedPortId,
+                                                                 file))
         {
             w.line(line);
         }
         w.blank();
 
-        emitSection(w, ctx, def, requestType, "request", def.request, def.doc, schema);
+        emitSection(w, ctx, file, def, requestType, "request", def.request, def.doc, schema);
         if (def.response)
         {
-            emitSection(w, ctx, def, responseType, "response", *def.response, def.doc, schema);
+            emitSection(w, ctx, file, def, responseType, "response", *def.response, def.doc, schema);
         }
         for (const auto& line :
              renderServiceAliasBridgeLines(baseTypeName,
@@ -854,7 +888,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         // The wrappers call the request's serialisation, which an accessors-only run does not emit.
         if (!ctx.accessorsOnly())
         {
-            for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType))
+            for (const auto& line : renderServiceAliasWrapperLines(baseTypeName, requestType, file))
             {
                 w.line(line);
             }
@@ -862,31 +896,11 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     else
     {
-        emitSection(w, ctx, def, baseTypeName, "", def.request, def.doc, schema);
+        emitSection(w, ctx, file, def, baseTypeName, "", def.request, def.doc, schema);
     }
 
-    // Each header is included where the declarations take something from it. A nested type's
-    // header is included where this header names the type: a field held as a view names none,
-    // and an accessors-only header names none, since its composite getters answer bytes.
-    const std::string                         declarations = body.str();
-    static const std::vector<IncludeProvider> standardHeaders{
-        {"<stdbool.h>", {"bool", "true", "false"}},
-        {"<stddef.h>", {"size_t", "offsetof("}},
-        {"<stdint.h>", {"int8_t", "int16_t", "int32_t", "int64_t"}},
-        {"<string.h>", {"memcpy(", "memset(", "memcmp(", "memmove("}},
-        {"\"dsdl_runtime.h\"", {"dsdl_runtime_", "DSDL_RUNTIME_"}},
-    };
-    out << includeLinesFor(declarations, standardHeaders);
-    if (!ctx.accessorsOnly())
-    {
-        for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-        {
-            if (const auto* dep = ctx.find(depRef))
-            {
-                out << "#include \"" << EmitterContext::relativeHeaderPath(*dep) << "\"\n";
-            }
-        }
-    }
+    const std::string declarations = body.str();
+    out << renderIncludeLines(includes);
     out << "\n" << declarations;
     out << "#endif /* " << guard << " */\n";
     return out.str();
@@ -1016,8 +1030,9 @@ struct CBodyPlan final
 class CSpelling final : public BodySpelling
 {
 public:
-    CSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
+    CSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const CFileNames& file)
         : module_(module)
+        , file_(file)
     {
         if (const auto nested = module->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.c_nested_headers"))
         {
@@ -1138,22 +1153,18 @@ public:
         const std::string object = (*direction == "serialize") ? "obj" : "out_obj";
         if (*direction == "initialize")
         {
-            w.line("int8_t " + name + "(" + typeName(fn.getArgument(0).getType()) + " " + object + ")");
+            w.line(file_.standard("int8_t") + " " + name + "(" + typeName(fn.getArgument(0).getType()) + " " + object +
+                   ")");
             w.open("{");
             markUnused(w, fn, {object});
             return {object};
         }
-        w.line("int8_t " + name + "(" + typeName(fn.getArgument(0).getType()) + " " + object + ", " +
-               typeName(fn.getArgument(1).getType()) + " buffer, size_t* inout_buffer_size_bytes)");
+        w.line(file_.standard("int8_t") + " " + name + "(" + typeName(fn.getArgument(0).getType()) + " " + object +
+               ", " + typeName(fn.getArgument(1).getType()) + " buffer, " + file_.standard("size_t") +
+               "* inout_buffer_size_bytes)");
         w.open("{");
         markUnused(w, fn, {object, "buffer", "inout_buffer_size_bytes"});
         return {object, "buffer", "inout_buffer_size_bytes"};
-    }
-
-    /// @brief The headers declaring the nested entry points the bodies spelt so far call.
-    [[nodiscard]] const std::set<std::string>& calledHeaders() const
-    {
-        return called_;
     }
 
     /// @brief The declaration of @p fn, so a body may call one defined after it.
@@ -1291,7 +1302,7 @@ public:
 
     void openLoop(SourceWriter& w) const override
     {
-        w.open("while (true) {");
+        w.open("while (" + file_.standard("true") + ") {");
     }
 
     void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1307,8 +1318,8 @@ public:
                  const llvm::StringRef upper,
                  const llvm::StringRef step) const override
     {
-        w.open("for (size_t " + variable.str() + " = " + lower.str() + "; " + variable.str() + " < " + upper.str() +
-               "; " + variable.str() + " += " + step.str() + ") {");
+        w.open("for (" + file_.standard("size_t") + " " + variable.str() + " = " + lower.str() + "; " + variable.str() +
+               " < " + upper.str() + "; " + variable.str() + " += " + step.str() + ") {");
     }
 
     void closeBlock(SourceWriter& w) const override
@@ -1330,7 +1341,7 @@ public:
             const unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
             if (width == 1)
             {
-                return integer.getValue().isZero() ? "false" : "true";
+                return integer.getValue().isZero() ? file_.standard("false") : file_.standard("true");
             }
             if (width == 64)
             {
@@ -1441,25 +1452,27 @@ public:
 
     [[nodiscard]] std::string isNotNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
-        return "(" + names(op.getPointer()) + " != NULL)";
+        return "(" + names(op.getPointer()) + " != " + file_.standard("NULL") + ")";
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp op, const ValueNames& names) const override
     {
-        return "(" + names(op.getPointer()) + " == NULL)";
+        return "(" + names(op.getPointer()) + " == " + file_.standard("NULL") + ")";
     }
 
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
     {
         // The count survives the round trip through the index type as a signed quantity.
         const std::string value = names(op.getValue());
-        return "((uint64_t) (ptrdiff_t) " + value + " == " + value + ")";
+        return "((" + file_.standard("uint64_t") + ") (" + file_.standard("ptrdiff_t") + ") " + value + " == " + value +
+               ")";
     }
 
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
     {
         const std::string buffer = names(op.getBuffer());
-        return "((" + buffer + " == NULL) ? (const uint8_t*) \"\" : " + buffer + ")";
+        return "((" + buffer + " == " + file_.standard("NULL") + ") ? (const " + file_.standard("uint8_t") +
+               "*) \"\" : " + buffer + ")";
     }
 
     [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
@@ -1521,17 +1534,18 @@ public:
 
     [[nodiscard]] std::string arrayLength(mlir::dsdl::ArrayLengthOp op, const ValueNames& names) const override
     {
-        return "(uint64_t) " + memberPath(op.getObject(), op.getMember(), names) + ".count";
+        return "(" + file_.standard("uint64_t") + ") " + memberPath(op.getObject(), op.getMember(), names) + ".count";
     }
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
-        w.line(memberPath(op.getObject(), op.getMember(), names) + ".count = (size_t) " + names(op.getValue()) + ";");
+        w.line(memberPath(op.getObject(), op.getMember(), names) + ".count = (" + file_.standard("size_t") + ") " +
+               names(op.getValue()) + ";");
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "(uint64_t) " + names(op.getObject()) + "->_tag_";
+        return "(" + file_.standard("uint64_t") + ") " + names(op.getObject()) + "->_tag_";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
@@ -1540,7 +1554,7 @@ public:
         // more than a byte, and narrowing the write here would dispatch the wrong arm.
         const CBodyMember* const found = memberOf(op.getObject(), "_tag_");
         const std::string        storage =
-            unsignedStorageType(static_cast<std::uint32_t>((found == nullptr) ? 8 : found->bitLength));
+            unsignedStorageType(static_cast<std::uint32_t>((found == nullptr) ? 8 : found->bitLength), file_);
         w.line(names(op.getObject()) + "->_tag_ = (" + storage + ") " + names(op.getValue()) + ";");
     }
 
@@ -1552,13 +1566,15 @@ public:
         const bool integral = !mlir::isa<mlir::FloatType>(valueType) && (op.getWidth() != 1);
         // A signed field's primitive takes a signed carrier, and the plan's i64 is spelt unsigned;
         // converting it implicitly is implementation-defined above INT64_MAX.
-        const std::string value =
-            (integral && op.getIsSigned()) ? ("(int64_t) " + names(op.getValue())) : names(op.getValue());
-        std::string arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) + ", (size_t) " +
-                                names(op.getBitOffset()) + ", " + value;
+        const std::string value     = (integral && op.getIsSigned())
+                                          ? ("(" + file_.standard("int64_t") + ") " + names(op.getValue()))
+                                          : names(op.getValue());
+        std::string       arguments = names(op.getBuffer()) + ", (" + file_.standard("size_t") + ") " +
+                                      names(op.getBufferSizeBytes()) + ", (" + file_.standard("size_t") + ") " +
+                                      names(op.getBitOffset()) + ", " + value;
         if (integral)
         {
-            arguments += ", (uint8_t) " + std::to_string(op.getWidth());
+            arguments += ", (" + file_.standard("uint8_t") + ") " + std::to_string(op.getWidth());
         }
         return primitive + "(" + arguments + ")";
     }
@@ -1568,11 +1584,12 @@ public:
         const mlir::Type  valueType = op.getValue().getType();
         const std::string primitive =
             runtimePrimitive(false, valueType, static_cast<std::int64_t>(op.getWidth()), op.getIsSigned());
-        std::string arguments = names(op.getBuffer()) + ", (size_t) " + names(op.getBufferSizeBytes()) + ", (size_t) " +
+        std::string arguments = names(op.getBuffer()) + ", (" + file_.standard("size_t") + ") " +
+                                names(op.getBufferSizeBytes()) + ", (" + file_.standard("size_t") + ") " +
                                 names(op.getBitOffset());
         if (!mlir::isa<mlir::FloatType>(valueType) && (op.getWidth() != 1))
         {
-            arguments += ", (uint8_t) " + std::to_string(op.getWidth());
+            arguments += ", (" + file_.standard("uint8_t") + ") " + std::to_string(op.getWidth());
         }
         return primitive + "(" + arguments + ")";
     }
@@ -1580,16 +1597,18 @@ public:
     void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
     {
         // A run of bits copied out of the object's own storage into the buffer.
-        w.line("dsdl_runtime_copy_bits(" + names(op.getDestination()) + ", (size_t) " +
-               names(op.getDestinationBitOffset()) + ", (size_t) " + names(op.getWidth()) + ", " +
-               names(op.getSource()) + ", (size_t) " + names(op.getSourceBitOffset()) + ");");
+        w.line(file_.runtime("dsdl_runtime_copy_bits") + "(" + names(op.getDestination()) + ", (" +
+               file_.standard("size_t") + ") " + names(op.getDestinationBitOffset()) + ", (" +
+               file_.standard("size_t") + ") " + names(op.getWidth()) + ", " + names(op.getSource()) + ", (" +
+               file_.standard("size_t") + ") " + names(op.getSourceBitOffset()) + ");");
     }
 
     void bitRead(SourceWriter& w, mlir::dsdl::BitReadOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_get_bits(" + names(op.getDestination()) + ", " + names(op.getBuffer()) + ", (size_t) " +
-               names(op.getBufferSizeBytes()) + ", (size_t) " + names(op.getBitOffset()) + ", (size_t) " +
-               names(op.getWidth()) + ");");
+        w.line(file_.runtime("dsdl_runtime_get_bits") + "(" + names(op.getDestination()) + ", " +
+               names(op.getBuffer()) + ", (" + file_.standard("size_t") + ") " + names(op.getBufferSizeBytes()) +
+               ", (" + file_.standard("size_t") + ") " + names(op.getBitOffset()) + ", (" + file_.standard("size_t") +
+               ") " + names(op.getWidth()) + ");");
     }
 
     void writeBit(SourceWriter& /*w*/, mlir::dsdl::WriteBitOp /*op*/, const ValueNames& /*names*/) const override
@@ -1605,14 +1624,15 @@ public:
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_image_read(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", (size_t) " +
-               names(op.getBufferSizeBytes()) + ", " + std::to_string(op.getBytes()) + "U);");
+        w.line(file_.runtime("dsdl_runtime_image_read") + "(" + names(op.getObject()) + ", " + names(op.getBuffer()) +
+               ", (" + file_.standard("size_t") + ") " + names(op.getBufferSizeBytes()) + ", " +
+               std::to_string(op.getBytes()) + "U);");
     }
 
     void imageWrite(SourceWriter& w, mlir::dsdl::ImageWriteOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_image_write(" + names(op.getBuffer()) + ", " + names(op.getObject()) + ", " +
-               std::to_string(op.getBytes()) + "U);");
+        w.line(file_.runtime("dsdl_runtime_image_write") + "(" + names(op.getBuffer()) + ", " + names(op.getObject()) +
+               ", " + std::to_string(op.getBytes()) + "U);");
     }
 
     void declareCallSerdesSized(SourceWriter& /*w*/,
@@ -1628,9 +1648,8 @@ public:
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
         // The nested type's own entry point, as its header publishes it.
-        called_.insert(headerOf(op.getObject()));
-        return entryPoint(op.getObject(), op.getDirection()) + "(" + names(op.getObject()) + ", " +
-               names(op.getBuffer()) + ", " + names(op.getSize()) + ")";
+        return file_.declaredIn(headerOf(op.getObject()), entryPoint(op.getObject(), op.getDirection())) + "(" +
+               names(op.getObject()) + ", " + names(op.getBuffer()) + ", " + names(op.getSize()) + ")";
     }
 
     void declareCallInitialize(SourceWriter&                w,
@@ -1640,8 +1659,9 @@ public:
     {
         // C translates the initialise body as a function, so a nested one is the call its
         // header publishes, answering the same code the rest of the plan carries.
-        called_.insert(headerOf(op.getObject()));
-        const std::string invocation = entryPoint(op.getObject(), "initialize") + "(" + names(op.getObject()) + ")";
+        const std::string invocation =
+            file_.declaredIn(headerOf(op.getObject()), entryPoint(op.getObject(), "initialize")) + "(" +
+            names(op.getObject()) + ")";
         if (name.empty())
         {
             discard(w, invocation);
@@ -1657,7 +1677,7 @@ public:
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "(uint64_t) " + viewPath(op, names) + ".size_bytes";
+        return "(" + file_.standard("uint64_t") + ") " + viewPath(op, names) + ".size_bytes";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
@@ -1666,7 +1686,7 @@ public:
                                      ? elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names)
                                      : memberPath(op.getObject(), op.getMember(), names);
         w.line(path + ".bytes = " + names(op.getBytes()) + ";");
-        w.line(path + ".size_bytes = (size_t) " + names(op.getSizeBytes()) + ";");
+        w.line(path + ".size_bytes = (" + file_.standard("size_t") + ") " + names(op.getSizeBytes()) + ";");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1675,18 +1695,20 @@ public:
         const CBodyMember* const member = memberOf(op.getObject(), op.getMember());
         if ((member != nullptr) && (member->arrayKind != "none"))
         {
-            w.line("dsdl_runtime_clear_views(" + elementBase(op.getObject(), op.getMember(), names) + ", " +
+            w.line(file_.runtime("dsdl_runtime_clear_views") + "(" +
+                   elementBase(op.getObject(), op.getMember(), names) + ", " +
                    ((member->arrayKind == "fixed") ? std::to_string(member->arrayCapacity) + "U" : (path + ".count")) +
                    ");");
             return;
         }
-        w.line("dsdl_runtime_clear_views(&" + path + ", 1U);");
+        w.line(file_.runtime("dsdl_runtime_clear_views") + "(&" + path + ", 1U);");
     }
 
     void copyBytes(SourceWriter& w, mlir::dsdl::CopyBytesOp op, const ValueNames& names) const override
     {
-        w.line("dsdl_runtime_copy_bytes(" + names(op.getDestination()) + ", " + names(op.getSource()) + ", (size_t) " +
-               names(op.getSourceSizeBytes()) + ", " + std::to_string(op.getBytes()) + "U);");
+        w.line(file_.runtime("dsdl_runtime_copy_bytes") + "(" + names(op.getDestination()) + ", " +
+               names(op.getSource()) + ", (" + file_.standard("size_t") + ") " + names(op.getSourceSizeBytes()) + ", " +
+               std::to_string(op.getBytes()) + "U);");
     }
 
 private:
@@ -1698,7 +1720,7 @@ private:
     [[nodiscard]] std::string accessorTypeName(const mlir::Type type) const
     {
         const auto integer = mlir::dyn_cast<mlir::IntegerType>(type);
-        return (integer && (integer.getWidth() == 64)) ? "int64_t" : typeName(type);
+        return (integer && (integer.getWidth() == 64)) ? file_.standard("int64_t") : typeName(type);
     }
 
     /// @brief What an accessor's parameters are called, by what the field needs of them.
@@ -1778,7 +1800,7 @@ private:
         {
             return path;
         }
-        return path + ((found->category == "bool") ? ".bitpacked" : ".elements");
+        return path + ((found->category == file_.standard("bool")) ? ".bitpacked" : ".elements");
     }
 
     [[nodiscard]] std::string elementPath(const mlir::Value     object,
@@ -1786,7 +1808,7 @@ private:
                                           const std::string&    index,
                                           const ValueNames&     names) const
     {
-        return elementBase(object, member, names) + "[(size_t) " + index + "]";
+        return elementBase(object, member, names) + "[(" + file_.standard("size_t") + ") " + index + "]";
     }
 
     /// @brief A view member, or one element of an array of them.
@@ -1813,37 +1835,39 @@ private:
     }
 
     /// @brief The runtime primitive that carries a field of this width and value type.
-    [[nodiscard]] static std::string runtimePrimitive(const bool         write,
-                                                      const mlir::Type   valueType,
-                                                      const std::int64_t width,
-                                                      const bool         isSigned)
+    [[nodiscard]] std::string runtimePrimitive(const bool         write,
+                                               const mlir::Type   valueType,
+                                               const std::int64_t width,
+                                               const bool         isSigned) const
     {
         if (mlir::isa<mlir::FloatType>(valueType))
         {
             // Selected by the field's width, not the carrier's: a float16 field travels as a C
             // `float` and is written by set_f16.
-            return std::string(write ? "dsdl_runtime_set_f" : "dsdl_runtime_get_f") + std::to_string(width);
+            return file_.runtime(std::string(write ? "dsdl_runtime_set_f" : "dsdl_runtime_get_f") +
+                                 std::to_string(width));
         }
         if ((width == 1) && !isSigned)
         {
-            return write ? "dsdl_runtime_set_bit" : "dsdl_runtime_get_bit";
+            return write ? file_.runtime("dsdl_runtime_set_bit") : file_.runtime("dsdl_runtime_get_bit");
         }
         if (write)
         {
-            return isSigned ? "dsdl_runtime_set_ixx" : "dsdl_runtime_set_uxx";
+            return isSigned ? file_.runtime("dsdl_runtime_set_ixx") : file_.runtime("dsdl_runtime_set_uxx");
         }
         // A read answers in a concrete width, so the primitive is the smallest standard integer
         // that holds the field rather than the field's own width.
         const unsigned holder = holderWidthFor(static_cast<unsigned>(width));
-        return std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") + std::to_string(holder);
+        return file_.runtime(std::string(isSigned ? "dsdl_runtime_get_i" : "dsdl_runtime_get_u") +
+                             std::to_string(holder));
     }
 
     /// @brief The value a variable holds before an arm assigns it.
-    [[nodiscard]] static std::string zeroOf(const mlir::Type type)
+    [[nodiscard]] std::string zeroOf(const mlir::Type type) const
     {
         if (mlir::isa<mlir::dsdl::PtrType>(type))
         {
-            return "NULL";
+            return file_.standard("NULL");
         }
         if (auto floating = mlir::dyn_cast<mlir::FloatType>(type))
         {
@@ -1856,7 +1880,7 @@ private:
         const unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
         if (width == 1)
         {
-            return "false";
+            return file_.standard("false");
         }
         return (width == 64) ? "0ULL" : "0";
     }
@@ -1991,7 +2015,7 @@ private:
         }
         if (mlir::isa<mlir::IndexType>(type))
         {
-            return "size_t";
+            return file_.standard("size_t");
         }
         if (auto floating = mlir::dyn_cast<mlir::FloatType>(type))
         {
@@ -2000,11 +2024,12 @@ private:
         const unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
         if (width == 1)
         {
-            return "bool";
+            return file_.standard("bool");
         }
         // The plan's i64 is the wire arithmetic and the runtime's argument, both unsigned; a
         // signed comparison casts for the comparison alone.
-        return (width == 64) ? "uint64_t" : ("int" + std::to_string(width) + "_t");
+        return file_.standard((width == 64) ? std::string(file_.standard("uint64_t"))
+                                            : "int" + std::to_string(width) + "_t");
     }
 
     /// @brief What a pointer of the body points at.
@@ -2012,16 +2037,19 @@ private:
     {
         if (mlir::isa<mlir::dsdl::ByteType>(pointee))
         {
-            return "uint8_t";
+            return file_.standard("uint8_t");
         }
         if (mlir::isa<mlir::dsdl::SizeType>(pointee))
         {
-            return "size_t";
+            return file_.standard("size_t");
         }
         if (const auto object = mlir::dyn_cast<mlir::dsdl::ObjectType>(pointee))
         {
-            const auto found = tags_.find(object.getIdentity());
-            return renderCTagSpelling(found == tags_.end() ? std::string{} : found->second);
+            const auto        found  = tags_.find(object.getIdentity());
+            const std::string tag    = (found == tags_.end()) ? std::string{} : found->second;
+            const auto        header = headers_.find(tag);
+            return file_.declaredIn((header == headers_.end()) ? llvm::StringRef{} : llvm::StringRef(header->second),
+                                    renderCTagSpelling(tag));
         }
         return "void";
     }
@@ -2033,11 +2061,12 @@ private:
         return (found == headers_.end()) ? std::string{} : found->second;
     }
 
-    mlir::ModuleOp                module_;
-    llvm::StringMap<CBodyPlan>    plans_;
-    llvm::StringMap<std::string>  tags_;
-    llvm::StringMap<std::string>  headers_;
-    mutable std::set<std::string> called_;
+    mlir::ModuleOp               module_;
+    llvm::StringMap<CBodyPlan>   plans_;
+    llvm::StringMap<std::string> tags_;
+    llvm::StringMap<std::string> headers_;
+    /// @brief How the implementation file names what it takes from other headers.
+    const CFileNames& file_;
 };
 
 }  // namespace
@@ -2195,12 +2224,18 @@ llvm::Error emit(const SemanticModule& semantic,
             diagnostics.error({"<mlir>", 1, 1}, "no schema for " + def.info.fullName + " in the lowered module");
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "no schema in the lowered module");
         }
-        std::ostringstream emittedOut;
+        // The declarations and bodies first, naming what they take from other headers as they write
+        // it; the includes are written after, from what was named. The file's own header, which
+        // declares every function the file defines, is included ahead of them.
+        const std::string  ownHeader = schema.getHeaderPath().value_or(llvm::StringRef{}).str();
+        ImportSet          includes;
+        std::ostringstream declarationsOut;
         std::ostringstream bodiesOut;
-        SourceWriter       w      = makeCWriter(emittedOut);
-        SourceWriter       bodies = makeCWriter(bodiesOut);
+        SourceWriter       declarations = makeCWriter(declarationsOut);
+        SourceWriter       bodies       = makeCWriter(bodiesOut);
         {
-            const CSpelling                       spelling(perDefModule, schema);
+            const CFileNames                      file(includes, ownHeader);
+            const CSpelling                       spelling(perDefModule, schema, file);
             PlanBodyLookups                       lookups(perDefModule);
             const std::vector<mlir::func::FuncOp> functions = schemaFunctions(perDefModule, schema.getSymName());
             for (const mlir::func::FuncOp fn : functions)
@@ -2211,30 +2246,17 @@ llvm::Error emit(const SemanticModule& semantic,
                     return llvm::createStringError(llvm::inconvertibleErrorCode(), "C body translation failed");
                 }
             }
-            // A nested type's entry point is declared by its own header, and only the types a
-            // body calls are included: an unused include is lint the consumer has to answer for.
-            std::set<std::string> nestedHeaders = spelling.calledHeaders();
-            nestedHeaders.erase(std::string{});
-            nestedHeaders.erase(schema.getHeaderPath().value_or(llvm::StringRef{}).str());
-            w.line("#include <stdbool.h>");
-            w.line("#include <stddef.h>");
-            w.line("#include <stdint.h>");
-            w.line("#include \"dsdl_runtime.h\"");
-            for (const std::string& header : nestedHeaders)
-            {
-                w.line("#include \"" + header + "\"");
-            }
-            w.line("#include \"" + schema.getHeaderPath().value_or(llvm::StringRef{}).str() + "\"");
-            w.blank();
             // Declared before any of them is defined: a body calls a helper, and a helper the
             // lowering built may be defined after the body that reaches it.
             for (const mlir::func::FuncOp fn : functions)
             {
-                w.line(spelling.declarationOf(fn));
+                declarations.line(spelling.declarationOf(fn));
             }
-            w.blank();
+            declarations.blank();
         }
-        const std::string emitted = emittedOut.str() + bodiesOut.str();
+        const std::string others  = renderIncludeLines(includes);
+        const std::string emitted = "#include \"" + ownHeader + "\"\n\n" + (others.empty() ? "" : others + "\n") +
+                                    declarationsOut.str() + bodiesOut.str();
 
         std::filesystem::path implDir = outRoot;
         for (const auto& ns : def.info.namespaceComponents)

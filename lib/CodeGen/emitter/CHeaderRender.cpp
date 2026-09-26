@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CIncludes.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include <cstdint>
@@ -26,24 +27,27 @@
 namespace llvmdsdl::emitter::c
 {
 
-std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata)
+std::vector<std::string> renderTypeMetadataMacros(const std::string&     typeName,
+                                                  const SectionMetadata& metadata,
+                                                  const CFileNames&      file)
 {
-    std::vector<std::string> lines = {
+    const auto               boolean = [&](const bool value) { return file.standard(value ? "true" : "false"); };
+    std::vector<std::string> lines   = {
         "#define " + typeName + "_FULL_NAME_ \"" + metadata.fullName + "\"",
         "#define " + typeName + "_FULL_NAME_AND_VERSION_ \"" + metadata.fullName + "." +
             std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"",
         "#define " + typeName + "_EXTENT_BYTES_ " + std::to_string(metadata.extentBytes) + "UL",
         "#define " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " +
             std::to_string(metadata.serializationBufferSizeBytes) + "UL",
-        "#define " + typeName + "_WIRE_FLAT_ " + (metadata.wireFlat.holds ? "true" : "false"),
+        "#define " + typeName + "_WIRE_FLAT_ " + boolean(metadata.wireFlat.holds),
         "#define " + typeName + "_WIRE_FLAT_REASON_ \"" + metadata.wireFlat.reason + "\"",
-        "#define " + typeName + "_HOST_IMAGE_ " + (metadata.hostImage.holds ? "true" : "false"),
+        "#define " + typeName + "_HOST_IMAGE_ " + boolean(metadata.hostImage.holds),
         "#define " + typeName + "_HOST_IMAGE_REASON_ \"" + metadata.hostImage.reason + "\"",
-        "#define " + typeName + "_IS_DEPRECATED_ " + (metadata.deprecated ? "true" : "false"),
+        "#define " + typeName + "_IS_DEPRECATED_ " + boolean(metadata.deprecated),
     };
     if (metadata.declaresPortId)
     {
-        lines.push_back("#define " + typeName + "_HAS_FIXED_PORT_ID_ " + (metadata.fixedPortId ? "true" : "false"));
+        lines.push_back("#define " + typeName + "_HAS_FIXED_PORT_ID_ " + boolean(metadata.fixedPortId.has_value()));
         if (metadata.fixedPortId)
         {
             lines.push_back("#define " + typeName + "_FIXED_PORT_ID_ " + std::to_string(*metadata.fixedPortId) + "U");
@@ -56,13 +60,14 @@ std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&    
                                                           const std::string&                 fullName,
                                                           const std::uint32_t                majorVersion,
                                                           const std::uint32_t                minorVersion,
-                                                          const std::optional<std::uint32_t> fixedPortId)
+                                                          const std::optional<std::uint32_t> fixedPortId,
+                                                          const CFileNames&                  file)
 {
     std::vector<std::string> lines = {
         "#define " + baseTypeName + "_FULL_NAME_ \"" + fullName + "\"",
         "#define " + baseTypeName + "_FULL_NAME_AND_VERSION_ \"" + fullName + "." + std::to_string(majorVersion) + "." +
             std::to_string(minorVersion) + "\"",
-        "#define " + baseTypeName + "_HAS_FIXED_PORT_ID_ " + (fixedPortId ? "true" : "false"),
+        "#define " + baseTypeName + "_HAS_FIXED_PORT_ID_ " + file.standard(fixedPortId ? "true" : "false"),
     };
     if (fixedPortId)
     {
@@ -103,21 +108,25 @@ std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTy
 }
 
 std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseTypeName,
-                                                        const std::string& requestTypeName)
+                                                        const std::string& requestTypeName,
+                                                        const CFileNames&  file)
 {
     const std::string objectType = renderCTagSpelling(requestTypeName);
+    const std::string status     = file.standard("int8_t");
+    const std::string byte       = file.standard("uint8_t");
+    const std::string size       = file.standard("size_t");
     return {
-        "static inline int8_t " + baseTypeName + "__serialize_(const " + objectType +
-            "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)",
+        "static inline " + status + " " + baseTypeName + "__serialize_(const " + objectType + "* const obj, " + byte +
+            "* const buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + requestTypeName + "__serialize_(obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline int8_t " + baseTypeName + "__deserialize_(" + objectType +
-            "* const out_obj, const uint8_t* buffer, size_t* const inout_buffer_size_bytes)",
+        "static inline " + status + " " + baseTypeName + "__deserialize_(" + objectType + "* const out_obj, const " +
+            byte + "* buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + requestTypeName + "__deserialize_(out_obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline int8_t " + baseTypeName + "__initialize_(" + objectType + "* const out_obj)",
+        "static inline " + status + " " + baseTypeName + "__initialize_(" + objectType + "* const out_obj)",
         "{",
         "  return " + requestTypeName + "__initialize_(out_obj);",
         "}",

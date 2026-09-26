@@ -81,6 +81,7 @@ add_library(llvmdsdlCodeGen
   Vocabulary.cpp
   emitter/C.cpp
   emitter/CHeaderRender.cpp
+  emitter/CIncludes.cpp
   emitter/Cpp.cpp
   emitter/Go.cpp
   emitter/Python.cpp
