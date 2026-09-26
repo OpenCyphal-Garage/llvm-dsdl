@@ -2125,15 +2125,23 @@ llvm::Error emitSectionType(SourceWriter&                             w,
         // object reads a copy.
         const bool        keepsBuffer = ctx.holdsView(section);
         const std::string receiver    = goReceiverName(typeName);
+        const std::string largest     = meta("SERIALIZATION_BUFFER_SIZE_BYTES");
+        w.blank();
+        w.line("// AppendBinary appends the wire image of " + receiver +
+               " to buffer, as encoding.BinaryAppender asks.");
+        w.open("func (" + receiver + " *" + typeName + ") AppendBinary(buffer []byte) ([]byte, error) {");
+        w.line("start := len(buffer)");
+        w.line("grown := slices.Grow(buffer, " + largest + ")");
+        w.line("used, err := " + receiver + ".Serialize(grown[start : start+" + largest + "])");
+        w.open("if err != nil {");
+        w.line("return buffer, err");
+        w.close("}");
+        w.line("return grown[:start+used], nil");
+        w.close("}");
         w.blank();
         w.line("// MarshalBinary answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks.");
         w.open("func (" + receiver + " *" + typeName + ") MarshalBinary() ([]byte, error) {");
-        w.line("buffer := make([]byte, " + meta("SERIALIZATION_BUFFER_SIZE_BYTES") + ")");
-        w.line("used, err := " + receiver + ".Serialize(buffer)");
-        w.open("if err != nil {");
-        w.line("return nil, err");
-        w.close("}");
-        w.line("return buffer[:used], nil");
+        w.line("return " + receiver + ".AppendBinary(nil)");
         w.close("}");
         w.blank();
         w.line(keepsBuffer ? "// UnmarshalBinary reads " + receiver + " from a copy of its wire image, which " +
@@ -2328,7 +2336,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const bool usesRuntime = llvm::StringRef(body.str()).contains("dsdlruntime.");
     const bool usesUnsafe  = llvm::StringRef(body.str()).contains("unsafe.");
     const bool usesBytes   = llvm::StringRef(body.str()).contains("bytes.Clone(");
-    if (usesRuntime || usesUnsafe || usesBytes || !imports.empty())
+    const bool usesSlices  = llvm::StringRef(body.str()).contains("slices.Grow(");
+    const bool usesLibrary = usesBytes || usesSlices || usesUnsafe;
+    if (usesRuntime || usesLibrary || !imports.empty())
     {
         head.open("import (");
         // gofmt sorts the imports within a group, so the standard library's sit in a group of
@@ -2337,11 +2347,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             head.line("\"bytes\"");
         }
+        if (usesSlices)
+        {
+            head.line("\"slices\"");
+        }
         if (usesUnsafe)
         {
             head.line("\"unsafe\"");
         }
-        if ((usesBytes || usesUnsafe) && (usesRuntime || !imports.empty()))
+        if (usesLibrary && (usesRuntime || !imports.empty()))
         {
             head.blank();
         }

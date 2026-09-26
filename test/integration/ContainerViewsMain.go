@@ -58,6 +58,12 @@ func main() {
 	var marshaler encoding.BinaryMarshaler = &frame
 	image, err := marshaler.MarshalBinary()
 	check("MarshalBinary answers the wire", err == nil && bytes.Equal(image, wire))
+	// encoding.BinaryAppender is Go 1.24's, newer than the module's go line, so it is named here.
+	var appender interface {
+		AppendBinary([]byte) ([]byte, error)
+	} = &frame
+	prefixed, err := appender.AppendBinary([]byte{0xAB})
+	check("AppendBinary appends the wire to its buffer", err == nil && prefixed[0] == 0xAB && bytes.Equal(prefixed[1:], wire))
 	var unmarshaled views.Frame
 	var unmarshaler encoding.BinaryUnmarshaler = &unmarshaled
 	err = unmarshaler.UnmarshalBinary(image)

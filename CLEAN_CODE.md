@@ -199,10 +199,14 @@ so `no_std` keeps it. The variants are values, so returning one allocates nothin
 runtime does not define is `Unrecognised`, which carries it.
 
 **Go.** `type ListRequest struct` in package `file`. Go's own wire interfaces come first:
-`MarshalBinary() ([]byte, error)` and `UnmarshalBinary([]byte) error`, so a generated type satisfies
+`AppendBinary([]byte) ([]byte, error)`, `MarshalBinary() ([]byte, error)` and
+`UnmarshalBinary([]byte) error`, so a generated type satisfies `encoding.BinaryAppender`,
 `encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler` and drops into anything that already
-speaks them. A type holding a view unmarshals a copy of its data, which the interface asks it not
-to keep. The buffer-oriented pair stays beside them for the path that allocates nothing:
+speaks them. `AppendBinary` appends to a slice the caller owns and can reuse, which allocates
+nothing once its capacity suffices, and `MarshalBinary` is `AppendBinary(nil)`.
+`encoding.BinaryAppender` is Go 1.24's; the method itself needs nothing newer than the module's
+`go 1.22`. A type holding a view unmarshals a copy of its data, which the interface asks it not to
+keep. The buffer-oriented pair stays beside them, writing into a slice the caller has sized:
 `func (r *ListRequest) Serialize(buffer []byte) (int, error)`. The error is the runtime's `Error`,
 a code whose named values are constants such as `ErrBufferTooSmall`, as `syscall.Errno` is: a
 returned `error` costs no allocation, and every code has a value.
@@ -551,8 +555,8 @@ reads the code back from a nested call's. Rust's `deserialize_with_consumed`, wh
 and the whole buffer on failure as the C harness reports them, went with them. C, C++, TypeScript,
 Python and the object lane are byte for byte as before, and the Rust and Go judges hold.
 
-Go's types then took `MarshalBinary` and `UnmarshalBinary` over that pair, so each satisfies the
-`encoding` package's interfaces. A type holding a view unmarshals `bytes.Clone(data)`, since its
+Go's types then took `AppendBinary`, `MarshalBinary` and `UnmarshalBinary` over that pair, so
+each satisfies the `encoding` package's interfaces, and `MarshalBinary` is `AppendBinary(nil)`. A type holding a view unmarshals `bytes.Clone(data)`, since its
 views would keep the data the interface asks it not to keep. Whether a section holds a view,
 directly or through a composite it holds, is `DefinitionIndex::holdsView`, which Rust's lifetime
 reads too. A method's receiver is the initial of its type's head noun, the name's last word: `r`
