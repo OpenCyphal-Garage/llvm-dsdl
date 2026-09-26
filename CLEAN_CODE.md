@@ -220,11 +220,15 @@ lines, the standard library's, a bound library's and the generated tree's own, e
 its paths. An implementation file includes its own header ahead of them, which declares every
 function it defines.
 
-Rust decides its imports apart from the set: every standard and runtime name is a full path, and a
-nested definition is found by a semantic-model walk into an import scope. It moves onto the set in a
-change of its own. A language that gives an import a local name records the name the file spells;
-allocating that name within the file's scope, which Go does with its `pkg_` aliases, Rust in an
-import scope and TypeScript only among the imports themselves, belongs to the surface tree.
+Rust names through it: a nested definition's struct where a field or its default names it, under
+the local name its import is given. A standard or runtime name is written as its full path, which
+needs no import, and `RustFileNames` is where that is decided. Rust had imported each definition a
+semantic-model walk found, in the walk's order. Its `use` declarations are in the order of their
+paths, which is rustfmt's.
+
+A language that gives an import a local name records the name the file spells; allocating that name
+within the file's scope, which Go does with its `pkg_` aliases, Rust in an import scope and
+TypeScript only among the imports themselves, belongs to the surface tree.
 
 ## Where each language lands
 

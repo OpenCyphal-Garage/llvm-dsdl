@@ -16,6 +16,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Rust.h"
@@ -81,15 +82,6 @@ namespace llvmdsdl::emitter::rust
 
 namespace
 {
-
-std::string rustMemoryModeVariantPath(const Options& options)
-{
-    if (options.memoryMode == MemoryMode::InlineThenPool)
-    {
-        return "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool";
-    }
-    return "crate::dsdl_runtime::DsdlMemoryMode::MaxInline";
-}
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
@@ -286,25 +278,29 @@ public:
     /// @brief The `use` path of the struct the definition @p ref names.
     std::string rustTypePath(const SemanticTypeRef& ref) const
     {
+        return rustModulePath(ref) + "::" + rustDeclaredTypeName(ref);
+    }
+
+    /// @brief The path of the module the definition @p ref is generated into.
+    std::string rustModulePath(const SemanticTypeRef& ref) const
+    {
         std::ostringstream out;
         out << "crate";
         for (const auto& ns : ref.namespaceComponents)
         {
             out << "::" << codegenProjectIdentifier(Language::Rust, IdentifierRole::NamespaceName, ns);
         }
-
         if (const auto* def = find(ref))
         {
-            out << "::" << rustModuleName(def->info) << "::" << rustDeclaredTypeName(*def);
+            out << "::" << rustModuleName(def->info);
             return out.str();
         }
-
         DiscoveredDefinition tmp;
         tmp.shortName           = ref.shortName;
         tmp.namespaceComponents = ref.namespaceComponents;
         tmp.majorVersion        = ref.majorVersion;
         tmp.minorVersion        = ref.minorVersion;
-        out << "::" << rustModuleName(tmp) << "::" << rustTypeName(tmp);
+        out << "::" << rustModuleName(tmp);
         return out.str();
     }
 
@@ -319,9 +315,87 @@ private:
     mutable std::set<std::string> moduleDeclarations_;
 };
 
+/// @brief How one Rust module names what it takes from other modules, recording each import.
+///
+/// Every name the module writes from outside itself is named here. A standard or runtime name is
+/// written as its full path, which needs no import; a nested definition's struct is imported under
+/// the local name the context allocated for it, and the `use` declarations written from the set
+/// once the module is rendered hold what the module names and nothing else.
+class RustFileNames final
+{
+public:
+    RustFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownKey)
+        : ctx_(ctx)
+        , imports_(imports)
+        , ownKey_(std::move(ownKey))
+    {
+    }
+
+    [[nodiscard]] const EmitterContext& context() const
+    {
+        return ctx_;
+    }
+
+    /// @brief The core library's @p path, in full: `core` is in scope in every module.
+    [[nodiscard]] static std::string core(const llvm::StringRef path)
+    {
+        return "core::" + path.str();
+    }
+
+    /// @brief The runtime's @p path, in full from the crate root.
+    [[nodiscard]] static std::string runtime(const llvm::StringRef path)
+    {
+        return "crate::dsdl_runtime::" + path.str();
+    }
+
+    /// @brief The struct of the definition @p ref, by the name this module imports it under.
+    [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
+    {
+        std::string local = ctx_.rustLocalTypeName(ref);
+        const auto* def   = ctx_.find(ref);
+        if ((def != nullptr) && (definitionTypeKey(def->info) == ownKey_))
+        {
+            return local;
+        }
+        return imports_.member(ImportOrigin::Definition,
+                               ctx_.rustModulePath(ref),
+                               ctx_.rustDeclaredTypeName(ref),
+                               local);
+    }
+
+private:
+    const EmitterContext& ctx_;
+    ImportSet&            imports_;
+    std::string           ownKey_;
+};
+
+/// @brief The `use` declarations of a module that names @p imports, in the order of their paths.
+std::string renderRustUses(const ImportSet& imports)
+{
+    std::string lines;
+    for (const ImportedModule& module : imports.modules())
+    {
+        for (const ImportedMember& member : module.members)
+        {
+            lines += "use " + module.path + "::" + member.name +
+                     ((member.local == member.name) ? "" : " as " + member.local) + ";\n";
+        }
+    }
+    return lines;
+}
+
+std::string rustMemoryModeVariantPath(const Options& options)
+{
+    if (options.memoryMode == MemoryMode::InlineThenPool)
+    {
+        return RustFileNames::runtime("DsdlMemoryMode::InlineThenPool");
+    }
+    return RustFileNames::runtime("DsdlMemoryMode::MaxInline");
+}
+
 std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx);
 
-std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string rustFieldBaseType(const SemanticFieldType& type, const RustFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -340,7 +414,7 @@ std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustLocalTypeName(*type.compositeType) + rustLifetimeOf(*type.compositeType, ctx);
+            return file.type(*type.compositeType) + rustLifetimeOf(*type.compositeType, file.context());
         }
         return "u8";
     }
@@ -354,9 +428,9 @@ std::string rustLifetimeOf(const SemanticTypeRef& ref, const EmitterContext& ctx
     return ((nested != nullptr) && ctx.holdsView(nested->request)) ? "<'a>" : "";
 }
 
-std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string rustFieldType(const SemanticFieldType& type, const RustFileNames& file)
 {
-    auto base = rustFieldBaseType(type, ctx);
+    auto base = rustFieldBaseType(type, file);
     if (type.arrayKind == ArrayKind::None)
     {
         return base;
@@ -365,17 +439,17 @@ std::string rustFieldType(const SemanticFieldType& type, const EmitterContext& c
     {
         return "[" + base + "; " + std::to_string(type.arrayCapacity) + "]";
     }
-    return "crate::dsdl_runtime::DsdlVec<" + base + ">";
+    return RustFileNames::runtime("DsdlVec") + "<" + base + ">";
 }
 
 /// @brief The type a member is held as: a view of the buffer, one per element of an array, where
 ///        the field is held so; otherwise the field's own.
-std::string rustMemberType(const SemanticField& field, const EmitterContext& ctx)
+std::string rustMemberType(const SemanticField& field, const RustFileNames& file)
 {
     const SemanticFieldType& type = field.resolvedType;
     if (!field.heldAsView)
     {
-        return rustFieldType(type, ctx);
+        return rustFieldType(type, file);
     }
     if (type.arrayKind == ArrayKind::None)
     {
@@ -385,10 +459,10 @@ std::string rustMemberType(const SemanticField& field, const EmitterContext& ctx
     {
         return "[&'a [u8]; " + std::to_string(type.arrayCapacity) + "]";
     }
-    return "crate::dsdl_runtime::DsdlVec<&'a [u8]>";
+    return RustFileNames::runtime("DsdlVec") + "<&'a [u8]>";
 }
 
-std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContext& ctx)
+std::string scalarDefaultExpr(const SemanticFieldType& type, const RustFileNames& file)
 {
     switch (type.scalarCategory)
     {
@@ -406,7 +480,7 @@ std::string scalarDefaultExpr(const SemanticFieldType& type, const EmitterContex
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return ctx.rustLocalTypeName(*type.compositeType) + "::default()";
+            return file.type(*type.compositeType) + "::default()";
         }
         return "0";
     }
@@ -439,7 +513,7 @@ std::string rustStoredLiteral(const SemanticFieldType& type, const mlir::TypedAt
 }
 
 /// @brief The value a field is set to, as the initialise body states it.
-std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefault& entry, const EmitterContext& ctx)
+std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefault& entry, const RustFileNames& file)
 {
     switch (entry.kind)
     {
@@ -450,15 +524,15 @@ std::string rustDefaultFromBody(const SemanticFieldType& type, const MemberDefau
     case MemberDefault::Kind::BoolArray:
         return "[false; " + std::to_string(entry.count) + "]";
     case MemberDefault::Kind::FixedCompositeArray:
-        return "core::array::from_fn(|_| " + scalarDefaultExpr(type, ctx) + ")";
+        return RustFileNames::core("array::from_fn") + "(|_| " + scalarDefaultExpr(type, file) + ")";
     case MemberDefault::Kind::Composite:
-        return scalarDefaultExpr(type, ctx);
+        return scalarDefaultExpr(type, file);
     case MemberDefault::Kind::VariableArrayEmpty:
-        return "crate::dsdl_runtime::DsdlVec::new()";
+        return RustFileNames::runtime("DsdlVec::new") + "()";
     case MemberDefault::Kind::View:
         return (type.arrayKind == ArrayKind::Fixed) ? "[&[]; " + std::to_string(type.arrayCapacity) + "]" : "&[]";
     }
-    return scalarDefaultExpr(type, ctx);
+    return scalarDefaultExpr(type, file);
 }
 
 /// @brief The `#[deprecated]` attribute for a definition, carrying the shared notice as its message.
@@ -623,10 +697,11 @@ public:
         // argument a body ignores with a leading underscore.
         const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
 
-        w.open(serialize ? "pub fn serialize(&self, " + buffer +
-                               ": &mut [u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {"
-                         : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") +
-                               "[u8]) -> core::result::Result<usize, crate::dsdl_runtime::Error> {");
+        w.open(serialize
+                   ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> " + RustFileNames::core("result::Result") +
+                         "<usize, " + RustFileNames::runtime("Error") + "> {"
+                   : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") + "[u8]) -> " +
+                         RustFileNames::core("result::Result") + "<usize, " + RustFileNames::runtime("Error") + "> {");
         return {"self", buffer};
     }
 
@@ -666,8 +741,8 @@ public:
         }
         else
         {
-            w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage +
-                   ") -> core::result::Result<(), crate::dsdl_runtime::Error> {");
+            w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage + ") -> " +
+                   RustFileNames::core("result::Result") + "<(), " + RustFileNames::runtime("Error") + "> {");
         }
         // The buffer's size as the plan speaks it, bound where the plan uses it at all. A composite
         // getter does not, once the length it wrote back is erased. A scalar accessor does, but only
@@ -814,7 +889,7 @@ public:
     /// @brief The runtime's error for the plan's code @p code.
     static std::string errorOf(const llvm::StringRef code)
     {
-        return "crate::dsdl_runtime::Error::from_code(" + code.str() + ")";
+        return RustFileNames::runtime("Error::from_code") + "(" + code.str() + ")";
     }
 
     [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
@@ -1105,8 +1180,8 @@ public:
         // and writes itself, and a slice past the end would panic before they could.
         const std::string buffer = names(op.getBuffer());
         const auto        result = mlir::cast<mlir::dsdl::PtrType>(op.getAddress().getType());
-        return "{ let _start = core::cmp::min(" + asSize(names(op.getByteOffset())) + ", " + buffer + ".len()); " +
-               (result.getIsConst() ? "&" : "&mut ") + buffer + "[_start..] }";
+        return "{ let _start = " + RustFileNames::core("cmp::min") + "(" + asSize(names(op.getByteOffset())) + ", " +
+               buffer + ".len()); " + (result.getIsConst() ? "&" : "&mut ") + buffer + "[_start..] }";
     }
 
     [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
@@ -1177,20 +1252,20 @@ public:
         // the allocator cannot provide ends the function with the allocation's code.
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
         const std::string count  = fresh("count");
-        w.line(access +
-               ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new(Self::__LLVMDSDL_MEMORY_MODE, "
+        w.line(access + ".set_memory_contract(" + RustFileNames::runtime("VarArrayMemoryContract::new") +
+               "(Self::__LLVMDSDL_MEMORY_MODE, "
                "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, Self::" +
                poolClassOf(op.getObject(), op.getMember()) + "));");
         w.line(access + ".clear();");
         w.line("let " + count + ": usize = " + asSize(names(op.getValue())) + ";");
-        w.open("if Self::__LLVMDSDL_MEMORY_MODE == crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
-        w.line("let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
+        w.open("if Self::__LLVMDSDL_MEMORY_MODE == " + RustFileNames::runtime("DsdlMemoryMode::InlineThenPool") + " {");
+        w.line("let mut _pool = " + RustFileNames::runtime("PassthroughPoolProvider::default") + "();");
         w.open("if let Err(_alloc_err) = " + access + ".reserve_with_pool(" + count + ", &mut _pool) {");
-        w.line("return Err(crate::dsdl_runtime::Error::from(_alloc_err));");
+        w.line("return Err(" + RustFileNames::runtime("Error::from") + "(_alloc_err));");
         w.close("}");
         w.midway("} else {");
         w.open("if let Err(_alloc_err) = " + access + ".try_reserve(" + count + ") {");
-        w.line("return Err(crate::dsdl_runtime::Error::from(_alloc_err));");
+        w.line("return Err(" + RustFileNames::runtime("Error::from") + "(_alloc_err));");
         w.close("}");
         w.close("}");
         w.line(access + ".resize(" + count + ", Default::default());");
@@ -1216,18 +1291,19 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + ", ";
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "crate::dsdl_runtime::set_f" + std::to_string(width) + "(" + prefix + value + ")";
+            return RustFileNames::runtime("set_f" + std::to_string(width)) + "(" + prefix + value + ")";
         }
         if (width == 1 && !op.getIsSigned())
         {
-            return "crate::dsdl_runtime::set_bit(" + prefix + (isBool(valueType) ? value : value + " != 0u64") + ")";
+            return RustFileNames::runtime("set_bit") + "(" + prefix + (isBool(valueType) ? value : value + " != 0u64") +
+                   ")";
         }
         if (op.getIsSigned())
         {
-            return "crate::dsdl_runtime::set_ixx(" + prefix + asSigned(value, valueType) + ", " +
+            return RustFileNames::runtime("set_ixx") + "(" + prefix + asSigned(value, valueType) + ", " +
                    std::to_string(width) + "u8)";
         }
-        return "crate::dsdl_runtime::set_uxx(" + prefix + value + ", " + std::to_string(width) + "u8)";
+        return RustFileNames::runtime("set_uxx") + "(" + prefix + value + ", " + std::to_string(width) + "u8)";
     }
 
     [[nodiscard]] std::string readBits(mlir::dsdl::ReadBitsOp op, const ValueNames& names) const override
@@ -1237,18 +1313,18 @@ public:
         const std::string prefix    = names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset()));
         if (mlir::isa<mlir::FloatType>(valueType))
         {
-            return "crate::dsdl_runtime::get_f" + std::to_string(width) + "(" + prefix + ")";
+            return RustFileNames::runtime("get_f" + std::to_string(width)) + "(" + prefix + ")";
         }
         const std::string result = typeName(valueType);
         if (width == 1 && !op.getIsSigned())
         {
-            return "crate::dsdl_runtime::get_bit(" + prefix + ") as " + result;
+            return RustFileNames::runtime("get_bit") + "(" + prefix + ") as " + result;
         }
         // The runtime answers in the narrowest standard width that holds the field; a signed read
         // arrives sign-extended and keeps its value across the widening.
         const unsigned holder = holderWidthFor(width);
-        return "crate::dsdl_runtime::get_" + std::string(op.getIsSigned() ? "i" : "u") + std::to_string(holder) + "(" +
-               prefix + ", " + std::to_string(width) + "u8) as " + result;
+        return RustFileNames::runtime(std::string("get_") + (op.getIsSigned() ? "i" : "u") + std::to_string(holder)) +
+               "(" + prefix + ", " + std::to_string(width) + "u8) as " + result;
     }
 
     void bitWrite(SourceWriter& /*w*/, mlir::dsdl::BitWriteOp /*op*/, const ValueNames& /*names*/) const override
@@ -1264,13 +1340,14 @@ public:
 
     void writeBit(SourceWriter& w, mlir::dsdl::WriteBitOp op, const ValueNames& names) const override
     {
-        w.line("let _ = crate::dsdl_runtime::set_bit(" + names(op.getBuffer()) + ", " +
+        w.line("let _ = " + RustFileNames::runtime("set_bit") + "(" + names(op.getBuffer()) + ", " +
                asSize(names(op.getBitOffset())) + ", " + names(op.getValue()) + ");");
     }
 
     [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp op, const ValueNames& names) const override
     {
-        return "crate::dsdl_runtime::get_bit(" + names(op.getBuffer()) + ", " + asSize(names(op.getBitOffset())) + ")";
+        return RustFileNames::runtime("get_bit") + "(" + names(op.getBuffer()) + ", " +
+               asSize(names(op.getBitOffset())) + ")";
     }
 
     void imageRead(SourceWriter& w, mlir::dsdl::ImageReadOp op, const ValueNames& names) const override
@@ -1281,17 +1358,18 @@ public:
         // moved and the rest zeroed, which is what reading each field would have produced.
         const std::string bytes = std::to_string(op.getBytes()) + "usize";
         w.open("{");
-        w.line("let _image = unsafe { core::slice::from_raw_parts_mut(" + names(op.getObject()) +
-               " as *mut Self as *mut u8, " + bytes + ") };");
-        w.line("let _avail = core::cmp::min(" + asSize(names(op.getBufferSizeBytes())) + ", " + names(op.getBuffer()) +
-               ".len());");
+        w.line("let _image = unsafe { " + RustFileNames::core("slice::from_raw_parts_mut") + "(" +
+               names(op.getObject()) + " as *mut Self as *mut u8, " + bytes + ") };");
+        w.line("let _avail = " + RustFileNames::core("cmp::min") + "(" + asSize(names(op.getBufferSizeBytes())) + ", " +
+               names(op.getBuffer()) + ".len());");
         // The object and the buffer may be the same storage, so the bytes present move before what
         // follows them is zeroed -- zeroing first would zero the source -- and they move with
         // `copy`, which is `memmove`: `copy_from_slice` is defined only for slices that do not
         // overlap.
-        w.line("let _take = core::cmp::min(_avail, " + bytes + ");");
+        w.line("let _take = " + RustFileNames::core("cmp::min") + "(_avail, " + bytes + ");");
         w.open("if _take > 0usize {");
-        w.line("unsafe { core::ptr::copy(" + names(op.getBuffer()) + ".as_ptr(), _image.as_mut_ptr(), _take) };");
+        w.line("unsafe { " + RustFileNames::core("ptr::copy") + "(" + names(op.getBuffer()) +
+               ".as_ptr(), _image.as_mut_ptr(), _take) };");
         w.close("}");
         w.open("if _take < " + bytes + " {");
         w.line("_image[_take..].fill(0u8);");
@@ -1304,11 +1382,11 @@ public:
         // The buffer has been checked to hold the payload by the time this runs.
         const std::string bytes = std::to_string(op.getBytes()) + "usize";
         w.open("{");
-        w.line("let _image = unsafe { core::slice::from_raw_parts(" + names(op.getObject()) +
+        w.line("let _image = unsafe { " + RustFileNames::core("slice::from_raw_parts") + "(" + names(op.getObject()) +
                " as *const Self as *const u8, " + bytes + ") };");
         // A move for the reason its counterpart takes one: the two may be the same storage.
-        w.line("unsafe { core::ptr::copy(_image.as_ptr(), " + names(op.getBuffer()) + ".as_mut_ptr(), " + bytes +
-               ") };");
+        w.line("unsafe { " + RustFileNames::core("ptr::copy") + "(_image.as_ptr(), " + names(op.getBuffer()) +
+               ".as_mut_ptr(), " + bytes + ") };");
         w.close("}");
     }
 
@@ -1337,8 +1415,9 @@ public:
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
         const std::string bytes = names(op.getBytes());
-        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = { let _len = core::cmp::min(" +
-               asSize(names(op.getSizeBytes())) + ", " + bytes + ".len()); &" + bytes + "[.._len] };");
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) +
+               " = { let _len = " + RustFileNames::core("cmp::min") + "(" + asSize(names(op.getSizeBytes())) + ", " +
+               bytes + ".len()); &" + bytes + "[.._len] };");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1359,8 +1438,9 @@ public:
         // A view is a slice of a buffer, which may be the buffer being written, so the bytes move
         // with `copy`: `copy_from_slice` is defined only for slices that do not overlap. The zero
         // fill follows the move, and covers only what the move did not reach.
-        w.line("{ let _n = core::cmp::min(core::cmp::min(" + asSize(names(op.getSourceSizeBytes())) + ", " + source +
-               ".len()), " + width + "); if _n > 0usize { unsafe { core::ptr::copy(" + source + ".as_ptr(), " +
+        w.line("{ let _n = " + RustFileNames::core("cmp::min") + "(" + RustFileNames::core("cmp::min") + "(" +
+               asSize(names(op.getSourceSizeBytes())) + ", " + source + ".len()), " + width +
+               "); if _n > 0usize { unsafe { " + RustFileNames::core("ptr::copy") + "(" + source + ".as_ptr(), " +
                destination + ".as_mut_ptr(), _n) }; } " + destination + "[_n.." + width + "].fill(0u8); }");
     }
 
@@ -1381,9 +1461,10 @@ public:
         // the code is zero.
         const bool        serialize = op.getDirection() == "serialize";
         const std::string buffer    = names(op.getBuffer());
-        const std::string slice = "{ let _len = core::cmp::min(" + asSize(names(op.getAvailable())) + ", " + buffer +
-                                  ".len()); " + (serialize ? "&mut " : "&") + buffer + "[.._len] }";
-        const std::string call  = names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ")";
+        const std::string slice     = "{ let _len = " + RustFileNames::core("cmp::min") + "(" +
+                                      asSize(names(op.getAvailable())) + ", " + buffer + ".len()); " +
+                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+        const std::string call = names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ")";
         if (consumed.empty() && error.empty())
         {
             discard(w, call);
@@ -1699,7 +1780,7 @@ struct SectionBodies final
 llvm::Error emitSectionType(SourceWriter&                         w,
                             const std::string&                    typeName,
                             const SemanticSection&                section,
-                            const EmitterContext&                 ctx,
+                            const RustFileNames&                  file,
                             const Options&                        options,
                             const SectionMetadata&                metadata,
                             const AttachedDoc&                    typeDoc,
@@ -1709,6 +1790,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             const SectionBodies&                  bodies,
                             PlanBodyLookups&                      lookups)
 {
+    const EmitterContext& ctx = file.context();
     // An accessors-only run has no bodies: a unit struct carries the constants and the accessors.
     InitializerShape init;
     if (!options.accessorsOnly)
@@ -1791,7 +1873,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                 continue;
             }
             emitAttachedDocRust(w, field.doc);
-            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + rustMemberType(field, ctx) +
+            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + rustMemberType(field, file) +
                    ",");
         }
 
@@ -1824,15 +1906,15 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     if (!options.accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("const _: () = assert!(core::mem::size_of::<" + declaredName +
+        w.line("const _: () = assert!(" + RustFileNames::core("mem::size_of") + "::<" + declaredName +
                ">() == " + std::to_string(metadata.serializationBufferSizeBytes) + "usize, \"" + declaredName +
                ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
             const std::string rustMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
-            w.line("const _: () = assert!(core::mem::offset_of!(" + declaredName + ", " + rustMember +
-                   ") == " + std::to_string(member.offsetBytes) + "usize, \"" + declaredName + "." + rustMember +
-                   ": not at the offset its serialisation assumes\");");
+            w.line("const _: () = assert!(" + RustFileNames::core("mem::offset_of") + "!(" + declaredName + ", " +
+                   rustMember + ") == " + std::to_string(member.offsetBytes) + "usize, \"" + declaredName + "." +
+                   rustMember + ": not at the offset its serialisation assumes\");");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
         w.blank();
@@ -1863,16 +1945,17 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             }
             if (isVariableArray(field.resolvedType.arrayKind))
             {
-                w.line(fieldScope.get(IdentifierRole::FieldName, field.name) +
-                       ": crate::dsdl_runtime::DsdlVec::with_contract("
-                       "crate::dsdl_runtime::VarArrayMemoryContract::new("
+                w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
+                       RustFileNames::runtime("DsdlVec::with_contract") + "(" +
+                       RustFileNames::runtime("VarArrayMemoryContract::new") +
+                       "("
                        "Self::__LLVMDSDL_MEMORY_MODE, "
                        "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
                        poolClassConstExprByField.at(field.name) + ")),");
                 continue;
             }
             w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-                   rustDefaultFromBody(field.resolvedType, *found->second, ctx) + ",");
+                   rustDefaultFromBody(field.resolvedType, *found->second, file) + ",");
         }
         if (section.isUnion)
         {
@@ -1908,15 +1991,14 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                "host. Regenerate with --target-triple naming this target.\");");
     }
     w.line("pub const HOST_IMAGE_REASON: &'static str = \"" + metadata.hostImage.reason + "\";");
-    w.line("pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
+    w.line("pub const __LLVMDSDL_MEMORY_MODE: " + RustFileNames::runtime("DsdlMemoryMode") + " = " +
            rustMemoryModeVariantPath(options) + ";");
     w.line("pub const __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = " + std::to_string(options.inlineThresholdBytes) +
            "usize;");
     for (const auto& [constName, classId] : poolClassConstants)
     {
-        w.line("pub const " + constName +
-               ": crate::dsdl_runtime::AllocationClassId = crate::dsdl_runtime::AllocationClassId(" +
-               std::to_string(classId) + "u32);");
+        w.line("pub const " + constName + ": " + RustFileNames::runtime("AllocationClassId") + " = " +
+               RustFileNames::runtime("AllocationClassId") + "(" + std::to_string(classId) + "u32);");
     }
     if (metadata.declaresPortId)
     {
@@ -1965,10 +2047,10 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             return err;
         }
         w.blank();
-        w.open("pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, "
-               "crate::dsdl_runtime::Error> {");
-        w.line("let mut buffer = "
-               "crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
+        w.open("pub fn to_bytes(&self) -> " + RustFileNames::core("result::Result") + "<" +
+               RustFileNames::runtime("DsdlVec") + "<u8>, " + RustFileNames::runtime("Error") + "> {");
+        w.line("let mut buffer = " + RustFileNames::runtime("DsdlVec") +
+               "::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
         w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
         w.line("let used = self.serialize(&mut buffer)?;");
         w.line("buffer.truncate(used);");
@@ -1976,8 +2058,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.close("}");
         w.blank();
 
-        w.open("pub fn from_bytes(buffer: " + borrowed +
-               ") -> core::result::Result<(Self, usize), crate::dsdl_runtime::Error> {");
+        w.open("pub fn from_bytes(buffer: " + borrowed + ") -> " + RustFileNames::core("result::Result") +
+               "<(Self, usize), " + RustFileNames::runtime("Error") + "> {");
         w.line("let mut out = Self::default();");
         w.line("let used = out.deserialize(buffer)?;");
         w.line("Ok((out, used))");
@@ -2019,6 +2101,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         lifetimeSections.insert("response");
     }
+    // The declarations and bodies first, naming what they take from other modules as they write
+    // it; the `use` declarations are written after, from what was named.
+    ImportSet                            imports;
+    const RustFileNames                  file(ctx, imports, definitionTypeKey(def.info));
     const RustSpelling                   spelling(module, schema, lifetimeSections);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
@@ -2060,23 +2146,27 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
     }
 
+    std::ostringstream head;
+    head << generatedCommentLine("Rust backend") << "\n";
+    head << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
+         << "\n\n";
     std::ostringstream out;
-    SourceWriter       w = makeRustWriter(out);
-    w.line(generatedCommentLine("Rust backend"));
-    w.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-           std::to_string(def.info.minorVersion));
-    out << "\n";
+    SourceWriter       w        = makeRustWriter(out);
+    const auto         assemble = [&]() {
+        const std::string uses = renderRustUses(imports);
+        return head.str() + (uses.empty() ? "" : uses + "\n") + out.str();
+    };
 
-    // An accessors-only file names no other type: a composite's getter answers its bytes.
-    // A composite's getter answers its bytes, and a view holds them: neither names the type.
+    // The local name each nested definition would be imported under, allocated over every one
+    // the module refers to. An accessors-only file names no other type: a composite's getter
+    // answers its bytes, and a view holds them.
     const auto deps = options.accessorsOnly ? std::vector<SemanticTypeRef>{}
                                             : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
 
     const auto selfKey = definitionTypeKey(def.info);
 
-    // The imports below are this module's; what a previous module aliased says nothing here. The
-    // module's own declarations are reserved first, so a composite whose short name meets one of
-    // them is the side that takes an alias.
+    // What a previous module aliased says nothing here. The module's own declarations are reserved
+    // first, so a composite whose short name meets one of them is the side that takes an alias.
     ctx.beginModuleImports();
     {
         const auto declaredBase = ctx.rustDeclaredTypeName(def);
@@ -2107,15 +2197,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             ref.namespaceComponents = resolved->info.namespaceComponents;
             ref.shortName           = resolved->info.shortName;
         }
-
-        const auto typePath = ctx.rustTypePath(ref);
-        const auto local    = ctx.declareImport(ref);
-        const auto exported = ctx.rustDeclaredTypeName(ref);
-        w.line("use " + typePath + ((local == exported) ? "" : " as " + local) + ";");
-    }
-    if (!deps.empty())
-    {
-        out << "\n";
+        (void) ctx.declareImport(ref);
     }
 
     // The helpers the plans call, ahead of the types whose bodies call them.
@@ -2135,7 +2217,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         if (auto err = emitSectionType(w,
                                        baseType,
                                        def.request,
-                                       ctx,
+                                       file,
                                        options,
                                        sectionMetadata(def.info, def.request, schema, ""),
                                        def.doc,
@@ -2147,7 +2229,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        return out.str();
+        return assemble();
     }
 
     const auto reqType  = renderSectionTypeName(Language::Rust, baseType, "request");
@@ -2156,7 +2238,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     if (auto err = emitSectionType(w,
                                    reqType,
                                    def.request,
-                                   ctx,
+                                   file,
                                    options,
                                    sectionMetadata(def.info, def.request, schema, "request"),
                                    def.doc,
@@ -2175,7 +2257,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         if (auto err = emitSectionType(w,
                                        respType,
                                        *def.response,
-                                       ctx,
+                                       file,
                                        options,
                                        sectionMetadata(def.info, *def.response, schema, "response"),
                                        def.doc,
@@ -2221,7 +2303,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line("pub const " + baseConstPrefix + "_FIXED_PORT_ID: u16 = " + std::to_string(*def.info.fixedPortId) + ";");
     }
 
-    return out.str();
+    return assemble();
 }
 
 llvm::Expected<std::string> loadRustRuntimeFile(const std::string& fileName)
