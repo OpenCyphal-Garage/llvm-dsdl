@@ -533,8 +533,8 @@ std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&       language
     };
     const std::string base          = renderBase(versioning);
     const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
-    // A deprecated definition's C++ struct is declared under a name of its own, which a sibling may
-    // be called; that name is claimed beside the public one.
+    // A deprecated definition's struct is declared under a name of its own, which a sibling may be
+    // called; that name is claimed beside the public one.
     const bool declaredApart = language.composition.deprecatedTypeDeclaredApart && isDeprecated;
     const auto claim = [&](const std::string& name, const std::string& versionedName, const llvm::StringRef section) {
         out.push_back(ScopedTypeName{scope, name, versionedName, section.str(), ""});

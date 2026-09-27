@@ -15,17 +15,22 @@
 #include "llvmdsdl/Support/SurfacePlan.h"
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 
+#include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SectionScopes.h"
 
 namespace llvmdsdl
@@ -50,18 +55,6 @@ std::optional<SurfaceScopeKind> namespaceScopeKind(const NamespaceForm form)
     return std::nullopt;
 }
 
-/// @brief The key a definition is reported and referred to by: `ns.Name.1.0`.
-std::string definitionKey(const DefinitionParts& definition)
-{
-    std::string key;
-    for (const std::string& component : definition.namespaceComponents)
-    {
-        key += component + ".";
-    }
-    return key + definition.shortName + "." + std::to_string(definition.majorVersion) + "." +
-           std::to_string(definition.minorVersion);
-}
-
 /// @brief Builds one language's plan, a definition at a time.
 class Allocator final
 {
@@ -81,16 +74,18 @@ public:
     {
         const Language  language = row_.language;
         DefinitionNames names;
-        names.key      = definitionKey(definition);
+        names.key      = renderDefinitionKey(definition.ref);
         names.typeName = renderDefinitionTypeName(language,
-                                                  definition.namespaceComponents,
-                                                  definition.shortName,
-                                                  definition.majorVersion,
-                                                  definition.minorVersion,
+                                                  definition.ref.namespaceComponents,
+                                                  definition.ref.shortName,
+                                                  definition.ref.majorVersion,
+                                                  definition.ref.minorVersion,
                                                   options_.versioning);
-        names.fileStem =
-            renderDefinitionFileStem(language, definition.shortName, definition.majorVersion, definition.minorVersion);
-        for (const std::string& component : definition.namespaceComponents)
+        names.fileStem = renderDefinitionFileStem(language,
+                                                  definition.ref.shortName,
+                                                  definition.ref.majorVersion,
+                                                  definition.ref.minorVersion);
+        for (const std::string& component : definition.ref.namespaceComponents)
         {
             names.namespaceNames.push_back(
                 codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component));
@@ -113,16 +108,17 @@ public:
 
         if (definition.service)
         {
-            allocateSection(names, file, "request", definition.request);
+            allocateSection(names, file, "request", definition.request, definition.deprecated);
             if (definition.response)
             {
-                allocateSection(names, file, "response", *definition.response);
+                allocateSection(names, file, "response", *definition.response, definition.deprecated);
             }
         }
         else
         {
-            allocateSection(names, file, "", definition.request);
+            allocateSection(names, file, "", definition.request, definition.deprecated);
         }
+        allocateBodies(names, space, file, definition.bodies);
         plan_.definitions.push_back(std::move(names));
     }
 
@@ -158,37 +154,44 @@ private:
         return openScope(parent, kind, name, std::nullopt);
     }
 
-    std::size_t declare(const std::size_t     scope,
-                        std::string           name,
-                        const SurfaceDeclKind kind,
-                        const NameClass       nameClass,
-                        const NameOrigin      origin,
-                        SurfaceEntity         of)
+    std::size_t declare(const std::size_t       scope,
+                        std::string             name,
+                        const SurfaceDeclKind   kind,
+                        const NameClass         nameClass,
+                        const NameOrigin        origin,
+                        SurfaceEntity           of,
+                        const SurfaceVisibility visibility = SurfaceVisibility::Public)
     {
         const std::size_t index = plan_.decls.size();
-        plan_.decls.push_back(SurfaceDecl{.name      = std::move(name),
-                                          .kind      = kind,
-                                          .nameClass = nameClass,
-                                          .origin    = origin,
-                                          .of        = std::move(of),
-                                          .scope     = scope});
+        plan_.decls.push_back(SurfaceDecl{.name       = std::move(name),
+                                          .kind       = kind,
+                                          .nameClass  = nameClass,
+                                          .visibility = visibility,
+                                          .origin     = origin,
+                                          .of         = std::move(of),
+                                          .scope      = scope});
         plan_.scopes[scope].items.push_back(SurfaceItem{.scope = false, .index = index});
         return index;
     }
 
+    /// @brief Declares one section's type and its members. A deprecated type is declared under a
+    ///        name of its own where the language does that, and its public name is an alias of it.
     void allocateSection(DefinitionNames&    names,
                          const std::size_t   file,
                          const std::string&  sectionName,
-                         const SectionParts& parts)
+                         const SectionParts& parts,
+                         const bool          deprecated)
     {
         const Language language = row_.language;
         SectionNames   section;
         section.section = sectionName;
         section.typeName =
             sectionName.empty() ? names.typeName : renderSectionTypeName(language, names.typeName, sectionName);
-        section.isUnion   = parts.isUnion;
-        const auto of     = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member}; };
-        section.typeScope = openScope(file, SurfaceScopeKind::Type, section.typeName, of(""));
+        section.isUnion = parts.isUnion;
+        const auto of   = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member}; };
+        const bool declaredApart = deprecated && row_.composition.deprecatedTypeDeclaredApart;
+        section.typeScope =
+            openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
 
         const NamingScope fields = makeSectionFieldScope(language, parts);
         for (const FieldParts& field : parts.fields)
@@ -210,6 +213,11 @@ private:
         else
         {
             allocateConstants(section, file, parts, of);
+        }
+        if (declaredApart)
+        {
+            (void)
+                declare(file, section.typeName, SurfaceDeclKind::Alias, NameClass::Type, NameOrigin::Generated, of(""));
         }
         names.sections.push_back(std::move(section));
     }
@@ -316,9 +324,107 @@ private:
         }
     }
 
+    /// @brief What a lowered function declares, by what it does.
+    static SurfaceDeclKind bodyKind(const PlanFunction function)
+    {
+        switch (function)
+        {
+        case PlanFunction::Serialize:
+        case PlanFunction::Deserialize:
+        case PlanFunction::Initialize:
+            return SurfaceDeclKind::Entry;
+        case PlanFunction::Get:
+        case PlanFunction::Set:
+            return SurfaceDeclKind::Accessor;
+        case PlanFunction::Helper:
+            break;
+        }
+        return SurfaceDeclKind::Helper;
+    }
+
+    /// @brief Declares the names the definition's lowered functions take.
+    void allocateBodies(const DefinitionNames&        names,
+                        const std::size_t             space,
+                        const std::size_t             file,
+                        const std::vector<BodyParts>& bodies)
+    {
+        const Language language = row_.language;
+        const auto     of       = [&](const BodyParts& body) {
+            return SurfaceEntity{names.key, body.plan.section, body.plan.member};
+        };
+        switch (row_.composition.helpers)
+        {
+        case HelperNaming::LinkName:
+            // Every lowered function is linked, a helper nothing calls included.
+            for (const BodyParts& body : bodies)
+            {
+                (void) declare(file,
+                               renderLoweredLinkName(language, body.plan),
+                               bodyKind(body.plan.function),
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               of(body));
+            }
+            return;
+        case HelperNaming::Binding:
+            for (const BodyParts& body : bodies)
+            {
+                if ((body.plan.function == PlanFunction::Helper) && !body.unreferenced)
+                {
+                    (void) declare(file,
+                                   renderHelperBindingIdentifier(language, body.plan),
+                                   SurfaceDeclKind::Helper,
+                                   NameClass::Value,
+                                   NameOrigin::Generated,
+                                   of(body));
+                }
+            }
+            return;
+        case HelperNaming::Package:
+            declareHelpers(names,
+                           file,
+                           bodies,
+                           packagePools_.try_emplace(space, language).first->second,
+                           names.typeName);
+            return;
+        case HelperNaming::Module: {
+            NamingScope pool(language);
+            declareHelpers(names, file, bodies, pool, {});
+            return;
+        }
+        }
+    }
+
+    /// @brief Declares each helper among @p bodies under the name @p pool allocates it.
+    void declareHelpers(const DefinitionNames&        names,
+                        const std::size_t             file,
+                        const std::vector<BodyParts>& bodies,
+                        NamingScope&                  pool,
+                        const llvm::StringRef         qualifier)
+    {
+        const llvm::StringMap<std::string> helpers = declareHelperNames(row_.language, bodies, pool, qualifier);
+        for (const BodyParts& body : bodies)
+        {
+            const auto found = helpers.find(body.symbol);
+            if (found != helpers.end())
+            {
+                (void) declare(file,
+                               found->second,
+                               SurfaceDeclKind::Helper,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, body.plan.section, body.plan.member},
+                               SurfaceVisibility::Private);
+            }
+        }
+    }
+
     const LanguageTraits& row_;
     const SurfaceOptions& options_;
     SurfacePlan           plan_;
+
+    /// @brief The helper pool of each package, by the package's scope.
+    std::map<std::size_t, NamingScope> packagePools_;
 };
 
 }  // namespace

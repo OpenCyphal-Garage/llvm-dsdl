@@ -16,8 +16,8 @@
 /// declaration's name is the file's public API, and an import's is private to the file.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_IMPORT_NAME_SCOPE_H
-#define LLVMDSDL_CODEGEN_IMPORT_NAME_SCOPE_H
+#ifndef LLVMDSDL_SUPPORT_IMPORT_NAME_SCOPE_H
+#define LLVMDSDL_SUPPORT_IMPORT_NAME_SCOPE_H
 
 #include <functional>
 #include <map>
@@ -27,7 +27,7 @@
 
 #include <llvm/ADT/StringRef.h>
 
-#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 
 namespace llvmdsdl
@@ -59,10 +59,10 @@ public:
     ///        answers it. A definition claims one name however often it is asked.
     /// @param[in] deprecated Whether the definition is deprecated, which a composed name carries
     ///            as the exported name does.
-    std::string claim(const SemanticTypeRef& ref, const std::string& exported, bool deprecated);
+    std::string claim(const DefinitionRef& ref, const std::string& exported, bool deprecated);
 
     /// @brief The local name claimed for @p ref, or @p exported where none was.
-    [[nodiscard]] std::string localName(const SemanticTypeRef& ref, const std::string& exported) const;
+    [[nodiscard]] std::string localName(const DefinitionRef& ref, const std::string& exported) const;
 
 private:
     [[nodiscard]] std::vector<std::string> broughtBy(const std::string& local) const;
@@ -77,4 +77,4 @@ private:
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_CODEGEN_IMPORT_NAME_SCOPE_H
+#endif  // LLVMDSDL_SUPPORT_IMPORT_NAME_SCOPE_H

@@ -103,6 +103,7 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Version.h"
@@ -140,43 +141,9 @@ std::string cSectionTypeName(const llvm::StringRef    fullName,
 }
 
 /// @brief The name C links one of a section's lowered functions under.
-///
-/// The IR names a function by its definition's DSDL identity, which C cannot declare. C spells it
-/// from the section's type name with its version, which C's one global scope keeps unique:
-/// `ns__Msg_1_0__serialize_ir_`, `ns__Msg_1_0__get_speed_ir_`, and for a helper
-/// `llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__2__ser`.
 std::string cLinkName(const PlanSymbol& symbol)
 {
-    const std::string type = cSectionTypeName(symbol.schema.fullName,
-                                              symbol.schema.major,
-                                              symbol.schema.minor,
-                                              symbol.section,
-                                              TypeNameVersioning::Versioned);
-    switch (symbol.function)
-    {
-    case PlanFunction::Serialize:
-        return renderLoweredEntryPointName(Language::C, type, EntryPoint::Serialize);
-    case PlanFunction::Deserialize:
-        return renderLoweredEntryPointName(Language::C, type, EntryPoint::Deserialize);
-    case PlanFunction::Initialize:
-        return renderLoweredEntryPointName(Language::C, type, EntryPoint::Initialize);
-    case PlanFunction::Get:
-        return renderLoweredAccessorName(Language::C, type, AccessorVerb::Get, symbol.member);
-    case PlanFunction::Set:
-        return renderLoweredAccessorName(Language::C, type, AccessorVerb::Set, symbol.member);
-    case PlanFunction::Helper:
-        break;
-    }
-    std::string helper = "llvmdsdl_plan_" + symbol.helperKind + "__" + type;
-    if (symbol.step)
-    {
-        helper += "__" + std::to_string(*symbol.step);
-    }
-    if (symbol.direction != PlanHelperDirection::None)
-    {
-        helper += (symbol.direction == PlanHelperDirection::Serialize) ? "__ser" : "__deser";
-    }
-    return helper;
+    return renderLoweredLinkName(Language::C, symbol);
 }
 
 /// @brief The name C links the lowered function @p irSymbol names under.

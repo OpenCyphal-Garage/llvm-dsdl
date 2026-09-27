@@ -64,7 +64,6 @@ add_library(llvmdsdlCodeGen
   DefinitionIndex.cpp
   DefinitionPathProjection.cpp
   EmitCommon.cpp
-  ImportNameScope.cpp
   ImportSet.cpp
   CodegenDiagnosticText.cpp
   GeneratedNameCollisions.cpp

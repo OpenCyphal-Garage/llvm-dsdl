@@ -7,7 +7,7 @@
 
 #include <iostream>
 
-#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
+#include "llvmdsdl/Support/BodyNaming.h"
 
 #include "UnitTests.h"
 #include "llvmdsdl/Support/Language.h"

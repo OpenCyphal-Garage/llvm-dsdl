@@ -15,6 +15,9 @@
 
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
+#include "llvmdsdl/Support/BodyNaming.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/SectionScopes.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 
@@ -36,14 +39,16 @@ FieldParts field(const std::string& name, const bool array = false, const std::u
 
 DefinitionParts message(const std::string& shortName, SectionParts section)
 {
-    return DefinitionParts{.namespaceComponents = {"ns"},
-                           .shortName           = shortName,
-                           .majorVersion        = 1,
-                           .minorVersion        = 0,
-                           .fixedPortId         = std::nullopt,
-                           .service             = false,
-                           .request             = std::move(section),
-                           .response            = std::nullopt};
+    return DefinitionParts{.ref         = llvmdsdl::DefinitionRef{.namespaceComponents = {"ns"},
+                                                                  .shortName           = shortName,
+                                                                  .majorVersion        = 1,
+                                                                  .minorVersion        = 0},
+                           .fixedPortId = std::nullopt,
+                           .service     = false,
+                           .deprecated  = false,
+                           .request     = std::move(section),
+                           .response    = std::nullopt,
+                           .bodies      = {}};
 }
 
 SurfacePlan allocate(const Language language, const std::vector<DefinitionParts>& definitions)
@@ -104,8 +109,9 @@ void outline(const SurfacePlan& plan, const std::size_t scope, const std::string
         }
         else
         {
-            out += indent + "  " + plan.decls[item.index].name + " : " + className(plan.decls[item.index].nameClass) +
-                   "\n";
+            const llvmdsdl::SurfaceDecl& decl = plan.decls[item.index];
+            out += indent + "  " + decl.name + " : " + className(decl.nameClass) +
+                   ((decl.visibility == llvmdsdl::SurfaceVisibility::Private) ? " private" : "") + "\n";
         }
     }
 }
@@ -130,6 +136,14 @@ std::string optionName(const SurfacePlan& plan, const std::string& option)
     const auto found = plan.definitions.front().sections.front().options.find(option);
     return (found == plan.definitions.front().sections.front().options.end()) ? "<none>"
                                                                               : plan.decls[found->second.decl].name;
+}
+
+/// @brief A lowered function of `ns.Msg.1.0`, from its symbol.
+llvmdsdl::BodyParts body(const std::string& symbol, const bool unreferenced = false)
+{
+    return llvmdsdl::BodyParts{.symbol       = symbol,
+                               .plan         = llvmdsdl::parsePlanSymbol(symbol).value_or(llvmdsdl::PlanSymbol{}),
+                               .unreferenced = unreferenced};
 }
 
 bool expect(const std::string& got, const std::string& want, const std::string& what)
@@ -240,6 +254,114 @@ bool runSurfacePlanTests()
                    "ns.List.1.0 response path",
                    "a field's entity") &&
             ok;
+    }
+
+    // A deprecated type is declared under a name of its own where the language does that, and its
+    // public name is an alias of it.
+    {
+        DefinitionParts old = message("Msg", SectionParts{.fields = {field("value")}, .constants = {}});
+        old.deprecated      = true;
+        ok                  = expect(outline(allocate(Language::Rust, {old})),
+                                     "root pkg\n"
+                                     "  module ns\n"
+                                     "    module msg_1_0\n"
+                                     "      type Msg_\n"
+                                     "        value : value\n"
+                                     "      Msg : type\n",
+                                     "a deprecated Rust type") &&
+                              ok;
+        ok                  = expect(outline(allocate(Language::C, {old})),
+                                     "root pkg\n"
+                                     "  file Msg_1_0\n"
+                                     "    type ns__Msg\n"
+                                     "      value : value\n",
+                                     "a deprecated C type") &&
+                              ok;
+    }
+
+    // Band 4, the lowered functions. A language that compiles the bodies apart links every one, a
+    // helper nothing calls included; the others name each helper a body calls, in the pool the
+    // language allocates helpers in.
+    {
+        DefinitionParts owner = message("Msg", SectionParts{.fields = {}, .constants = {}});
+        owner.bodies          = {body("ns.Msg.1.0.plan.capacity_check"),
+                                 body("ns.Msg.1.0.plan.scalar_unsigned.0.ser"),
+                                 body("ns.Msg.1.0.serialize"),
+                                 body("ns.Msg.1.0.get.speed"),
+                                 body("ns.Msg.1.0.plan.scalar_unsigned.1.ser", true)};
+        ok                    = expect(outline(allocate(Language::C, {owner})),
+                                       "root pkg\n"
+                                       "  file Msg_1_0\n"
+                                       "    type ns__Msg\n"
+                                       "    llvmdsdl_plan_capacity_check__ns__Msg_1_0 : value\n"
+                                       "    llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__0__ser : value\n"
+                                       "    ns__Msg_1_0__serialize_ir_ : value\n"
+                                       "    ns__Msg_1_0__get_speed_ir_ : value\n"
+                                       "    llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__1__ser : value\n",
+                                       "C's lowered functions") &&
+                                ok;
+        ok                    = expect(outline(allocate(Language::Cpp, {owner})),
+                                       "root pkg\n"
+                                       "  namespace ns\n"
+                                       "    file Msg_1_0\n"
+                                       "      type Msg\n"
+                                       "      mlir_llvmdsdl_plan_capacity_check_ns_Msg_1_0 : value\n"
+                                       "      mlir_llvmdsdl_plan_scalar_unsigned_ns_Msg_1_0_0_ser : value\n",
+                                       "C++'s helpers") &&
+                                ok;
+        ok                    = expect(outline(allocate(Language::Rust, {owner})),
+                                       "root pkg\n"
+                                       "  module ns\n"
+                                       "    module msg_1_0\n"
+                                       "      type Msg\n"
+                                       "      capacity_check : value private\n"
+                                       "      scalar_unsigned_0_ser : value private\n",
+                                       "Rust's helpers") &&
+                                ok;
+        ok                    = expect(outline(allocate(Language::Go, {owner})),
+                                       "root pkg\n"
+                                       "  package ns\n"
+                                       "    file msg_1_0\n"
+                                       "      type Msg\n"
+                                       "      msgCapacityCheck : value private\n"
+                                       "      msgScalarUnsigned0Ser : value private\n",
+                                       "Go's helpers") &&
+                                ok;
+        ok                    = expect(outline(allocate(Language::TypeScript, {owner})),
+                                       "root pkg\n"
+                                       "  module ns\n"
+                                       "    module msg_1_0\n"
+                                       "      type Msg\n"
+                                       "      capacityCheck : value private\n"
+                                       "      scalarUnsigned0Ser : value private\n",
+                                       "TypeScript's helpers") &&
+                                ok;
+        ok                    = expect(outline(allocate(Language::Python, {owner})),
+                                       "root pkg\n"
+                                       "  module ns\n"
+                                       "    module msg_1_0\n"
+                                       "      type Msg\n"
+                                       "      _capacity_check : value private\n"
+                                       "      _scalar_unsigned_0_ser : value private\n",
+                                       "Python's helpers") &&
+                                ok;
+
+        // Two helpers that project onto one name meet in the pool, and the later one moves.
+        DefinitionParts           twins  = message("Msg", SectionParts{.fields = {}, .constants = {}});
+        const llvmdsdl::BodyParts first  = body("ns.Msg.1.0.plan.capacity_check");
+        llvmdsdl::BodyParts       second = first;
+        second.symbol                    = "ns.Msg.1.0.plan.capacity__check";
+        second.plan.helperKind           = "capacity__check";
+        twins.bodies                     = {first, second};
+        ok                               = expect(outline(allocate(Language::Rust, {twins})),
+                                                  "root pkg\n"
+                                                  "  module ns\n"
+                                                  "    module msg_1_0\n"
+                                                  "      type Msg\n"
+                                                  "      capacity_check : value private\n"
+                                                  "      capacity_check_2 : value private\n",
+                                                  "two helpers of one name") &&
+                                           ok;
     }
 
     // Band 1, the language's reservations: a constant that reaches a name the generator writes at

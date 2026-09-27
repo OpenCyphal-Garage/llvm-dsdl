@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-#include "llvmdsdl/CodeGen/ImportNameScope.h"
-#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/Support/Language.h"
 
 #include "UnitTests.h"
@@ -19,21 +19,14 @@
 namespace
 {
 
-llvmdsdl::SemanticTypeRef refTo(const std::vector<std::string>& namespaceComponents,
-                                const std::string&              shortName,
-                                const std::uint32_t             minor = 0)
+llvmdsdl::DefinitionRef refTo(const std::vector<std::string>& namespaceComponents,
+                              const std::string&              shortName,
+                              const std::uint32_t             minor = 0)
 {
-    llvmdsdl::SemanticTypeRef ref;
-    ref.namespaceComponents = namespaceComponents;
-    ref.shortName           = shortName;
-    for (const auto& component : namespaceComponents)
-    {
-        ref.fullName += component + ".";
-    }
-    ref.fullName += shortName;
-    ref.majorVersion = 1;
-    ref.minorVersion = minor;
-    return ref;
+    return llvmdsdl::DefinitionRef{.namespaceComponents = namespaceComponents,
+                                   .shortName           = shortName,
+                                   .majorVersion        = 1,
+                                   .minorVersion        = minor};
 }
 
 bool expect(const std::string& got, const std::string& want, const char* what)

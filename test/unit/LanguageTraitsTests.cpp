@@ -213,6 +213,22 @@ std::string render(const llvmdsdl::NamespaceForm value)
     return "?";
 }
 
+std::string render(const llvmdsdl::HelperNaming value)
+{
+    switch (value)
+    {
+    case llvmdsdl::HelperNaming::LinkName:
+        return "link-name";
+    case llvmdsdl::HelperNaming::Binding:
+        return "binding";
+    case llvmdsdl::HelperNaming::Package:
+        return "package";
+    case llvmdsdl::HelperNaming::Module:
+        return "module";
+    }
+    return "?";
+}
+
 std::string flag(const bool value)
 {
     return value ? "1" : "0";
@@ -237,7 +253,7 @@ std::string render(const LanguageTraits& row)
            " name-reaches-type=" + flag(d.definitionName.typeNameReachesTheType) + " section-join='" +
            d.sectionJoin.str() + "' section-alone=" + flag(d.sectionNamedAlone) +
            " namespace-shared=" + flag(d.definitionsShareNamespaceScope) + " namespaces=" + render(d.namespaces) +
-           " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
+           " helpers=" + render(d.helpers) + " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
            " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
            " constant-macros=" + flag(d.constantsAreMacros) + " generated-suffix='" + d.generatedConstantSuffix.str() +
            "' array-metadata=" + flag(d.arrayMetadataConstants) +
@@ -274,6 +290,7 @@ bool runLanguageTraitsTests()
          "bool-arrays=packed | "
          "namespace-join='__' "
          "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 namespaces=joined "
+         "helpers=link-name "
          "file-directory-module=0 namespace-type-scope=0 constants=enclosing constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
          "deprecated-apart=0 free-entry-join='__' free-init=1 free-accessors=joined free-union-options=1 "
@@ -284,7 +301,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=packed-when-fixed "
          "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
-         "namespace-shared=1 namespaces=namespace file-directory-module=0 namespace-type-scope=1 constants=type "
+         "namespace-shared=1 namespaces=namespace helpers=binding file-directory-module=0 namespace-type-scope=1 "
+         "constants=type "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=1 "
          "deprecated-apart=1 free-entry-join='_' free-init=0 free-accessors=none free-union-options=0 "
@@ -295,16 +313,18 @@ bool runLanguageTraitsTests()
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 namespaces=module "
+         "helpers=module "
          "file-directory-module=1 namespace-type-scope=0 constants=type constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
-         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
+         "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
          "constants=package constants-share-fields=0 reserved=none | nullable=100 views=1 images=1 "
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
-         "namespace-shared=1 namespaces=package file-directory-module=0 namespace-type-scope=0 constants=package "
+         "namespace-shared=1 namespaces=package helpers=package file-directory-module=0 namespace-type-scope=0 "
+         "constants=package "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=concatenated free-union-options=0 "
@@ -315,6 +335,7 @@ bool runLanguageTraitsTests()
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
+         "helpers=module "
          "file-directory-module=0 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
@@ -325,6 +346,7 @@ bool runLanguageTraitsTests()
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
+         "helpers=module "
          "file-directory-module=1 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
@@ -348,6 +370,14 @@ bool runLanguageTraitsTests()
                  row.name.str() + ": a getter's buffer is null only where it answers a pointer");
         t.expect(row.body.nullability.rawPointer || !row.body.nullability.accessorBuffer,
                  row.name.str() + ": a buffer no body sees null is not null to a getter");
+    }
+
+    // A helper is named by its link name exactly where the bodies are compiled apart.
+    for (const LanguageTraits& row : llvmdsdl::allLanguageTraits())
+    {
+        t.expect((row.composition.helpers == llvmdsdl::HelperNaming::LinkName) ==
+                     !row.composition.freeFunctions.loweredBodySuffix.empty(),
+                 row.name.str() + ": a helper takes a link name where, and only where, the bodies are apart");
     }
 
     // A namespace is joined into each identifier exactly where the row names a separator to join it.

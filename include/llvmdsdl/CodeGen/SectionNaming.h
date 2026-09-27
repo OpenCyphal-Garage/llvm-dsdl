@@ -18,6 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/SectionScopes.h"
@@ -30,6 +31,11 @@ namespace llvmdsdl
 /// @param[in] section The section.
 /// @return Its parts.
 [[nodiscard]] SectionParts sectionParts(const SemanticSection& section);
+
+/// @brief The identity of the definition @p ref refers to, as naming reads it.
+/// @param[in] ref The reference.
+/// @return The definition's identity.
+[[nodiscard]] DefinitionRef definitionRef(const SemanticTypeRef& ref);
 
 /// @brief The parts of @p definition that naming reads.
 /// @param[in] definition The definition.
