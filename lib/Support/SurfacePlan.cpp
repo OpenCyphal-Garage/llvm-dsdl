@@ -169,7 +169,8 @@ private:
                                           .visibility = visibility,
                                           .origin     = origin,
                                           .of         = std::move(of),
-                                          .scope      = scope});
+                                          .scope      = scope,
+                                          .binds      = std::nullopt});
         plan_.scopes[scope].items.push_back(SurfaceItem{.scope = false, .index = index});
         return index;
     }
@@ -428,6 +429,24 @@ private:
 };
 
 }  // namespace
+
+std::optional<NamePartition> namePartition(const NameClasses& classes, const NameClass nameClass)
+{
+    switch (nameClass)
+    {
+    case NameClass::Value:
+        return NamePartition::Values;
+    case NameClass::Type:
+        return classes.typesApartFromValues ? NamePartition::Types : NamePartition::Values;
+    case NameClass::Module:
+        return classes.modulesAmongTypes ? namePartition(classes, NameClass::Type) : NamePartition::Modules;
+    case NameClass::Tag:
+        return classes.tags ? std::optional<NamePartition>(NamePartition::Tags) : std::nullopt;
+    case NameClass::Macro:
+        return classes.macros ? std::optional<NamePartition>(NamePartition::Macros) : std::nullopt;
+    }
+    return std::nullopt;
+}
 
 SurfacePlan allocateSurface(const LanguageTraits&                 row,
                             const llvm::ArrayRef<DefinitionParts> definitions,

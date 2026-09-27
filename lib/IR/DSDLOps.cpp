@@ -32,6 +32,7 @@
 
 #include "llvmdsdl/IR/DSDLAttrs.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"           // IWYU pragma: keep
@@ -620,15 +621,7 @@ LogicalResult IOOp::verify()
 namespace
 {
 
-/// @brief A class of names as one language keeps them apart, where several classes may be one.
-enum class Partition
-{
-    Values,
-    Types,
-    Modules,
-    Tags,
-    Macros,
-};
+using Partition = llvmdsdl::NamePartition;
 
 /// @brief The partition @p nameClass falls in, or none where the language has no such class.
 std::optional<Partition> partitionOf(const NameClass nameClass, const llvmdsdl::NameClasses& classes)
@@ -636,15 +629,15 @@ std::optional<Partition> partitionOf(const NameClass nameClass, const llvmdsdl::
     switch (nameClass)
     {
     case NameClass::Value:
-        return Partition::Values;
+        return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Value);
     case NameClass::Type:
-        return classes.typesApartFromValues ? Partition::Types : Partition::Values;
+        return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Type);
     case NameClass::Module:
-        return classes.modulesAmongTypes ? partitionOf(NameClass::Type, classes) : Partition::Modules;
+        return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Module);
     case NameClass::Tag:
-        return classes.tags ? std::optional<Partition>(Partition::Tags) : std::nullopt;
+        return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Tag);
     case NameClass::Macro:
-        return classes.macros ? std::optional<Partition>(Partition::Macros) : std::nullopt;
+        return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Macro);
     }
     return std::nullopt;
 }

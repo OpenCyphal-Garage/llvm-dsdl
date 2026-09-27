@@ -229,6 +229,36 @@ std::string render(const llvmdsdl::HelperNaming value)
     return "?";
 }
 
+std::string render(const llvmdsdl::MemberReach value)
+{
+    switch (value)
+    {
+    case llvmdsdl::MemberReach::None:
+        return "none";
+    case llvmdsdl::MemberReach::Bare:
+        return "bare";
+    case llvmdsdl::MemberReach::SelfType:
+        return "self-type";
+    case llvmdsdl::MemberReach::Instance:
+        return "instance";
+    case llvmdsdl::MemberReach::TypeName:
+        return "type-name";
+    }
+    return "?";
+}
+
+std::string render(const llvmdsdl::Qualification value)
+{
+    switch (value)
+    {
+    case llvmdsdl::Qualification::Shortest:
+        return "shortest";
+    case llvmdsdl::Qualification::Rooted:
+        return "rooted";
+    }
+    return "?";
+}
+
 std::string flag(const bool value)
 {
     return value ? "1" : "0";
@@ -245,16 +275,21 @@ std::string render(const LanguageTraits& row)
            " internal=" + render(c.internalLinkage) + " errors=" + render(c.errors) +
            " constants=" + render(c.typeConstants) + " constants-share-fields=" + flag(c.constantsShareFieldNamespace) +
            " reserved=" + render(c.reservedUnderscores) + " classes=" + flag(c.nameClasses.typesApartFromValues) +
-           flag(c.nameClasses.modulesAmongTypes) + flag(c.nameClasses.tags) + flag(c.nameClasses.macros) +
-           " | nullable=" + flag(b.nullability.objectPointer) + flag(b.nullability.rawPointer) +
-           flag(b.nullability.accessorBuffer) + " views=" + flag(b.accessorsReturnViews) +
-           " images=" + flag(b.objectsAreByteImages) + " answers-size=" + flag(b.bodiesAnswerSize) +
-           " bool-arrays=" + render(b.boolArrays) + " | namespace-join='" + d.definitionName.namespaceJoin.str() +
+           flag(c.nameClasses.modulesAmongTypes) + flag(c.nameClasses.tags) + flag(c.nameClasses.macros) + " lookup='" +
+           c.lookup.separator.str() + "','" + c.lookup.rootPrefix.str() + "'," +
+           flag(c.lookup.rootPrefixOnlyWhenShadowed) + flag(c.lookup.enclosingNamespaces) + "," +
+           render(c.lookup.ownMembers) + ",'" + c.lookup.selfType.str() + "','" + c.lookup.selfInstance.str() + "','" +
+           c.lookup.selfClass.str() + "'" + " | nullable=" + flag(b.nullability.objectPointer) +
+           flag(b.nullability.rawPointer) + flag(b.nullability.accessorBuffer) +
+           " views=" + flag(b.accessorsReturnViews) + " images=" + flag(b.objectsAreByteImages) +
+           " answers-size=" + flag(b.bodiesAnswerSize) + " bool-arrays=" + render(b.boolArrays) +
+           " | namespace-join='" + d.definitionName.namespaceJoin.str() +
            "' version-in-name=" + flag(d.definitionName.versionInTypeName) +
            " name-reaches-type=" + flag(d.definitionName.typeNameReachesTheType) + " section-join='" +
            d.sectionJoin.str() + "' section-alone=" + flag(d.sectionNamedAlone) +
            " namespace-shared=" + flag(d.definitionsShareNamespaceScope) + " namespaces=" + render(d.namespaces) +
-           " helpers=" + render(d.helpers) + " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
+           " helpers=" + render(d.helpers) + " qualification=" + render(d.qualification) +
+           " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
            " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
            " constant-macros=" + flag(d.constantsAreMacros) + " generated-suffix='" + d.generatedConstantSuffix.str() +
            "' array-metadata=" + flag(d.arrayMetadataConstants) +
@@ -287,23 +322,26 @@ bool runLanguageTraitsTests()
     const std::pair<Language, std::string> kExpected[] = {
         {Language::C,
          "c: scopes=000 nested=0 methods=none internal=static errors=status-code constants=enclosing "
-         "constants-share-fields=0 reserved=leading classes=0011 | nullable=111 views=0 images=1 answers-size=0 "
+         "constants-share-fields=0 reserved=leading classes=0011 lookup='','',00,none,'','','' | nullable=111 views=0 "
+         "images=1 answers-size=0 "
          "bool-arrays=packed | "
          "namespace-join='__' "
          "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 namespaces=joined "
-         "helpers=link-name "
+         "helpers=link-name qualification=shortest "
          "file-directory-module=0 namespace-type-scope=0 constants=enclosing constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
          "deprecated-apart=0 free-entry-join='__' free-init=1 free-accessors=joined free-union-options=1 "
          "lowered-body-suffix='ir_'"},
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
-         "constants-share-fields=1 reserved=leading-and-interior classes=0101 | nullable=110 views=1 images=1 "
+         "constants-share-fields=1 reserved=leading-and-interior classes=0101 lookup='::','::',11,bare,'','','' | "
+         "nullable=110 views=1 images=1 "
          "answers-size=0 "
          "bool-arrays=packed-when-fixed "
          "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
-         "namespace-shared=1 namespaces=namespace helpers=binding file-directory-module=0 namespace-type-scope=1 "
+         "namespace-shared=1 namespaces=namespace helpers=binding qualification=rooted file-directory-module=0 "
+         "namespace-type-scope=1 "
          "constants=type "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=1 "
@@ -311,21 +349,24 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "
-         "constants-share-fields=0 reserved=none classes=1100 | nullable=000 views=1 images=1 answers-size=1 "
+         "constants-share-fields=0 reserved=none classes=1100 lookup='::','crate::',00,self-type,'Self','','' | "
+         "nullable=000 views=1 images=1 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 namespaces=module "
-         "helpers=module "
+         "helpers=module qualification=shortest "
          "file-directory-module=1 namespace-type-scope=0 constants=type constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
-         "constants=package constants-share-fields=0 reserved=none classes=0000 | nullable=100 views=1 images=1 "
+         "constants=package constants-share-fields=0 reserved=none classes=0000 lookup='.','',00,none,'','','' | "
+         "nullable=100 views=1 images=1 "
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
-         "namespace-shared=1 namespaces=package helpers=package file-directory-module=0 namespace-type-scope=0 "
+         "namespace-shared=1 namespaces=package helpers=package qualification=shortest file-directory-module=0 "
+         "namespace-type-scope=0 "
          "constants=package "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
@@ -333,22 +374,24 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::TypeScript,
          "ts: scopes=110 nested=1 methods=member internal=not-exported errors=exception constants=type "
-         "constants-share-fields=0 reserved=none classes=1000 | nullable=100 views=1 images=0 answers-size=1 "
+         "constants-share-fields=0 reserved=none classes=1000 lookup='.','',00,type-name,'','','' | nullable=100 "
+         "views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
-         "helpers=module "
+         "helpers=module qualification=shortest "
          "file-directory-module=0 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
-         "constants-share-fields=1 reserved=none classes=0100 | nullable=100 views=1 images=0 answers-size=1 "
+         "constants-share-fields=1 reserved=none classes=0100 lookup='.','',00,instance,'','self','cls' | nullable=100 "
+         "views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
-         "helpers=module "
+         "helpers=module qualification=shortest "
          "file-directory-module=1 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "

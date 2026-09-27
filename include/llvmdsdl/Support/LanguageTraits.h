@@ -147,6 +147,59 @@ struct NameClasses final
     bool macros{};
 };
 
+/// @brief How a body reaches a member of the type it is declared in, where a lookup of the bare name
+///        does not.
+enum class MemberReach
+{
+    /// @brief It names none: a type's members are reached through a value.
+    None,
+
+    /// @brief Bare, through class-member lookup.
+    Bare,
+
+    /// @brief Through the name the language gives a body's own type, as `Self::`.
+    SelfType,
+
+    /// @brief Through the instance or the class the body is handed, as `self.` and `cls.`, and
+    ///        through the type's name where it is handed neither.
+    Instance,
+
+    /// @brief Through the type's name, which is a value too.
+    TypeName,
+};
+
+/// @brief How the language resolves a name written in a body, and how a qualified name is written.
+///
+/// The model `spellReference` repeats over a surface plan: which scopes a body sees, nearest first,
+/// and the forms a name takes where the bare one does not reach the declaration.
+struct Lookup final
+{
+    /// @brief What joins a qualifier to the name it qualifies; empty where a name is never qualified.
+    llvm::StringRef separator;
+
+    /// @brief What begins a path from the root; empty where the language writes none.
+    llvm::StringRef rootPrefix;
+
+    /// @brief Whether a path from the root is written without @ref rootPrefix where the root's first
+    ///        component is not shadowed.
+    bool rootPrefixOnlyWhenShadowed{};
+
+    /// @brief Whether a body sees each namespace that encloses its own, nearest first.
+    bool enclosingNamespaces{};
+
+    /// @brief How a body reaches a member of its own type.
+    MemberReach ownMembers{};
+
+    /// @brief The name a body calls its own type by; empty where it writes the type's name.
+    llvm::StringRef selfType;
+
+    /// @brief The instance a method is handed; empty where the language hands none by name.
+    llvm::StringRef selfInstance;
+
+    /// @brief The class a class method is handed; empty where the language hands none by name.
+    llvm::StringRef selfClass;
+};
+
 /// @brief What a language can express.
 ///
 /// The table in `CLEAN_CODE.md`, *Language classification*. A column grows here when a phase needs
@@ -179,6 +232,9 @@ struct Classification final
 
     /// @brief The classes one scope keeps names apart in.
     NameClasses nameClasses{};
+
+    /// @brief How a name written in a body is resolved.
+    Lookup lookup{};
 };
 
 /// @brief How a free function that reads or writes one member of a type is named.
@@ -284,6 +340,16 @@ enum class HelperNaming
     Module,
 };
 
+/// @brief How a reference is spelt, where the language could spell it more than one way.
+enum class Qualification
+{
+    /// @brief The shortest spelling the language's lookup resolves to the declaration.
+    Shortest,
+
+    /// @brief From the root, for a declaration outside the site's own type.
+    Rooted,
+};
+
 /// @brief How the output composes a language's declarations today.
 struct Composition final
 {
@@ -307,6 +373,9 @@ struct Composition final
 
     /// @brief How a lowered helper is named.
     HelperNaming helpers{};
+
+    /// @brief How a reference is spelt.
+    Qualification qualification{};
 
     /// @brief Whether a definition's file and a namespace's directory of one name are one module.
     ///
