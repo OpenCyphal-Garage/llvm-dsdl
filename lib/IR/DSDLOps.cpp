@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
@@ -29,12 +30,15 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "llvmdsdl/IR/DSDLAttrs.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"           // IWYU pragma: keep
 #include "mlir/IR/BuiltinAttributes.h"  // IWYU pragma: keep
 #include "mlir/IR/Diagnostics.h"        // IWYU pragma: keep
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/LLVM.h"
 
 using namespace mlir;
@@ -710,7 +714,7 @@ private:
         {
             return success();
         }
-        ScopeOp space = namespaceOf(scope);
+        const ScopeOp space = namespaceOf(scope);
         for (Operation& op : *scope.getBody())
         {
             if (auto child = llvm::dyn_cast<ScopeOp>(op))
