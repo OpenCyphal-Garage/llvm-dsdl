@@ -14,11 +14,11 @@ This is the plan to bring the declaration half under a contract of its own.
 
 ## The output
 
-Taking `uavcan.file.List.0.2` from the regulated corpus, at `8c2f0a7`:
+Taking `uavcan.file.List.0.2` from the regulated corpus, at `b1c5dbe8`:
 
 | | the section type | a synthesised helper |
 |---|---|---|
-| C | `struct uavcan__file__List__Request` | `int8_t llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
+| C | `struct uavcan__file__List__Request` | `int8_t llvmdsdl_plan_capacity_check__uavcan__file__List_0_2__Request` |
 | C++ | `struct uavcan::file::List_Request` | `inline std::int8_t uavcan::file::mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request` |
 | Rust | `pub struct Request` in `uavcan::file::list_0_2` | `fn capacity_check_request` |
 | Go | `type ListRequest struct` | `func listCapacityCheckRequest` |
@@ -70,11 +70,12 @@ So the declaration half has a policy for *how a name is spelled* and none for *w
 lives*. Since the second question is answered six times in six emitters, it is answered the same
 way six times.
 
-The helper name shows the cost twice over. `lib/Transforms/Passes.cpp` mints
-`llvmdsdl_plan_capacity_check__<schema>__<section>` as the MLIR symbol. `renderHelperBindingIdentifier`
-re-mangles that string at render time into `mlir_llvmdsdl_…`, collapsing `__` for C++ alone. C uses
-the first and C++ the second. One symbol, two spellings, computed in two places — which is what
-happens when a name is decided away from the references to it.
+The helper name shows the cost. `lib/Transforms/Passes.cpp` mints the helper's identity,
+`uavcan.file.List.0.2.request.plan.capacity_check`, as the MLIR symbol. C spells it
+`llvmdsdl_plan_capacity_check__uavcan__file__List_0_2__Request` in its emitter, and
+`renderHelperBindingIdentifier` spells it `mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request`
+for C++. Each spelling is composed away from the scope that declares it, so each restates the whole
+definition that scope already names.
 
 ## Language classification
 
@@ -126,12 +127,14 @@ Bodies stay top-level functions, and their symbols do not change:
   looking it up;
 - `schemaFunctions`, `PlanBodyLookups`, `schemaOf`, the emitters' accessor lookup,
   `cloneFunctionsOf` and the canonicaliser nested on `func.func` read a flat module;
-- the object lane exports every function, and a call into another definition is an external
-  declaration named by the callee's symbol, so a body's symbol is an ABI name.
+- the object lane exports every function, and renames each function and each call into another
+  definition to the C link name it reads back from the symbol through `parsePlanSymbol`, so a body's
+  symbol is what its ABI name is spelt from.
 
 Moving the bodies into scope ops and rewriting their references with `replaceAllSymbolUses` would
 produce the same output at the cost of every item above. A symbol is renamed only in the object lane,
-at LLVM conversion, once C's phase changes C's names; there a symbol is also what a linker reads.
+before LLVM conversion, to the C link name its header declares; there a symbol is also what a linker
+reads.
 
 The tree is built from three ops in `DSDLOps.td`, with typed attributes:
 
@@ -148,14 +151,14 @@ dsdl.surface target = "rust" profile = "std" {
   dsdl.scope module "uavcan" path = "src/uavcan/mod.rs" {
    dsdl.scope module "file" path = "src/uavcan/file/mod.rs" {
     dsdl.scope module "list_0_2" path = "src/uavcan/file/list_0_2.rs" {
-      dsdl.decl "Path" kind = import class = type of = @uavcan_file_Path_2_0
+      dsdl.decl "Path" kind = import class = type of = @uavcan.file.Path.2.0
       dsdl.decl "capacity_check_request" kind = helper class = value visibility = private
-          of = @llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request
-      dsdl.scope type "Request" of = @uavcan_file_List_0_2 section = "request" {
-        dsdl.decl "entry_index" kind = field of = @uavcan_file_List_0_2
+          of = @uavcan.file.List.0.2.request.plan.capacity_check
+      dsdl.scope type "Request" of = @uavcan.file.List.0.2 section = "request" {
+        dsdl.decl "entry_index" kind = field of = @uavcan.file.List.0.2
             section = "request" member = "entry_index"
         dsdl.decl "FULL_NAME" kind = constant origin = generated
-        dsdl.decl "serialize" kind = entry of = @uavcan_file_List_0_2__request__serialize_ir_
+        dsdl.decl "serialize" kind = entry of = @uavcan.file.List.0.2.request.serialize
       }
       dsdl.decl "List" kind = alias class = type origin = generated
     }
@@ -657,15 +660,17 @@ The C and C++ judge was installed after the sweep, and read 4,808 findings over 
 one, and the C++, read at C++20 with the accessors taking spans, to 4,946. With each file including
 the headers that declare what it names, the C comes to 4,804 and the C++ to 4,461, and the C to
 4,803 once the runtime header includes only what it uses. An implementation file that declares only
-its helpers, and leaves its bodies to its header, takes the C to 3,990.
+its helpers, and leaves its bodies to its header, takes the C to 3,990. Naming the IR by DSDL
+identity leaves the C at 3,990 and takes the C++ to 4,294: its headers lose their version sentinels
+and guard with `#pragma once`.
 
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
-| 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
+| 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan__file__List_0_2__Request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
 | 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
-| 1,497 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
+| 1,163 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, and the section types and facts the C++ phase nests |
 | 996 | Python | `E501` | long lines |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
@@ -677,6 +682,7 @@ What is left is per-language.
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
 | 168 | C++ | `modernize-concat-nested-namespaces` | `namespace uavcan { namespace node {`, where C++17 writes `namespace uavcan::node {` |
+| 167 | C++ | `portability-avoid-pragma-once` | `#pragma once`, one per header |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 123 | C, C++ | `readability-redundant-parentheses` | `!(rejected)`, 123 in each |
 | 75 | TypeScript | `naming-convention` | accessor names that keep a field's underscores (`getScalarMeter_per_second_per_second`) |
