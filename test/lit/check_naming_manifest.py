@@ -79,6 +79,24 @@ def main() -> int:
     if got != ("Request", "Response"):
         failures.append(f"expected the rust section type names to be Request/Response, got {got!r}")
 
+    # C joins the namespace into the type name, so it reports the joined name under its own key, on
+    # the definition and on each section.
+    c_call = languages["c"].get("fixtures_naming.naming.Call.1.0", {})
+    got = (
+        c_call.get("qualified_type_name"),
+        c_call.get("request", {}).get("qualified_type_name"),
+        c_call.get("response", {}).get("qualified_type_name"),
+    )
+    expected_c = (
+        "fixtures_naming__naming__Call",
+        "fixtures_naming__naming__Call__Request",
+        "fixtures_naming__naming__Call__Response",
+    )
+    if got != expected_c:
+        failures.append(f"expected the C type names of Call to be {expected_c!r}, got {got!r}")
+    if "type_name" in c_call:
+        failures.append("C joins the namespace into the type name and should report no type_name")
+
     brk = go.get("fixtures_naming.naming.Break.1.0", {})
     if brk.get("file_stem") != "break_1_0":
         failures.append(f"expected Break to take the stem break_1_0, got {brk.get('file_stem')!r}")

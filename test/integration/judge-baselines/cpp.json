@@ -8,6 +8,7 @@
     "modernize-type-traits": 54,
     "modernize-use-auto": 1910,
     "modernize-use-integer-sign-comparison": 34,
+    "portability-avoid-pragma-once": 167,
     "readability-identifier-naming": 1497,
     "readability-non-const-parameter": 5,
     "readability-redundant-casting": 454,

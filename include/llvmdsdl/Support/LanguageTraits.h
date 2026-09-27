@@ -159,6 +159,46 @@ struct Classification final
     ReservedUnderscores reservedUnderscores{};
 };
 
+/// @brief How a free function that reads or writes one member of a type is named.
+enum class AccessorNaming
+{
+    /// @brief None is free: an accessor is a member of the type, or a method on it.
+    None,
+
+    /// @brief The type's name, the entry point join, the verb and the member, each ending in `_`:
+    ///        `List_Request__get_path_`.
+    Joined,
+
+    /// @brief The type's name, the verb in title case and the member: `ListRequestGetPath`.
+    Concatenated,
+};
+
+/// @brief How the free functions declared beside a section's type are named.
+///
+/// A free function is declared in the scope that holds the type, so its name carries the type's.
+struct FreeFunctionNames final
+{
+    /// @brief What joins the type's name to an entry point, as in `List_Request__serialize_`.
+    ///
+    /// Empty where the entry points are members of the type or methods on it.
+    llvm::StringRef entryPointJoin;
+
+    /// @brief Whether the type is initialised through a free entry point as well.
+    bool initializer{};
+
+    /// @brief How a field's getter and setter are named.
+    AccessorNaming accessors{};
+
+    /// @brief Whether a union's option has a free test and selector, as in `Value__is_integer_`.
+    bool unionOptionFunctions{};
+
+    /// @brief What ends the name of the body a free entry point or accessor wraps, where the body is
+    ///        compiled apart from it, as in `List_Request_0_2__serialize_ir_`.
+    ///
+    /// Empty where the body is the entry point itself.
+    llvm::StringRef loweredBodySuffix;
+};
+
 /// @brief How one language composes a definition's type name.
 struct DefinitionNamePolicy final
 {
@@ -182,7 +222,8 @@ struct DefinitionNamePolicy final
     /// and Python in a per-namespace one.
     ///
     /// C is false because its namespace is joined into the identifier, so the namespace the manifest
-    /// reports beside the name would double it. C++ is false as it always has been, and the reason
+    /// reports beside the name would double it; the manifest reports C's joined name as
+    /// `qualified_type_name`. C++ is false as it always has been, and the reason
     /// once given for it -- that its emitter builds a namespace-qualified symbol of its own -- is not
     /// what `cppTypeName` does. Whether C++ should report is a question for the phase that takes C++;
     /// see `CLEAN_CODE.md`.
@@ -207,6 +248,16 @@ struct Composition final
     /// type the same way without meeting.
     bool definitionsShareNamespaceScope{};
 
+    /// @brief Whether a definition's file and a namespace's directory of one name are one module.
+    ///
+    /// Rust declares either as a `mod`, and Python imports either as its package's attribute.
+    bool fileAndDirectoryAreOneModule{};
+
+    /// @brief Whether a namespace is declared in the scope that holds its parent namespace's types.
+    ///
+    /// C++ declares `namespace Foo` beside `struct Foo`, and the two may not share a name.
+    bool namespaceAndTypeShareScope{};
+
     /// @brief Where a type's constants are declared.
     ConstantsScope constants{};
 
@@ -223,6 +274,9 @@ struct Composition final
 
     /// @brief Whether a deprecated definition's type is declared under a name of its own.
     bool deprecatedTypeDeclaredApart{};
+
+    /// @brief How the free functions beside a section's type are named.
+    FreeFunctionNames freeFunctions{};
 };
 
 /// @brief One language's row.

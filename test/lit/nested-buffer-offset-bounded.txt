@@ -7,16 +7,16 @@
 # RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s
 
-# CHECK-LABEL: func.func @fixtures_vendor_UsesDelimited_1_0__serialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.UsesDelimited.1.0.serialize
 # CHECK-NOT: arith.select {{.*}} : i64
 # CHECK: dsdl.buffer_at %{{[0-9a-z]+}}[%c4_i64]
-# CHECK-NEXT: dsdl.call_serdes @fixtures_vendor_Delimited_1_0__serialize_ir_
+# CHECK-NEXT: dsdl.call_serdes @fixtures.vendor.Delimited.1.0.serialize
 
-# CHECK-LABEL: func.func @fixtures_vendor_UsesDelimited_1_0__deserialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.UsesDelimited.1.0.deserialize
 # CHECK: %[[FITS:[0-9]+]] = arith.cmpi {{ult|ugt}}, %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
 # CHECK-NEXT: %[[AT:[0-9]+]] = arith.select %[[FITS]], %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
 # CHECK: dsdl.buffer_at %{{[0-9a-z]+}}[%[[AT]]]
-# CHECK-NEXT: dsdl.call_serdes @fixtures_vendor_Delimited_1_0__deserialize_ir_
+# CHECK-NEXT: dsdl.call_serdes @fixtures.vendor.Delimited.1.0.deserialize
 
 # A nested type the buffer starts with is handed the buffer itself, with the whole of its size, in
 # either direction: the bounded byte would be nought for every capacity. A reader hands on the
@@ -26,20 +26,20 @@
 # RUN: %dsdlc --target-language mlir %S/fixtures_ts_alias/collide 2>/dev/null > %t.start.mlir
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.start.mlir | FileCheck %s --check-prefix=START
 
-# START-LABEL: func.func @collide_Uses_1_0__serialize_ir_
+# START-LABEL: func.func @collide.Uses.1.0.serialize
 # START: dsdl.member_addr %arg0 "from_alpha"
 # START-NEXT: %[[SLOT:[0-9]+]] = dsdl.local %{{[0-9]+}} : i64
-# START-NEXT: dsdl.call_serdes @collide_alpha_Vec_1_0__serialize_ir_(%{{[0-9]+}}, %arg1, %[[SLOT]])
+# START-NEXT: dsdl.call_serdes @collide.alpha.Vec.1.0.serialize(%{{[0-9]+}}, %arg1, %[[SLOT]])
 # START: dsdl.buffer_at %arg1[%c4_i64]
-# START-NEXT: dsdl.call_serdes @collide_beta_Vec_1_0__serialize_ir_
+# START-NEXT: dsdl.call_serdes @collide.beta.Vec.1.0.serialize
 
-# START-LABEL: func.func @collide_Uses_1_0__deserialize_ir_
+# START-LABEL: func.func @collide.Uses.1.0.deserialize
 # START: %[[READ:[0-9]+]] = dsdl.buffer_or_empty %arg1
 # START-NOT: arith.select
 # START-NOT: arith.subi
 # START: %[[SLOT:[0-9]+]] = dsdl.local %{{[0-9]+}} : i64
-# START-NEXT: dsdl.call_serdes @collide_alpha_Vec_1_0__deserialize_ir_(%{{[0-9]+}}, %[[READ]], %[[SLOT]])
+# START-NEXT: dsdl.call_serdes @collide.alpha.Vec.1.0.deserialize(%{{[0-9]+}}, %[[READ]], %[[SLOT]])
 # START: %[[FITS:[0-9]+]] = arith.cmpi {{ult|ugt}}, %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
 # START-NEXT: %[[AT:[0-9]+]] = arith.select %[[FITS]], %{{[0-9a-z_]+}}, %{{[0-9a-z_]+}} : i64
 # START: dsdl.buffer_at %[[READ]][%[[AT]]]
-# START-NEXT: dsdl.call_serdes @collide_beta_Vec_1_0__deserialize_ir_
+# START-NEXT: dsdl.call_serdes @collide.beta.Vec.1.0.deserialize

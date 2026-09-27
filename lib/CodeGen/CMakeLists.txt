@@ -67,11 +67,11 @@ add_library(llvmdsdlCodeGen
   ImportNameScope.cpp
   ImportSet.cpp
   CodegenDiagnosticText.cpp
+  GeneratedNameCollisions.cpp
   HelperBindingNaming.cpp
   InitializerRender.cpp
   NamingManifest.cpp
   SchemaLookup.cpp
-  SchemaNaming.cpp
   SectionNaming.cpp
   StorageTypeTokens.cpp
   SourceWriter.cpp

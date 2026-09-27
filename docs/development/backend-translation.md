@@ -30,7 +30,7 @@ dialect. Consuming lowered facts is not translating lowered operations.
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
 receives; each plan yields three bodies, serialise, deserialise and initialise; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
 `build-dsdl-plan-bodies`, so it acts on every backend alike. The C and object lanes take each definition's schema, and the functions built for it, from that
-module, and stamp C names on the schema before spelling or converting them.
+module.
 
 After `build-dsdl-plan-bodies` the pipeline folds what the target's `BodyInterface` rules out:
 `dsdl-fold-null-guards` a null test the target cannot fail, `dsdl-fold-unobserved-accessor-sizes`
@@ -57,12 +57,12 @@ A body spells nothing the way C does:
 | in the body | in C |
 |---|---|
 | `!dsdl.ptr<!dsdl.object<"vendor.Msg.1.0">>`, `!dsdl.ptr<!dsdl.byte>`, `!dsdl.ptr<!dsdl.size>`, `const` carried on the pointer | `struct vendor__Msg*`, `uint8_t*`, `size_t*` |
-| `dsdl.load_member %obj "field"`, and the store, address, element and length forms, each carrying the DSDL member name | the member's `c_name` from the schema |
+| `dsdl.load_member %obj "field"`, and the store, address, element and length forms, each carrying the DSDL member name | the member's name in the section scope the header declares it in |
 | `dsdl.array_length`, `dsdl.set_array_length` | `.count` |
 | `dsdl.element_addr`, `dsdl.load_element`, `dsdl.store_element`, carrying the element's storage category and width | `.elements[i]`, or `.bitpacked` for a `bool` array |
 | `dsdl.union_tag`, `dsdl.set_union_tag` | `._tag_` |
-| `dsdl.call_serdes @vendor_Inner_1_0__serialize_ir_`, carrying the member and the direction | `vendor__Inner__serialize_` |
-| `dsdl.call_initialize @vendor_Inner_1_0__initialize_ir_`, carrying the member | `vendor__Inner__initialize_` |
+| `dsdl.call_serdes @vendor.Inner.1.0.serialize`, carrying the member and the direction | `vendor__Inner__serialize_` |
+| `dsdl.call_initialize @vendor.Inner.1.0.initialize`, carrying the member | `vendor__Inner__initialize_` |
 | `dsdl.store_view`, `dsdl.clear_view`, `dsdl.load_view`, carrying the member held as a view and, in an array of views, the element's index | `.bytes` and `.size_bytes` of the member's `dsdl_runtime_view_t`, or of the element's; `dsdl_runtime_clear_views` over a fixed array |
 | `dsdl.copy_bytes`, carrying the field's width | `dsdl_runtime_copy_bytes` |
 

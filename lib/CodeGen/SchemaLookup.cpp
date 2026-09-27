@@ -29,6 +29,7 @@
 
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
 {
@@ -107,8 +108,7 @@ mlir::OwningOpRef<mlir::dsdl::IOOp> unionTagStep(mlir::MLIRContext* const contex
     mlir::OpBuilder      builder(context);
     mlir::OperationState state(builder.getUnknownLoc(), mlir::dsdl::IOOp::getOperationName());
     state.addAttribute("kind", builder.getStringAttr("field"));
-    state.addAttribute("name", builder.getStringAttr("_tag_"));
-    state.addAttribute("c_name", builder.getStringAttr("_tag_"));
+    state.addAttribute("name", builder.getStringAttr(kPlanUnionTagMember));
     state.addAttribute("type_name", builder.getStringAttr("saturated uint" + std::to_string(tagBits)));
     state.addAttribute("scalar_category", builder.getStringAttr("unsigned"));
     state.addAttribute("cast_mode", builder.getStringAttr("saturated"));

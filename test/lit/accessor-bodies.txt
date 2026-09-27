@@ -18,7 +18,7 @@
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/other.mlir | FileCheck %s --check-prefix=NOT_FLAT
 
 # Two fields, a byte and a half-word: the second sits at bit eight.
-# GET-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__get_b_ir_(
+# GET-LABEL: func.func @fixtures_host_image.vendor.Padded.1.0.get.b(
 # GET-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64) -> i64
 # GET-SAME:  llvmdsdl.member = "b", llvmdsdl.plan_body = "get"
 # GET:       %[[OFF:.*]] = arith.constant 8 : i64
@@ -27,10 +27,10 @@
 # GET:       %[[NULL:.*]] = dsdl.is_null %[[BUF]]
 # GET:       %[[HELD:.*]] = arith.select %[[NULL]], %[[EMPTY]], %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
 # GET:       %[[RAW:.*]] = dsdl.read_bits %[[READABLE]][%[[OFF]]], size %[[HELD]] {width = 16 : i64}
-# GET:       %[[VALUE:.*]] = call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__deser(%[[RAW]])
+# GET:       %[[VALUE:.*]] = call @fixtures_host_image.vendor.Padded.1.0.plan.scalar_unsigned.1.deser(%[[RAW]])
 # GET:       return %[[VALUE]] : i64
 
-# SET-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__set_b_ir_(
+# SET-LABEL: func.func @fixtures_host_image.vendor.Padded.1.0.set.b(
 # SET-SAME:  %[[BUF:.*]]: !dsdl.ptr<!dsdl.byte>, %[[SIZE:.*]]: i64, %[[VALUE:.*]]: i64) -> i8
 # SET-SAME:  llvmdsdl.member = "b", llvmdsdl.plan_body = "set"
 # SET:       %[[OFF:.*]] = arith.constant 8 : i64
@@ -38,30 +38,30 @@
 # SET:       %[[CAP:.*]] = arith.muli %[[SIZE]], %{{.*}}
 # SET:       arith.cmpi uge, %[[CAP]], %{{.*}}
 # SET:       scf.if
-# SET:       %[[NORMALISED:.*]] = func.call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__ser(%[[VALUE]])
+# SET:       %[[NORMALISED:.*]] = func.call @fixtures_host_image.vendor.Padded.1.0.plan.scalar_unsigned.1.ser(%[[VALUE]])
 # SET:       dsdl.write_bits %[[BUF]][%[[OFF]]], %[[NORMALISED]], size %[[SIZE]] {width = 16 : i64}
 
 # The offsets follow the steps: after a four-byte fixed array, and after an eight-byte nested record.
-# OFFSETS-LABEL: @fixtures_host_image_vendor_Arr_1_0__get_tail_ir_(
+# OFFSETS-LABEL: @fixtures_host_image.vendor.Arr.1.0.get.tail(
 # OFFSETS:       arith.constant 32 : i64
-# OFFSETS-LABEL: @fixtures_host_image_vendor_Nested_1_0__get_code_ir_(
+# OFFSETS-LABEL: @fixtures_host_image.vendor.Nested.1.0.get.code(
 # OFFSETS:       arith.constant 64 : i64
 
 # An element of a fixed array takes an index. At or past the capacity it reads as zero, as bytes
 # past the buffer do: the read stays within the field, and the answer is selected after it, since a
 # slice read carries no size to clamp.
 # RUN: FileCheck %s --check-prefix=ELEMENT < %t/bodies.mlir
-# ELEMENT-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__get_head_ir_(
+# ELEMENT-LABEL: func.func @fixtures_host_image.vendor.Arr.1.0.get.head(
 # ELEMENT-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[INDEX:.*]]: i64) -> i64
 # ELEMENT:       %[[HELD:.*]] = arith.select %{{.*}}, %{{.*}}, %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
 # ELEMENT:       %[[IN:.*]] = arith.cmpi ult, %[[INDEX]], %{{.*}}
 # ELEMENT:       %[[OFF:.*]] = arith.muli %[[INDEX]], %{{.*}}
 # ELEMENT:       %[[AT:.*]] = arith.select %[[IN]], %[[OFF]], %{{.*}}
 # ELEMENT:       dsdl.read_bits %{{.*}}[%[[AT]]], size %[[HELD]] {width = 8 : i64}
-# ELEMENT:       %[[VALUE:.*]] = call @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Arr_1_0__0__deser(
+# ELEMENT:       %[[VALUE:.*]] = call @fixtures_host_image.vendor.Arr.1.0.plan.scalar_unsigned.0.deser(
 # ELEMENT:       %[[ANSWER:.*]] = arith.select %[[IN]], %[[VALUE]], %{{.*}}
 # ELEMENT:       return %[[ANSWER]]
-# ELEMENT-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__set_head_ir_(
+# ELEMENT-LABEL: func.func @fixtures_host_image.vendor.Arr.1.0.set.head(
 # ELEMENT-SAME:  %{{.*}}: !dsdl.ptr<!dsdl.byte>, %{{.*}}: i64, %[[INDEX:.*]]: i64, %{{.*}}: i64) -> i8
 # ELEMENT:       arith.cmpi ult, %[[INDEX]], %{{.*}}
 # ELEMENT:       dsdl.write_bits
@@ -70,20 +70,20 @@
 # field's byte offset and, through the size pointer, what remains. A field at offset nought answers
 # the buffer the getter was handed, null or not, and the size a getter reads there.
 # RUN: FileCheck %s --check-prefix=COMPOSITE < %t/bodies.mlir
-# COMPOSITE-LABEL: func.func @fixtures_host_image_vendor_Nested_1_0__get_inner_ir_(
+# COMPOSITE-LABEL: func.func @fixtures_host_image.vendor.Nested.1.0.get.inner(
 # COMPOSITE-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
 # COMPOSITE-NOT:   dsdl.buffer_or_empty
 # COMPOSITE:       %[[NULL:.*]] = dsdl.is_null %[[BUF]]
 # COMPOSITE-NEXT:  %[[HELD:.*]] = arith.select %[[NULL]], %{{.*}}, %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
 # COMPOSITE-NEXT:  dsdl.store_scalar %[[OUT]], %[[HELD]]
 # COMPOSITE-NEXT:  return %[[BUF]]
-# COMPOSITE-NOT:   @fixtures_host_image_vendor_Nested_1_0__set_inner_ir_
+# COMPOSITE-NOT:   @fixtures_host_image.vendor.Nested.1.0.set.inner
 
 # Past offset nought the offset is clamped to the size, so a short buffer yields an empty one, as a
 # null buffer does.
 # RUN: %dsdlc --target-language mlir %S/fixtures_aliasable > %t/aliasable.mlir
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/aliasable.mlir | FileCheck %s --check-prefix=COMPOSITE_AT
-# COMPOSITE_AT-LABEL: func.func @fixtures_aliasable_vendor_Pose_1_0__get_orientation_ir_(
+# COMPOSITE_AT-LABEL: func.func @fixtures_aliasable.vendor.Pose.1.0.get.orientation(
 # COMPOSITE_AT-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
 # COMPOSITE_AT:       %[[OFF:.*]] = arith.constant 12 : i64
 # COMPOSITE_AT:       %[[READABLE:.*]] = dsdl.buffer_or_empty %[[BUF]]

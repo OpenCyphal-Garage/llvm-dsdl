@@ -29,8 +29,10 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -38,6 +40,25 @@ namespace llvmdsdl
 {
 namespace
 {
+
+/// @brief The key a language's type name is reported under, or nothing where it is not reported.
+///
+/// `type_name` where a consumer reaches the type from the name and the namespace. A language that
+/// joins the namespace into the identifier reports the joined name as `qualified_type_name`, since
+/// the namespace beside it would double it.
+std::optional<llvm::StringLiteral> typeNameKey(const Language language)
+{
+    const DefinitionNamePolicy& policy = definitionNamePolicy(language);
+    if (policy.typeNameReachesTheType)
+    {
+        return llvm::StringLiteral{"type_name"};
+    }
+    if (!policy.namespaceJoin.empty())
+    {
+        return llvm::StringLiteral{"qualified_type_name"};
+    }
+    return std::nullopt;
+}
 
 /// @brief Renders one section's attribute names.
 ///
@@ -47,14 +68,14 @@ namespace
 ///            which decides whether they are in reach of the module's own names. The emitters build
 ///            their scope from it, so the manifest has to as well or it reports a name that is not
 ///            the one written.
-/// @param[in] reportTypeName Whether the section's type name is the shared projection, and so is
-///            the whole answer rather than part of one. Reported because it does not follow from
-///            the definition's own: Rust reaches a section through the definition's module, so the
-///            name is the section word alone and a consumer cannot derive it from the type name.
-llvm::json::Object renderSection(const Language         language,
-                                 const SemanticSection& section,
-                                 const std::string&     sectionTypeName,
-                                 const bool             reportTypeName)
+/// @param[in] typeNameKey The key @p sectionTypeName is reported under, or nothing where it is not
+///            reported. Reported for each section because it does not follow from the definition's
+///            own: Rust reaches a section through the definition's module, so the name is the
+///            section word alone and a consumer cannot derive it from the type name.
+llvm::json::Object renderSection(const Language                           language,
+                                 const SemanticSection&                   section,
+                                 const std::string&                       sectionTypeName,
+                                 const std::optional<llvm::StringLiteral> typeNameKey)
 {
     const NamingScope fieldScope = makeSectionFieldScope(language, section);
 
@@ -87,9 +108,9 @@ llvm::json::Object renderSection(const Language         language,
     }
 
     llvm::json::Object out;
-    if (reportTypeName)
+    if (typeNameKey)
     {
-        out["type_name"] = sectionTypeName;
+        out[*typeNameKey] = sectionTypeName;
     }
     out["fields"]    = std::move(fields);
     out["constants"] = std::move(constants);
@@ -131,8 +152,8 @@ llvm::json::Object renderDefinition(const Language            language,
         namespaceParts.push_back(codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component));
     }
 
-    // The same name the emitters prefix a section's constants with. Reported only for the three
-    // languages whose type symbol is this projection, but needed for the scope in every language.
+    // The same name the emitters prefix a section's constants with. Reported where `typeNameKey`
+    // names a key, but needed for the scope in every language.
     const std::string typeName = renderDefinitionTypeName(language,
                                                           def.info.namespaceComponents,
                                                           def.info.shortName,
@@ -140,12 +161,12 @@ llvm::json::Object renderDefinition(const Language            language,
                                                           def.info.minorVersion,
                                                           typeNameVersioning);
 
-    const bool reportType = definitionNamePolicy(language).typeNameReachesTheType;
+    const std::optional<llvm::StringLiteral> reportType = typeNameKey(language);
 
     llvm::json::Object out;
     if (reportType)
     {
-        out["type_name"] = typeName;
+        out[*reportType] = typeName;
     }
     // Exact for every backend: the FileStem role returns the raw short name for C and C++ and the
     // folded one for the other four -- both go through this one call.

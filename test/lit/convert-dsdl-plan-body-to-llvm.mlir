@@ -50,8 +50,8 @@ func.func @widget_serialize(
   %e = dsdl.write_bits %buf[%c0], %w, size %cap {width = 8 : i64} : !dsdl.ptr<!dsdl.byte>, i64
 
   // A nested type is called by its body's own symbol; one not in this module is declared.
-  // CHECK: llvm.call @vendor_Inner_1_0__serialize_ir_
-  %e2 = dsdl.call_serdes @vendor_Inner_1_0__serialize_ir_(%obj, %at, %slot) {direction = "serialize", member = "inner"} : !dsdl.ptr<const !dsdl.object<"fixtures.vendor.Widget.1.0">>, !dsdl.ptr<!dsdl.byte>, !dsdl.ptr<!dsdl.size>
+  // CHECK: llvm.call @vendor.Inner.1.0.serialize
+  %e2 = dsdl.call_serdes @vendor.Inner.1.0.serialize(%obj, %at, %slot) {direction = "serialize", member = "inner"} : !dsdl.ptr<const !dsdl.object<"fixtures.vendor.Widget.1.0">>, !dsdl.ptr<!dsdl.byte>, !dsdl.ptr<!dsdl.size>
 
   // CHECK: llvm.store %{{.*}}, %[[SZ]]
   dsdl.store_scalar %sz, %cap : !dsdl.ptr<!dsdl.size>, i64

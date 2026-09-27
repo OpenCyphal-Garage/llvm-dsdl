@@ -3920,6 +3920,7 @@ if(PYTHON_EXECUTABLE AND CMAKE_C_COMPILER)
         -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
         -DC_COMPILER=${CMAKE_C_COMPILER}
         -DCROSSCHECK_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/gates/member_layout_crosscheck.py
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/member-layout-crosscheck-out
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMemberLayoutCrosscheck.cmake
   )
@@ -4045,33 +4046,6 @@ if(PYTHON_EXECUTABLE)
     PROPERTIES
       LABELS "integration;docs;release-blocking"
   )
-endif()
-
-# The names an object lowering emits under are stamped by a backend, and the header it links
-# against is emitted separately. Versioning moves both, so both spellings are checked.
-if(PYTHON_EXECUTABLE)
-  foreach(naming_mode unversioned versioned)
-    set(versioned_flag OFF)
-    if(naming_mode STREQUAL versioned)
-      set(versioned_flag ON)
-    endif()
-    add_test(
-      NAME llvmdsdl-schema-symbol-parity-${naming_mode}
-      COMMAND
-        ${CMAKE_COMMAND}
-          -DDSDLC=$<TARGET_FILE:dsdlc>
-          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-          -DVERSIONED_TYPE_NAMES=${versioned_flag}
-          -DPARITY_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/gates/schema_symbol_parity.py
-          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/schema-symbol-parity-${naming_mode}-out
-          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunSchemaSymbolParity.cmake
-    )
-    set_tests_properties(
-      llvmdsdl-schema-symbol-parity-${naming_mode}
-      PROPERTIES
-        LABELS "integration;uavcan;abi;release-blocking"
-    )
-  endforeach()
 endif()
 
 # The style judges of CLEAN_CODE.md phase 1, each over the regulated corpus in its own language.

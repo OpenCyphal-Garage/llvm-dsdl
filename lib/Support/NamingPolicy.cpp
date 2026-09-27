@@ -17,6 +17,7 @@
 
 #include "llvmdsdl/Support/NamingPolicy.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cctype>
@@ -833,6 +834,23 @@ llvm::ArrayRef<llvm::StringRef> codegenGeneratedConstantTokens()
     return runtimeOwnedNames(Language::Rust, IdentifierRole::ConstantName);
 }
 
+llvm::StringRef unionTagMemberName(const Language language)
+{
+    switch (language)
+    {
+    case Language::C:
+    case Language::Cpp:
+    case Language::Rust:
+        return "_tag_";
+    case Language::Go:
+        return "Tag";
+    case Language::TypeScript:
+    case Language::Python:
+        return "_tag";
+    }
+    return "_tag_";
+}
+
 std::string codegenToGoExportedIdentifier(const llvm::StringRef name)
 {
     return codegenProjectIdentifier(Language::Go, IdentifierRole::ConstantName, name);
@@ -1003,6 +1021,18 @@ std::string NamingScope::get(const IdentifierRole role, const llvm::StringRef so
         return codegenProjectIdentifier(language_, role, sourceName);
     }
     return it->second;
+}
+
+std::vector<std::string> NamingScope::assigned() const
+{
+    std::vector<std::string> out;
+    out.reserve(assigned_.size());
+    for (const auto& entry : assigned_)
+    {
+        out.push_back(entry.second);
+    }
+    std::ranges::sort(out);
+    return out;
 }
 
 }  // namespace llvmdsdl

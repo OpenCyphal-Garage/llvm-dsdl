@@ -220,6 +220,18 @@ def emit_deprecated(root: pathlib.Path) -> None:
     write(base / "GoneService.1.0.dsdl", f"@deprecated\nuint8 a\n{SEALED}---\nuint8 b\n{SEALED}")
 
 
+def emit_folded_names(root: pathlib.Path) -> None:
+    """Two definitions whose full names differ where one has a `.` and the other a `_`.
+
+    Every language spells the two apart, and so does the IR, which names a definition by its DSDL
+    identity. The holder references both, so a body calls across the pair.
+    """
+    base = root / "adv" / "fold"
+    write(base / "A_B.1.0.dsdl", f"uint8 a\n{SEALED}")
+    write(base / "A" / "B.1.0.dsdl", f"uint16 b\n{SEALED}")
+    write(base / "Holder.1.0.dsdl", f"adv.fold.A_B.1.0 x\nadv.fold.A.B.1.0 y\n{SEALED}")
+
+
 def emit_version_multiplicity(root: pathlib.Path) -> None:
     """The axes that need several versions of one definition present at once.
 
@@ -266,6 +278,7 @@ def main() -> int:
     emit_members(root)
     emit_sections(root)
     emit_deprecated(root)
+    emit_folded_names(root)
     if not args.no_version_multiplicity:
         emit_version_multiplicity(root)
 

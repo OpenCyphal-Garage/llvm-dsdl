@@ -584,7 +584,7 @@ void emitUnionSectionType(SourceWriter&          w,
     {
         emitAttachedDocTs(w, typeDoc);
         emitDeprecationJsDocTs(w, section.deprecated, fullName, majorVersion, minorVersion);
-        w.line("export type " + typeName + " = { _tag: number };");
+        w.line("export type " + typeName + " = { " + unionTagMemberName(Language::TypeScript).str() + ": number };");
         return;
     }
 
@@ -598,8 +598,8 @@ void emitUnionSectionType(SourceWriter&          w,
         emitAttachedDocTs(w, field->doc);
         const auto         fieldName = fieldIdents.get(IdentifierRole::FieldName, field->name);
         std::ostringstream variant;
-        variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
-                << tsFieldType(field->resolvedType, file) << "; }";
+        variant << "{ " << unionTagMemberName(Language::TypeScript).str() << ": " << field->unionOptionIndex << "; "
+                << fieldName << ": " << tsFieldType(field->resolvedType, file) << "; }";
         const auto* const prefix = "  | ";
         w.line(prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
     }
@@ -692,7 +692,7 @@ public:
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{"_tag", tagSteps_.back().get()};
+                entry.members["_tag_"] = Member{unionTagMemberName(Language::TypeScript).str(), tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1251,12 +1251,15 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return file_.runtime() + ".toBigIntValue(" + names(op.getObject()) + "._tag)";
+        return file_.runtime() + ".toBigIntValue(" + names(op.getObject()) + "." +
+               unionTagMemberName(Language::TypeScript).str() + ")";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
-        w.line("(" + names(op.getObject()) + " as { _tag: number })._tag = " + asNumber(op.getValue(), names) + ";");
+        const std::string tag = unionTagMemberName(Language::TypeScript).str();
+        w.line("(" + names(op.getObject()) + " as { " + tag + ": number })." + tag + " = " +
+               asNumber(op.getValue(), names) + ";");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
@@ -1947,7 +1950,8 @@ void emitMakeFunction(SourceWriter&           w,
                       tsDefaultFromBody(field, entryOf(field), file);
             }
         }
-        w.line("return { _tag: " + std::to_string(init.unionTag) + arm + " };");
+        w.line("return { " + unionTagMemberName(Language::TypeScript).str() + ": " + std::to_string(init.unionTag) +
+               arm + " };");
     }
     else
     {

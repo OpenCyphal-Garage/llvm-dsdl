@@ -32,7 +32,50 @@ class DiagnosticEngine;
 /// @file
 /// @brief Discovery routines for locating and loading DSDL definitions.
 
-/// @brief Rejects a service section whose generated type name collides with another type's.
+/// @brief A type's or a namespace's name, in the scope a definition shares with other definitions.
+struct ScopedTypeName final
+{
+    /// @brief The scope, from @ref sharedScopeOf; for a namespace, its parent's.
+    std::string scope;
+
+    /// @brief The name as emitted.
+    std::string name;
+
+    /// @brief The name under @ref TypeNameVersioning::Versioned.
+    std::string versionedName;
+
+    /// @brief The section the type is: `request`, `response`, or empty.
+    std::string section;
+
+    /// @brief For a namespace, its full DSDL name; empty for a type.
+    std::string namespaceName;
+};
+
+/// @brief The scope @p info's names are declared in, where @p language shares one across definitions.
+/// @param[in] language Naming language.
+/// @param[in] info The definition.
+/// @return The projected namespace path, or empty where the namespace is in the identifier and the
+///         scope is global.
+[[nodiscard]] std::string sharedScopeOf(const LanguageTraits& language, const DiscoveredDefinition& info);
+
+/// @brief Every type name @p info declares in @p language's shared scope.
+///
+/// The definition's, each section's, and a deprecated C++ struct's own; and, where the row's
+/// `namespaceAndTypeShareScope` is set, each namespace's in its parent's scope. Empty where the
+/// language gives every definition a module of its own.
+/// @param[in] language Naming language.
+/// @param[in] info The definition.
+/// @param[in] isService Whether the definition is a service.
+/// @param[in] isDeprecated Whether the definition is deprecated.
+/// @param[in] versioning Whether generated type names carry the version.
+/// @return The names, namespaces first.
+[[nodiscard]] std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&       language,
+                                                          const DiscoveredDefinition& info,
+                                                          bool                        isService,
+                                                          bool                        isDeprecated,
+                                                          TypeNameVersioning          versioning);
+
+/// @brief Rejects a generated type name that another name declared in its scope also takes.
 ///
 /// A service emits a type per section, named after the service with a suffix -- `Foo` gives
 /// `Foo_Request`. A sibling definition may be *called* `Foo_Request`, which is conformant DSDL, and
@@ -42,22 +85,31 @@ class DiagnosticEngine;
 /// A deprecated definition's C++ struct is declared as `<name>_`, with `<name>` a deprecated alias of
 /// it (@ref renderDeclaredTypeName), so that name is claimed as well.
 ///
+/// Where the row's `namespaceAndTypeShareScope` is set, each namespace is claimed in its parent's
+/// scope beside the types: `ns.Foo` and a namespace `ns.Foo` are both C++'s `ns::Foo`, and so are
+/// `ns.Foo.1.0` and a namespace `ns.Foo_1_0` under @ref TypeNameVersioning::Versioned.
+///
 /// Only where a language shares one scope across a namespace does this break a build -- C in its
 /// single global scope, C++ in the namespace, Go in the package. Rust, TypeScript and Python give
 /// every definition its own module, so the repeat is unreachable and is not reported.
+///
+/// A language whose `namespaceJoin` puts the namespace in the identifier has its names checked in
+/// one scope across every namespace. C joins with `__`, which a DSDL name may hold as well, so
+/// `ns.A__B` and `ns.A.B` are both `ns__A__B`.
 ///
 /// The check runs after parsing because that is where a definition is known to be a service, and it
 /// composes the section name with @ref renderSectionTypeName, the same call the emitters use.
 ///
 /// @param[in] definitions Parsed definitions to check.
 /// @param[in] outputLanguages Languages whose output names are checked; empty disables the check.
-/// @param[in] versioning Whether generated type names carry the version. Under
-///            @ref TypeNameVersioning::Versioned the two names differ and nothing is reported.
+/// @param[in] versioning Whether generated type names carry the version, which decides the names
+///            compared. The diagnostic suggests `--versioned-type-names` where the versioned names
+///            of the two differ.
 /// @param[in,out] diagnostics Diagnostic sink.
-void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
-                                           llvm::ArrayRef<LanguageTraits>   outputLanguages,
-                                           TypeNameVersioning               versioning,
-                                           DiagnosticEngine&                diagnostics);
+void checkScopedTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
+                                   llvm::ArrayRef<LanguageTraits>   outputLanguages,
+                                   TypeNameVersioning               versioning,
+                                   DiagnosticEngine&                diagnostics);
 
 /// @brief Discovers and loads every DSDL definition reachable from the given roots.
 ///
@@ -90,10 +142,13 @@ void checkServiceSectionTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> defi
 ///   escape fires -- so whichever half collides, one type would be lost or the output would not
 ///   compile. The keys come from the same engine the emitters name with, so the check cannot drift
 ///   from what is written.
+/// - **File and directory collisions.** A definition whose output file and a namespace whose
+///   directory take one module name, in a selected language where a file and a directory of one
+///   name are one module: `ns/File.1.0` beside `ns/file_1_0/` in Rust and Python.
 ///
 /// It does *not* catch a service section colliding with a sibling type, because that needs to know
 /// which definitions are services and this runs before parsing. See
-/// @ref checkServiceSectionTypeNameCollisions.
+/// @ref checkScopedTypeNameCollisions.
 ///
 /// A rename that changes a path -- an escaped file or namespace name -- is reported as a note rather
 /// than silently applied, since it changes what a build has to reference.

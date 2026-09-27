@@ -1,0 +1,35 @@
+# Regression: C joins the namespace into a type name with `__`, which a DSDL name may hold as well,
+# and declares every type in one global scope. `ns.A__B` and `ns.A.B` were both `ns__A__B`, and
+# `ns.Svc`'s request section and `ns.Svc.Request` were both `ns__Svc__Request`, so a translation unit
+# including both headers did not compile. The object backend names its C the same way.
+
+# RUN: rm -rf %t && mkdir -p %t/join/ns/A %t/skew/ns/A %t/svc/ns/Svc
+# RUN: printf 'uint8 a\n@sealed\n' > %t/join/ns/A__B.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/join/ns/A/B.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n' > %t/skew/ns/A__B.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/skew/ns/A/B.2.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/svc/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/svc/ns/Svc/Request.1.0.dsdl
+
+# One version on each side: the versioned names meet as well, so the flag is not suggested.
+# RUN: not %dsdlc --target-language c %t/join/ns --outdir %t/c 2>&1 | FileCheck %s --check-prefix=JOIN
+# JOIN: A__B.1.0.dsdl:1:1: error: type name collision in generated output: 'ns.A__B' and 'ns.A.B' both emit 'ns__A__B' for target language 'c'; rename one of them
+# RUN: not %dsdlc --target-language c --versioned-type-names %t/join/ns --outdir %t/cv 2>&1 | FileCheck %s --check-prefix=JOINV
+# JOINV: 'ns.A__B' and 'ns.A.B' both emit 'ns__A__B_1_0' for target language 'c'; rename one of them
+# RUN: not %dsdlc --target-language obj %t/join/ns --outdir %t/obj 2>&1 | FileCheck %s --check-prefix=OBJ
+# OBJ: 'ns.A__B' and 'ns.A.B' both emit 'ns__A__B' for target language 'c'
+
+# Two versions: the versioned names part them.
+# RUN: not %dsdlc --target-language c %t/skew/ns --outdir %t/skewc 2>&1 | FileCheck %s --check-prefix=SKEW
+# SKEW: 'ns.A__B' and 'ns.A.B' both emit 'ns__A__B' for target language 'c'; pass --versioned-type-names, or rename one of them
+# RUN: %dsdlc --target-language c --versioned-type-names %t/skew/ns --outdir %t/skewcv
+# RUN: grep -h 'typedef struct' %t/skewcv/ns/A__B_1_0.h %t/skewcv/ns/A/B_2_0.h | FileCheck %s --check-prefix=SKEWV
+# SKEWV: typedef struct ns__A__B_1_0 {
+# SKEWV: typedef struct ns__A__B_2_0 {
+
+# A service section and a definition in a namespace of the service's name.
+# RUN: not %dsdlc --target-language c %t/svc/ns --outdir %t/svcc 2>&1 | FileCheck %s --check-prefix=SVC
+# SVC: error: type name collision in generated output: 'ns.Svc.Request' and the request section of 'ns.Svc' both emit 'ns__Svc__Request' for target language 'c'; pass --versioned-type-names, or rename one of them
+
+# Go puts each namespace in a package of its own.
+# RUN: %dsdlc --target-language go --go-module m %t/join/ns --outdir %t/go

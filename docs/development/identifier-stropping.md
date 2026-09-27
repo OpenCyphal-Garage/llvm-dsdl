@@ -97,10 +97,10 @@ the manifest a report of what a backend writes rather than a second opinion abou
 ### 3.1 One name, and the names built from a definition
 
 The engine above answers how *one* name is spelled. A definition also has names built from its parts
--- its type name, its output file stem, its include guard, its linkage symbol base -- and those are
-composed rather than projected. `Support/DefinitionNaming.h` answers them, from a per-language table
-of the same shape as the role table: how the namespace is joined into the type name, whether the
-version is part of it, and whether the composed result is re-projected.
+-- its type name, its output file stem, its entry points and accessors -- and those are composed
+rather than projected. `Support/DefinitionNaming.h` answers them, from a per-language table of the
+same shape as the role table: how the namespace is joined into the type name, whether the version is
+part of it, and whether the composed result is re-projected.
 
 It takes parts rather than a `DiscoveredDefinition` because `llvmdsdlFrontend` links only
 `llvmdsdlSupport`, and `Discovery` -- which has to agree with the emitters about what they will emit
@@ -112,12 +112,15 @@ three libraries, with the C backend linking only because all three agreed with t
 coincidence of identical source text, and C, C++ and the object backend could each answer
 differently whether a type name carries its version.
 
-Only in the C backend does a scope cross a layer. Its struct declaration reads the scope
-directly; its serialiser bodies are spelt from MLIR by `CSpelling`, which reads member names from
-the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
-the C emitter stamps the scoped name over it on its own clone of the schema before it spells the
-bodies -- so the declaration and the references cannot disagree, and hand-driven `dsdl-opt` runs
-still have a name to work with.
+The IR names a definition by its DSDL identity, `ns.Msg.1.0`, and each of its functions by that
+identity with dotted suffixes, `ns.Msg.1.0.serialize`; `Support/PlanSymbol.h` renders and reads
+them. A backend that links or declares a function spells it from what the symbol reads back, in the
+scope where the spelling lives: C links `ns__Msg_1_0__serialize_ir_`, spelt from its versioned type
+name, and builds its include guard and version sentinels from its type name too.
+
+The C backend's struct declaration and the serialiser bodies `CSpelling` spells from MLIR name a
+member through one section scope, built from the semantic model, so the declaration and the
+references cannot disagree.
 
 ---
 
@@ -351,6 +354,18 @@ error: type name collision in generated output: ns.Foo_bar and ns.FooBar
        map to the same output file name for target languages 'rust', 'go', 'ts', 'python'
 ```
 
+A definition's file can also meet a namespace's directory. Rust declares `file_1_0.rs` and
+`file_1_0/` as one `mod file_1_0`, and Python's package `file_1_0/` hides its module `file_1_0.py`,
+so where the row's `fileAndDirectoryAreOneModule` is set the pair is rejected:
+
+```
+error: type name collision in generated output: ns.File.1.0 and namespace ns.file_1_0,
+       which holds ns.file_1_0.X, map to the same module name for target languages 'rust', 'python'
+```
+
+TypeScript generates the pair: it resolves `./file_1_0` to the file, and imports a type in the
+directory by that type's own path.
+
 A name a type does not declare can still collide. A service emits a type per section named after
 itself — `Foo` gives `Foo_Request` — and a sibling definition may be *called* `Foo_Request`, which is
 conformant DSDL. Neither declared name collides, so the check above cannot see it. A second pass
@@ -367,7 +382,7 @@ Two things about that pass are worth stating, because both were wrong in the fir
 - **It keys on the identifier as emitted, not on a name plus a version.** Under the unversioned
   default the version is not in the identifier, so two types collide whatever versions they carry; a
   key carrying the version misses the pair whose versions differ. Two versions of *one* definition
-  are excluded by comparing owners instead: that is what `--versioned-type-names` and the generated
+  are excluded by comparing owners instead: that is what `--versioned-type-names` and C's
   include-time sentinel are for, and not this check's business.
 - **It reports only where a scope is actually shared** — C's single global scope, C++'s namespace,
   Go's package. Rust, TypeScript and Python give every definition and version its own module, so a
@@ -379,11 +394,47 @@ the check cannot compute a name different from the one written. That call is als
 decides whether a section is named after the service at all: Rust reaches a section through the
 definition's module, so the section word alone is the name.
 
-### 6.1 Macros stay unique by construction
+The same pass claims each namespace in its parent's scope where the row's
+`namespaceAndTypeShareScope` is set. C++ declares a namespace beside the structs of its parent, so
+`ns.Foo` and a namespace `ns.Foo` are both `ns::Foo`, as are `ns.Foo.1.0` and a namespace
+`ns.Foo_1_0` under `--versioned-type-names`:
 
-C and C++ macros are global. Every generated macro is `<TypeName>_<MEMBER>`, and type names are
-unique after the check above, so macro uniqueness follows. A future macro that does not carry the
-type prefix is a defect rather than a style choice.
+```
+error: type name collision in generated output: 'ns.Foo' and namespace 'ns.Foo_1_0', which holds
+       'ns.Foo_1_0.X', both emit 'Foo_1_0' for target language 'cpp'; rename one of them
+```
+
+C's single global scope is one key across every namespace, since the row's `namespaceJoin` puts
+the namespace in the identifier. C joins with `__`, which a DSDL name may hold as well, so
+`ns.A__B` and `ns.A.B` are both `ns__A__B`, and `ns.Svc`'s request section and `ns.Svc.Request`
+are both `ns__Svc__Request`. The diagnostic suggests `--versioned-type-names` only where the two
+versioned names differ; `ns.A__B.1.0` and `ns.A.B.1.0` are both `ns__A__B_1_0`:
+
+```
+error: type name collision in generated output: 'ns.A__B' and 'ns.A.B' both emit 'ns__A__B'
+       for target language 'c'; rename one of them
+```
+
+### 6.1 Names generated beside a type
+
+C, C++ and Go declare names of their own beside a type, in the scope the type shares with other
+definitions: C its entry points, accessors, union option functions and macros; C++ its free entry
+points and a service's constants; Go its constants and accessors. Each carries its type's name, and
+a type's name can be another type's with a generated suffix after it, so `ns.A_EXTENT_BYTES_` beside
+`ns.A` in C, or `ns.MsgExtentBytes` beside `ns.Msg` in Go, is one identifier declared twice. A third
+pass, `checkGeneratedNameCollisions`, claims every such name in its scope and rejects one two
+definitions reach:
+
+```
+error: name collision in generated output: 'ns.MsgExtentBytes' and a name generated for 'ns.Msg'
+       both emit 'MsgExtentBytes' for target language 'go'; rename one of them
+```
+
+The names come from what the emitters name them with: the composers that read the row's
+`freeFunctions` (`renderEntryPointName`, `renderAccessorName`, `renderEnclosedConstantName`) and the
+section scopes of §5.2. An accessor is claimed for every field, whether or not the section's shape
+gives it one, so what a corpus may be called does not change with a field's type. The pass runs
+after analysis, since the section scopes take the analysed section.
 
 ---
 
@@ -501,9 +552,11 @@ is worse than no switch.
   `file_stem` is exact for every backend. `type_name` is reported for Rust, Go, TypeScript and
   Python, which name a type after its short name and let a module carry the namespace, and on each
   section as well as the definition: Rust reaches a section through the definition's module, so the
-  name is the section word alone and does not follow from the definition's. C and C++ build
-  namespace-qualified symbols in their own emitters, for which the shared projection is only part of
-  the answer, so the manifest omits the key rather than report half a name.
+  name is the section word alone and does not follow from the definition's. C joins the namespace
+  into the identifier and reports the joined name as `qualified_type_name`, on the definition and
+  on each section. C++ builds namespace-qualified symbols in its own emitter, for which the shared
+  projection is only part of the answer, so the manifest omits the key rather than report half a
+  name.
 
 - **Hover** groups languages by the identifier they produce — ``emits as `count` (c, cpp, rust, ts,
   python) · `Count` (go)`` — rather than printing six rows, five of which agree.

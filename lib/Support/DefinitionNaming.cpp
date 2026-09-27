@@ -16,6 +16,7 @@
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include <cassert>
 #include <cstdint>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
@@ -84,46 +85,6 @@ std::string renderDefinitionFileStem(const Language        language,
     return codegenProjectIdentifier(language, IdentifierRole::FileStem, composed);
 }
 
-std::string renderIncludeGuard(const Language        language,
-                               const llvm::StringRef prefix,
-                               const llvm::StringRef fullName,
-                               const std::uint32_t   majorVersion,
-                               const std::uint32_t   minorVersion,
-                               const llvm::StringRef suffix)
-{
-    const std::string composed = prefix.str() + fullName.str() + "_" + std::to_string(majorVersion) + "_" +
-                                 std::to_string(minorVersion) + suffix.str();
-    return codegenProjectIdentifier(language, IdentifierRole::MacroName, composed);
-}
-
-std::pair<std::string, std::string> renderVersionSentinelMacros(const Language        language,
-                                                                const llvm::StringRef fullName,
-                                                                const std::uint32_t   majorVersion,
-                                                                const std::uint32_t   minorVersion)
-{
-    // The generic one carries no version.
-    const std::string generic =
-        codegenProjectIdentifier(language, IdentifierRole::MacroName, "LLVMDSDL_SELECTED_" + fullName.str() + "_");
-    const std::string specific =
-        renderIncludeGuard(language, "LLVMDSDL_SELECTED_", fullName, majorVersion, minorVersion, "_");
-    return {generic, specific};
-}
-
-std::string renderDefinitionSymbolBase(const llvm::StringRef fullName,
-                                       const std::uint32_t   majorVersion,
-                                       const std::uint32_t   minorVersion)
-{
-    std::string out = fullName.str();
-    for (char& c : out)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return out + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
-}
-
 namespace
 {
 
@@ -160,17 +121,91 @@ std::string renderSectionTypeName(const Language        language,
     return baseTypeName.str() + renderSectionTypeSuffix(language, sectionName);
 }
 
-std::string renderSectionSymbolSuffix(const llvm::StringRef sectionName)
+namespace
 {
-    if (sectionName == "request")
+
+llvm::StringRef entryPointVerb(const EntryPoint entryPoint)
+{
+    switch (entryPoint)
     {
-        return "__request";
-    }
-    if (sectionName == "response")
-    {
-        return "__response";
+    case EntryPoint::Serialize:
+        return "serialize";
+    case EntryPoint::Deserialize:
+        return "deserialize";
+    case EntryPoint::Initialize:
+        return "initialize";
     }
     return "";
+}
+
+/// @brief The verb as a joined name spells it, then as a concatenated one does.
+std::pair<llvm::StringRef, llvm::StringRef> accessorVerb(const AccessorVerb verb)
+{
+    switch (verb)
+    {
+    case AccessorVerb::Get:
+        return {"get", "Get"};
+    case AccessorVerb::Set:
+        return {"set", "Set"};
+    case AccessorVerb::Is:
+        return {"is", "Is"};
+    case AccessorVerb::Select:
+        return {"select", "Select"};
+    }
+    return {};
+}
+
+}  // namespace
+
+std::string renderEntryPointName(const Language language, const llvm::StringRef typeName, const EntryPoint entryPoint)
+{
+    const llvm::StringRef join = languageTraits(language).composition.freeFunctions.entryPointJoin;
+    assert(!join.empty() && "the language's entry points are not free functions");
+    return typeName.str() + join.str() + entryPointVerb(entryPoint).str() + "_";
+}
+
+std::string renderAccessorName(const Language        language,
+                               const llvm::StringRef typeName,
+                               const AccessorVerb    verb,
+                               const llvm::StringRef member)
+{
+    const FreeFunctionNames& names    = languageTraits(language).composition.freeFunctions;
+    const auto [joined, concatenated] = accessorVerb(verb);
+    switch (names.accessors)
+    {
+    case AccessorNaming::Joined:
+        return typeName.str() + names.entryPointJoin.str() + joined.str() + "_" + member.str() + "_";
+    case AccessorNaming::Concatenated:
+        return typeName.str() + concatenated.str() + member.str();
+    case AccessorNaming::None:
+        break;
+    }
+    assert(false && "the language's accessors are not free functions");
+    return "";
+}
+
+std::string renderLoweredEntryPointName(const Language        language,
+                                        const llvm::StringRef versionedTypeName,
+                                        const EntryPoint      entryPoint)
+{
+    const llvm::StringRef suffix = languageTraits(language).composition.freeFunctions.loweredBodySuffix;
+    assert(!suffix.empty() && "the language's bodies are not compiled apart from its entry points");
+    return renderEntryPointName(language, versionedTypeName, entryPoint) + suffix.str();
+}
+
+std::string renderLoweredAccessorName(const Language        language,
+                                      const llvm::StringRef versionedTypeName,
+                                      const AccessorVerb    verb,
+                                      const llvm::StringRef member)
+{
+    const llvm::StringRef suffix = languageTraits(language).composition.freeFunctions.loweredBodySuffix;
+    assert(!suffix.empty() && "the language's bodies are not compiled apart from its accessors");
+    return renderAccessorName(language, versionedTypeName, verb, member) + suffix.str();
+}
+
+std::string renderEnclosedConstantName(const llvm::StringRef typeName, const llvm::StringRef constant)
+{
+    return typeName.str() + "_" + constant.str();
 }
 
 std::string renderCTagSpelling(const llvm::StringRef typeName)

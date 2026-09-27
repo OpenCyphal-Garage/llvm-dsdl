@@ -18,7 +18,7 @@
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
 #include "llvmdsdl/Transforms/Passes.h"
@@ -2194,12 +2194,11 @@ bool unionIsFlat(mlir::dsdl::SerializationPlanOp plan)
         any = true;
         if (io.isComposite())
         {
-            auto schema =
-                module ? module.lookupSymbol<mlir::dsdl::SchemaOp>(
-                             renderDefinitionSymbolBase(io.getCompositeFullName().value_or(llvm::StringRef{}),
-                                                        static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                                        static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))))
-                       : mlir::dsdl::SchemaOp{};
+            auto schema = module ? module.lookupSymbol<mlir::dsdl::SchemaOp>(renderSchemaSymbol(
+                                       SchemaSymbol{io.getCompositeFullName().value_or(llvm::StringRef{}).str(),
+                                                    static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                                    static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))}))
+                                 : mlir::dsdl::SchemaOp{};
             if (!schema || schema.getBody().empty())
             {
                 return false;
@@ -2234,7 +2233,7 @@ PlanStep unionTagAsStep(mlir::dsdl::SerializationPlanOp plan)
 {
     PlanStep tag;
     tag.kind                = PlanStepKind::Field;
-    tag.name                = "_tag_";
+    tag.name                = kPlanUnionTagMember.str();
     tag.scalarCategory      = "unsigned";
     tag.castMode            = "saturated";
     tag.arrayKind           = "none";
@@ -2310,7 +2309,6 @@ std::pair<mlir::Value, mlir::Value> readableBuffer(mlir::OpBuilder&     builder,
 mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                           builder,
                                         mlir::ModuleOp                             module,
                                         mlir::Location                             loc,
-                                        llvm::StringRef                            fnStem,
                                         mlir::dsdl::SchemaOp                       schema,
                                         llvm::StringRef                            section,
                                         const PlanStep&                            step,
@@ -2357,7 +2355,7 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
         }
         auto fn = mlir::func::FuncOp::create(builder,
                                              loc,
-                                             (fnStem + "__get_" + step.name + "_ir_").str(),
+                                             planAccessorSymbol(schema, section, true, step.name),
                                              builder.getFunctionType(arguments, mlir::TypeRange{valueTy}));
         tagAccessor(fn, schema, section, "get", step);
         mlir::Block* entry = fn.addEntryBlock();
@@ -2393,7 +2391,7 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
         arguments.push_back(valueTy);
         auto fn = mlir::func::FuncOp::create(builder,
                                              loc,
-                                             (fnStem + "__set_" + step.name + "_ir_").str(),
+                                             planAccessorSymbol(schema, section, false, step.name),
                                              builder.getFunctionType(arguments, mlir::TypeRange{i8Ty}));
         tagAccessor(fn, schema, section, "set", step);
         mlir::Block* entry = fn.addEntryBlock();
@@ -2471,7 +2469,6 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
 mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                           builder,
                                            mlir::ModuleOp                             module,
                                            mlir::Location                             loc,
-                                           llvm::StringRef                            fnStem,
                                            mlir::dsdl::SchemaOp                       schema,
                                            llvm::StringRef                            section,
                                            const PlanStep&                            step,
@@ -2500,7 +2497,7 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
     arguments.push_back(sizeTy);
     auto fn = mlir::func::FuncOp::create(builder,
                                          loc,
-                                         (fnStem + "__get_" + step.name + "_ir_").str(),
+                                         planAccessorSymbol(schema, section, true, step.name),
                                          builder.getFunctionType(arguments, mlir::TypeRange{readTy}));
     tagAccessor(fn, schema, section, "get", step);
     mlir::Block* entry = fn.addEntryBlock();
@@ -2604,8 +2601,10 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
             return violation->operation->emitOpError(violation->message);
         }
 
-        const std::string section = plan.getSection().value_or(llvm::StringRef{}).str();
-        const std::string fnStem  = schema.getSymName().str() + renderSectionSymbolSuffix(section);
+        const std::string section    = plan.getSection().value_or(llvm::StringRef{}).str();
+        const auto        bodySymbol = [&](const PlanFunction function) {
+            return renderPlanSymbol(planFunction(schema, section, function));
+        };
 
         const std::string identity = planIdentity(schema, plan);
 
@@ -2637,7 +2636,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         if (mlir::failed(buildTypedSerializeBody(builder,
                                                  module,
                                                  plan.getLoc(),
-                                                 fnStem + "__serialize_ir_",
+                                                 bodySymbol(PlanFunction::Serialize),
                                                  identity,
                                                  steps,
                                                  capacityCheckSymbol,
@@ -2651,7 +2650,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         if (mlir::failed(buildTypedDeserializeBody(builder,
                                                    module,
                                                    plan.getLoc(),
-                                                   fnStem + "__deserialize_ir_",
+                                                   bodySymbol(PlanFunction::Deserialize),
                                                    identity,
                                                    steps,
                                                    isUnion,
@@ -2664,16 +2663,16 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         if (mlir::failed(buildTypedInitializeBody(builder,
                                                   module,
                                                   plan.getLoc(),
-                                                  fnStem + "__initialize_ir_",
+                                                  bodySymbol(PlanFunction::Initialize),
                                                   identity,
                                                   steps,
                                                   isUnion)))
         {
             return plan.emitOpError("initialize body could not be built");
         }
-        for (const auto& [name, direction] : {std::pair{fnStem + "__serialize_ir_", "serialize"},
-                                              std::pair{fnStem + "__deserialize_ir_", "deserialize"},
-                                              std::pair{fnStem + "__initialize_ir_", "initialize"}})
+        for (const auto& [name, direction] : {std::pair{bodySymbol(PlanFunction::Serialize), "serialize"},
+                                              std::pair{bodySymbol(PlanFunction::Deserialize), "deserialize"},
+                                              std::pair{bodySymbol(PlanFunction::Initialize), "initialize"}})
         {
             auto fn = module.lookupSymbol<mlir::func::FuncOp>(name);
             if (!fn)
@@ -2709,7 +2708,6 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                     if (mlir::failed(buildCompositeAccessor(builder,
                                                             module,
                                                             plan.getLoc(),
-                                                            fnStem,
                                                             schema,
                                                             section,
                                                             *field.step,
@@ -2723,7 +2721,6 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                 if (mlir::failed(buildFieldAccessors(builder,
                                                      module,
                                                      plan.getLoc(),
-                                                     fnStem,
                                                      schema,
                                                      section,
                                                      *field.step,
@@ -2742,8 +2739,7 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
         {
             const PlanStep     tag      = unionTagAsStep(plan);
             const std::int64_t afterTag = tag.bitLength;
-            if (mlir::failed(
-                    buildFieldAccessors(builder, module, plan.getLoc(), fnStem, schema, section, tag, 0, built)))
+            if (mlir::failed(buildFieldAccessors(builder, module, plan.getLoc(), schema, section, tag, 0, built)))
             {
                 return plan.emitOpError("accessor bodies could not be built for the union's tag");
             }
@@ -2752,7 +2748,6 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                 const bool ok = stepIsComposite(*option) ? mlir::succeeded(buildCompositeAccessor(builder,
                                                                                                   module,
                                                                                                   plan.getLoc(),
-                                                                                                  fnStem,
                                                                                                   schema,
                                                                                                   section,
                                                                                                   *option,
@@ -2761,7 +2756,6 @@ struct BuildDSDLPlanBodiesPass : public mlir::PassWrapper<BuildDSDLPlanBodiesPas
                                                          : mlir::succeeded(buildFieldAccessors(builder,
                                                                                                module,
                                                                                                plan.getLoc(),
-                                                                                               fnStem,
                                                                                                schema,
                                                                                                section,
                                                                                                *option,
