@@ -1,0 +1,11 @@
+# Requested help goes to stdout. The help a bare invocation prints, and every usage error, go to stderr.
+
+# RUN: %dsdlc --help 2>/dev/null | FileCheck %s --check-prefix=HELP
+# RUN: %dsdlc -h 2>/dev/null | FileCheck %s --check-prefix=HELP
+# RUN: not %dsdlc 2>&1 | FileCheck %s --check-prefix=HELP
+# RUN: not %dsdlc 2>/dev/null | FileCheck %s --check-prefix=EMPTY --allow-empty
+# RUN: not %dsdlc --unknown 2>/dev/null | FileCheck %s --check-prefix=EMPTY --allow-empty
+
+# HELP: {{^}}LANGUAGES{{$}}
+
+# EMPTY-NOT: {{.}}

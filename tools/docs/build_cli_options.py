@@ -61,11 +61,9 @@ def _run_help(name: str, tool: Path) -> str:
         raise SystemExit(f"{name}: did not respond to --help within {HELP_TIMEOUT_SECONDS}s")
     except OSError as ex:
         raise SystemExit(f"{name}: could not run {tool}: {ex}")
-    # The hand-written help texts write to stdout; the stderr fallback covers a
-    # tool that chooses the other stream.
-    out = proc.stdout.strip() or proc.stderr.strip()
+    out = proc.stdout.strip()
     if not out:
-        raise SystemExit(f"{name}: --help produced no output")
+        raise SystemExit(f"{name}: --help printed nothing to stdout")
     return out
 
 

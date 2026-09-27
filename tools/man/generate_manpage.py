@@ -67,9 +67,9 @@ def _run_help(tool: Path) -> str:
         )
     except subprocess.TimeoutExpired:
         raise SystemExit(f"{tool} did not respond to --help within 60s")
-    out = proc.stdout.strip() or proc.stderr.strip()
+    out = proc.stdout.strip()
     if not out:
-        raise SystemExit(f"{tool} --help produced no output")
+        raise SystemExit(f"{tool} --help printed nothing to stdout")
     return out
 
 
