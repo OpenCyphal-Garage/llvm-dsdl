@@ -575,7 +575,7 @@ public:
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
                 entry.members["_tag_"] =
-                    Member{"_tag_",
+                    Member{unionTagMemberName(Language::Cpp).str(),
                            tagSteps_.back().get(),
                            scope.declare(IdentifierRole::FunctionName, accessorSource("get", "_tag_")),
                            scope.declare(IdentifierRole::FunctionName, accessorSource("set", "_tag_"))};
@@ -610,8 +610,11 @@ public:
         const std::string resource = isPmrFlavor(flavor_) ? ", " + file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
                                                                 "* const memory_resource"
                                                           : "";
-        w.line("inline " + file_.standard("std::int8_t") + " " + plan.typeName +
-               (serialize ? "_serialize_(const " : "_deserialize_(") + plan.declaredName + "* const " + object + ", " +
+        w.line("inline " + file_.standard("std::int8_t") + " " +
+               renderEntryPointName(Language::Cpp,
+                                    plan.typeName,
+                                    serialize ? EntryPoint::Serialize : EntryPoint::Deserialize) +
+               (serialize ? "(const " : "(") + plan.declaredName + "* const " + object + ", " +
                (serialize ? "" : "const ") + file_.standard("std::uint8_t") + "* const buffer, " +
                file_.standard("std::size_t") + "* const inout_buffer_size_bytes" + resource + ")");
         w.open("{");
@@ -1136,13 +1139,14 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "static_cast<" + file_.standard("std::uint64_t") + ">(" + names(op.getObject()) + "->_tag_)";
+        return "static_cast<" + file_.standard("std::uint64_t") + ">(" + names(op.getObject()) + "->" +
+               unionTagMemberName(Language::Cpp).str() + ")";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         const Plan& plan = planOf(op.getObject());
-        w.line(names(op.getObject()) + "->_tag_ = static_cast<" +
+        w.line(names(op.getObject()) + "->" + unionTagMemberName(Language::Cpp).str() + " = static_cast<" +
                unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits), file_) + ">(" + names(op.getValue()) +
                ");");
     }
@@ -1309,8 +1313,10 @@ public:
             llvm::report_fatal_error("C++ spelling: a nested call to a body of no schema in the module");
         }
         const std::string nested = qualifiedTypeName(typeRefOf(schema));
-        return nested + (op.getDirection() == "serialize" ? "_serialize_(" : "_deserialize_(") + names(op.getObject()) +
-               ", " + names(op.getBuffer()) + ", " + names(op.getSize()) +
+        const EntryPoint  entryPoint =
+            (op.getDirection() == "serialize") ? EntryPoint::Serialize : EntryPoint::Deserialize;
+        return renderEntryPointName(Language::Cpp, nested, entryPoint) + "(" + names(op.getObject()) + ", " +
+               names(op.getBuffer()) + ", " + names(op.getSize()) +
                (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ")";
     }
 
@@ -1760,12 +1766,14 @@ void emitFunctionPrototypes(SourceWriter&       w,
 {
     w.line("struct " + declaredName + ";");
     w.line(
-        "inline " + file.standard("std::int8_t") + " " + typeName + "_serialize_(const " + declaredName + "* obj, " +
+        "inline " + file.standard("std::int8_t") + " " +
+        renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) + "(const " + declaredName + "* obj, " +
         file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") + "* inout_buffer_size_bytes" +
         (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
         ");");
     w.line(
-        "inline " + file.standard("std::int8_t") + " " + typeName + "_deserialize_(" + declaredName +
+        "inline " + file.standard("std::int8_t") + " " +
+        renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) + "(" + declaredName +
         "* out_obj, const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
         "* inout_buffer_size_bytes" +
         (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
@@ -1962,7 +1970,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         {
             // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
             // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            w.line(unsignedStorageType(unionTagBits(plan), file) + " _tag_{" + std::to_string(init.unionTag) + "U};");
+            w.line(unsignedStorageType(unionTagBits(plan), file) + " " + unionTagMemberName(Language::Cpp).str() + "{" +
+                   std::to_string(init.unionTag) + "U};");
             ++emitted;
         }
 
@@ -2095,12 +2104,14 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                "const {");
         if (isPmrFlavor(flavor))
         {
-            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, " +
+            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) +
+                   "(this, buffer, inout_buffer_size_bytes, " +
                    (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
         }
         else
         {
-            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes);");
+            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) +
+                   "(this, buffer, inout_buffer_size_bytes);");
         }
         w.close("}");
 
@@ -2110,12 +2121,14 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                "inout_buffer_size_bytes) {");
         if (isPmrFlavor(flavor))
         {
-            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, " +
+            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) +
+                   "(this, buffer, inout_buffer_size_bytes, " +
                    (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
         }
         else
         {
-            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes);");
+            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) +
+                   "(this, buffer, inout_buffer_size_bytes);");
         }
         w.close("}");
 
@@ -2126,7 +2139,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                    "* "
                    "inout_buffer_size_bytes, " +
                    file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) const {");
-            w.line("return " + typeName + "_serialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) +
+                   "(this, buffer, inout_buffer_size_bytes, memory_resource);");
             w.close("}");
 
             w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") +
@@ -2134,7 +2148,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                    "* "
                    "inout_buffer_size_bytes, " +
                    file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) {");
-            w.line("return " + typeName + "_deserialize_(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) +
+                   "(this, buffer, inout_buffer_size_bytes, memory_resource);");
             w.close("}");
         }
     }
@@ -2397,9 +2412,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         const std::string aliasAttribute =
             (def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "";
 
-        w.line("constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
-        w.line("constexpr const char* " + baseTypeName + "_FULL_NAME_AND_VERSION = \"" + def.info.fullName + "." +
-               std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + "\";");
+        w.line("constexpr const char* " + renderEnclosedConstantName(baseTypeName, "FULL_NAME") + " = \"" +
+               def.info.fullName + "\";");
+        w.line("constexpr const char* " + renderEnclosedConstantName(baseTypeName, "FULL_NAME_AND_VERSION") + " = \"" +
+               def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
+               std::to_string(def.info.minorVersion) + "\";");
         w.blank();
 
         if (auto err = emitSection(w,
@@ -2437,24 +2454,27 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         }
 
         w.line("using " + baseTypeName + aliasAttribute + " = " + requestDeclared + ";");
-        w.line("constexpr " + file.standard("std::size_t") + " " + baseTypeName + "_EXTENT_BYTES = " + requestDeclared +
-               "::EXTENT_BYTES;");
-        w.line("constexpr " + file.standard("std::size_t") + " " + baseTypeName +
-               "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestDeclared + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+        w.line("constexpr " + file.standard("std::size_t") + " " +
+               renderEnclosedConstantName(baseTypeName, "EXTENT_BYTES") + " = " + requestDeclared + "::EXTENT_BYTES;");
+        w.line("constexpr " + file.standard("std::size_t") + " " +
+               renderEnclosedConstantName(baseTypeName, "SERIALIZATION_BUFFER_SIZE_BYTES") + " = " + requestDeclared +
+               "::SERIALIZATION_BUFFER_SIZE_BYTES;");
         // The service-ID belongs to the service, and this alias is how the service is named.
-        w.line(std::string("constexpr bool ") + baseTypeName +
-               "_HAS_FIXED_PORT_ID = " + (def.info.fixedPortId ? "true;" : "false;"));
+        w.line("constexpr bool " + renderEnclosedConstantName(baseTypeName, "HAS_FIXED_PORT_ID") + " = " +
+               (def.info.fixedPortId ? "true;" : "false;"));
         if (def.info.fixedPortId)
         {
-            w.line("constexpr " + file.standard("std::uint16_t") + " " + baseTypeName +
-                   "_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId) + "U;");
+            w.line("constexpr " + file.standard("std::uint16_t") + " " +
+                   renderEnclosedConstantName(baseTypeName, "FIXED_PORT_ID") + " = " +
+                   std::to_string(*def.info.fixedPortId) + "U;");
         }
         w.blank();
 
         // The wrappers call the request's serialisation, which an accessors-only run does not emit.
         if (!ctx.accessorsOnly())
         {
-            w.line("inline " + file.standard("std::int8_t") + " " + baseTypeName + "_serialize_(const " +
+            w.line("inline " + file.standard("std::int8_t") + " " +
+                   renderEntryPointName(Language::Cpp, baseTypeName, EntryPoint::Serialize) + "(const " +
                    requestDeclared + "* const obj, " + file.standard("std::uint8_t") + "* const buffer, " +
                    file.standard("std::size_t") +
                    "* const "
@@ -2464,12 +2484,13 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                         : "") +
                    ")");
             w.open("{");
-            w.line("return " + requestType + "_serialize_(obj, buffer, inout_buffer_size_bytes" +
-                   (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+            w.line("return " + renderEntryPointName(Language::Cpp, requestType, EntryPoint::Serialize) +
+                   "(obj, buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
             w.close("}");
             w.blank();
 
-            w.line("inline " + file.standard("std::int8_t") + " " + baseTypeName + "_deserialize_(" + requestDeclared +
+            w.line("inline " + file.standard("std::int8_t") + " " +
+                   renderEntryPointName(Language::Cpp, baseTypeName, EntryPoint::Deserialize) + "(" + requestDeclared +
                    "* const out_obj, const " + file.standard("std::uint8_t") + "* buffer, " +
                    file.standard("std::size_t") +
                    "* const "
@@ -2479,8 +2500,9 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                         : "") +
                    ")");
             w.open("{");
-            w.line("return " + requestType + "_deserialize_(out_obj, buffer, inout_buffer_size_bytes" +
-                   (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
+            w.line("return " + renderEntryPointName(Language::Cpp, requestType, EntryPoint::Deserialize) +
+                   "(out_obj, buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
+                   ");");
             w.close("}");
             w.blank();
         }

@@ -1,0 +1,31 @@
+# Regression: a C++ namespace is declared beside the structs of its parent namespace, so a
+# definition and a namespace of one name there are `namespace ns { struct Foo; namespace Foo {} }`,
+# which clang refuses ("redefinition of 'Foo' as different kind of symbol"). The type name decides
+# which namespace it meets: `Foo` by default, and `Foo_1_0` under --versioned-type-names.
+
+# RUN: rm -rf %t && mkdir -p %t/plain/ns/Foo %t/versioned/ns/Foo_1_0 %t/svc/ns/Svc_Request
+# RUN: printf 'uint8 a\n@sealed\n' > %t/plain/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/plain/ns/Foo/X.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n' > %t/versioned/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/versioned/ns/Foo_1_0/X.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/svc/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 c\n@sealed\n' > %t/svc/ns/Svc_Request/X.1.0.dsdl
+
+# `ast` emits nothing, so it checks every backend; C++ is the one that declares both in one scope.
+# RUN: not %dsdlc --target-language ast %t/plain/ns 2>&1 | FileCheck %s --check-prefix=PLAIN
+# PLAIN: error: type name collision in generated output: 'ns.Foo' and namespace 'ns.Foo', which holds 'ns.Foo.X', both emit 'Foo' for target language 'cpp'; pass --versioned-type-names, or rename one of them
+# PLAIN-NOT: type name collision
+
+# The versioned name keeps the plain pair apart, and meets the namespace that carries the version.
+# RUN: %dsdlc --target-language cpp --cpp-profile std --versioned-type-names %t/plain/ns --outdir %t/plaincpp
+# RUN: not %dsdlc --target-language cpp --cpp-profile std --versioned-type-names %t/versioned/ns --outdir %t/vcpp 2>&1 | FileCheck %s --check-prefix=VERSIONED
+# VERSIONED: error: type name collision in generated output: 'ns.Foo' and namespace 'ns.Foo_1_0', which holds 'ns.Foo_1_0.X', both emit 'Foo_1_0' for target language 'cpp'; rename one of them
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/versioned/ns --outdir %t/unversionedcpp
+
+# A service section is a type of the namespace too.
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/svc/ns --outdir %t/svccpp 2>&1 | FileCheck %s --check-prefix=SVC
+# SVC: error: type name collision in generated output: the request section of 'ns.Svc' and namespace 'ns.Svc_Request', which holds 'ns.Svc_Request.X', both emit 'Svc_Request' for target language 'cpp'
+
+# Go puts a namespace in a package of its own, and C flattens it into the type name.
+# RUN: %dsdlc --target-language go --go-module m %t/plain/ns --outdir %t/go
+# RUN: %dsdlc --target-language c %t/plain/ns --outdir %t/c

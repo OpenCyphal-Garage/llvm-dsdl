@@ -16,6 +16,7 @@
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include <cassert>
 #include <cstdint>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
@@ -158,6 +159,74 @@ std::string renderSectionTypeName(const Language        language,
         return codegenProjectIdentifier(language, IdentifierRole::TypeName, sectionName);
     }
     return baseTypeName.str() + renderSectionTypeSuffix(language, sectionName);
+}
+
+namespace
+{
+
+llvm::StringRef entryPointVerb(const EntryPoint entryPoint)
+{
+    switch (entryPoint)
+    {
+    case EntryPoint::Serialize:
+        return "serialize";
+    case EntryPoint::Deserialize:
+        return "deserialize";
+    case EntryPoint::Initialize:
+        return "initialize";
+    }
+    return "";
+}
+
+/// @brief The verb as a joined name spells it, then as a concatenated one does.
+std::pair<llvm::StringRef, llvm::StringRef> accessorVerb(const AccessorVerb verb)
+{
+    switch (verb)
+    {
+    case AccessorVerb::Get:
+        return {"get", "Get"};
+    case AccessorVerb::Set:
+        return {"set", "Set"};
+    case AccessorVerb::Is:
+        return {"is", "Is"};
+    case AccessorVerb::Select:
+        return {"select", "Select"};
+    }
+    return {};
+}
+
+}  // namespace
+
+std::string renderEntryPointName(const Language language, const llvm::StringRef typeName, const EntryPoint entryPoint)
+{
+    const llvm::StringRef join = languageTraits(language).composition.freeFunctions.entryPointJoin;
+    assert(!join.empty() && "the language's entry points are not free functions");
+    return typeName.str() + join.str() + entryPointVerb(entryPoint).str() + "_";
+}
+
+std::string renderAccessorName(const Language        language,
+                               const llvm::StringRef typeName,
+                               const AccessorVerb    verb,
+                               const llvm::StringRef member)
+{
+    const FreeFunctionNames& names    = languageTraits(language).composition.freeFunctions;
+    const auto [joined, concatenated] = accessorVerb(verb);
+    switch (names.accessors)
+    {
+    case AccessorNaming::Joined:
+        return typeName.str() + names.entryPointJoin.str() + joined.str() + "_" + member.str() + "_";
+    case AccessorNaming::Concatenated:
+        return typeName.str() + concatenated.str() + member.str();
+    case AccessorNaming::None:
+        break;
+    }
+    assert(false && "the language's accessors are not free functions");
+    return "";
+}
+
+std::string renderEnclosedConstantName(const llvm::StringRef typeName, const llvm::StringRef constant)
+{
+    return typeName.str() + "_" + constant.str();
 }
 
 std::string renderSectionSymbolSuffix(const llvm::StringRef sectionName)

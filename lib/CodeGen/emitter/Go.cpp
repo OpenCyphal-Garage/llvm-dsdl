@@ -747,7 +747,7 @@ public:
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{"Tag", tagSteps_.back().get()};
+                entry.members["_tag_"] = Member{unionTagMemberName(Language::Go).str(), tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -921,7 +921,10 @@ public:
     {
         const Accessed    a         = accessed(fn);
         const std::string storage   = scalarType(a.member->io);
-        const std::string name      = a.plan->typeName + (getter ? "Get" : "Set") + a.member->goName;
+        const std::string name      = renderAccessorName(Language::Go,
+                                                         a.plan->typeName,
+                                                         getter ? AccessorVerb::Get : AccessorVerb::Set,
+                                                         a.member->goName);
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
         const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
@@ -2057,7 +2060,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         {
             // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
             // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            members.push_back(GoStructMember{"Tag", unsignedStorageType(unionTagBits(plan)), {}});
+            members.push_back(
+                GoStructMember{unionTagMemberName(Language::Go).str(), unsignedStorageType(unionTagBits(plan)), {}});
         }
         if (section.fields.empty())
         {

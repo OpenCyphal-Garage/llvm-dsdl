@@ -360,9 +360,11 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
     const NamingScope constScope = makeSectionConstantScope(Language::C, section, {});
     for (const auto& option : metadata.unionOptions)
     {
-        w.line("#define " + typeName + "_" +
-               constScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::C, option.name)) + " " +
-               std::to_string(option.tag) + "U");
+        w.line("#define " +
+               renderEnclosedConstantName(typeName,
+                                          constScope.get(IdentifierRole::MacroName,
+                                                         unionOptionTagName(Language::C, option.name))) +
+               " " + std::to_string(option.tag) + "U");
     }
     w.blank();
 }
@@ -382,9 +384,9 @@ void emitArrayMacros(SourceWriter&          w,
         const auto named = [&](const ArrayMetadataKind kind) {
             return constScope.get(IdentifierRole::MacroName, arrayMetadataName(Language::C, field.name, kind));
         };
-        w.line("#define " + typeName + "_" + named(ArrayMetadataKind::Capacity) + " " +
+        w.line("#define " + renderEnclosedConstantName(typeName, named(ArrayMetadataKind::Capacity)) + " " +
                std::to_string(field.resolvedType.arrayCapacity) + "U");
-        w.line("#define " + typeName + "_" + named(ArrayMetadataKind::IsVariableLength) + " " +
+        w.line("#define " + renderEnclosedConstantName(typeName, named(ArrayMetadataKind::IsVariableLength)) + " " +
                (isVariableArray(field.resolvedType.arrayKind) ? file.standard("true") : file.standard("false")));
     }
     if (!section.fields.empty())
@@ -474,7 +476,7 @@ void emitSectionTypedef(SourceWriter&                         w,
     {
         // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
         // 257..65536, etc.); a hardcoded uint8_t truncates a wide tag and mis-dispatches.
-        w.line(unsignedStorageType(unionTagBits(plan), file) + " _tag_;");
+        w.line(unsignedStorageType(unionTagBits(plan), file) + " " + unionTagMemberName(Language::C).str() + ";");
         ++emitted;
     }
 
@@ -522,7 +524,8 @@ void emitSectionTypedef(SourceWriter&                         w,
 
     if (metadata.isUnion)
     {
-        w.line("#define " + typeName + "_UNION_OPTION_COUNT_ " + std::to_string(metadata.unionOptions.size()) + "U");
+        w.line("#define " + renderEnclosedConstantName(typeName, "UNION_OPTION_COUNT_") + " " +
+               std::to_string(metadata.unionOptions.size()) + "U");
         w.blank();
     }
 }
@@ -542,8 +545,8 @@ void emitSectionConstants(SourceWriter&          w,
     {
         emitAttachedDocC(w, c.doc);
         const std::string literal = valueToCExpr(c.type, c.value);
-        w.line("#define " + typeName + "_" + constScope.get(IdentifierRole::ConstantName, c.name) + " (" +
-               (std::holds_alternative<bool>(c.value.data) ? file.standard(literal) : literal) + ")");
+        w.line("#define " + renderEnclosedConstantName(typeName, constScope.get(IdentifierRole::ConstantName, c.name)) +
+               " (" + (std::holds_alternative<bool>(c.value.data) ? file.standard(literal) : literal) + ")");
     }
     if (!section.constants.empty())
     {
@@ -583,24 +586,28 @@ void emitUnionOptionWrappers(SourceWriter&          w,
     for (const auto& option : metadata.unionOptions)
     {
         const std::string member = fieldScope.get(IdentifierRole::FieldName, option.name);
-        const std::string tag =
-            typeName + "_" + tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::C, option.name));
+        const std::string tag = renderEnclosedConstantName(typeName,
+                                                           tagScope.get(IdentifierRole::MacroName,
+                                                                        unionOptionTagName(Language::C, option.name)));
 
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("static inline " + file.standard("bool") + " " + typeName + "__is_" + member + "_(const " + objectType +
+        w.line("static inline " + file.standard("bool") + " " +
+               renderAccessorName(Language::C, typeName, AccessorVerb::Is, member) + "(const " + objectType +
                "* const obj)");
         // NOLINTEND(performance-inefficient-string-concatenation)
         w.open("{");
-        w.line("return (obj != " + file.standard("NULL") + ") && (obj->_tag_ == " + tag + ");");
+        w.line("return (obj != " + file.standard("NULL") + ") && (obj->" + unionTagMemberName(Language::C).str() +
+               " == " + tag + ");");
         w.close("}");
         w.blank();
 
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("static inline void " + typeName + "__select_" + member + "_(" + objectType + "* const obj)");
+        w.line("static inline void " + renderAccessorName(Language::C, typeName, AccessorVerb::Select, member) + "(" +
+               objectType + "* const obj)");
         // NOLINTEND(performance-inefficient-string-concatenation)
         w.open("{");
         w.open("if (obj != " + file.standard("NULL") + ") {");
-        w.line("obj->_tag_ = " + tag + ";");
+        w.line("obj->" + unionTagMemberName(Language::C).str() + " = " + tag + ";");
         w.close("}");
         w.close("}");
         w.blank();
@@ -664,7 +671,8 @@ void emitSection(SourceWriter&              w,
         w.line(file.standard("int8_t") + " " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
         w.blank();
 
-        w.line("static inline " + file.standard("int8_t") + " " + typeName + "__serialize_(const " + objectType +
+        w.line("static inline " + file.standard("int8_t") + " " +
+               renderEntryPointName(Language::C, typeName, EntryPoint::Serialize) + "(const " + objectType +
                "* const obj, " + file.standard("uint8_t") + "* const buffer, " + file.standard("size_t") +
                "* const "
                "inout_buffer_size_bytes)");
@@ -673,7 +681,8 @@ void emitSection(SourceWriter&              w,
         w.close("}");
         w.blank();
 
-        w.line("static inline " + file.standard("int8_t") + " " + typeName + "__deserialize_(" + objectType +
+        w.line("static inline " + file.standard("int8_t") + " " +
+               renderEntryPointName(Language::C, typeName, EntryPoint::Deserialize) + "(" + objectType +
                "* const out_obj, const " + file.standard("uint8_t") + "* buffer, " + file.standard("size_t") +
                "* const "
                "inout_buffer_size_bytes)");
@@ -682,7 +691,8 @@ void emitSection(SourceWriter&              w,
         w.close("}");
         w.blank();
 
-        w.line("static inline " + file.standard("int8_t") + " " + typeName + "__initialize_(" + objectType +
+        w.line("static inline " + file.standard("int8_t") + " " +
+               renderEntryPointName(Language::C, typeName, EntryPoint::Initialize) + "(" + objectType +
                "* const out_obj)");
         w.open("{");
         w.line("return " + irStem + "__initialize_ir_(out_obj);");
@@ -714,7 +724,7 @@ void emitSection(SourceWriter&              w,
             SemanticFieldType tag;
             tag.scalarCategory = SemanticScalarCategory::UnsignedInt;
             tag.bitLength      = metadata.unionTagBits;
-            subjects.push_back(Subject{"_tag_", "_tag_", tag});
+            subjects.push_back(Subject{"_tag_", unionTagMemberName(Language::C).str(), tag});
         }
         for (const auto& field : section.fields)
         {
@@ -746,8 +756,9 @@ void emitSection(SourceWriter&              w,
                        "* buffer, " + file.standard("int64_t") + " buffer_size_bytes" + irIndex + ", " +
                        file.standard("size_t") + "* out_size);");
                 w.blank();
-                w.line("static inline const " + file.standard("uint8_t") + "* " + typeName + "__get_" + cMember +
-                       "_(const " + file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
+                w.line("static inline const " + file.standard("uint8_t") + "* " +
+                       renderAccessorName(Language::C, typeName, AccessorVerb::Get, cMember) + "(const " +
+                       file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
                        " buffer_size_bytes" + cIndex + ", " + file.standard("size_t") + "* const out_size)");
                 w.open("{");
                 w.line(file.standard("size_t") + "               sub_size = 0;");
@@ -779,7 +790,8 @@ void emitSection(SourceWriter&              w,
             w.line(file.standard("int8_t") + " " + irSet + "(" + file.standard("uint8_t") + "* buffer, " +
                    file.standard("int64_t") + " buffer_size_bytes" + irIndex + ", " + irType + " value);");
             w.blank();
-            w.line("static inline " + cType + " " + typeName + "__get_" + cMember + "_(const " +
+            w.line("static inline " + cType + " " +
+                   renderAccessorName(Language::C, typeName, AccessorVerb::Get, cMember) + "(const " +
                    file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
                    " buffer_size_bytes" + cIndex + ")");
             w.open("{");
@@ -793,7 +805,8 @@ void emitSection(SourceWriter&              w,
             }
             w.close("}");
             w.blank();
-            w.line("static inline " + file.standard("int8_t") + " " + typeName + "__set_" + cMember + "_(" +
+            w.line("static inline " + file.standard("int8_t") + " " +
+                   renderAccessorName(Language::C, typeName, AccessorVerb::Set, cMember) + "(" +
                    file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
                    " buffer_size_bytes" + cIndex + ", const " + cType + " value)");
             w.open("{");
@@ -1099,7 +1112,12 @@ public:
             }
             if (plan.getIsUnion())
             {
-                entry.members["_tag_"] = CBodyMember{"_tag_", "none", "unsigned", unionTagBits(plan), {}, false};
+                entry.members["_tag_"] = CBodyMember{unionTagMemberName(Language::C).str(),
+                                                     "none",
+                                                     "unsigned",
+                                                     unionTagBits(plan),
+                                                     {},
+                                                     false};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1519,7 +1537,8 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "(" + file_.standard("uint64_t") + ") " + names(op.getObject()) + "->_tag_";
+        return "(" + file_.standard("uint64_t") + ") " + names(op.getObject()) + "->" +
+               unionTagMemberName(Language::C).str();
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
@@ -1529,7 +1548,8 @@ public:
         const CBodyMember* const found = memberOf(op.getObject(), "_tag_");
         const std::string        storage =
             unsignedStorageType(static_cast<std::uint32_t>((found == nullptr) ? 8 : found->bitLength), file_);
-        w.line(names(op.getObject()) + "->_tag_ = (" + storage + ") " + names(op.getValue()) + ";");
+        w.line(names(op.getObject()) + "->" + unionTagMemberName(Language::C).str() + " = (" + storage + ") " +
+               names(op.getValue()) + ";");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override

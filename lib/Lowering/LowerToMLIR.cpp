@@ -307,8 +307,12 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 planState.addAttribute("section", builder.getStringAttr(sectionName));
             }
             planState.addAttribute("c_type_name", builder.getStringAttr(sectionCTypeName));
-            planState.addAttribute("c_serialize_symbol", builder.getStringAttr(sectionCTypeName + "__serialize_"));
-            planState.addAttribute("c_deserialize_symbol", builder.getStringAttr(sectionCTypeName + "__deserialize_"));
+            planState.addAttribute("c_serialize_symbol",
+                                   builder.getStringAttr(
+                                       renderEntryPointName(Language::C, sectionCTypeName, EntryPoint::Serialize)));
+            planState.addAttribute("c_deserialize_symbol",
+                                   builder.getStringAttr(
+                                       renderEntryPointName(Language::C, sectionCTypeName, EntryPoint::Deserialize)));
             planState.addAttribute("min_bits", builder.getI64IntegerAttr(section.minBitLength));
             planState.addAttribute("max_bits", builder.getI64IntegerAttr(section.maxBitLength));
             if (section.sealed)

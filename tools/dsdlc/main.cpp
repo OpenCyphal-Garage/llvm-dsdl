@@ -45,6 +45,7 @@
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
 #include "llvmdsdl/CodeGen/Vocabulary.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
+#include "llvmdsdl/CodeGen/GeneratedNameCollisions.h"
 #include "llvmdsdl/CodeGen/NamingManifest.h"
 #include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -1762,6 +1763,15 @@ int runDsdlc(int argc, char** argv)
     if (!semantic)
     {
         llvm::consumeError(semantic.takeError());
+        printDiagnostics(diagnostics);
+        return 1;
+    }
+
+    // The names a definition generates beside its type, which parsing cannot see: a section's
+    // constants and option tags are named by scopes that take the analysed section.
+    llvmdsdl::checkGeneratedNameCollisions(*semantic, outputLanguages, options.typeNameVersioning, diagnostics);
+    if (diagnostics.hasErrors())
+    {
         printDiagnostics(diagnostics);
         return 1;
     }
