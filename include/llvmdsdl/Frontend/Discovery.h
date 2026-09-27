@@ -32,6 +32,49 @@ class DiagnosticEngine;
 /// @file
 /// @brief Discovery routines for locating and loading DSDL definitions.
 
+/// @brief A type's or a namespace's name, in the scope a definition shares with other definitions.
+struct ScopedTypeName final
+{
+    /// @brief The scope, from @ref sharedScopeOf; for a namespace, its parent's.
+    std::string scope;
+
+    /// @brief The name as emitted.
+    std::string name;
+
+    /// @brief The name under @ref TypeNameVersioning::Versioned.
+    std::string versionedName;
+
+    /// @brief The section the type is: `request`, `response`, or empty.
+    std::string section;
+
+    /// @brief For a namespace, its full DSDL name; empty for a type.
+    std::string namespaceName;
+};
+
+/// @brief The scope @p info's names are declared in, where @p language shares one across definitions.
+/// @param[in] language Naming language.
+/// @param[in] info The definition.
+/// @return The projected namespace path, or empty where the namespace is in the identifier and the
+///         scope is global.
+[[nodiscard]] std::string sharedScopeOf(const LanguageTraits& language, const DiscoveredDefinition& info);
+
+/// @brief Every type name @p info declares in @p language's shared scope.
+///
+/// The definition's, each section's, and a deprecated C++ struct's own; and, where the row's
+/// `namespaceAndTypeShareScope` is set, each namespace's in its parent's scope. Empty where the
+/// language gives every definition a module of its own.
+/// @param[in] language Naming language.
+/// @param[in] info The definition.
+/// @param[in] isService Whether the definition is a service.
+/// @param[in] isDeprecated Whether the definition is deprecated.
+/// @param[in] versioning Whether generated type names carry the version.
+/// @return The names, namespaces first.
+[[nodiscard]] std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&       language,
+                                                          const DiscoveredDefinition& info,
+                                                          bool                        isService,
+                                                          bool                        isDeprecated,
+                                                          TypeNameVersioning          versioning);
+
 /// @brief Rejects a generated type name that another name declared in its scope also takes.
 ///
 /// A service emits a type per section, named after the service with a suffix -- `Foo` gives

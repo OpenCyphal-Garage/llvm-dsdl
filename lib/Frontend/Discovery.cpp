@@ -453,81 +453,113 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
         const auto& info = parsed.info;
         for (const auto& language : outputLanguages)
         {
-            if (!language.composition.definitionsShareNamespaceScope)
+            for (const ScopedTypeName& type :
+                 scopedTypeNames(language, info, parsed.ast.isService(), parsed.ast.isDeprecated(), versioning))
             {
-                continue;
-            }
-            // The scope a name has to be unique within: C++ and Go put the short name in a scope of
-            // their own per namespace, so that namespace is part of the key.
-            std::string scope;
-            std::string namespaceName;
-            for (const auto& component : info.namespaceComponents)
-            {
-                const std::string projected =
-                    codegenProjectIdentifier(language.language, IdentifierRole::NamespaceName, component);
-                namespaceName += component;
-                if (language.composition.namespaceAndTypeShareScope &&
-                    claimedNamespaces.insert(std::string(language.name) + ":" + namespaceName).second)
+                if (type.namespaceName.empty())
                 {
                     record(language,
-                           scope,
-                           projected,
-                           TypeNameOrigin{namespaceName, "", info.filePath, info.fullName, projected});
+                           type.scope,
+                           type.name,
+                           TypeNameOrigin{info.fullName, type.section, info.filePath, "", type.versionedName});
                 }
-                scope += projected;
-                scope.push_back('.');
-                namespaceName.push_back('.');
-            }
-            // A language that joins the namespace into the identifier declares every definition's in
-            // one global scope. C joins with `__`, which a DSDL name may hold as well, so `ns.A__B`
-            // and `ns.A.B` are both `ns__A__B`.
-            if (!language.composition.definitionName.namespaceJoin.empty())
-            {
-                scope.clear();
-            }
-            const auto claimType =
-                [&](const std::string& name, const std::string& versionedName, const llvm::StringRef section) {
+                else if (claimedNamespaces.insert(std::string(language.name) + ":" + type.namespaceName).second)
+                {
                     record(language,
-                           scope,
-                           name,
-                           TypeNameOrigin{info.fullName, section.str(), info.filePath, "", versionedName});
-                };
-            const auto renderBase = [&](const TypeNameVersioning scheme) {
-                return renderDefinitionTypeName(language.language,
-                                                info.namespaceComponents,
-                                                info.shortName,
-                                                info.majorVersion,
-                                                info.minorVersion,
-                                                scheme);
-            };
-            const std::string base          = renderBase(versioning);
-            const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
-            // A deprecated definition's C++ struct is declared under a name of its own, which a
-            // sibling may be called; that name is claimed beside the public one.
-            const bool declaredApart = language.composition.deprecatedTypeDeclaredApart && parsed.ast.isDeprecated();
-            claimType(base, versionedBase, "");
-            if (!parsed.ast.isService())
-            {
-                if (declaredApart)
-                {
-                    claimType(renderDeclaredTypeName(base, true), renderDeclaredTypeName(versionedBase, true), "");
-                }
-                continue;
-            }
-            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
-            {
-                const std::string sectionName      = renderSectionTypeName(language.language, base, section);
-                const std::string versionedSection = renderSectionTypeName(language.language, versionedBase, section);
-                claimType(sectionName, versionedSection, section);
-                if (declaredApart)
-                {
-                    claimType(renderDeclaredTypeName(sectionName, true),
-                              renderDeclaredTypeName(versionedSection, true),
-                              section);
+                           type.scope,
+                           type.name,
+                           TypeNameOrigin{type.namespaceName, "", info.filePath, info.fullName, type.versionedName});
                 }
             }
         }
     }
+}
+
+std::string sharedScopeOf(const LanguageTraits& language, const DiscoveredDefinition& info)
+{
+    // A language that joins the namespace into the identifier declares every definition's in one
+    // global scope. C joins with `__`, which a DSDL name may hold as well, so `ns.A__B` and `ns.A.B`
+    // are both `ns__A__B`.
+    if (!language.composition.definitionName.namespaceJoin.empty())
+    {
+        return "";
+    }
+    // C++ and Go put the short name in a scope of their own per namespace, so that namespace is part
+    // of the key.
+    std::string scope;
+    for (const auto& component : info.namespaceComponents)
+    {
+        scope += codegenProjectIdentifier(language.language, IdentifierRole::NamespaceName, component);
+        scope.push_back('.');
+    }
+    return scope;
+}
+
+std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&       language,
+                                            const DiscoveredDefinition& info,
+                                            const bool                  isService,
+                                            const bool                  isDeprecated,
+                                            const TypeNameVersioning    versioning)
+{
+    std::vector<ScopedTypeName> out;
+    if (!language.composition.definitionsShareNamespaceScope)
+    {
+        return out;
+    }
+    if (language.composition.namespaceAndTypeShareScope)
+    {
+        std::string parent;
+        std::string namespaceName;
+        for (const auto& component : info.namespaceComponents)
+        {
+            const std::string projected =
+                codegenProjectIdentifier(language.language, IdentifierRole::NamespaceName, component);
+            namespaceName += component;
+            out.push_back(ScopedTypeName{parent, projected, projected, "", namespaceName});
+            parent += projected;
+            parent.push_back('.');
+            namespaceName.push_back('.');
+        }
+    }
+
+    const std::string scope      = sharedScopeOf(language, info);
+    const auto        renderBase = [&](const TypeNameVersioning scheme) {
+        return renderDefinitionTypeName(language.language,
+                                        info.namespaceComponents,
+                                        info.shortName,
+                                        info.majorVersion,
+                                        info.minorVersion,
+                                        scheme);
+    };
+    const std::string base          = renderBase(versioning);
+    const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
+    // A deprecated definition's C++ struct is declared under a name of its own, which a sibling may
+    // be called; that name is claimed beside the public one.
+    const bool declaredApart = language.composition.deprecatedTypeDeclaredApart && isDeprecated;
+    const auto claim = [&](const std::string& name, const std::string& versionedName, const llvm::StringRef section) {
+        out.push_back(ScopedTypeName{scope, name, versionedName, section.str(), ""});
+        if (declaredApart)
+        {
+            out.push_back(ScopedTypeName{scope,
+                                         renderDeclaredTypeName(name, true),
+                                         renderDeclaredTypeName(versionedName, true),
+                                         section.str(),
+                                         ""});
+        }
+    };
+    if (!isService)
+    {
+        claim(base, versionedBase, "");
+        return out;
+    }
+    out.push_back(ScopedTypeName{scope, base, versionedBase, "", ""});
+    for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
+    {
+        claim(renderSectionTypeName(language.language, base, section),
+              renderSectionTypeName(language.language, versionedBase, section),
+              section);
+    }
+    return out;
 }
 
 std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::string>&      rootNamespaceDirs,

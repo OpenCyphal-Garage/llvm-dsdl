@@ -1,0 +1,82 @@
+# Regression: C declares every type in one global scope, and C++ and Go every type of a namespace in
+# one namespace or package, and each declares names of its own beside a type. A definition could be
+# called one of them, and the output did not compile: `ns.A_EXTENT_BYTES_` redefined `ns.A`'s macro,
+# `ns.A.serialize_` met `ns__A__serialize_`, `ns.MsgExtentBytes` redeclared `ns.Msg`'s constant in
+# Go, and `ns.Foo_serialize_` was hidden by `ns.Foo`'s free function in C++.
+
+# RUN: rm -rf %t && mkdir -p %t
+
+# C: a metadata macro, an entry point, a DSDL constant's macro, an accessor and a union option
+# function, and a service's own macro.
+# RUN: mkdir -p %t/cmacro/ns && printf 'uint8 a\n@sealed\n' > %t/cmacro/ns/A.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/cmacro/ns/A_EXTENT_BYTES_.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/cmacro/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CMACRO
+# CMACRO: A_EXTENT_BYTES_.1.0.dsdl:1:1: error: name collision in generated output: 'ns.A_EXTENT_BYTES_' and a name generated for 'ns.A' both emit 'ns__A_EXTENT_BYTES_' for target language 'c'; rename one of them
+
+# RUN: mkdir -p %t/centry/ns/A && printf 'uint8 a\n@sealed\n' > %t/centry/ns/A.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/centry/ns/A/serialize_.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/centry/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CENTRY
+# CENTRY: 'ns.A.serialize_' and a name generated for 'ns.A' both emit 'ns__A__serialize_' for target language 'c'
+
+# RUN: mkdir -p %t/cconst/ns && printf 'uint8 C1 = 1\nuint8 a\n@sealed\n' > %t/cconst/ns/A.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/cconst/ns/A_C1.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/cconst/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CCONST
+# CCONST: 'ns.A_C1' and a name generated for 'ns.A' both emit 'ns__A_C1' for target language 'c'
+
+# RUN: mkdir -p %t/cacc/ns/A && printf 'uint8 x\n@sealed\n' > %t/cacc/ns/A.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/cacc/ns/A/get_x_.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/cacc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CACC
+# CACC: 'ns.A.get_x_' and a name generated for 'ns.A' both emit 'ns__A__get_x_' for target language 'c'
+
+# RUN: mkdir -p %t/cunion/ns/U && printf '@union\nuint8 x\nuint8 y\n@sealed\n' > %t/cunion/ns/U.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/cunion/ns/U/select_y_.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/cunion/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CUNION
+# CUNION: 'ns.U.select_y_' and a name generated for 'ns.U' both emit 'ns__U__select_y_' for target language 'c'
+
+# RUN: mkdir -p %t/csvc/ns && printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/csvc/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/csvc/ns/Svc_FULL_NAME_.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/csvc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CSVC
+# CSVC: 'ns.Svc_FULL_NAME_' and a name generated for 'ns.Svc' both emit 'ns__Svc_FULL_NAME_' for target language 'c'
+
+# Two generated names meet as well: the constant `B_C` of `ns.A` and the constant `C` of `ns.A_B`.
+# RUN: mkdir -p %t/cboth/ns && printf 'uint8 B_C = 1\nuint8 a\n@sealed\n' > %t/cboth/ns/A.1.0.dsdl
+# RUN: printf 'uint8 C = 2\nuint8 b\n@sealed\n' > %t/cboth/ns/A_B.1.0.dsdl
+# RUN: not %dsdlc --target-language c %t/cboth/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CBOTH
+# CBOTH: a name generated for 'ns.A' and a name generated for 'ns.A_B' both emit 'ns__A_B_C' for target language 'c'
+
+# The object backend names its C the same way.
+# RUN: not %dsdlc --target-language obj %t/cmacro/ns --outdir %t/obj 2>&1 | FileCheck %s --check-prefix=OBJ
+# OBJ: both emit 'ns__A_EXTENT_BYTES_' for target language 'c'
+
+# C++: a free entry point, and a service's own constant.
+# RUN: mkdir -p %t/cppentry/ns && printf 'uint8 a\n@sealed\n' > %t/cppentry/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/cppentry/ns/Foo_serialize_.1.0.dsdl
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/cppentry/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CPPENTRY
+# CPPENTRY: 'ns.Foo_serialize_' and a name generated for 'ns.Foo' both emit 'Foo_serialize_' for target language 'cpp'
+
+# RUN: mkdir -p %t/cppsvc/ns && printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/cppsvc/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/cppsvc/ns/Svc_FULL_NAME.1.0.dsdl
+# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/cppsvc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CPPSVC
+# CPPSVC: 'ns.Svc_FULL_NAME' and a name generated for 'ns.Svc' both emit 'Svc_FULL_NAME' for target language 'cpp'
+
+# Go: a package constant, an accessor, and the accessor of a union's tag.
+# RUN: mkdir -p %t/goconst/ns && printf 'uint8 a\n@sealed\n' > %t/goconst/ns/Msg.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/goconst/ns/MsgExtentBytes.1.0.dsdl
+# RUN: not %dsdlc --target-language go --go-module m %t/goconst/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOCONST
+# GOCONST: 'ns.MsgExtentBytes' and a name generated for 'ns.Msg' both emit 'MsgExtentBytes' for target language 'go'
+
+# RUN: mkdir -p %t/goacc/ns && printf 'uint8 a\n@sealed\n' > %t/goacc/ns/Msg.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/goacc/ns/MsgGetA.1.0.dsdl
+# RUN: not %dsdlc --target-language go --go-module m %t/goacc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOACC
+# GOACC: 'ns.MsgGetA' and a name generated for 'ns.Msg' both emit 'MsgGetA' for target language 'go'
+
+# RUN: mkdir -p %t/gotag/ns && printf '@union\nuint8 x\nuint8 y\n@sealed\n' > %t/gotag/ns/U.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/gotag/ns/UGetTag.1.0.dsdl
+# RUN: not %dsdlc --target-language go --go-module m %t/gotag/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOTAG
+# GOTAG: 'ns.UGetTag' and a name generated for 'ns.U' both emit 'UGetTag' for target language 'go'
+
+# A pair is rejected only for the language that declares both in one scope.
+# RUN: %dsdlc --target-language rust %t/goconst/ns --outdir %t/rust
+# RUN: %dsdlc --target-language c %t/goconst/ns --outdir %t/c
+# RUN: %dsdlc --target-language go --go-module m %t/cmacro/ns --outdir %t/go
+# RUN: %dsdlc --target-language python %t/cppentry/ns --outdir %t/py

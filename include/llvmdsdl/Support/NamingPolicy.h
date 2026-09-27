@@ -326,6 +326,10 @@ public:
     /// @return The assigned identifier, or the projection of @p sourceName if it was never declared.
     [[nodiscard]] std::string get(IdentifierRole role, llvm::StringRef sourceName) const;
 
+    /// @brief Returns every identifier the scope has assigned.
+    /// @return The identifiers, sorted.
+    [[nodiscard]] std::vector<std::string> assigned() const;
+
 private:
     /// @brief Key for the assignment map: one source name may appear in two roles.
     [[nodiscard]] static std::string keyOf(IdentifierRole role, llvm::StringRef sourceName);

@@ -412,11 +412,26 @@ error: type name collision in generated output: 'ns.A__B' and 'ns.A.B' both emit
        for target language 'c'; rename one of them
 ```
 
-### 6.1 Macros stay unique by construction
+### 6.1 Names generated beside a type
 
-C and C++ macros are global. Every generated macro is `<TypeName>_<MEMBER>`, and type names are
-unique after the check above, so macro uniqueness follows. A future macro that does not carry the
-type prefix is a defect rather than a style choice.
+C, C++ and Go declare names of their own beside a type, in the scope the type shares with other
+definitions: C its entry points, accessors, union option functions and macros; C++ its free entry
+points and a service's constants; Go its constants and accessors. Each carries its type's name, and
+a type's name can be another type's with a generated suffix after it, so `ns.A_EXTENT_BYTES_` beside
+`ns.A` in C, or `ns.MsgExtentBytes` beside `ns.Msg` in Go, is one identifier declared twice. A third
+pass, `checkGeneratedNameCollisions`, claims every such name in its scope and rejects one two
+definitions reach:
+
+```
+error: name collision in generated output: 'ns.MsgExtentBytes' and a name generated for 'ns.Msg'
+       both emit 'MsgExtentBytes' for target language 'go'; rename one of them
+```
+
+The names come from what the emitters name them with: the composers that read the row's
+`freeFunctions` (`renderEntryPointName`, `renderAccessorName`, `renderEnclosedConstantName`) and the
+section scopes of §5.2. An accessor is claimed for every field, whether or not the section's shape
+gives it one, so what a corpus may be called does not change with a field's type. The pass runs
+after analysis, since the section scopes take the analysed section.
 
 ---
 
