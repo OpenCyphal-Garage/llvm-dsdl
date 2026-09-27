@@ -85,46 +85,6 @@ std::string renderDefinitionFileStem(const Language        language,
     return codegenProjectIdentifier(language, IdentifierRole::FileStem, composed);
 }
 
-std::string renderIncludeGuard(const Language        language,
-                               const llvm::StringRef prefix,
-                               const llvm::StringRef fullName,
-                               const std::uint32_t   majorVersion,
-                               const std::uint32_t   minorVersion,
-                               const llvm::StringRef suffix)
-{
-    const std::string composed = prefix.str() + fullName.str() + "_" + std::to_string(majorVersion) + "_" +
-                                 std::to_string(minorVersion) + suffix.str();
-    return codegenProjectIdentifier(language, IdentifierRole::MacroName, composed);
-}
-
-std::pair<std::string, std::string> renderVersionSentinelMacros(const Language        language,
-                                                                const llvm::StringRef fullName,
-                                                                const std::uint32_t   majorVersion,
-                                                                const std::uint32_t   minorVersion)
-{
-    // The generic one carries no version.
-    const std::string generic =
-        codegenProjectIdentifier(language, IdentifierRole::MacroName, "LLVMDSDL_SELECTED_" + fullName.str() + "_");
-    const std::string specific =
-        renderIncludeGuard(language, "LLVMDSDL_SELECTED_", fullName, majorVersion, minorVersion, "_");
-    return {generic, specific};
-}
-
-std::string renderDefinitionSymbolBase(const llvm::StringRef fullName,
-                                       const std::uint32_t   majorVersion,
-                                       const std::uint32_t   minorVersion)
-{
-    std::string out = fullName.str();
-    for (char& c : out)
-    {
-        if (c == '.')
-        {
-            c = '_';
-        }
-    }
-    return out + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
-}
-
 namespace
 {
 
@@ -224,22 +184,28 @@ std::string renderAccessorName(const Language        language,
     return "";
 }
 
+std::string renderLoweredEntryPointName(const Language        language,
+                                        const llvm::StringRef versionedTypeName,
+                                        const EntryPoint      entryPoint)
+{
+    const llvm::StringRef suffix = languageTraits(language).composition.freeFunctions.loweredBodySuffix;
+    assert(!suffix.empty() && "the language's bodies are not compiled apart from its entry points");
+    return renderEntryPointName(language, versionedTypeName, entryPoint) + suffix.str();
+}
+
+std::string renderLoweredAccessorName(const Language        language,
+                                      const llvm::StringRef versionedTypeName,
+                                      const AccessorVerb    verb,
+                                      const llvm::StringRef member)
+{
+    const llvm::StringRef suffix = languageTraits(language).composition.freeFunctions.loweredBodySuffix;
+    assert(!suffix.empty() && "the language's bodies are not compiled apart from its accessors");
+    return renderAccessorName(language, versionedTypeName, verb, member) + suffix.str();
+}
+
 std::string renderEnclosedConstantName(const llvm::StringRef typeName, const llvm::StringRef constant)
 {
     return typeName.str() + "_" + constant.str();
-}
-
-std::string renderSectionSymbolSuffix(const llvm::StringRef sectionName)
-{
-    if (sectionName == "request")
-    {
-        return "__request";
-    }
-    if (sectionName == "response")
-    {
-        return "__response";
-    }
-    return "";
 }
 
 std::string renderCTagSpelling(const llvm::StringRef typeName)

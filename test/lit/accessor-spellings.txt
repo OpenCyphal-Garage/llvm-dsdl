@@ -25,15 +25,15 @@
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/padded_1_0.py | FileCheck %s --check-prefix=PY
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/arr_1_0.py | FileCheck %s --check-prefix=PY_ELEMENT
 
-# C:      int64_t fixtures_host_image_vendor_Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes);
+# C:      int64_t fixtures_host_image__vendor__Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes);
 # C:      static inline uint16_t fixtures_host_image__vendor__Padded__get_b_(const uint8_t* const buffer, const size_t buffer_size_bytes)
 # C-NEXT: {
-# C-NEXT:   return (uint16_t) fixtures_host_image_vendor_Padded_1_0__get_b_ir_(buffer, (int64_t) buffer_size_bytes);
+# C-NEXT:   return (uint16_t) fixtures_host_image__vendor__Padded_1_0__get_b_ir_(buffer, (int64_t) buffer_size_bytes);
 # C:      static inline int8_t fixtures_host_image__vendor__Padded__set_b_(uint8_t* const buffer, const size_t buffer_size_bytes, const uint16_t value)
 
 # A C getter reads a null buffer as an empty one, so the size it reads for is zero there. The plan
 # names that size, and C declares it by the name.
-# C_BODY:      fixtures_host_image_vendor_Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes){{$}}
+# C_BODY:      fixtures_host_image__vendor__Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes){{$}}
 # C_BODY-NEXT: {
 # C_BODY:      const bool is_null = (buffer == NULL);
 # C_BODY-NEXT: const uint64_t size = (is_null ? 0ULL : buffer_size_bytes_);

@@ -10,18 +10,18 @@
 
 # KEPT: module attributes {llvmdsdl.accessors_only,
 # A helper an accessor calls carries no mark, so its signature closes on the body.
-# KEPT: func.func @llvmdsdl_plan_scalar_unsigned__fixtures_host_image_vendor_Padded_1_0__1__deser(%{{.*}}: i64) -> i64 attributes {
+# KEPT: func.func @fixtures_host_image.vendor.Padded.1.0.plan.scalar_unsigned.1.deser(%{{.*}}: i64) -> i64 attributes {
 # KEPT-NOT: llvmdsdl.unreferenced
-# KEPT: func.func @fixtures_host_image_vendor_Padded_1_0__get_b_ir_(
+# KEPT: func.func @fixtures_host_image.vendor.Padded.1.0.get.b(
 # KEPT-SAME: llvmdsdl.plan_body = "get"
-# KEPT: func.func @fixtures_host_image_vendor_Padded_1_0__set_b_ir_(
+# KEPT: func.func @fixtures_host_image.vendor.Padded.1.0.set.b(
 # KEPT-SAME: llvmdsdl.plan_body = "set"
 
 # The three bodies are gone, and the capacity check only they called is marked.
 # GONE-NOT: llvmdsdl.plan_body = "serialize"
 # GONE-NOT: llvmdsdl.plan_body = "deserialize"
 # GONE-NOT: llvmdsdl.plan_body = "initialize"
-# GONE: func.func @llvmdsdl_plan_capacity_check__fixtures_host_image_vendor_Padded_1_0(
+# GONE: func.func @fixtures_host_image.vendor.Padded.1.0.plan.capacity_check(
 # GONE-SAME: llvmdsdl.unreferenced
 # GONE-NOT: llvmdsdl.plan_body = "serialize"
 # GONE-NOT: llvmdsdl.plan_body = "deserialize"

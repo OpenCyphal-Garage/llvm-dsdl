@@ -14,7 +14,7 @@
 #include "llvmdsdl/Transforms/PlanSteps.h"
 
 #include "llvmdsdl/IR/DSDLOps.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -55,9 +55,9 @@ std::optional<std::int64_t> nestedFixedBits(mlir::dsdl::IOOp io)
         return std::nullopt;
     }
     auto schema = module.lookupSymbol<mlir::dsdl::SchemaOp>(
-        renderDefinitionSymbolBase(*io.getCompositeFullName(),
-                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
+        renderSchemaSymbol(SchemaSymbol{io.getCompositeFullName()->str(),
+                                        static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                        static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))}));
     if (!schema || schema.getBody().empty())
     {
         return std::nullopt;

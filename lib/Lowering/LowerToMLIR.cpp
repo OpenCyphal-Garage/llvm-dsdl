@@ -47,6 +47,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/Language.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
@@ -192,9 +193,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
 
         mlir::OperationState state(loc, "dsdl.schema");
         state.addAttribute("sym_name",
-                           builder.getStringAttr(renderDefinitionSymbolBase(def.info.fullName,
-                                                                            def.info.majorVersion,
-                                                                            def.info.minorVersion)));
+                           builder.getStringAttr(renderSchemaSymbol(
+                               SchemaSymbol{def.info.fullName, def.info.majorVersion, def.info.minorVersion})));
         state.addAttribute("c_type_name",
                            builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
         state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));

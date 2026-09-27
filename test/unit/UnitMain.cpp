@@ -19,6 +19,7 @@ int main()
     ok      = runIntegerMathTests() && ok;
     ok      = runTargetLanguagesTests() && ok;
     ok      = runLanguageTraitsTests() && ok;
+    ok      = runPlanSymbolTests() && ok;
     ok      = runCliPathTests() && ok;
     ok      = runFlatSetTests() && ok;
     ok      = runEvaluatorTests() && ok;

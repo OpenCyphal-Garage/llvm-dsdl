@@ -191,6 +191,12 @@ struct FreeFunctionNames final
 
     /// @brief Whether a union's option has a free test and selector, as in `Value__is_integer_`.
     bool unionOptionFunctions{};
+
+    /// @brief What ends the name of the body a free entry point or accessor wraps, where the body is
+    ///        compiled apart from it, as in `List_Request_0_2__serialize_ir_`.
+    ///
+    /// Empty where the body is the entry point itself.
+    llvm::StringRef loweredBodySuffix;
 };
 
 /// @brief How one language composes a definition's type name.

@@ -18,26 +18,26 @@
 # RUN: FileCheck %s --check-prefix=NEST_WRITE  < %t/folded.mlir
 # RUN: FileCheck %s --check-prefix=PADDED      < %t/folded.mlir
 
-# FLAT_READ-LABEL: func.func @fixtures_host_image_vendor_Flat_1_0__deserialize_ir_(
+# FLAT_READ-LABEL: func.func @fixtures_host_image.vendor.Flat.1.0.deserialize(
 # FLAT_READ-NOT:   dsdl.read_bits
 # FLAT_READ:       dsdl.image_read {{.*}} {bytes = 8 : i64}
 # FLAT_READ-NOT:   dsdl.read_bits
 # FLAT_READ:       return
 
-# FLAT_WRITE-LABEL: func.func @fixtures_host_image_vendor_Flat_1_0__serialize_ir_(
+# FLAT_WRITE-LABEL: func.func @fixtures_host_image.vendor.Flat.1.0.serialize(
 # FLAT_WRITE-NOT:   dsdl.write_bits
 # FLAT_WRITE:       dsdl.image_write {{.*}} {bytes = 8 : i64}
 # FLAT_WRITE-NOT:   dsdl.write_bits
 # FLAT_WRITE:       return
 
 # The loop a fixed array lowers to goes the same way scalars do.
-# ARR_READ-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__deserialize_ir_(
+# ARR_READ-LABEL: func.func @fixtures_host_image.vendor.Arr.1.0.deserialize(
 # ARR_READ-NOT:   scf.for
 # ARR_READ:       dsdl.image_read {{.*}} {bytes = 6 : i64}
 # ARR_READ-NOT:   scf.for
 # ARR_READ:       return
 
-# ARR_WRITE-LABEL: func.func @fixtures_host_image_vendor_Arr_1_0__serialize_ir_(
+# ARR_WRITE-LABEL: func.func @fixtures_host_image.vendor.Arr.1.0.serialize(
 # ARR_WRITE-NOT:   scf.for
 # ARR_WRITE:       dsdl.image_write {{.*}} {bytes = 6 : i64}
 # ARR_WRITE-NOT:   scf.for
@@ -45,13 +45,13 @@
 
 # A nested record's own deserialise call goes too: its error code is what a guard on the consumed
 # count reads, and an image read cannot fail, so that code becomes zero rather than being kept.
-# NEST_READ-LABEL: func.func @fixtures_host_image_vendor_Nested_1_0__deserialize_ir_(
+# NEST_READ-LABEL: func.func @fixtures_host_image.vendor.Nested.1.0.deserialize(
 # NEST_READ-NOT:   dsdl.call_serdes
 # NEST_READ:       dsdl.image_read {{.*}} {bytes = 12 : i64}
 # NEST_READ-NOT:   dsdl.call_serdes
 # NEST_READ:       return
 
-# NEST_WRITE-LABEL: func.func @fixtures_host_image_vendor_Nested_1_0__serialize_ir_(
+# NEST_WRITE-LABEL: func.func @fixtures_host_image.vendor.Nested.1.0.serialize(
 # NEST_WRITE-NOT:   dsdl.call_serdes
 # NEST_WRITE:       dsdl.image_write {{.*}} {bytes = 12 : i64}
 # NEST_WRITE-NOT:   dsdl.call_serdes
@@ -59,7 +59,7 @@
 
 # Flat on the wire but not a byte image in memory: the verdict does not hold, and the body keeps
 # every field read it had.
-# PADDED-LABEL: func.func @fixtures_host_image_vendor_Padded_1_0__deserialize_ir_(
+# PADDED-LABEL: func.func @fixtures_host_image.vendor.Padded.1.0.deserialize(
 # PADDED-NOT:   dsdl.image_read
 # PADDED:       dsdl.read_bits
 # PADDED-NOT:   dsdl.image_read

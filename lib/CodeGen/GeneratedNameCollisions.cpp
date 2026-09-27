@@ -30,6 +30,7 @@
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
 {
@@ -67,9 +68,13 @@ std::string describe(const Claim& claim)
 }
 
 /// @brief Calls @p claim with every name @p language declares beside one section's type.
+///
+/// A body compiled apart from its entry point is linked under the versioned type name whatever the
+/// type name is, so @p versionedTypeName names those.
 void forEachGeneratedName(const LanguageTraits&                              language,
                           const SemanticSection&                             section,
                           const std::string&                                 typeName,
+                          const std::string&                                 versionedTypeName,
                           const llvm::function_ref<void(const std::string&)> claim)
 {
     const Composition&       composition = language.composition;
@@ -101,6 +106,32 @@ void forEachGeneratedName(const LanguageTraits&                              lan
         if (free.initializer)
         {
             claim(renderEntryPointName(language.language, typeName, EntryPoint::Initialize));
+        }
+    }
+    if (!free.loweredBodySuffix.empty())
+    {
+        claim(renderLoweredEntryPointName(language.language, versionedTypeName, EntryPoint::Serialize));
+        claim(renderLoweredEntryPointName(language.language, versionedTypeName, EntryPoint::Deserialize));
+        claim(renderLoweredEntryPointName(language.language, versionedTypeName, EntryPoint::Initialize));
+        // A lowered accessor is named by the member as the plan names it.
+        for (const auto& field : section.fields)
+        {
+            if (!field.isPadding)
+            {
+                claim(renderLoweredAccessorName(language.language, versionedTypeName, AccessorVerb::Get, field.name));
+                claim(renderLoweredAccessorName(language.language, versionedTypeName, AccessorVerb::Set, field.name));
+            }
+        }
+        if (section.isUnion)
+        {
+            claim(renderLoweredAccessorName(language.language,
+                                            versionedTypeName,
+                                            AccessorVerb::Get,
+                                            kPlanUnionTagMember));
+            claim(renderLoweredAccessorName(language.language,
+                                            versionedTypeName,
+                                            AccessorVerb::Set,
+                                            kPlanUnionTagMember));
         }
     }
 
@@ -231,28 +262,37 @@ void checkGeneratedNameCollisions(const SemanticModule&                module,
                     record(language, scope, name, Claim{info.fullName, section, info.filePath, "", true});
                 };
             };
-            const std::string base = renderDefinitionTypeName(language.language,
-                                                              info.namespaceComponents,
-                                                              info.shortName,
-                                                              info.majorVersion,
-                                                              info.minorVersion,
-                                                              versioning);
+            const auto renderBase = [&](const TypeNameVersioning scheme) {
+                return renderDefinitionTypeName(language.language,
+                                                info.namespaceComponents,
+                                                info.shortName,
+                                                info.majorVersion,
+                                                info.minorVersion,
+                                                scheme);
+            };
+            const std::string base          = renderBase(versioning);
+            const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
             if (!def.isService)
             {
-                forEachGeneratedName(language, def.request, base, claimFor(""));
+                forEachGeneratedName(language, def.request, base, versionedBase, claimFor(""));
                 continue;
             }
             forEachServiceName(language, base, claimFor(""));
-            forEachGeneratedName(language,
-                                 def.request,
-                                 renderSectionTypeName(language.language, base, "request"),
-                                 claimFor("request"));
-            if (def.response)
+            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
             {
-                forEachGeneratedName(language,
-                                     *def.response,
-                                     renderSectionTypeName(language.language, base, "response"),
-                                     claimFor("response"));
+                const SemanticSection* held = &def.request;
+                if (section == "response")
+                {
+                    held = def.response ? &*def.response : nullptr;
+                }
+                if (held != nullptr)
+                {
+                    forEachGeneratedName(language,
+                                         *held,
+                                         renderSectionTypeName(language.language, base, section),
+                                         renderSectionTypeName(language.language, versionedBase, section),
+                                         claimFor(section.str()));
+                }
             }
         }
     }

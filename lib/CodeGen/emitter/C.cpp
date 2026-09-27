@@ -39,6 +39,11 @@
 #include <mlir/Support/LLVM.h>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
+#include "llvmdsdl/Support/PlanSymbol.h"
+#include <map>
+#include <mlir/IR/SymbolTable.h>
+#include <llvm/ADT/SmallVector.h>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -114,10 +119,122 @@ std::string headerFileName(const DiscoveredDefinition& info)
     return renderDefinitionFileStem(Language::C, info.shortName, info.majorVersion, info.minorVersion) + ".h";
 }
 
-std::string sectionIRFunctionStem(const SemanticDefinition& def, const std::string& sectionName)
+/// @brief The name C links one of a section's lowered functions under.
+///
+/// The IR names a function by its definition's DSDL identity, which C cannot declare. C spells it
+/// from the section's type name with its version, which C's one global scope keeps unique:
+/// `ns__Msg_1_0__serialize_ir_`, `ns__Msg_1_0__get_speed_ir_`, and for a helper
+/// `llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__2__ser`.
+std::string cLinkName(const PlanSymbol& symbol)
 {
-    return renderDefinitionSymbolBase(def.info.fullName, def.info.majorVersion, def.info.minorVersion) +
-           renderSectionSymbolSuffix(sectionName);
+    llvm::SmallVector<llvm::StringRef, 8> parts;
+    llvm::StringRef(symbol.schema.fullName).split(parts, '.');
+    const std::vector<std::string> namespaceComponents(parts.begin(), std::prev(parts.end()));
+    const std::string              type = renderSectionTypeName(Language::C,
+                                                                renderDefinitionTypeName(Language::C,
+                                                                                         namespaceComponents,
+                                                                                         parts.back(),
+                                                                                         symbol.schema.major,
+                                                                                         symbol.schema.minor,
+                                                                                         TypeNameVersioning::Versioned),
+                                                                symbol.section);
+    switch (symbol.function)
+    {
+    case PlanFunction::Serialize:
+        return renderLoweredEntryPointName(Language::C, type, EntryPoint::Serialize);
+    case PlanFunction::Deserialize:
+        return renderLoweredEntryPointName(Language::C, type, EntryPoint::Deserialize);
+    case PlanFunction::Initialize:
+        return renderLoweredEntryPointName(Language::C, type, EntryPoint::Initialize);
+    case PlanFunction::Get:
+        return renderLoweredAccessorName(Language::C, type, AccessorVerb::Get, symbol.member);
+    case PlanFunction::Set:
+        return renderLoweredAccessorName(Language::C, type, AccessorVerb::Set, symbol.member);
+    case PlanFunction::Helper:
+        break;
+    }
+    std::string helper = "llvmdsdl_plan_" + symbol.helperKind + "__" + type;
+    if (symbol.step)
+    {
+        helper += "__" + std::to_string(*symbol.step);
+    }
+    if (symbol.direction != PlanHelperDirection::None)
+    {
+        helper += (symbol.direction == PlanHelperDirection::Serialize) ? "__ser" : "__deser";
+    }
+    return helper;
+}
+
+/// @brief The name C links the lowered function @p irSymbol names under.
+std::string cLinkName(const llvm::StringRef irSymbol)
+{
+    const auto symbol = parsePlanSymbol(irSymbol);
+    if (!symbol)
+    {
+        llvm::report_fatal_error(llvm::Twine("C spelling: a function the plan grammar does not name: ") + irSymbol);
+    }
+    return cLinkName(*symbol);
+}
+
+/// @brief The name C links one of a section's lowered functions under.
+std::string cLinkName(const SemanticDefinition& def, const std::string& sectionName, const PlanFunction function)
+{
+    return cLinkName(
+        planFunction(def.info.fullName, def.info.majorVersion, def.info.minorVersion, sectionName, function));
+}
+
+/// @brief The name C links a lowered accessor of one of a section's members under.
+std::string cLinkName(const SemanticDefinition& def,
+                      const std::string&        sectionName,
+                      const bool                getter,
+                      const llvm::StringRef     member)
+{
+    PlanSymbol symbol = planFunction(def.info.fullName,
+                                     def.info.majorVersion,
+                                     def.info.minorVersion,
+                                     sectionName,
+                                     getter ? PlanFunction::Get : PlanFunction::Set);
+    symbol.member     = member.str();
+    return cLinkName(symbol);
+}
+
+/// @brief Renames every lowered function in @p module, and every reference to one, to its C link name.
+///
+/// An object is linked against the header's declarations, which name the functions as C spells
+/// them; a nested body the object calls is declared under the same name its own object defines.
+void renameToCLinkNames(mlir::ModuleOp module)
+{
+    std::map<std::string, std::string> renames;
+    const auto                         consider = [&renames](const llvm::StringRef name) {
+        if (const auto symbol = parsePlanSymbol(name))
+        {
+            renames.emplace(name.str(), cLinkName(*symbol));
+        }
+    };
+    module.walk([&consider](mlir::Operation* op) {
+        if (auto fn = mlir::dyn_cast<mlir::func::FuncOp>(op))
+        {
+            consider(fn.getSymName());
+        }
+        for (const mlir::NamedAttribute attribute : op->getAttrs())
+        {
+            if (const auto reference = mlir::dyn_cast<mlir::FlatSymbolRefAttr>(attribute.getValue()))
+            {
+                consider(reference.getValue());
+            }
+        }
+    });
+    mlir::MLIRContext* const context = module.getContext();
+    for (const auto& [from, to] : renames)
+    {
+        const auto fromName = mlir::StringAttr::get(context, from);
+        const auto toName   = mlir::StringAttr::get(context, to);
+        (void) mlir::SymbolTable::replaceAllSymbolUses(fromName, toName, module);
+        if (auto fn = module.lookupSymbol<mlir::func::FuncOp>(fromName))
+        {
+            mlir::SymbolTable::setSymbolName(fn, toName);
+        }
+    }
 }
 
 /// @brief The object a definition's serialisation is assembled into, beside its header.
@@ -146,9 +263,23 @@ std::string implFileName(const DiscoveredDefinition& info)
     return name;
 }
 
+/// @brief The definition's C type name with its version, which names it alone in C's global scope.
+std::string versionedCTypeName(const DiscoveredDefinition& info)
+{
+    return renderDefinitionTypeName(Language::C,
+                                    info.namespaceComponents,
+                                    info.shortName,
+                                    info.majorVersion,
+                                    info.minorVersion,
+                                    TypeNameVersioning::Versioned);
+}
+
+/// @brief The header's include guard, spelt from the type name it declares.
 std::string headerGuard(const DiscoveredDefinition& info)
 {
-    return renderIncludeGuard(Language::C, "LLVMDSDL_", info.fullName, info.majorVersion, info.minorVersion, "_H");
+    return codegenProjectIdentifier(Language::C,
+                                    IdentifierRole::MacroName,
+                                    "LLVMDSDL_" + versionedCTypeName(info) + "_H");
 }
 
 std::string valueToCExpr(const TypeExprAST& type, const Value& value)
@@ -619,7 +750,9 @@ void emitSection(SourceWriter&              w,
         w.blank();
     }
     emitSectionConstants(w, typeName, section);
-    const auto irStem = sectionIRFunctionStem(def, sectionName);
+    const std::string loweredSerialize   = cLinkName(def, sectionName, PlanFunction::Serialize);
+    const std::string loweredDeserialize = cLinkName(def, sectionName, PlanFunction::Deserialize);
+    const std::string loweredInitialize  = cLinkName(def, sectionName, PlanFunction::Initialize);
     // The object type and its serialisation, which an accessors-only run leaves out.
     if (!ctx.accessorsOnly())
     {
@@ -640,13 +773,13 @@ void emitSection(SourceWriter&              w,
                            plan);
 
         const auto objectType = renderCTagSpelling(typeName);
-        w.line("int8_t " + irStem + "__serialize_ir_(const " + objectType +
+        w.line("int8_t " + loweredSerialize + "(const " + objectType +
                "* obj, uint8_t* buffer, size_t* "
                "inout_buffer_size_bytes);");
-        w.line("int8_t " + irStem + "__deserialize_ir_(" + objectType +
+        w.line("int8_t " + loweredDeserialize + "(" + objectType +
                "* out_obj, const uint8_t* buffer, size_t* "
                "inout_buffer_size_bytes);");
-        w.line("int8_t " + irStem + "__initialize_ir_(" + objectType + "* out_obj);");
+        w.line("int8_t " + loweredInitialize + "(" + objectType + "* out_obj);");
         w.blank();
 
         w.line("static inline int8_t " + renderEntryPointName(Language::C, typeName, EntryPoint::Serialize) +
@@ -654,7 +787,7 @@ void emitSection(SourceWriter&              w,
                "* const obj, uint8_t* const buffer, size_t* const "
                "inout_buffer_size_bytes)");
         w.open("{");
-        w.line("return " + irStem + "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
+        w.line("return " + loweredSerialize + "(obj, buffer, inout_buffer_size_bytes);");
         w.close("}");
         w.blank();
 
@@ -663,14 +796,14 @@ void emitSection(SourceWriter&              w,
                "* const out_obj, const uint8_t* buffer, size_t* const "
                "inout_buffer_size_bytes)");
         w.open("{");
-        w.line("return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
+        w.line("return " + loweredDeserialize + "(out_obj, buffer, inout_buffer_size_bytes);");
         w.close("}");
         w.blank();
 
         w.line("static inline int8_t " + renderEntryPointName(Language::C, typeName, EntryPoint::Initialize) + "(" +
                objectType + "* const out_obj)");
         w.open("{");
-        w.line("return " + irStem + "__initialize_ir_(out_obj);");
+        w.line("return " + loweredInitialize + "(out_obj);");
         w.close("}");
         w.blank();
     }
@@ -683,7 +816,8 @@ void emitSection(SourceWriter&              w,
     // unions those are, and the tag's getter is the sign that it did.
     auto       schemaModule = schema ? schema->getParentOfType<mlir::ModuleOp>() : mlir::ModuleOp{};
     const bool unionFlat    = section.isUnion && schemaModule &&
-                              (schemaModule.lookupSymbol<mlir::func::FuncOp>(irStem + "__get__tag__ir_") != nullptr);
+                              (schemaModule.lookupSymbol<mlir::func::FuncOp>(
+                                   planAccessorSymbol(schema, sectionName, true, kPlanUnionTagMember)) != nullptr);
     if ((metadata.wireFlat.holds && !section.isUnion) || unionFlat)
     {
         const NamingScope fieldScope = makeSectionFieldScope(Language::C, section);
@@ -699,7 +833,7 @@ void emitSection(SourceWriter&              w,
             SemanticFieldType tag;
             tag.scalarCategory = SemanticScalarCategory::UnsignedInt;
             tag.bitLength      = metadata.unionTagBits;
-            subjects.push_back(Subject{"_tag_", unionTagMemberName(Language::C).str(), tag});
+            subjects.push_back(Subject{kPlanUnionTagMember.str(), unionTagMemberName(Language::C).str(), tag});
         }
         for (const auto& field : section.fields)
         {
@@ -726,7 +860,7 @@ void emitSection(SourceWriter&              w,
                 // A nested composite's getter answers the buffer from the field's offset and, through
                 // the pointer, what remains of this one, for the nested type's own accessors.
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                const std::string irGet = irStem + "__get_" + name + "_ir_";
+                const std::string irGet = cLinkName(def, sectionName, true, name);
                 w.line("const uint8_t* " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex +
                        ", size_t* out_size);");
                 w.blank();
@@ -756,8 +890,8 @@ void emitSection(SourceWriter&              w,
             }
             const std::string cType = cTypeFromFieldType(type, ctx);
             // NOLINTBEGIN(performance-inefficient-string-concatenation)
-            const std::string irGet = irStem + "__get_" + name + "_ir_";
-            const std::string irSet = irStem + "__set_" + name + "_ir_";
+            const std::string irGet = cLinkName(def, sectionName, true, name);
+            const std::string irSet = cLinkName(def, sectionName, false, name);
             w.line(irType + " " + irGet + "(const uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ");");
             w.line("int8_t " + irSet + "(uint8_t* buffer, int64_t buffer_size_bytes" + irIndex + ", " + irType +
                    " value);");
@@ -823,8 +957,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     // not, and saying so here beats a cascade of redefinitions from inside generated code.
     if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
     {
-        const auto [anyVersion, thisVersion] =
-            renderVersionSentinelMacros(Language::C, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+        // One sentinel for the type, spelt from its unversioned name, and one for this version.
+        const std::string anyVersion =
+            codegenProjectIdentifier(Language::C, IdentifierRole::MacroName, "LLVMDSDL_SELECTED_" + baseTypeName + "_");
+        const std::string thisVersion =
+            codegenProjectIdentifier(Language::C,
+                                     IdentifierRole::MacroName,
+                                     "LLVMDSDL_SELECTED_" + versionedCTypeName(def.info) + "_");
         out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
         out << "#  error \"" << def.info.fullName
             << ": two versions of one type in one translation unit, but generated type names are "
@@ -1154,7 +1293,7 @@ public:
         {
             return openHelper(w, fn);
         }
-        const std::string name = fn.getSymName().str();
+        const std::string name = cLinkName(fn.getSymName());
         if ((*direction == "get") || (*direction == "set"))
         {
             // An accessor reads or writes the wire at the field's offset. A scalar one carries
@@ -1216,7 +1355,7 @@ public:
     [[nodiscard]] std::string declarationOf(mlir::func::FuncOp fn) const
     {
         const auto               direction = planBodyDirection(fn);
-        const std::string        name      = fn.getSymName().str();
+        const std::string        name      = cLinkName(fn.getSymName());
         std::string              rendered;
         std::vector<std::string> parameters;
         if (!direction)
@@ -1259,7 +1398,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return callee.str();
+        return cLinkName(callee);
     }
 
     [[nodiscard]] std::string valueName(const ValueRole       role,
@@ -1979,7 +2118,7 @@ private:
             parameters.push_back("p" + std::to_string(argument.getArgNumber()));
             rendered += (rendered.empty() ? "" : ", ") + typeName(argument.getType()) + " " + parameters.back();
         }
-        w.line(typeName(fn.getFunctionType().getResult(0)) + " " + fn.getSymName().str() + "(" +
+        w.line(typeName(fn.getFunctionType().getResult(0)) + " " + cLinkName(fn.getSymName()) + "(" +
                (rendered.empty() ? "void" : rendered) + ")");
         w.open("{");
         markUnused(w, fn, parameters);
@@ -2170,6 +2309,7 @@ llvm::Error emit(const SemanticModule& semantic,
         mlir::PassManager pm(perDefModule.getContext());
         if (options.artifact == Artifact::Object)
         {
+            renameToCLinkNames(perDefModule);
             pm.addPass(createConvertDSDLToLLVMPass(objectSizeBits, objectLittleEndian));
             pm.addPass(createEmitDSDLRuntimePass());
             if (mlir::failed(pm.run(perDefModule)))

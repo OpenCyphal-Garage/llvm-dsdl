@@ -17,14 +17,14 @@
 
 # A variable-length array is its length set to nought and nothing else; a fixed array of
 # composites is a counted loop of calls into the element type's own initialiser.
-# CHECK-LABEL: func.func @fixtures_vendor_DelimitedList_1_0__initialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.DelimitedList.1.0.initialize
 # CHECK: dsdl.set_array_length %{{.*}} "items"
 # CHECK: scf.for
 # CHECK: dsdl.element_addr %{{.*}} "pair"
-# CHECK-NEXT: dsdl.call_initialize @fixtures_vendor_Delimited_1_0__initialize_ir_
+# CHECK-NEXT: dsdl.call_initialize @fixtures.vendor.Delimited.1.0.initialize
 
 # A structure: the null check, then one store per scalar.
-# CHECK-LABEL: func.func @fixtures_vendor_Helpers_1_0__initialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.Helpers.1.0.initialize
 # CHECK-SAME: attributes {llvmdsdl.plan_body = "initialize"
 # CHECK: dsdl.is_null
 # CHECK: dsdl.store_member %{{.*}} "a"
@@ -32,12 +32,12 @@
 # CHECK: dsdl.set_array_length %{{.*}} "c"
 
 # A union: the tag first, then every option.
-# CHECK-LABEL: func.func @fixtures_vendor_UnionTag_1_0__initialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.UnionTag.1.0.initialize
 # CHECK: dsdl.set_union_tag
 # CHECK: dsdl.store_member %{{.*}} "first"
 # CHECK: dsdl.store_member %{{.*}} "second"
 
 # A nested composite is initialised by its own body, through a call that carries no buffer.
-# CHECK-LABEL: func.func @fixtures_vendor_UsesDelimited_1_0__initialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.UsesDelimited.1.0.initialize
 # CHECK: dsdl.member_addr %{{.*}} "nested"
-# CHECK-NEXT: dsdl.call_initialize @fixtures_vendor_Delimited_1_0__initialize_ir_
+# CHECK-NEXT: dsdl.call_initialize @fixtures.vendor.Delimited.1.0.initialize

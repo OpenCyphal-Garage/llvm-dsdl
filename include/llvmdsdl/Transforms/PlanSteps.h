@@ -27,7 +27,7 @@
 #include <llvm/ADT/StringRef.h>
 
 #include "llvmdsdl/IR/DSDLOps.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
 {
@@ -174,6 +174,25 @@ inline std::string planIdentity(mlir::dsdl::SchemaOp schema, mlir::dsdl::Seriali
                         plan.getSection().value_or(llvm::StringRef{}));
 }
 
+/// @brief One of a section's functions, as the passes name it.
+inline PlanSymbol planFunction(const llvm::StringRef fullName,
+                               const std::int64_t    major,
+                               const std::int64_t    minor,
+                               const llvm::StringRef section,
+                               const PlanFunction    function)
+{
+    PlanSymbol symbol;
+    symbol.schema  = SchemaSymbol{fullName.str(), static_cast<std::uint32_t>(major), static_cast<std::uint32_t>(minor)};
+    symbol.section = section.str();
+    symbol.function = function;
+    return symbol;
+}
+
+inline PlanSymbol planFunction(mlir::dsdl::SchemaOp schema, const llvm::StringRef section, const PlanFunction function)
+{
+    return planFunction(schema.getFullName(), schema.getMajor(), schema.getMinor(), section, function);
+}
+
 /// @brief The symbol `build-dsdl-plan-bodies` gives one plan's body in one direction.
 inline std::string planBodySymbol(const llvm::StringRef fullName,
                                   const std::int64_t    major,
@@ -181,8 +200,8 @@ inline std::string planBodySymbol(const llvm::StringRef fullName,
                                   const llvm::StringRef section,
                                   const bool            serialize)
 {
-    return renderDefinitionSymbolBase(fullName, static_cast<std::uint32_t>(major), static_cast<std::uint32_t>(minor)) +
-           renderSectionSymbolSuffix(section) + (serialize ? "__serialize_ir_" : "__deserialize_ir_");
+    return renderPlanSymbol(
+        planFunction(fullName, major, minor, section, serialize ? PlanFunction::Serialize : PlanFunction::Deserialize));
 }
 
 /// @brief The symbol `build-dsdl-plan-bodies` gives one plan's initialise body.
@@ -191,8 +210,37 @@ inline std::string planInitializeSymbol(const llvm::StringRef fullName,
                                         const std::int64_t    minor,
                                         const llvm::StringRef section)
 {
-    return renderDefinitionSymbolBase(fullName, static_cast<std::uint32_t>(major), static_cast<std::uint32_t>(minor)) +
-           renderSectionSymbolSuffix(section) + "__initialize_ir_";
+    return renderPlanSymbol(planFunction(fullName, major, minor, section, PlanFunction::Initialize));
+}
+
+/// @brief The symbol `build-dsdl-plan-bodies` gives a member's getter or setter.
+inline std::string planAccessorSymbol(mlir::dsdl::SchemaOp  schema,
+                                      const llvm::StringRef section,
+                                      const bool            getter,
+                                      const llvm::StringRef member)
+{
+    PlanSymbol symbol = planFunction(schema, section, getter ? PlanFunction::Get : PlanFunction::Set);
+    symbol.member     = member.str();
+    return renderPlanSymbol(symbol);
+}
+
+/// @brief The symbol `lower-dsdl-exec` gives a helper.
+/// @param[in] schema The definition the helper serves.
+/// @param[in] section The section it serves, or empty for a message.
+/// @param[in] kind What the helper does: `capacity_check`, `scalar_unsigned` and so on.
+/// @param[in] step The plan step it serves, where it serves one.
+/// @param[in] direction The direction it serves, where it serves one.
+inline std::string planHelperSymbol(mlir::dsdl::SchemaOp              schema,
+                                    const llvm::StringRef             section,
+                                    const llvm::StringRef             kind,
+                                    const std::optional<std::int64_t> step      = std::nullopt,
+                                    const PlanHelperDirection         direction = PlanHelperDirection::None)
+{
+    PlanSymbol symbol = planFunction(schema, section, PlanFunction::Helper);
+    symbol.helperKind = kind.str();
+    symbol.step       = step;
+    symbol.direction  = direction;
+    return renderPlanSymbol(symbol);
 }
 
 }  // namespace llvmdsdl

@@ -8,6 +8,7 @@ add_executable(llvmdsdl-unit-tests
   FlatSetTests.cpp
   TargetLanguagesTests.cpp
   LanguageTraitsTests.cpp
+  PlanSymbolTests.cpp
   CliPathTests.cpp
   EvaluatorTests.cpp
   DepfileRenderTests.cpp

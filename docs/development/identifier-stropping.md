@@ -97,10 +97,10 @@ the manifest a report of what a backend writes rather than a second opinion abou
 ### 3.1 One name, and the names built from a definition
 
 The engine above answers how *one* name is spelled. A definition also has names built from its parts
--- its type name, its output file stem, its include guard, its linkage symbol base -- and those are
-composed rather than projected. `Support/DefinitionNaming.h` answers them, from a per-language table
-of the same shape as the role table: how the namespace is joined into the type name, whether the
-version is part of it, and whether the composed result is re-projected.
+-- its type name, its output file stem, its entry points and accessors -- and those are composed
+rather than projected. `Support/DefinitionNaming.h` answers them, from a per-language table of the
+same shape as the role table: how the namespace is joined into the type name, whether the version is
+part of it, and whether the composed result is re-projected.
 
 It takes parts rather than a `DiscoveredDefinition` because `llvmdsdlFrontend` links only
 `llvmdsdlSupport`, and `Discovery` -- which has to agree with the emitters about what they will emit
@@ -111,6 +111,12 @@ Without it each emitter composes its own: `mangleSymbol` would exist three times
 three libraries, with the C backend linking only because all three agreed with their consumer by
 coincidence of identical source text, and C, C++ and the object backend could each answer
 differently whether a type name carries its version.
+
+The IR names a definition by its DSDL identity, `ns.Msg.1.0`, and each of its functions by that
+identity with dotted suffixes, `ns.Msg.1.0.serialize`; `Support/PlanSymbol.h` renders and reads
+them. A backend that links or declares a function spells it from what the symbol reads back, in the
+scope where the spelling lives: C links `ns__Msg_1_0__serialize_ir_`, spelt from its versioned type
+name, and builds its include guard and version sentinels from its type name too.
 
 Only in the C backend does a scope cross a layer. Its struct declaration reads the scope
 directly; its serialiser bodies are spelt from MLIR by `CSpelling`, which reads member names from
@@ -379,7 +385,7 @@ Two things about that pass are worth stating, because both were wrong in the fir
 - **It keys on the identifier as emitted, not on a name plus a version.** Under the unversioned
   default the version is not in the identifier, so two types collide whatever versions they carry; a
   key carrying the version misses the pair whose versions differ. Two versions of *one* definition
-  are excluded by comparing owners instead: that is what `--versioned-type-names` and the generated
+  are excluded by comparing owners instead: that is what `--versioned-type-names` and C's
   include-time sentinel are for, and not this check's business.
 - **It reports only where a scope is actually shared** — C's single global scope, C++'s namespace,
   Go's package. Rust, TypeScript and Python give every definition and version its own module, so a

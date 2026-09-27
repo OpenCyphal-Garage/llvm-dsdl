@@ -9,69 +9,69 @@
 # RUN: FileCheck %s --check-prefix=PLAN < %t/plans.mlir
 
 # The asserting plan carries the assertion; the step is marked where the nested type asserts.
-# PLAN: dsdl.schema @fixtures_aliasable_vendor_Pose_1_0
+# PLAN: dsdl.schema @fixtures_aliasable.vendor.Pose.1.0
 # PLAN: dsdl.serialization_plan attributes {{{.*}}aliasable{{.*}}wire_flat}
-# PLAN: dsdl.schema @fixtures_views_vendor_Frame_1_0
+# PLAN: dsdl.schema @fixtures_views.vendor.Frame.1.0
 # PLAN: composite_sealed = true, held_as_view, kind = "field"{{.*}}name = "pose"
 # PLAN: composite_sealed = true, kind = "field"{{.*}}name = "velocity"
 # A sealed holder stays wire-flat, and is not a host image: a view is a pointer where the wire has
 # the record.
-# PLAN: dsdl.schema @fixtures_views_vendor_Sealed_1_0
+# PLAN: dsdl.schema @fixtures_views.vendor.Sealed.1.0
 # PLAN: dsdl.serialization_plan attributes {{{.*}}host_image_reason = "view-member"{{.*}}sealed, wire_flat}
 # Each element of an array of the type is a view.
-# PLAN: dsdl.schema @fixtures_views_vendor_Track_1_0
+# PLAN: dsdl.schema @fixtures_views.vendor.Track.1.0
 # PLAN: array_capacity = 2 : i64, array_kind = "fixed"{{.*}}held_as_view{{.*}}name = "pair"
 # PLAN: array_capacity = 3 : i64, array_kind = "variable_inclusive"{{.*}}held_as_view{{.*}}name = "trail"
 
 # The bodies hold the view and copy from it; the nested entry points are called for the copy alone.
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/plans.mlir > %t/bodies.mlir
 # RUN: FileCheck %s --check-prefix=BODY < %t/bodies.mlir
-# BODY-LABEL: func.func @fixtures_views_vendor_Frame_1_0__serialize_ir_(
-# BODY-NOT:   Pose_1_0__serialize_ir_
+# BODY-LABEL: func.func @fixtures_views.vendor.Frame.1.0.serialize(
+# BODY-NOT:   Pose.1.0.serialize
 # BODY:       %[[BYTES:.*]], %[[SIZE:.*]] = dsdl.load_view %{{.*}} "pose"
 # BODY:       dsdl.copy_bytes %{{.*}}, %[[BYTES]], size %[[SIZE]] {bytes = 24 : i64}
-# BODY:       dsdl.call_serdes @fixtures_aliasable_vendor_Vec3_1_0__serialize_ir_({{.*}}member = "velocity"
-# BODY-NOT:   Pose_1_0__serialize_ir_
-# BODY-LABEL: func.func @fixtures_views_vendor_Frame_1_0__deserialize_ir_(
-# BODY-NOT:   Pose_1_0__deserialize_ir_
+# BODY:       dsdl.call_serdes @fixtures_aliasable.vendor.Vec3.1.0.serialize({{.*}}member = "velocity"
+# BODY-NOT:   Pose.1.0.serialize
+# BODY-LABEL: func.func @fixtures_views.vendor.Frame.1.0.deserialize(
+# BODY-NOT:   Pose.1.0.deserialize
 # BODY:       dsdl.store_view %{{.*}} "pose" = %{{.*}}, %{{.*}} : <!dsdl.object<"fixtures_views.vendor.Frame.1.0">>, <const !dsdl.byte>
-# BODY:       dsdl.call_serdes @fixtures_aliasable_vendor_Vec3_1_0__deserialize_ir_({{.*}}member = "velocity"
-# BODY-NOT:   Pose_1_0__deserialize_ir_
-# BODY-LABEL: func.func @fixtures_views_vendor_Frame_1_0__initialize_ir_(
-# BODY-NOT:   Pose_1_0__initialize_ir_
+# BODY:       dsdl.call_serdes @fixtures_aliasable.vendor.Vec3.1.0.deserialize({{.*}}member = "velocity"
+# BODY-NOT:   Pose.1.0.deserialize
+# BODY-LABEL: func.func @fixtures_views.vendor.Frame.1.0.initialize(
+# BODY-NOT:   Pose.1.0.initialize
 # BODY:       dsdl.clear_view %{{.*}} "pose"
-# BODY:       dsdl.call_initialize @fixtures_aliasable_vendor_Vec3_1_0__initialize_ir_({{.*}}member = "velocity"
-# BODY-NOT:   Pose_1_0__initialize_ir_
+# BODY:       dsdl.call_initialize @fixtures_aliasable.vendor.Vec3.1.0.initialize({{.*}}member = "velocity"
+# BODY-NOT:   Pose.1.0.initialize
 # An array's element loop stores and loads the element the index names; the trail keeps its length
 # machinery; initialise clears the pair whole and empties the trail.
-# BODY-LABEL: func.func @fixtures_views_vendor_Track_1_0__serialize_ir_(
-# BODY-NOT:   Pose_1_0__serialize_ir_
+# BODY-LABEL: func.func @fixtures_views.vendor.Track.1.0.serialize(
+# BODY-NOT:   Pose.1.0.serialize
 # BODY:       %[[PAIR:.*]], %[[PAIR_SIZE:.*]] = dsdl.load_view %{{.*}} "pair"[%{{.*}}]
 # BODY:       dsdl.copy_bytes %{{.*}}, %[[PAIR]], size %[[PAIR_SIZE]] {bytes = 24 : i64}
 # BODY:       dsdl.array_length %{{.*}} "trail"
 # BODY:       %[[TRAIL:.*]], %[[TRAIL_SIZE:.*]] = dsdl.load_view %{{.*}} "trail"[%{{.*}}]
 # BODY:       dsdl.copy_bytes %{{.*}}, %[[TRAIL]], size %[[TRAIL_SIZE]] {bytes = 24 : i64}
-# BODY-NOT:   Pose_1_0__serialize_ir_
-# BODY-LABEL: func.func @fixtures_views_vendor_Track_1_0__deserialize_ir_(
-# BODY-NOT:   Pose_1_0__deserialize_ir_
+# BODY-NOT:   Pose.1.0.serialize
+# BODY-LABEL: func.func @fixtures_views.vendor.Track.1.0.deserialize(
+# BODY-NOT:   Pose.1.0.deserialize
 # BODY:       dsdl.store_view %{{.*}} "pair"[%{{.*}}] = %{{.*}}, %{{.*}} : <!dsdl.object<"fixtures_views.vendor.Track.1.0">>, <const !dsdl.byte>
 # BODY:       dsdl.set_array_length %{{.*}} "trail"
 # BODY:       dsdl.store_view %{{.*}} "trail"[%{{.*}}] = %{{.*}}, %{{.*}} : <!dsdl.object<"fixtures_views.vendor.Track.1.0">>, <const !dsdl.byte>
-# BODY-NOT:   Pose_1_0__deserialize_ir_
-# BODY-LABEL: func.func @fixtures_views_vendor_Track_1_0__initialize_ir_(
-# BODY-NOT:   Pose_1_0__initialize_ir_
+# BODY-NOT:   Pose.1.0.deserialize
+# BODY-LABEL: func.func @fixtures_views.vendor.Track.1.0.initialize(
+# BODY-NOT:   Pose.1.0.initialize
 # BODY:       dsdl.clear_view %{{.*}} "pair"
 # BODY-NEXT:  dsdl.set_array_length %{{.*}} "trail", %c0_i64
-# BODY-NOT:   Pose_1_0__initialize_ir_
+# BODY-NOT:   Pose.1.0.initialize
 
 # A holder that begins with the record hands its view the buffer itself. Serialise copies to the
 # buffer it was given; deserialise holds the buffer it reads, with as much of it as the record
 # spans. No offset is formed and none is bounded.
 # RUN: FileCheck %s --check-prefix=LEADING < %t/bodies.mlir
-# LEADING-LABEL: func.func @fixtures_views_vendor_Leading_1_0__serialize_ir_(
+# LEADING-LABEL: func.func @fixtures_views.vendor.Leading.1.0.serialize(
 # LEADING:       %[[BYTES:.*]], %[[SIZE:.*]] = dsdl.load_view %arg0 "pose"
 # LEADING-NEXT:  dsdl.copy_bytes %arg1, %[[BYTES]], size %[[SIZE]] {bytes = 24 : i64}
-# LEADING-LABEL: func.func @fixtures_views_vendor_Leading_1_0__deserialize_ir_(
+# LEADING-LABEL: func.func @fixtures_views.vendor.Leading.1.0.deserialize(
 # LEADING:       %[[READ:[0-9]+]] = dsdl.buffer_or_empty %arg1
 # LEADING-NEXT:  %[[SHORT:[0-9]+]] = arith.cmpi ult, %[[CAP:[0-9]+]], %c24_i64 : i64
 # LEADING-NEXT:  %[[HELD:[0-9]+]] = arith.select %[[SHORT]], %[[CAP]], %c24_i64 : i64

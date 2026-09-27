@@ -1,0 +1,46 @@
+# The IR names a definition by its DSDL identity and a function by that identity with dotted
+# suffixes; each backend spells them its own way. A symbol spelt for C folded `.` into `_`, so
+# `ns.A_B` and `ns.A.B` were one symbol and every target failed with "redefinition of symbol", and
+# their C include guards and version sentinels were one macro.
+
+# RUN: rm -rf %t && mkdir -p %t/ns/A
+# RUN: printf 'uint8 a\n@sealed\n' > %t/ns/A_B.1.0.dsdl
+# RUN: printf 'uint16 b\n@sealed\n' > %t/ns/A/B.1.0.dsdl
+# RUN: printf 'uint8 q\n@sealed\n---\nuint8 r\n@sealed\n' > %t/ns/Svc.1.0.dsdl
+
+# RUN: %dsdlc --target-language mlir --no-embedded-uavcan %t/ns > %t/schemas.mlir
+# RUN: FileCheck %s --check-prefix=SCHEMA < %t/schemas.mlir
+# SCHEMA-DAG: dsdl.schema @ns.A.B.1.0
+# SCHEMA-DAG: dsdl.schema @ns.A_B.1.0
+# SCHEMA-DAG: dsdl.schema @ns.Svc.1.0
+
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/schemas.mlir | FileCheck %s --check-prefix=BODY
+# BODY-DAG: func.func @ns.A_B.1.0.serialize(
+# BODY-DAG: func.func @ns.A.B.1.0.serialize(
+# BODY-DAG: func.func @ns.A_B.1.0.get.a(
+# BODY-DAG: func.func @ns.Svc.1.0.request.deserialize(
+# BODY-DAG: func.func @ns.Svc.1.0.response.initialize(
+# BODY-DAG: func.func @ns.A_B.1.0.plan.capacity_check(
+# BODY-DAG: func.func @ns.Svc.1.0.request.plan.scalar_unsigned.{{[0-9]+}}.ser(
+
+# RUN: %dsdlc --target-language c --no-embedded-uavcan %t/ns --outdir %t/c
+# RUN: cat %t/c/ns/A_B_1_0.h | FileCheck %s --check-prefix=C_AB
+# RUN: cat %t/c/ns/A/B_1_0.h | FileCheck %s --check-prefix=C_A_B
+# C_AB: #ifndef LLVMDSDL_NS__A_B_1_0_H
+# C_AB: #define LLVMDSDL_SELECTED_NS__A_B_
+# C_AB: int8_t ns__A_B_1_0__serialize_ir_(
+# C_A_B: #ifndef LLVMDSDL_NS__A__B_1_0_H
+# C_A_B: #define LLVMDSDL_SELECTED_NS__A__B_
+# C_A_B: int8_t ns__A__B_1_0__serialize_ir_(
+
+# RUN: %dsdlc --target-language cpp --cpp-profile std --no-embedded-uavcan %t/ns --outdir %t/cpp
+# RUN: cat %t/cpp/ns/A_B_1_0.hpp | FileCheck %s --check-prefix=CPP
+# CPP: #pragma once
+# CPP-NOT: #ifndef
+# CPP-NOT: LLVMDSDL_SELECTED_
+
+# RUN: %dsdlc --target-language obj --no-embedded-uavcan %t/ns --outdir %t/obj
+# RUN: %dsdlc --target-language rust --no-embedded-uavcan %t/ns --outdir %t/rust
+# RUN: %dsdlc --target-language go --go-module m --no-embedded-uavcan %t/ns --outdir %t/go
+# RUN: %dsdlc --target-language ts --no-embedded-uavcan %t/ns --outdir %t/ts
+# RUN: %dsdlc --target-language python --no-embedded-uavcan %t/ns --outdir %t/py

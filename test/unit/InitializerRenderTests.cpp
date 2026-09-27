@@ -183,7 +183,7 @@ bool runInitializerRenderTests()
 
     // A structure of scalars and composites.
     {
-        const char* const body  = "uavcan_node_Heartbeat_1_0__initialize_ir_";
+        const char* const body  = "uavcan.node.Heartbeat.1.0.initialize";
         const auto        shape = read(body);
         if (!shape || shape->isUnion || shape->members.size() != 4U)
         {
@@ -202,7 +202,7 @@ bool runInitializerRenderTests()
             ok = false;
         }
         const auto* health = member(*shape, "health");
-        if (health && health->callee != "uavcan_node_Health_1_0__initialize_ir_")
+        if (health && health->callee != "uavcan.node.Health.1.0.initialize")
         {
             std::cerr << body << ": health initialised through '" << health->callee << "'\n";
             ok = false;
@@ -211,7 +211,7 @@ bool runInitializerRenderTests()
 
     // A union: the tag, then every arm.
     {
-        const char* const body  = "uavcan_register_Value_1_0__initialize_ir_";
+        const char* const body  = "uavcan.register.Value.1.0.initialize";
         const auto        shape = read(body);
         if (!shape || !shape->isUnion || shape->unionTag != 0 || shape->members.size() != 15U)
         {
@@ -224,14 +224,14 @@ bool runInitializerRenderTests()
 
     // A variable-length array, a fixed bool array and a fixed scalar array.
     {
-        const auto string = read("uavcan_primitive_String_1_0__initialize_ir_");
+        const auto string = read("uavcan.primitive.String.1.0.initialize");
         ok                = string && expectKind(*string, "String", "value", Kind::VariableArrayEmpty) && ok;
 
-        const auto list = read("uavcan_node_port_SubjectIDList_1_0__initialize_ir_");
+        const auto list = read("uavcan.node.port.SubjectIDList.1.0.initialize");
         ok = list && list->isUnion && expectKind(*list, "SubjectIDList", "mask", Kind::BoolArray, 8192) && ok;
         ok = list && expectKind(*list, "SubjectIDList", "sparse_list", Kind::VariableArrayEmpty) && ok;
 
-        const auto info = read("uavcan_node_GetInfo_1_0__response__initialize_ir_");
+        const auto info = read("uavcan.node.GetInfo.1.0.response.initialize");
         ok              = info && expectKind(*info, "GetInfo.Response", "unique_id", Kind::FixedScalarArray, 16) && ok;
     }
 

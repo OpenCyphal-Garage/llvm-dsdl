@@ -14,6 +14,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "llvmdsdl/Transforms/PlanSteps.h"
 #include "llvmdsdl/SerDes/HelperBodyPlan.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
@@ -62,7 +63,7 @@
 #include <mlir/Transforms/Passes.h>
 
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/ScalarStorage.h"
 
 namespace llvmdsdl
@@ -263,8 +264,7 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp              
         // that the plan says so.
         return mlir::success();
     }
-    const std::string funcName = (kPlanHelperSymbolPrefix + "capacity_check__").str() + schemaSym.getValue().str() +
-                                 renderSectionSymbolSuffix(section);
+    const std::string funcName = planHelperSymbol(schema, section, "capacity_check");
     plan.setLoweredCapacityCheckHelperAttr(builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
@@ -328,8 +328,7 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp             
     const auto        schemaSym   = schema.getSymNameAttr();
     const auto        sectionAttr = plan.getSectionAttr();
     const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
-    const std::string funcName = (kPlanHelperSymbolPrefix + "validate_union_tag__").str() + schemaSym.getValue().str() +
-                                 renderSectionSymbolSuffix(section);
+    const std::string funcName    = planHelperSymbol(schema, section, "validate_union_tag");
     plan.setLoweredUnionTagValidateHelperAttr(builder.getStringAttr(funcName));
     if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
     {
@@ -444,11 +443,10 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp             
         const std::int64_t stepIndex = *op.getStepIndex();
         const auto         castMode  = op.getCastMode();
 
-        const std::string symbolStem = (kPlanHelperSymbolPrefix + "scalar_unsigned__").str() +
-                                       schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
-                                       std::to_string(stepIndex);
-        const std::string serName    = symbolStem + "__ser";
-        const std::string deserName  = symbolStem + "__deser";
+        const std::string serName =
+            planHelperSymbol(schema, section, "scalar_unsigned", stepIndex, PlanHelperDirection::Serialize);
+        const std::string deserName =
+            planHelperSymbol(schema, section, "scalar_unsigned", stepIndex, PlanHelperDirection::Deserialize);
         op.setLoweredSerUnsignedHelperAttr(builder.getStringAttr(serName));
         op.setLoweredDeserUnsignedHelperAttr(builder.getStringAttr(deserName));
 
@@ -550,11 +548,10 @@ mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp               
         const std::int64_t stepIndex = *op.getStepIndex();
         const auto         castMode  = op.getCastMode();
 
-        const std::string symbolStem = (kPlanHelperSymbolPrefix + "scalar_signed__").str() +
-                                       schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
-                                       std::to_string(stepIndex);
-        const std::string serName    = symbolStem + "__ser";
-        const std::string deserName  = symbolStem + "__deser";
+        const std::string serName =
+            planHelperSymbol(schema, section, "scalar_signed", stepIndex, PlanHelperDirection::Serialize);
+        const std::string deserName =
+            planHelperSymbol(schema, section, "scalar_signed", stepIndex, PlanHelperDirection::Deserialize);
         op.setLoweredSerSignedHelperAttr(builder.getStringAttr(serName));
         op.setLoweredDeserSignedHelperAttr(builder.getStringAttr(deserName));
 
@@ -654,10 +651,10 @@ mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp                
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
         const std::int64_t stepIndex = *op.getStepIndex();
-        const std::string symbolStem = (kPlanHelperSymbolPrefix + "scalar_float__").str() + schemaSym.getValue().str() +
-                                       renderSectionSymbolSuffix(section) + "__" + std::to_string(stepIndex);
-        const std::string serName    = symbolStem + "__ser";
-        const std::string deserName  = symbolStem + "__deser";
+        const std::string  serName =
+            planHelperSymbol(schema, section, "scalar_float", stepIndex, PlanHelperDirection::Serialize);
+        const std::string deserName =
+            planHelperSymbol(schema, section, "scalar_float", stepIndex, PlanHelperDirection::Deserialize);
         op.setLoweredSerFloatHelperAttr(builder.getStringAttr(serName));
         op.setLoweredDeserFloatHelperAttr(builder.getStringAttr(deserName));
 
@@ -750,9 +747,7 @@ mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp           
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
         const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolName = (kPlanHelperSymbolPrefix + "validate_array_length__").str() +
-                                        schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
-                                        std::to_string(stepIndex);
+        const std::string  symbolName = planHelperSymbol(schema, section, "validate_array_length", stepIndex);
         op.setLoweredArrayLengthValidateHelperAttr(builder.getStringAttr(symbolName));
 
         if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))
@@ -843,12 +838,11 @@ mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp               
         {
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
-        const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolStem = (kPlanHelperSymbolPrefix + "array_length_prefix__").str() +
-                                        schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
-                                        std::to_string(stepIndex);
-        const std::string  serName    = symbolStem + "__ser";
-        const std::string  deserName  = symbolStem + "__deser";
+        const std::int64_t stepIndex = *op.getStepIndex();
+        const std::string  serName =
+            planHelperSymbol(schema, section, "array_length_prefix", stepIndex, PlanHelperDirection::Serialize);
+        const std::string deserName =
+            planHelperSymbol(schema, section, "array_length_prefix", stepIndex, PlanHelperDirection::Deserialize);
         op.setLoweredSerArrayLengthPrefixHelperAttr(builder.getStringAttr(serName));
         op.setLoweredDeserArrayLengthPrefixHelperAttr(builder.getStringAttr(deserName));
 
@@ -944,10 +938,10 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp                  modu
         return plan->emitOpError("invalid union tag width");
     }
 
-    const std::string symbolStem = (kPlanHelperSymbolPrefix + "union_tag__").str() + schemaSym.getValue().str() +
-                                   renderSectionSymbolSuffix(section);
-    const std::string serName    = symbolStem + "__ser";
-    const std::string deserName  = symbolStem + "__deser";
+    const std::string serName =
+        planHelperSymbol(schema, section, "union_tag", std::nullopt, PlanHelperDirection::Serialize);
+    const std::string deserName =
+        planHelperSymbol(schema, section, "union_tag", std::nullopt, PlanHelperDirection::Deserialize);
     plan.setLoweredSerUnionTagHelperAttr(builder.getStringAttr(serName));
     plan.setLoweredDeserUnionTagHelperAttr(builder.getStringAttr(deserName));
 
@@ -1057,9 +1051,7 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp       
             return op.emitOpError("carries no step_index; canonicalise the plan first");
         }
         const std::int64_t stepIndex  = *op.getStepIndex();
-        const std::string  symbolName = (kPlanHelperSymbolPrefix + "validate_delimiter_header__").str() +
-                                        schemaSym.getValue().str() + renderSectionSymbolSuffix(section) + "__" +
-                                        std::to_string(stepIndex);
+        const std::string  symbolName = planHelperSymbol(schema, section, "validate_delimiter_header", stepIndex);
         op.setLoweredDelimiterValidateHelperAttr(builder.getStringAttr(symbolName));
 
         if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))

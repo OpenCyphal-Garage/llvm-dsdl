@@ -66,7 +66,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .freeFunctions                  = {.entryPointJoin       = "__",
                                                    .initializer          = true,
                                                    .accessors            = AccessorNaming::Joined,
-                                                   .unionOptionFunctions = true},
+                                                   .unionOptionFunctions = true,
+                                                   .loweredBodySuffix    = "ir_"},
             },
     },
     {

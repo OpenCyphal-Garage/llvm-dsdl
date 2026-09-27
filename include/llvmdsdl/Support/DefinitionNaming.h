@@ -48,8 +48,9 @@ enum class TypeNameVersioning : std::uint8_t
     /// Two versions of one DSDL type then reach one identifier, and what that costs depends on what
     /// scopes the type. Rust, TypeScript and Python give each version its own module and are
     /// unaffected. C and C++ share a scope across versions, so the two collide only if a consumer
-    /// brings both into one translation unit -- which the generated headers detect and refuse. Go
-    /// shares a package across versions, so it cannot be generated at all and says so.
+    /// brings both into one translation unit: C's headers detect it and stop with a message naming
+    /// the flag, and C++ reports the redefinition. Go shares a package across versions, so it cannot
+    /// be generated at all and says so.
     Unversioned,
 
     /// @brief The version is part of the type name, so every version can be used at once.
@@ -89,43 +90,6 @@ enum class TypeNameVersioning : std::uint8_t
                                                    llvm::StringRef shortName,
                                                    std::uint32_t   majorVersion,
                                                    std::uint32_t   minorVersion);
-
-/// @brief Renders an include-guard macro for one definition's generated header.
-///
-/// Every generated header guards on `<prefix><FULL_NAME>_<major>_<minor><suffix>`, upper-cased and
-/// escaped as a macro token. The prefix is what keeps one definition's several headers apart -- the
-/// object backend emits four for a single type.
-/// @param[in] language Naming language.
-/// @param[in] prefix Leading discriminator, including its trailing separator.
-/// @param[in] fullName Dot-separated DSDL full name.
-/// @param[in] majorVersion Major version.
-/// @param[in] minorVersion Minor version.
-/// @param[in] suffix Trailing discriminator, including its leading separator.
-/// @return The guard macro.
-[[nodiscard]] std::string renderIncludeGuard(Language        language,
-                                             llvm::StringRef prefix,
-                                             llvm::StringRef fullName,
-                                             std::uint32_t   majorVersion,
-                                             std::uint32_t   minorVersion,
-                                             llvm::StringRef suffix);
-
-/// @brief Renders the sentinel macros that detect two versions of one type in one translation unit.
-///
-/// Under @ref TypeNameVersioning::Unversioned two versions of a DSDL type reach one identifier. In C
-/// and C++ that is legal to *generate* -- the two live in separate headers, and generating both is
-/// ordinary -- and only breaks if a consumer includes both. The first header to be included defines
-/// the generic sentinel and its own specific one; a header for a different version then finds the
-/// generic set and its own missing, and stops with a message naming the flag rather than a cascade
-/// of redefinition errors from deep inside generated code.
-/// @param[in] language Naming language.
-/// @param[in] fullName Dot-separated DSDL full name.
-/// @param[in] majorVersion Major version.
-/// @param[in] minorVersion Minor version.
-/// @return A pair of macro names: the generic one, then the one specific to this version.
-[[nodiscard]] std::pair<std::string, std::string> renderVersionSentinelMacros(Language        language,
-                                                                              llvm::StringRef fullName,
-                                                                              std::uint32_t   majorVersion,
-                                                                              std::uint32_t   minorVersion);
 
 /// @brief Names the generated type of one section of a definition.
 ///
@@ -192,6 +156,31 @@ enum class AccessorVerb : std::uint8_t
                                              AccessorVerb    verb,
                                              llvm::StringRef member);
 
+/// @brief Names the body a free entry point wraps, where the body is compiled apart from it.
+///
+/// `List_Request_0_2__serialize_ir_` in C. The body is linked under this name, so it carries the
+/// version whatever the type name does: two versions of one definition are two bodies to a linker.
+/// @param[in] language Naming language, whose row has a lowered body suffix.
+/// @param[in] versionedTypeName The section's type name under @ref TypeNameVersioning::Versioned.
+/// @param[in] entryPoint The operation.
+/// @return The body's name.
+[[nodiscard]] std::string renderLoweredEntryPointName(Language        language,
+                                                      llvm::StringRef versionedTypeName,
+                                                      EntryPoint      entryPoint);
+
+/// @brief Names the body a free accessor wraps, where the body is compiled apart from it.
+///
+/// `List_Request_0_2__get_path_ir_` in C.
+/// @param[in] language Naming language, whose row has a lowered body suffix.
+/// @param[in] versionedTypeName The section's type name under @ref TypeNameVersioning::Versioned.
+/// @param[in] verb What the accessor does.
+/// @param[in] member The member as the plan names it: a DSDL field's name, or the union's tag.
+/// @return The body's name.
+[[nodiscard]] std::string renderLoweredAccessorName(Language        language,
+                                                    llvm::StringRef versionedTypeName,
+                                                    AccessorVerb    verb,
+                                                    llvm::StringRef member);
+
 /// @brief Names a constant declared beside a type, in the scope that encloses it.
 ///
 /// C declares every constant of a type this way, `List_Request_EXTENT_BYTES_`, and C++ the
@@ -200,38 +189,6 @@ enum class AccessorVerb : std::uint8_t
 /// @param[in] constant The constant's name, with any suffix the language puts on it.
 /// @return The constant's name.
 [[nodiscard]] std::string renderEnclosedConstantName(llvm::StringRef typeName, llvm::StringRef constant);
-
-/// @brief The prefix every helper symbol `build-dsdl-plan-bodies` synthesises begins with.
-///
-/// The pass appends the helper's kind, the schema symbol and a role suffix to reach a whole symbol.
-/// A backend that shortens the symbol for its own scope strips this from the front, so the pass that
-/// writes it and the backends that read it name it here rather than each spelling the literal.
-inline constexpr llvm::StringLiteral kPlanHelperSymbolPrefix{"llvmdsdl_plan_"};
-
-/// @brief Renders the linkage-symbol base for one definition.
-///
-/// `uavcan.node.Heartbeat` at 1.0 gives `uavcan_node_Heartbeat_1_0`. Callers append
-/// @ref renderSectionSymbolSuffix and their own role suffix to reach a whole symbol.
-///
-/// This is the one composed name whose copies drift silently. The C backend's generated
-/// implementation defines `<base><section>__serialize_ir_` and its header declares it, from two
-/// different libraries; a difference between them is a link error at best and, for the inline
-/// wrappers, nothing at all until someone links two versions together.
-/// @param[in] fullName Dot-separated DSDL full name.
-/// @param[in] majorVersion Major version.
-/// @param[in] minorVersion Minor version.
-/// @return The symbol base.
-[[nodiscard]] std::string renderDefinitionSymbolBase(llvm::StringRef fullName,
-                                                     std::uint32_t   majorVersion,
-                                                     std::uint32_t   minorVersion);
-
-/// @brief Renders the suffix distinguishing a service section's symbols from a message's.
-///
-/// A message has no section and takes no suffix, so its symbols keep the shape they had before
-/// services existed.
-/// @param[in] sectionName Section name: `request`, `response`, or empty for a message.
-/// @return The suffix, or an empty string.
-[[nodiscard]] std::string renderSectionSymbolSuffix(llvm::StringRef sectionName);
 
 /// @brief Renders how generated C names a composite type where it is used: `struct <typeName>`.
 ///

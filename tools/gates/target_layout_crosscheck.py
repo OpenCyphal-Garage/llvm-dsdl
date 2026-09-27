@@ -92,7 +92,7 @@ def describe(member: str) -> Derived:
 
 
 def parse_type_names(schema_text: str) -> dict[str, str]:
-    """`<symbol><section>` -> the C type name, so a body can be tied to a struct."""
+    """`<symbol>[.<section>]` -> the C type name, so a body can be tied to a struct."""
     names: dict[str, str] = {}
     symbol = ""
     for line in schema_text.splitlines():
@@ -103,14 +103,14 @@ def parse_type_names(schema_text: str) -> dict[str, str]:
         if plan and symbol:
             values = dict(ATTR_STR.findall(plan.group(1)))
             section = values.get("section", "")
-            suffix = ("__" + section) if section else ""
+            suffix = ("." + section) if section else ""
             if "c_type_name" in values:
                 names[symbol + suffix] = values["c_type_name"]
     return names
 
 
 def parse_derived(converted_text: str) -> dict[str, list[str]]:
-    """`<symbol><section>` -> the members of the struct its bodies address within."""
+    """`<symbol>[.<section>]` -> the members of the struct its bodies address within."""
     derived: dict[str, list[str]] = {}
     current = ""
     for line in converted_text.splitlines():
@@ -118,11 +118,9 @@ def parse_derived(converted_text: str) -> dict[str, list[str]]:
         if found:
             current = found.group(1)
         shape = STRUCT_TYPE.search(line.strip())
-        if shape and current.endswith("_ir_"):
-            stem = current.rsplit("__", 1)[0]
-            for tail in ("__serialize", "__deserialize"):
-                if stem.endswith(tail):
-                    stem = stem[: -len(tail)]
+        # A body is `<schema>[.<section>].serialize` or `.deserialize`; the rest names the plan.
+        stem, _, role = current.rpartition(".")
+        if shape and role in ("serialize", "deserialize"):
             derived.setdefault(stem, split_members(shape.group(1)))
     return derived
 
