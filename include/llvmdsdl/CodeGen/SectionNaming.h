@@ -8,141 +8,54 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Shared identifier scopes for one section's attributes.
-///
-/// The emitters and the naming manifest both name a section's attributes through these, which is
-/// what makes the manifest a report of the identifiers a backend writes.
+/// The naming parts of the semantic model, and the section scopes of
+/// `llvmdsdl/Support/SectionScopes.h` built from them.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_SECTION_NAMING_H
 #define LLVMDSDL_CODEGEN_SECTION_NAMING_H
 
-#include <cstdint>
-#include <string>
-#include <vector>
-
 #include "llvm/ADT/StringRef.h"
 
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/SectionScopes.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 
 namespace llvmdsdl
 {
 
-/// @brief Which of the two constants a variable- or fixed-length array field contributes.
-enum class ArrayMetadataKind : std::uint8_t
-{
-    Capacity,
-    IsVariableLength,
-};
+/// @brief The parts of @p section that naming reads.
+/// @param[in] section The section.
+/// @return Its parts.
+[[nodiscard]] SectionParts sectionParts(const SemanticSection& section);
 
-/// @brief The name an array field's generated metadata constant is declared under in a section scope.
-///
-/// C and C++ emit `<FIELD>_ARRAY_CAPACITY` and `<FIELD>_ARRAY_IS_VARIABLE_LENGTH` beside the DSDL
-/// constants, so those names have to be allocated from the same scope or nothing keeps them apart:
-/// two array fields whose macro projections are equal (`fooBar` and `FooBar`) would otherwise declare
-/// one constant twice, and a DSDL constant named `foo_array_capacity` would collide with the metadata
-/// of an array field named `foo`.
-///
-/// The name is composed from the DSDL field name rather than from its projection, so that the scope
-/// sees the collision: equal projections of the field name give equal projections here. It carries
-/// the trailing `_` that C puts on a generated macro and C++ does not, because the scope compares
-/// what is emitted -- without it, C would report a collision between a metadata macro and a DSDL
-/// constant that the trailing `_` keeps apart.
-/// @param[in] language Naming language.
-/// @param[in] fieldName DSDL field name.
-/// @param[in] kind Which constant.
-/// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
-[[nodiscard]] std::string arrayMetadataName(Language language, llvm::StringRef fieldName, ArrayMetadataKind kind);
+/// @brief The parts of @p definition that naming reads.
+/// @param[in] definition The definition.
+/// @return Its parts.
+[[nodiscard]] DefinitionParts definitionParts(const SemanticDefinition& definition);
 
-/// @brief The name a union option's tag constant is declared under in a section scope.
-///
-/// A union's options are reachable only through the tag value that selects them, and the value
-/// itself is a position in the DSDL. Every language declares `<OPTION>_OPTION_TAG` beside the DSDL
-/// constants so that a caller writes the name instead of the number.
-///
-/// Composed from the DSDL field name for the reason @ref arrayMetadataName gives: the scope has to
-/// see a collision between two options whose projections are equal, and between an option's tag and
-/// a DSDL constant that projects onto the same name. It carries C's trailing `_` for the same
-/// reason too.
-/// @param[in] language Naming language.
-/// @param[in] fieldName DSDL name of the option.
-/// @return The scope key, to be declared and read back under @ref IdentifierRole::MacroName.
-[[nodiscard]] std::string unionOptionTagName(Language language, llvm::StringRef fieldName);
-
-/// @brief Builds the field-name scope for @p section in @p language.
-///
-/// Fields are declared in DSDL order, which makes the assignment reproducible; padding fields carry
-/// no name and are skipped. Where the language declares constants into the same region as fields the
-/// constants are declared here too, so the two cannot collide -- see @ref makeSectionConstantScope.
+/// @brief @ref makeSectionFieldScope over the parts of @p section.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose fields are being named.
 /// @return A scope with every field declared.
 [[nodiscard]] NamingScope makeSectionFieldScope(Language language, const SemanticSection& section);
 
-/// @brief Builds the constant-name scope for @p section in @p language.
-///
-/// A C++ struct body holds the fields and the constants, so a field and a constant that project onto
-/// one identifier are a redeclaration; for C++ this returns the same scope as
-/// @ref makeSectionFieldScope. The other five put constants somewhere a field cannot reach -- outside
-/// the type, or behind a macro prefix -- and get a scope of their own.
+/// @brief @ref makeSectionConstantScope over the parts of @p section.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose constants are being named.
-/// @param[in] typeConstantPrefix The prefix the language puts in front of a section constant, where
-///            it uses one. Python and TypeScript declare a definition's own facts at module scope
-///            under a fixed prefix of their own, and a section constant lands in that same scope
-///            behind the type's prefix, so a type whose prefix is one of theirs puts the two in
-///            reach of each other -- `DSDL.1.0` with a constant `FULL_NAME` reaches
-///            `DSDL_FULL_NAME`. Passing the prefix is what lets the scope see that. The other four
-///            languages put the two in different scopes and pass an empty prefix.
-///
-///            There is no default. A caller that leaves it out gets a scope that disagrees with the
-///            one the emitter built, and the names it reads back are then names nothing writes --
-///            a silent wrong answer rather than a missing one.
+/// @param[in] typeConstantPrefix As @ref makeSectionConstantScope takes it.
 /// @return A scope with every constant declared.
-/// @brief Names one of a Go definition's package-level constants from @p parts.
-///
-/// A Go constant is exported and CamelCase, and the package holds a whole DSDL namespace, so the
-/// name carries the type it belongs to: `RecordFullName`, `RecordFooBarOptionTag`.
-///
-/// Each part is projected on its own and the results are joined, because the case of a part is what
-/// says how to read it. `FULL_NAME` has no lower case, so it is a screaming-snake token of two words
-/// and means `FullName`; `VSLAMPoseUpdate` has its own capitals and they are the author's.
-/// @param[in] parts The name's parts, outermost first.
-/// @return The constant's name.
-[[nodiscard]] std::string goConstantName(const std::vector<llvm::StringRef>& parts);
+[[nodiscard]] NamingScope makeSectionConstantScope(Language               language,
+                                                   const SemanticSection& section,
+                                                   llvm::StringRef        typeConstantPrefix);
 
-/// @brief What @ref makeGoConstantScope keys one of a section's constants by.
-///
-/// The parts as DSDL wrote them: `barBaz` and `bar_baz` are two constants and `CBarBaz` is one
-/// name, so keying on the name would lose the collision the scope exists to repair.
-/// @param[in] parts The name's parts, outermost first.
-/// @return The key.
-[[nodiscard]] std::string goConstantKey(const std::vector<llvm::StringRef>& parts);
-
-/// @brief What @ref makeGoConstantScope keys one of the generated constants by.
-///
-/// A definition may declare a constant named `FULL_NAME`, which is the case the claim exists for,
-/// and the two are not one name the scope should answer twice.
-/// @param[in] typeName The section's Go type name.
-/// @param[in] token What this constant says about the type.
-/// @return The key.
-[[nodiscard]] std::string goGeneratedConstantKey(llvm::StringRef typeName, llvm::StringRef token);
-
-/// @brief The scope a Go section's package-level constants are declared into.
-///
-/// The generated names are declared before any DSDL one, so a DSDL constant that folds onto one of
-/// them is the side that moves. Read it with @ref goConstantKey or @ref goGeneratedConstantKey; the
-/// emitter and the naming manifest both build it, and a caller that composes the name some other
-/// way reports one nothing writes.
+/// @brief @ref makeGoConstantScope over the parts of @p section.
 /// @param[in] section The section whose constants these are.
 /// @param[in] typeName The section's Go type name.
 /// @return The scope.
 [[nodiscard]] NamingScope makeGoConstantScope(const SemanticSection& section, llvm::StringRef typeName);
-
-[[nodiscard]] NamingScope makeSectionConstantScope(Language               language,
-                                                   const SemanticSection& section,
-                                                   llvm::StringRef        typeConstantPrefix);
 
 }  // namespace llvmdsdl
 

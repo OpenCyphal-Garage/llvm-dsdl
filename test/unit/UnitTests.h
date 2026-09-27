@@ -51,6 +51,7 @@ bool runTargetLanguagesTests();
 /// @return True when every case in the suite passed.
 bool runLanguageTraitsTests();
 bool runPlanSymbolTests();
+bool runSurfacePlanTests();
 
 /// @brief Runs the CliPathTests suite.
 /// @return True when every case in the suite passed.

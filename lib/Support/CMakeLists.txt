@@ -16,6 +16,8 @@ add_library(llvmdsdlSupport
   NamingPolicy.cpp
   PlanSymbol.cpp
   ScalarStorage.cpp
+  SectionScopes.cpp
+  SurfacePlan.cpp
   Rational.cpp
   ReservedIdentifiers.cpp
   SourceLocation.cpp

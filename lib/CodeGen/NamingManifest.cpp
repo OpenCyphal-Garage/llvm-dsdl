@@ -10,20 +10,19 @@
 /// @file
 /// Implements the naming manifest: the map from DSDL names to generated identifiers.
 ///
-/// Everything here is derived from the same engine and the same section scopes the emitters use, so
-/// the manifest reports what a backend writes rather than a second opinion about it.
+/// The manifest renders each language's surface plan, which is the allocation the emitters read, so
+/// it reports what a backend writes rather than a second opinion about it.
 ///
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/NamingManifest.h"
 
-#include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
-#include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,17 +34,13 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {
 namespace
 {
 
-/// @brief The key a language's type name is reported under, or nothing where it is not reported.
-///
-/// `type_name` where a consumer reaches the type from the name and the namespace. A language that
-/// joins the namespace into the identifier reports the joined name as `qualified_type_name`, since
-/// the namespace beside it would double it.
 std::optional<llvm::StringLiteral> typeNameKey(const Language language)
 {
     const DefinitionNamePolicy& policy = definitionNamePolicy(language);
@@ -62,56 +57,31 @@ std::optional<llvm::StringLiteral> typeNameKey(const Language language)
 
 /// @brief Renders one section's attribute names.
 ///
-/// @param[in] language Naming language.
-/// @param[in] section The section being reported.
-/// @param[in] sectionTypeName The generated type name the section's constants are prefixed with,
-///            which decides whether they are in reach of the module's own names. The emitters build
-///            their scope from it, so the manifest has to as well or it reports a name that is not
-///            the one written.
-/// @param[in] typeNameKey The key @p sectionTypeName is reported under, or nothing where it is not
-///            reported. Reported for each section because it does not follow from the definition's
-///            own: Rust reaches a section through the definition's module, so the name is the
-///            section word alone and a consumer cannot derive it from the type name.
-llvm::json::Object renderSection(const Language                           language,
-                                 const SemanticSection&                   section,
-                                 const std::string&                       sectionTypeName,
+/// @param[in] plan The language's plan.
+/// @param[in] section Where the section's names are in @p plan.
+/// @param[in] typeNameKey The key the section's type name is reported under, or nothing where it is
+///            not reported. Reported for each section because it does not follow from the
+///            definition's own: Rust reaches a section through the definition's module, so the name
+///            is the section word alone and a consumer cannot derive it from the type name.
+llvm::json::Object renderSection(const SurfacePlan&                       plan,
+                                 const SectionNames&                      section,
                                  const std::optional<llvm::StringLiteral> typeNameKey)
 {
-    const NamingScope fieldScope = makeSectionFieldScope(language, section);
-
-    // A constant in a package's scope is named whole by the scope the emitter builds; every other
-    // language's scope allocates a name that `renderDeclaredConstantName` then declares.
-    const bool        goLike     = languageTraits(language).composition.constants == ConstantsScope::Package;
-    const NamingScope constScope = goLike
-                                       ? makeGoConstantScope(section, sectionTypeName)
-                                       : makeSectionConstantScope(language,
-                                                                  section,
-                                                                  codegenProjectIdentifier(language,
-                                                                                           IdentifierRole::ConstantName,
-                                                                                           sectionTypeName));
-
     llvm::json::Object fields;
     for (const auto& field : section.fields)
     {
-        if (!field.isPadding)
-        {
-            fields[field.name] = fieldScope.get(IdentifierRole::FieldName, field.name);
-        }
+        fields[field.getKey().str()] = plan.decls[field.getValue()].name;
     }
     llvm::json::Object constants;
     for (const auto& constant : section.constants)
     {
-        constants[constant.name] =
-            goLike ? constScope.get(IdentifierRole::ConstantName, goConstantKey({sectionTypeName, constant.name}))
-                   : renderDeclaredConstantName(language,
-                                                sectionTypeName,
-                                                constScope.get(IdentifierRole::ConstantName, constant.name));
+        constants[constant.getKey().str()] = plan.decls[constant.getValue()].name;
     }
 
     llvm::json::Object out;
     if (typeNameKey)
     {
-        out[*typeNameKey] = sectionTypeName;
+        out[*typeNameKey] = section.typeName;
     }
     out["fields"]    = std::move(fields);
     out["constants"] = std::move(constants);
@@ -123,22 +93,12 @@ llvm::json::Object renderSection(const Language                           langua
     if (section.isUnion)
     {
         llvm::json::Object options;
-        for (const auto& field : section.fields)
+        for (const auto& entry : section.options)
         {
-            if (field.isPadding)
-            {
-                continue;
-            }
             llvm::json::Object option;
-            option["name"] = goLike
-                                 ? constScope.get(IdentifierRole::ConstantName,
-                                                  goConstantKey({sectionTypeName, field.name, "OPTION_TAG"}))
-                                 : renderDeclaredConstantName(language,
-                                                              sectionTypeName,
-                                                              constScope.get(IdentifierRole::MacroName,
-                                                                             unionOptionTagName(language, field.name)));
-            option["tag"]  = static_cast<std::int64_t>(field.unionOptionIndex);
-            options[field.name] = std::move(option);
+            option["name"]                = plan.decls[entry.getValue().decl].name;
+            option["tag"]                 = static_cast<std::int64_t>(entry.getValue().tag);
+            options[entry.getKey().str()] = std::move(option);
         }
         out["union_options"] = std::move(options);
     }
@@ -146,56 +106,30 @@ llvm::json::Object renderSection(const Language                           langua
 }
 
 /// @brief Renders one definition under one language.
-llvm::json::Object renderDefinition(const Language            language,
-                                    const SemanticDefinition& def,
-                                    const TypeNameVersioning  typeNameVersioning)
+llvm::json::Object renderDefinition(const Language language, const SurfacePlan& plan, const DefinitionNames& definition)
 {
-    llvm::json::Array namespaceParts;
-    for (const auto& component : def.info.namespaceComponents)
-    {
-        namespaceParts.push_back(codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component));
-    }
-
-    // The same name the emitters prefix a section's constants with. Reported where `typeNameKey`
-    // names a key, but needed for the scope in every language.
-    const std::string typeName = renderDefinitionTypeName(language,
-                                                          def.info.namespaceComponents,
-                                                          def.info.shortName,
-                                                          def.info.majorVersion,
-                                                          def.info.minorVersion,
-                                                          typeNameVersioning);
-
     const std::optional<llvm::StringLiteral> reportType = typeNameKey(language);
 
     llvm::json::Object out;
     if (reportType)
     {
-        out[*reportType] = typeName;
+        out[*reportType] = definition.typeName;
     }
-    // Exact for every backend: the FileStem role returns the raw short name for C and C++ and the
-    // folded one for the other four -- both go through this one call.
-    out["file_stem"] =
-        renderVersionedFileStem(language, def.info.shortName, def.info.majorVersion, def.info.minorVersion);
+    out["file_stem"] = definition.fileStem;
+    llvm::json::Array namespaceParts;
+    for (const std::string& component : definition.namespaceNames)
+    {
+        namespaceParts.push_back(component);
+    }
     out["namespace"] = std::move(namespaceParts);
-    if (def.info.fixedPortId)
+    if (definition.fixedPortId)
     {
-        out["fixed_port_id"] = static_cast<std::int64_t>(*def.info.fixedPortId);
+        out["fixed_port_id"] = static_cast<std::int64_t>(*definition.fixedPortId);
     }
-    if (def.isService)
+    for (const SectionNames& section : definition.sections)
     {
-        out["request"] =
-            renderSection(language, def.request, renderSectionTypeName(language, typeName, "request"), reportType);
-        if (def.response.has_value())
-        {
-            out["response"] = renderSection(language,
-                                            *def.response,
-                                            renderSectionTypeName(language, typeName, "response"),
-                                            reportType);
-        }
-    }
-    else
-    {
-        out["message"] = renderSection(language, def.request, typeName, reportType);
+        out[section.section.empty() ? std::string("message") : section.section] =
+            renderSection(plan, section, reportType);
     }
     return out;
 }
@@ -212,18 +146,23 @@ std::string renderNamingManifest(const SemanticModule&                semantic,
     root["tool"]                 = toolVersion.str();
     root["type_name_versioning"] = (typeNameVersioning == TypeNameVersioning::Versioned) ? "versioned" : "unversioned";
 
+    std::vector<DefinitionParts> definitions;
+    definitions.reserve(semantic.definitions.size());
+    for (const SemanticDefinition& definition : semantic.definitions)
+    {
+        definitions.push_back(definitionParts(definition));
+    }
+
     llvm::json::Object byLanguage;
     for (const LanguageTraits& row : languages)
     {
-        const Language        language     = row.language;
-        const llvm::StringRef languageName = row.name;
-        llvm::json::Object    byType;
-        for (const auto& def : semantic.definitions)
+        const SurfacePlan  plan = allocateSurface(row, definitions, SurfaceOptions{.versioning = typeNameVersioning});
+        llvm::json::Object byType;
+        for (const DefinitionNames& definition : plan.definitions)
         {
-            byType[def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-                   std::to_string(def.info.minorVersion)] = renderDefinition(language, def, typeNameVersioning);
+            byType[definition.key] = renderDefinition(row.language, plan, definition);
         }
-        byLanguage[languageName.str()] = std::move(byType);
+        byLanguage[row.name.str()] = std::move(byType);
     }
     root["languages"] = std::move(byLanguage);
 
