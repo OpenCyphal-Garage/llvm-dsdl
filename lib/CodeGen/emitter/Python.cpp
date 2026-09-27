@@ -569,26 +569,24 @@ void emitUnionOptionTags(SourceWriter&          w,
     const NamingScope tagScope    = makeSectionConstantScope(Language::Python, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
-        w.line(prefixupper + "_" +
-               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Python, option.name)) + " = " +
-               std::to_string(option.tag));
+        w.line(renderDeclaredConstantName(Language::Python,
+                                          prefix,
+                                          tagScope.get(IdentifierRole::MacroName,
+                                                       unionOptionTagName(Language::Python, option.name))) +
+               " = " + std::to_string(option.tag));
     }
 }
 
 void emitSectionConstants(SourceWriter& w, const std::string& prefix, const SemanticSection& section)
 {
-    std::vector<std::string> constNames;
-    constNames.reserve(section.constants.size());
-    for (const auto& constant : section.constants)
-    {
-        constNames.push_back(constant.name);
-    }
     const auto        prefixupper = codegenProjectIdentifier(Language::Python, IdentifierRole::ConstantName, prefix);
     NamingScope const constScope  = makeSectionConstantScope(Language::Python, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(w, constant.doc);
-        const auto constName = prefixupper + "_" + constScope.get(IdentifierRole::ConstantName, constant.name);
+        const auto constName = renderDeclaredConstantName(Language::Python,
+                                                          prefix,
+                                                          constScope.get(IdentifierRole::ConstantName, constant.name));
         w.line(constName + " = " + pyConstValue(constant.type, constant.value));
     }
 }

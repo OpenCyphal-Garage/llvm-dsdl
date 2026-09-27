@@ -6,22 +6,54 @@
 #
 #===----------------------------------------------------------------------===//
 
-"""Check the naming manifest against the tree a backend wrote.
+"""Check the naming manifest against the trees the backends wrote.
 
 The manifest's whole claim is that it reports what will be generated rather than a second opinion
 about it, so the test is not "does it contain plausible strings" but "does every stem it names for
-Go exist as a file in the Go output".
+Go exist as a file in the Go output", and "is every constant and option tag it names defined in the
+output of its language".
+
+    check_naming_manifest.py MANIFEST GO_ROOT C_ROOT TS_ROOT PYTHON_ROOT
 """
 
 from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
+
+# How each language defines a constant or an option tag, with NAME standing for the identifier.
+DEFINITIONS = {
+    "c": (r"^#define NAME\b", (".h",)),
+    "go": (r"^\s*(?:const\s+)?NAME\b[^=\n]*=", (".go",)),
+    "ts": (r"^export const NAME\b", (".ts",)),
+    "python": (r"^NAME\s*=", (".py",)),
+}
+
+
+def undefined_constants(language: str, definitions: dict, root: pathlib.Path) -> list[str]:
+    """Names @p definitions reports for a constant or an option tag that no file under @p root defines."""
+    pattern, suffixes = DEFINITIONS[language]
+    text = "\n".join(
+        path.read_text(encoding="utf-8") for path in root.rglob("*") if path.is_file() and path.suffix in suffixes
+    )
+    missing = []
+    for full_name, entry in sorted(definitions.items()):
+        for section in ("message", "request", "response"):
+            reported = entry.get(section, {})
+            names = list(reported.get("constants", {}).values())
+            names += [option["name"] for option in reported.get("union_options", {}).values()]
+            for name in names:
+                if not re.search(pattern.replace("NAME", re.escape(name)), text, re.MULTILINE):
+                    missing.append(f"{language}: {full_name} {section} reports {name!r}, which nothing defines")
+    return missing
 
 
 def main() -> int:
     manifest_path, go_root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+    written = {"go": go_root, "c": pathlib.Path(sys.argv[3]), "ts": pathlib.Path(sys.argv[4]),
+               "python": pathlib.Path(sys.argv[5])}
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     if manifest.get("version") != 1:
@@ -52,8 +84,7 @@ def main() -> int:
     constants = claimed.get("message", {}).get("constants", {})
     if fields.get("serialize") != "Serialize_":
         failures.append(f"expected the field 'serialize' to be reported as Serialize_, got {fields.get('serialize')!r}")
-    # A Go constant carries the type it belongs to, so the manifest reports the whole name rather
-    # than a token a consumer joins to a prefix.
+    # A Go constant carries the type it belongs to.
     if constants.get("FULL_NAME") != "ClaimedFullName2":
         failures.append(
             f"expected FULL_NAME to be reported as ClaimedFullName2, got {constants.get('FULL_NAME')!r}"
@@ -127,6 +158,9 @@ def main() -> int:
     if "fixed_port_id" in ported:
         failures.append("Call has no fixed port-ID and should report none")
 
+    for language, root in written.items():
+        failures += undefined_constants(language, languages[language], root)
+
     # A type named DSDL is the one case where a section constant is in reach of the module's own
     # names in Python and TypeScript. The manifest reports what is written, so it has to report the
     # moved name; reporting the unescaped one would name a constant the module does not define.
@@ -139,10 +173,10 @@ def main() -> int:
         )
         for source in ("FULL_NAME", "HAS_FIXED_PORT_ID", "FIXED_PORT_ID", "VERSION_MAJOR"):
             reported = constants.get(source)
-            if reported != source + "_2":
+            if reported != "DSDL_" + source + "_2":
                 failures.append(
                     f"{language}: DSDL's constant {source} is reported as {reported!r}, "
-                    f"expected {source + '_2'!r}"
+                    f"expected {'DSDL_' + source + '_2'!r}"
                 )
 
     for failure in failures:
