@@ -30,7 +30,7 @@ dialect. Consuming lowered facts is not translating lowered operations.
 registered with `dsdl-opt` under that name. dsdlc runs it once, over the module every backend
 receives; each plan yields three bodies, serialise, deserialise and initialise; `--optimize-lowered-serdes` canonicalises the bodies and their helpers after
 `build-dsdl-plan-bodies`, so it acts on every backend alike. The C and object lanes take each definition's schema, and the functions built for it, from that
-module, and stamp C names on the schema before spelling or converting them.
+module.
 
 ## The body IR is target-neutral
 
@@ -39,7 +39,7 @@ A body spells nothing the way C does:
 | in the body | in C |
 |---|---|
 | `!dsdl.ptr<!dsdl.object<"vendor.Msg.1.0">>`, `!dsdl.ptr<!dsdl.byte>`, `!dsdl.ptr<!dsdl.size>`, `const` carried on the pointer | `struct vendor__Msg*`, `uint8_t*`, `size_t*` |
-| `dsdl.load_member %obj "field"`, and the store, address, element and length forms, each carrying the DSDL member name | the member's `c_name` from the schema |
+| `dsdl.load_member %obj "field"`, and the store, address, element and length forms, each carrying the DSDL member name | the member's name in the section scope the header declares it in |
 | `dsdl.array_length`, `dsdl.set_array_length` | `.count` |
 | `dsdl.element_addr`, `dsdl.load_element`, `dsdl.store_element`, carrying the element's storage category and width | `.elements[i]`, or `.bitpacked` for a `bool` array |
 | `dsdl.union_tag`, `dsdl.set_union_tag` | `._tag_` |

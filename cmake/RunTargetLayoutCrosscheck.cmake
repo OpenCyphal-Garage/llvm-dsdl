@@ -17,7 +17,8 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language c --outdir "${OUT_DIR}/c" "${FIXTURES}"
+  COMMAND "${DSDLC}" --target-language c --outdir "${OUT_DIR}/c" --naming-manifest "${OUT_DIR}/naming.json"
+          "${FIXTURES}"
   RESULT_VARIABLE r ERROR_VARIABLE e)
 if(NOT r EQUAL 0)
   message(FATAL_ERROR "C generation failed:\n${e}")
@@ -55,7 +56,7 @@ endif()
 execute_process(
   COMMAND "${PYTHON_EXECUTABLE}" "${CROSSCHECK_SCRIPT}"
           --c-root "${OUT_DIR}/c"
-          --schema "${OUT_DIR}/schema.mlir"
+          --naming-manifest "${OUT_DIR}/naming.json"
           --converted "${OUT_DIR}/converted.mlir"
           --target "${PROBE_TRIPLE}"
           --clang "${CLANG}"

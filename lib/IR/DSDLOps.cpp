@@ -587,15 +587,15 @@ LogicalResult IOOp::verify()
         }
     }
 
-    const bool namesComposite = getCompositeCTypeNameAttr() || getCompositeFullNameAttr() || getCompositeMajor() ||
-                                getCompositeMinor() || getCompositeSealed() || getCompositeExtentBits();
+    const bool namesComposite = getCompositeFullNameAttr() || getCompositeMajor() || getCompositeMinor() ||
+                                getCompositeSealed() || getCompositeExtentBits();
     if (scalarCategory == "composite")
     {
-        if (!getCompositeCTypeNameAttr() || !getCompositeFullNameAttr() || !getCompositeMajor() ||
-            !getCompositeMinor() || !getCompositeSealed() || !getCompositeExtentBits())
+        if (!getCompositeFullNameAttr() || !getCompositeMajor() || !getCompositeMinor() || !getCompositeSealed() ||
+            !getCompositeExtentBits())
         {
-            return emitOpError("a composite step carries composite_c_type_name, composite_full_name, "
-                               "composite_major, composite_minor, composite_sealed and composite_extent_bits");
+            return emitOpError("a composite step carries composite_full_name, composite_major, composite_minor, "
+                               "composite_sealed and composite_extent_bits");
         }
     }
     else if (namesComposite)

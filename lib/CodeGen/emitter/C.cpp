@@ -19,7 +19,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/EmitCommon.h"
-#include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
@@ -48,7 +47,6 @@
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include <algorithm>
 #include <cstddef>
@@ -119,6 +117,26 @@ std::string headerFileName(const DiscoveredDefinition& info)
     return renderDefinitionFileStem(Language::C, info.shortName, info.majorVersion, info.minorVersion) + ".h";
 }
 
+/// @brief The C type name of one section of the definition @p fullName names.
+std::string cSectionTypeName(const llvm::StringRef    fullName,
+                             const std::uint32_t      major,
+                             const std::uint32_t      minor,
+                             const llvm::StringRef    section,
+                             const TypeNameVersioning versioning)
+{
+    llvm::SmallVector<llvm::StringRef, 8> parts;
+    fullName.split(parts, '.');
+    const std::vector<std::string> namespaceComponents(parts.begin(), std::prev(parts.end()));
+    return renderSectionTypeName(Language::C,
+                                 renderDefinitionTypeName(Language::C,
+                                                          namespaceComponents,
+                                                          parts.back(),
+                                                          major,
+                                                          minor,
+                                                          versioning),
+                                 section);
+}
+
 /// @brief The name C links one of a section's lowered functions under.
 ///
 /// The IR names a function by its definition's DSDL identity, which C cannot declare. C spells it
@@ -127,17 +145,11 @@ std::string headerFileName(const DiscoveredDefinition& info)
 /// `llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__2__ser`.
 std::string cLinkName(const PlanSymbol& symbol)
 {
-    llvm::SmallVector<llvm::StringRef, 8> parts;
-    llvm::StringRef(symbol.schema.fullName).split(parts, '.');
-    const std::vector<std::string> namespaceComponents(parts.begin(), std::prev(parts.end()));
-    const std::string              type = renderSectionTypeName(Language::C,
-                                                                renderDefinitionTypeName(Language::C,
-                                                                                         namespaceComponents,
-                                                                                         parts.back(),
-                                                                                         symbol.schema.major,
-                                                                                         symbol.schema.minor,
-                                                                                         TypeNameVersioning::Versioned),
-                                                                symbol.section);
+    const std::string type = cSectionTypeName(symbol.schema.fullName,
+                                              symbol.schema.major,
+                                              symbol.schema.minor,
+                                              symbol.section,
+                                              TypeNameVersioning::Versioned);
     switch (symbol.function)
     {
     case PlanFunction::Serialize:
@@ -344,23 +356,22 @@ public:
 
     std::string cTypeName(const SemanticDefinition& def) const
     {
-        return cTypeNameFromInfo(def.info, typeNameVersioning_);
+        return renderDefinitionTypeName(Language::C,
+                                        def.info.namespaceComponents,
+                                        def.info.shortName,
+                                        def.info.majorVersion,
+                                        def.info.minorVersion,
+                                        typeNameVersioning_);
     }
 
     std::string cTypeName(const SemanticTypeRef& ref) const
     {
-        if (const auto* def = find(ref))
-        {
-            return cTypeName(*def);
-        }
-
-        DiscoveredDefinition tmp;
-        tmp.fullName            = ref.fullName;
-        tmp.shortName           = ref.shortName;
-        tmp.namespaceComponents = ref.namespaceComponents;
-        tmp.majorVersion        = ref.majorVersion;
-        tmp.minorVersion        = ref.minorVersion;
-        return cTypeNameFromInfo(tmp, typeNameVersioning_);
+        return renderDefinitionTypeName(Language::C,
+                                        ref.namespaceComponents,
+                                        ref.shortName,
+                                        ref.majorVersion,
+                                        ref.minorVersion,
+                                        typeNameVersioning_);
     }
 
     static std::string relativeHeaderPath(const SemanticDefinition& def)
@@ -529,8 +540,8 @@ void emitSectionTypedef(SourceWriter&                         w,
                         const mlir::dsdl::SerializationPlanOp plan)
 {
     // One scope for the whole section: the keyword and claimed-name escapes make the projection
-    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The serialiser
-    // reads the same scope through the `c_name` attributes stamped in `emitCImplementations`.
+    // many-to-one, so two distinct DSDL fields can otherwise land on one member. The bodies'
+    // spelling names members through the same scope.
     const NamingScope fieldScope = makeSectionFieldScope(Language::C, section);
     w.open("typedef struct " + typeName + " {");
 
@@ -1063,8 +1074,8 @@ void cloneReachableSchemas(mlir::Operation*                         target,
             {
                 return;
             }
-            const std::string key = op.getCompositeFullName()->str() + "." + std::to_string(*op.getCompositeMajor()) +
-                                    "." + std::to_string(*op.getCompositeMinor());
+            const std::string key =
+                planIdentity(*op.getCompositeFullName(), *op.getCompositeMajor(), *op.getCompositeMinor(), {});
             if (!seen.insert(key).second)
             {
                 return;
@@ -1185,7 +1196,6 @@ struct CBodyMember final
     std::string  arrayKind;
     std::string  category;
     std::int64_t bitLength{0};
-    std::string  compositeCTypeName;
     /// @brief The member is a `dsdl_runtime_view_t`, or an array of them.
     bool         heldAsView{false};
     std::int64_t arrayCapacity{0};
@@ -1194,55 +1204,64 @@ struct CBodyMember final
 /// @brief What the C header named one plan and its members.
 struct CBodyPlan final
 {
-    std::string                  cTypeName;
     llvm::StringMap<CBodyMember> members;
 };
 
 /// @brief Spells a plan body as C.
 ///
-/// The names come from the `c_name` and `c_type_name` attributes `stampCNames` left on the
-/// schema, so a body reaches the same identifiers the header declares.
+/// A type is named from its identity, and a member through the section scope the header declares
+/// it in, so a body reaches the identifiers the header declares.
 class CSpelling final : public BodySpelling
 {
 public:
-    CSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema)
-        : module_(module)
+    /// @param[in] module The module the bodies are in.
+    /// @param[in] schema The schema the bodies belong to.
+    /// @param[in] def The definition @p schema was lowered from.
+    /// @param[in] versioning Whether type names carry the version.
+    /// @param[in] headers The header declaring each nested type a body may call, by the plan
+    ///            identity of its object.
+    CSpelling(mlir::ModuleOp               module,
+              mlir::dsdl::SchemaOp         schema,
+              const SemanticDefinition&    def,
+              const TypeNameVersioning     versioning,
+              llvm::StringMap<std::string> headers)
+        : headers_(std::move(headers))
     {
-        if (const auto nested = module->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.c_nested_headers"))
-        {
-            for (const mlir::Attribute entry : nested)
-            {
-                const auto [cTypeName, headerPath] = mlir::cast<mlir::StringAttr>(entry).getValue().split('=');
-                headers_[cTypeName]                = headerPath.str();
-            }
-        }
         // A body points at nested objects as well as its own, so every plan the module carries
         // contributes the tag its header declares.
         for (mlir::dsdl::SchemaOp other : module.getOps<mlir::dsdl::SchemaOp>())
         {
+            const auto major = static_cast<std::uint32_t>(other.getMajor());
+            const auto minor = static_cast<std::uint32_t>(other.getMinor());
+            tags_[planIdentity(other.getFullName(), major, minor, {})] =
+                cSectionTypeName(other.getFullName(), major, minor, {}, versioning);
             if (other.getBody().empty())
             {
-                tags_[planIdentity(other.getFullName(), other.getMajor(), other.getMinor(), {})] =
-                    other.getCTypeName().value_or(llvm::StringRef{}).str();
                 continue;
             }
             // The schema names the type; a section names its own, and only a service has one.
-            tags_[planIdentity(other.getFullName(), other.getMajor(), other.getMinor(), {})] =
-                other.getCTypeName().value_or(llvm::StringRef{}).str();
             for (mlir::dsdl::SerializationPlanOp plan :
                  other.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
             {
-                tags_[planIdentity(other, plan)] = plan.getCTypeName().str();
+                tags_[planIdentity(other, plan)] = cSectionTypeName(other.getFullName(),
+                                                                    major,
+                                                                    minor,
+                                                                    plan.getSection().value_or(llvm::StringRef{}),
+                                                                    versioning);
             }
         }
         if (schema.getBody().empty())
         {
             return;
         }
+        const NamingScope requestScope = makeSectionFieldScope(Language::C, def.request);
+        const NamingScope responseScope =
+            makeSectionFieldScope(Language::C, def.response.has_value() ? *def.response : def.request);
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
+            const NamingScope& scope =
+                (plan.getSection().value_or(llvm::StringRef{}) == "response") ? responseScope : requestScope;
             CBodyPlan entry;
-            entry.cTypeName = plan.getCTypeName().str();
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
@@ -1252,33 +1271,28 @@ public:
                         continue;
                     }
                     CBodyMember member;
-                    member.cName              = io.getCName().value_or(llvm::StringRef{}).str();
-                    member.arrayKind          = io.getArrayKind().str();
-                    member.category           = io.getScalarCategory().str();
-                    member.bitLength          = io.getBitLength();
-                    member.compositeCTypeName = io.getCompositeCTypeName().value_or(llvm::StringRef{}).str();
-                    member.heldAsView         = io.getHeldAsView();
-                    member.arrayCapacity      = io.getArrayCapacity();
+                    member.cName         = scope.get(IdentifierRole::FieldName, io.getName());
+                    member.arrayKind     = io.getArrayKind().str();
+                    member.category      = io.getScalarCategory().str();
+                    member.bitLength     = io.getBitLength();
+                    member.heldAsView    = io.getHeldAsView();
+                    member.arrayCapacity = io.getArrayCapacity();
                     // A nested type's own schema is not cloned into this module for a source
-                    // build, so the field is where its name comes from.
-                    if (io.getCompositeFullName())
+                    // build, so the field is where its identity comes from.
+                    if (const auto composite = io.getCompositeFullName())
                     {
-                        tags_[planIdentity(*io.getCompositeFullName(),
-                                           io.getCompositeMajor().value_or(0),
-                                           io.getCompositeMinor().value_or(0),
-                                           {})] = member.compositeCTypeName;
+                        const auto major = static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0));
+                        const auto minor = static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0));
+                        tags_[planIdentity(*composite, major, minor, {})] =
+                            cSectionTypeName(*composite, major, minor, {}, versioning);
                     }
                     entry.members[io.getName()] = std::move(member);
                 }
             }
             if (plan.getIsUnion())
             {
-                entry.members["_tag_"] = CBodyMember{unionTagMemberName(Language::C).str(),
-                                                     "none",
-                                                     "unsigned",
-                                                     unionTagBits(plan),
-                                                     {},
-                                                     false};
+                entry.members[kPlanUnionTagMember] =
+                    CBodyMember{unionTagMemberName(Language::C).str(), "none", "unsigned", unionTagBits(plan), false};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -1347,7 +1361,10 @@ public:
     /// @brief The header that declares the type @p object points at.
     [[nodiscard]] std::string headerOf(const mlir::Value object) const
     {
-        const auto found = headers_.find(entryPointTag(object));
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        const auto identity =
+            pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
+        const auto found = identity ? headers_.find(identity.getIdentity()) : headers_.end();
         return (found == headers_.end()) ? std::string{} : found->second;
     }
 
@@ -2185,7 +2202,6 @@ private:
         return "void";
     }
 
-    mlir::ModuleOp               module_;
     llvm::StringMap<CBodyPlan>   plans_;
     llvm::StringMap<std::string> tags_;
     llvm::StringMap<std::string> headers_;
@@ -2226,18 +2242,10 @@ llvm::Error emit(const SemanticModule& semantic,
     }
     const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
 
-    std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
-    llvm::StringMap<mlir::Operation*>                 schemaByKey;
+    llvm::StringMap<mlir::Operation*> schemaByKey;
     for (mlir::dsdl::SchemaOp op : module.getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>())
     {
-        const auto headerPath = op.getHeaderPath();
-        if (!headerPath)
-        {
-            continue;
-        }
-        schemaByHeaderPath.emplace(headerPath->str(), op.getOperation());
-        schemaByKey[op.getFullName().str() + "." + std::to_string(op.getMajor()) + "." +
-                    std::to_string(op.getMinor())] = op.getOperation();
+        schemaByKey[planIdentity(op.getFullName(), op.getMajor(), op.getMinor(), {})] = op.getOperation();
     }
 
     unsigned objectSizeBits     = 64U;
@@ -2269,40 +2277,18 @@ llvm::Error emit(const SemanticModule& semantic,
         perDefModule->setAttrs(module->getAttrDictionary());
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
 
-        const std::string targetHeaderPath = EmitterContext::relativeHeaderPath(def);
-        const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
-        if (targetIt == schemaByHeaderPath.end())
+        const auto target =
+            schemaByKey.find(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}));
+        if (target == schemaByKey.end())
         {
-            diagnostics.error({"<mlir>", 1, 1},
-                              "failed to locate schema op for " + def.info.fullName + " (" + targetHeaderPath + ")");
+            diagnostics.error({"<mlir>", 1, 1}, "failed to locate schema op for " + definitionTypeKey(def.info));
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "schema selection failed");
         }
-        mlir::Operation* const schemaClone = targetIt->second->clone();
+        mlir::Operation* const schemaClone = target->second->clone();
         perDefModule.getBodyRegion().front().push_back(schemaClone);
-        stampCNames(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), def, options.typeNameVersioning);
-        // The nested types whose entry points this definition's bodies may call, each as the C name
-        // the bodies call it by and the header that declares it, for the implementation file to
-        // include where a body does call. A field held as a view is decoded by no call.
-        {
-            llvm::SmallVector<mlir::Attribute, 8> nestedHeaders;
-            for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-            {
-                if (const auto* dep = ctx.find(depRef))
-                {
-                    nestedHeaders.push_back(
-                        mlir::StringAttr::get(perDefModule.getContext(),
-                                              ctx.cTypeName(*dep) + "=" + EmitterContext::relativeHeaderPath(*dep)));
-                }
-            }
-            perDefModule->setAttr("llvmdsdl.c_nested_headers",
-                                  mlir::ArrayAttr::get(perDefModule.getContext(), nestedHeaders));
-        }
         if (options.artifact == Artifact::Object)
         {
             cloneReachableSchemas(schemaClone, perDefModule, schemaByKey);
-            // The clones carry lowering's guesses; the module overload matches each to its own
-            // definition, so a nested type's members are named the way its own object named them.
-            (void) stampCNames(perDefModule, semantic, options.typeNameVersioning);
         }
         cloneFunctionsOf(mlir::cast<mlir::dsdl::SchemaOp>(schemaClone), module, perDefModule);
 
@@ -2345,7 +2331,24 @@ llvm::Error emit(const SemanticModule& semantic,
         std::ostringstream emittedOut;
         SourceWriter       w = makeCWriter(emittedOut);
         {
-            const CSpelling                       spelling(perDefModule, schema);
+            // The nested types whose entry points this definition's bodies may call, each by the
+            // header that declares it, for the implementation file to include where a body does
+            // call. A field held as a view is decoded by no call.
+            llvm::StringMap<std::string> dependencyHeaders;
+            for (const auto& depRef : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
+            {
+                if (const auto* dep = ctx.find(depRef))
+                {
+                    dependencyHeaders
+                        [planIdentity(dep->info.fullName, dep->info.majorVersion, dep->info.minorVersion, {})] =
+                            EmitterContext::relativeHeaderPath(*dep);
+                }
+            }
+            const CSpelling                       spelling(perDefModule,
+                                                           schema,
+                                                           def,
+                                                           options.typeNameVersioning,
+                                                           std::move(dependencyHeaders));
             PlanBodyLookups                       lookups(perDefModule);
             const std::vector<mlir::func::FuncOp> functions = schemaFunctions(perDefModule, schema.getSymName());
             // A nested type's entry point is declared by its own header, and only the types a
@@ -2365,7 +2368,7 @@ llvm::Error emit(const SemanticModule& semantic,
                 });
             }
             nestedHeaders.erase(std::string{});
-            nestedHeaders.erase(schema.getHeaderPath().value_or(llvm::StringRef{}).str());
+            nestedHeaders.erase(EmitterContext::relativeHeaderPath(def));
             w.line("#include <stdbool.h>");
             w.line("#include <stddef.h>");
             w.line("#include <stdint.h>");
@@ -2374,7 +2377,7 @@ llvm::Error emit(const SemanticModule& semantic,
             {
                 w.line("#include \"" + header + "\"");
             }
-            w.line("#include \"" + schema.getHeaderPath().value_or(llvm::StringRef{}).str() + "\"");
+            w.line("#include \"" + EmitterContext::relativeHeaderPath(def) + "\"");
             w.blank();
             // Declared before any of them is defined: a body calls a helper, and a helper the
             // lowering built may be defined after the body that reaches it.

@@ -118,12 +118,9 @@ them. A backend that links or declares a function spells it from what the symbol
 scope where the spelling lives: C links `ns__Msg_1_0__serialize_ir_`, spelt from its versioned type
 name, and builds its include guard and version sentinels from its type name too.
 
-Only in the C backend does a scope cross a layer. Its struct declaration reads the scope
-directly; its serialiser bodies are spelt from MLIR by `CSpelling`, which reads member names from
-the `c_name` attribute. Lowering fills that attribute with the unscoped projection, and
-the C emitter stamps the scoped name over it on its own clone of the schema before it spells the
-bodies -- so the declaration and the references cannot disagree, and hand-driven `dsdl-opt` runs
-still have a name to work with.
+The C backend's struct declaration and the serialiser bodies `CSpelling` spells from MLIR name a
+member through one section scope, built from the semantic model, so the declaration and the
+references cannot disagree.
 
 ---
 
@@ -555,9 +552,11 @@ is worse than no switch.
   `file_stem` is exact for every backend. `type_name` is reported for Rust, Go, TypeScript and
   Python, which name a type after its short name and let a module carry the namespace, and on each
   section as well as the definition: Rust reaches a section through the definition's module, so the
-  name is the section word alone and does not follow from the definition's. C and C++ build
-  namespace-qualified symbols in their own emitters, for which the shared projection is only part of
-  the answer, so the manifest omits the key rather than report half a name.
+  name is the section word alone and does not follow from the definition's. C joins the namespace
+  into the identifier and reports the joined name as `qualified_type_name`, on the definition and
+  on each section. C++ builds namespace-qualified symbols in its own emitter, for which the shared
+  projection is only part of the answer, so the manifest omits the key rather than report half a
+  name.
 
 - **Hover** groups languages by the identifier they produce — ``emits as `count` (c, cpp, rust, ts,
   python) · `Count` (go)`` — rather than printing six rows, five of which agree.

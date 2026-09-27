@@ -10,14 +10,14 @@
 // llvmdsdl-member-layout-crosscheck, which compiles offsetof to ask what the layout is.
 
 module {
-  dsdl.schema @demo.T.1.0 attributes {c_type_name = "demo__T", full_name = "demo.T", major = 1 : i32, minor = 0 : i32, sealed} {
-    dsdl.serialization_plan attributes {c_deserialize_symbol = "demo__T__deserialize_", c_serialize_symbol = "demo__T__serialize_", c_type_name = "demo__T", max_bits = 88 : i64, min_bits = 24 : i64, sealed} {
-      dsdl.io {array_capacity = 0 : i64, array_kind = "none", bit_length = 8 : i64, c_name = "foo", cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, array_length_prefix_bits = 0 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "field", name = "foo", scalar_category = "unsigned", type_name = "saturated uint8"}
+  dsdl.schema @demo.T.1.0 attributes {full_name = "demo.T", major = 1 : i32, minor = 0 : i32, sealed} {
+    dsdl.serialization_plan attributes {max_bits = 88 : i64, min_bits = 24 : i64, sealed} {
+      dsdl.io {array_capacity = 0 : i64, array_kind = "none", bit_length = 8 : i64, cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, array_length_prefix_bits = 0 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "field", name = "foo", scalar_category = "unsigned", type_name = "saturated uint8"}
       // Eleven bits are held in two, which is the width the offset of anything after it depends on.
-      dsdl.io {array_capacity = 0 : i64, array_kind = "none", bit_length = 11 : i64, c_name = "bar", cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, array_length_prefix_bits = 0 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "field", name = "bar", scalar_category = "unsigned", type_name = "saturated uint11"}
+      dsdl.io {array_capacity = 0 : i64, array_kind = "none", bit_length = 11 : i64, cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, array_length_prefix_bits = 0 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "field", name = "bar", scalar_category = "unsigned", type_name = "saturated uint11"}
       // Padding reserves wire bits and takes no member, so it shifts no position.
       dsdl.io {array_capacity = 0 : i64, array_kind = "none", bit_length = 5 : i64, cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, array_length_prefix_bits = 0 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "padding", name = "", scalar_category = "void", type_name = "void5"}
-      dsdl.io {array_capacity = 4 : i64, array_kind = "variable_inclusive", array_length_prefix_bits = 8 : i64, bit_length = 8 : i64, c_name = "tail", cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "field", name = "tail", scalar_category = "unsigned", type_name = "saturated uint8[<=4]"}
+      dsdl.io {array_capacity = 4 : i64, array_kind = "variable_inclusive", array_length_prefix_bits = 8 : i64, bit_length = 8 : i64, cast_mode = "saturated", max_bits = 64 : i64, min_bits = 0 : i64, alignment_bits = 1 : i64, union_option_index = 0 : i64, union_tag_bits = 0 : i64, kind = "field", name = "tail", scalar_category = "unsigned", type_name = "saturated uint8[<=4]"}
     }
   }
 

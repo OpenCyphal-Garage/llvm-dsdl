@@ -1,22 +1,23 @@
 # Generates the C and the schema for the same corpus and holds their member orders against each
 # other, then asks the compiler what the layout is.
 
-if(NOT DEFINED DSDLC OR NOT DEFINED OUT_DIR OR NOT DEFINED PYTHON_EXECUTABLE)
-  message(FATAL_ERROR "DSDLC, OUT_DIR and PYTHON_EXECUTABLE are required")
+if(NOT DEFINED DSDLC OR NOT DEFINED UAVCAN_ROOT OR NOT DEFINED OUT_DIR OR NOT DEFINED PYTHON_EXECUTABLE)
+  message(FATAL_ERROR "DSDLC, UAVCAN_ROOT, OUT_DIR and PYTHON_EXECUTABLE are required")
 endif()
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language c --outdir "${OUT_DIR}/c" +uavcan
+  COMMAND "${DSDLC}" --target-language c --outdir "${OUT_DIR}/c" --naming-manifest "${OUT_DIR}/naming.json"
+          "${UAVCAN_ROOT}"
   RESULT_VARIABLE c_result OUTPUT_VARIABLE c_output ERROR_VARIABLE c_output)
 if(NOT c_result EQUAL 0)
   message(FATAL_ERROR "C generation failed:\n${c_output}")
 endif()
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language mlir +uavcan
+  COMMAND "${DSDLC}" --target-language mlir "${UAVCAN_ROOT}"
   RESULT_VARIABLE m_result OUTPUT_FILE "${OUT_DIR}/schema.mlir" ERROR_VARIABLE m_output)
 if(NOT m_result EQUAL 0)
   message(FATAL_ERROR "schema generation failed:\n${m_output}")
@@ -27,6 +28,7 @@ execute_process(
           --dsdlc "${DSDLC}"
           --c-root "${OUT_DIR}/c"
           --mlir "${OUT_DIR}/schema.mlir"
+          --naming-manifest "${OUT_DIR}/naming.json"
           --cc "${C_COMPILER}"
           --workdir "${OUT_DIR}/work"
   RESULT_VARIABLE check_result OUTPUT_VARIABLE check_output ERROR_VARIABLE check_output)

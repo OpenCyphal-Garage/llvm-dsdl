@@ -18,21 +18,20 @@ Two things are asserted, per member, against the derived struct:
     one element of one, and every scalar field;
   * the members are laid out in the order the derivation addresses them.
 
-A nested composite's own members are checked in that type's own row.
+A nested composite's own members are checked in that type's own row. The C name of each type is
+taken from the naming manifest.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-SCHEMA = re.compile(r'dsdl\.schema @(\S+)')
-PLAN = re.compile(r'dsdl\.serialization_plan attributes \{([^}]*)\}')
-ATTR_STR = re.compile(r'(\w+) = "((?:[^"\\]|\\.)*)"')
 FUNCTION = re.compile(r'func\.func @(\S+?)\(')
 STRUCT_TYPE = re.compile(r'!llvm\.struct<\((.*)\)>$')
 
@@ -91,21 +90,18 @@ def describe(member: str) -> Derived:
     return Derived("composite")
 
 
-def parse_type_names(schema_text: str) -> dict[str, str]:
-    """`<symbol>[.<section>]` -> the C type name, so a body can be tied to a struct."""
+def parse_type_names(manifest: dict) -> dict[str, str]:
+    """`<definition>[.<section>]` -> the C type name, so a body can be tied to a struct.
+
+    The manifest reports a definition under its DSDL identity, `ns.Msg.1.0`, which is also the
+    symbol of its schema and so the stem of its bodies.
+    """
     names: dict[str, str] = {}
-    symbol = ""
-    for line in schema_text.splitlines():
-        found = SCHEMA.search(line)
-        if found:
-            symbol = found.group(1)
-        plan = PLAN.search(line)
-        if plan and symbol:
-            values = dict(ATTR_STR.findall(plan.group(1)))
-            section = values.get("section", "")
-            suffix = ("." + section) if section else ""
-            if "c_type_name" in values:
-                names[symbol + suffix] = values["c_type_name"]
+    for definition, entry in manifest["languages"]["c"].items():
+        for section in ("message", "request", "response"):
+            if section in entry:
+                stem = definition if section == "message" else f"{definition}.{section}"
+                names[stem] = entry[section]["qualified_type_name"]
     return names
 
 
@@ -156,14 +152,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--c-root", required=True, type=Path)
-    parser.add_argument("--schema", required=True, type=Path)
+    parser.add_argument("--naming-manifest", required=True, type=Path)
     parser.add_argument("--converted", required=True, type=Path)
     parser.add_argument("--target", required=True)
     parser.add_argument("--clang", required=True)
     parser.add_argument("--workdir", required=True, type=Path)
     args = parser.parse_args()
 
-    names = parse_type_names(args.schema.read_text(encoding="utf-8"))
+    names = parse_type_names(json.loads(args.naming_manifest.read_text(encoding="utf-8")))
     derived = parse_derived(args.converted.read_text(encoding="utf-8"))
     structs = parse_structs(args.c_root)
 

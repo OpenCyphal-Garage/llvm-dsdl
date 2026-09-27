@@ -20,22 +20,24 @@ So this compares them, three ways:
     a float16 in a `float`, and an array's element in whatever one element takes. An offset
     computed from a wrong width lands between fields rather than on one.
 
-The first two are read off the two generated artefacts. The third is compiled and run, because
-only `offsetof` answers what the layout is.
+The first two are read off the two generated artefacts, with the C names of the types and members
+taken from the naming manifest. The third is compiled and run, because only `offsetof` answers what
+the layout is.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# `dsdl.field {c_name = "x", name = "x", padding, section = "request", type_name = "..."}`
+# `dsdl.field {name = "x", padding, section = "request", type_name = "..."}`
 FIELD = re.compile(r'dsdl\.field \{([^}]*)\}')
-SCHEMA = re.compile(r'dsdl\.schema @(\S+)\s+attributes\s*\{([^}]*)\}')
+SCHEMA = re.compile(r'dsdl\.schema @(\S+)\s+attributes\s*\{')
 # `is_union` is carried by the plan, not the schema: a service is a union in one section and
 # not in the other, so it is not a property of the type.
 PLAN = re.compile(r'dsdl\.serialization_plan attributes \{([^}]*)\}')
@@ -81,18 +83,21 @@ class Member:
 
 @dataclass
 class Section:
-    """One struct's worth of schema: the fields it declares, in order."""
+    """One struct's worth of schema: the fields it declares, in order, by their DSDL names."""
 
     members: list[Member] = field(default_factory=list)
     is_union: bool = False
 
 
 def parse_schema(text: str) -> dict[tuple[str, str], Section]:
-    """The non-padding field names each schema section declares, keyed by (full name, section)."""
+    """The non-padding fields each schema section declares, keyed by (definition, section).
+
+    A schema's symbol is the definition's DSDL identity, `ns.Msg.1.0`, which is also the key the
+    naming manifest reports the definition under.
+    """
     sections: dict[tuple[str, str], Section] = {}
     for match in SCHEMA.finditer(text):
-        attrs = dict(ATTR_STR.findall(match.group(2)))
-        full = attrs.get("full_name", match.group(1))
+        full = match.group(1)
         body_start = match.end()
         body_end = text.find("\n  }", body_start)
         body = text[body_start:body_end if body_end > 0 else len(text)]
@@ -110,7 +115,7 @@ def parse_schema(text: str) -> dict[tuple[str, str], Section]:
             entry = sections.setdefault(key, Section())
             if ", padding" in inner or inner.startswith("padding"):
                 continue
-            name = values.get("c_name", "")
+            name = values.get("name", "")
             match_primitive = PRIMITIVE.match(values.get("type_name", ""))
             if match_primitive is None:
                 # A composite: its own storage is checked in its own row.
@@ -156,13 +161,13 @@ def parse_structs(root: Path) -> dict[str, list[str]]:
     return structs
 
 
-def c_type_name(full_name: str, section: str) -> str:
-    base = full_name.replace(".", "__")
-    if section == "request":
-        return base + "__Request"
-    if section == "response":
-        return base + "__Response"
-    return base
+def c_names(manifest: dict, definition: str, section: str) -> tuple[str, dict[str, str]] | None:
+    """The C type name of one section and its members' C names by DSDL name, from the manifest."""
+    entry = manifest["languages"]["c"].get(definition)
+    if entry is None:
+        return None
+    names = entry[section or "message"]
+    return names["qualified_type_name"], names["fields"]
 
 
 def main() -> int:
@@ -171,11 +176,13 @@ def main() -> int:
     parser.add_argument("--dsdlc", required=True)
     parser.add_argument("--c-root", required=True, type=Path)
     parser.add_argument("--mlir", required=True, type=Path)
+    parser.add_argument("--naming-manifest", required=True, type=Path)
     parser.add_argument("--cc", default="cc")
     parser.add_argument("--workdir", required=True, type=Path)
     args = parser.parse_args()
 
     sections = parse_schema(args.mlir.read_text(encoding="utf-8"))
+    manifest = json.loads(args.naming_manifest.read_text(encoding="utf-8"))
     structs = parse_structs(args.c_root)
 
     failures: list[str] = []
@@ -184,11 +191,16 @@ def main() -> int:
     width_cases: list[tuple[str, list[Member], Path]] = []
 
     for (full, section), entry in sorted(sections.items()):
-        name = c_type_name(full, section)
+        named = c_names(manifest, full, section)
+        if named is None:
+            failures.append(f"{full} {section or 'message'}: the naming manifest does not report it")
+            continue
+        name, member_names = named
         declared = structs.get(name)
         if declared is None:
+            failures.append(f"{name}: no header declares the struct")
             continue
-        expected_members = list(entry.members)
+        expected_members = [Member(member_names[m.name], m.kind, m.bits, m.array) for m in entry.members]
         if entry.is_union:
             expected_members.append(Member("_tag_"))
         expected = [m.name for m in expected_members]

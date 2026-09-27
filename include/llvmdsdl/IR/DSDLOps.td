@@ -34,8 +34,7 @@ def DSDL_SchemaOp
       I32Attr:$major, I32Attr:$minor, UnitAttr:$sealed,
       OptionalAttr<DSDL_I64Attr>:$extent_bits,
       OptionalAttr<DSDL_I64Attr>:$fixed_port_id, UnitAttr:$service,
-      UnitAttr:$deprecated, OptionalAttr<StrAttr>:$doc,
-      OptionalAttr<StrAttr>:$c_type_name, OptionalAttr<StrAttr>:$header_path);
+      UnitAttr:$deprecated, OptionalAttr<StrAttr>:$doc);
 
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "$sym_name attr-dict-with-keyword $body";
@@ -46,12 +45,11 @@ def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
   let summary =
       "A field declaration in schema space (introspection/documentation)";
   let description = [{
-    Carries a field's schema-level identity (name, resolved type name, optional
-    generated C name, docs, owning service section, and union option index) for
-    introspection and comment propagation. It is NOT consumed by the
-    serialisation path — the wire layout lives in `dsdl.serialization_plan` —
-    but it IS a first-class, verified op so malformed schema IR is rejected
-    during lowering.
+    Carries a field's schema-level identity (name, resolved type name, docs,
+    owning service section, and union option index) for introspection and
+    comment propagation. It is NOT consumed by the serialisation path — the
+    wire layout lives in `dsdl.serialization_plan` — but it IS a first-class,
+    verified op so malformed schema IR is rejected during lowering.
 
     `union_option_index` is the tag value that selects this field, and it is
     carried here as well as on the section's `dsdl.io` step because this is
@@ -59,8 +57,7 @@ def DSDL_FieldOp : DSDL_Op<"field", [NoMemoryEffect]> {
     reads both halves of the pair from one op. `dsdl.schema` checks the two
     against each other.
   }];
-  let arguments = (ins StrAttr:$name, StrAttr:$type_name,
-      OptionalAttr<StrAttr>:$c_name, UnitAttr:$padding,
+  let arguments = (ins StrAttr:$name, StrAttr:$type_name, UnitAttr:$padding,
       OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$section,
       OptionalAttr<DSDL_I64Attr>:$union_option_index);
   let assemblyFormat = "attr-dict";
@@ -89,11 +86,9 @@ def DSDL_SerializationPlanOp
     about the section as a whole. The `lowered_*` attributes are stamped by
     `lower-dsdl-exec`, which also names the helper functions it synthesises for the section.
   }];
-  let arguments = (ins StrAttr:$c_type_name, StrAttr:$c_serialize_symbol,
-      StrAttr:$c_deserialize_symbol, DSDL_I64Attr:$min_bits,
-      DSDL_I64Attr:$max_bits, OptionalAttr<StrAttr>:$section,
-      OptionalAttr<DSDL_I64Attr>:$extent_bits, UnitAttr:$sealed,
-      UnitAttr:$is_union, UnitAttr:$fixed_size,
+  let arguments = (ins DSDL_I64Attr:$min_bits, DSDL_I64Attr:$max_bits,
+      OptionalAttr<StrAttr>:$section, OptionalAttr<DSDL_I64Attr>:$extent_bits,
+      UnitAttr:$sealed, UnitAttr:$is_union, UnitAttr:$fixed_size,
       OptionalAttr<DSDL_I64Attr>:$union_tag_bits,
       OptionalAttr<DSDL_I64Attr>:$union_option_count, UnitAttr:$lowered,
       OptionalAttr<DSDL_I64Attr>:$lowered_min_bits,
@@ -146,9 +141,7 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
       DSDL_I64Attr:$array_length_prefix_bits, DSDL_I64Attr:$alignment_bits,
       DSDL_I64Attr:$min_bits, DSDL_I64Attr:$max_bits,
       DSDL_I64Attr:$union_option_index, DSDL_I64Attr:$union_tag_bits,
-      OptionalAttr<StrAttr>:$c_name, OptionalAttr<StrAttr>:$doc,
-      OptionalAttr<StrAttr>:$composite_c_type_name,
-      OptionalAttr<StrAttr>:$composite_full_name,
+      OptionalAttr<StrAttr>:$doc, OptionalAttr<StrAttr>:$composite_full_name,
       OptionalAttr<DSDL_I64Attr>:$composite_major,
       OptionalAttr<DSDL_I64Attr>:$composite_minor,
       OptionalAttr<BoolAttr>:$composite_sealed,

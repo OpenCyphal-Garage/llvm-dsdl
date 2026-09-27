@@ -227,18 +227,11 @@ its members by their DSDL names, and a nested type's functions by their plan-bod
 carries no C name, so `build-dsdl-plan-bodies` runs the same over a module whichever backend
 reads it next.
 
-The C names are the conversions' to add. Lowering stamps the unscoped, unversioned spelling of
-every C name on the schema, because it does not know a backend's naming options; a backend
-rewrites them through `stampCNames`, in [`lib/CodeGen/SchemaNaming.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/SchemaNaming.cpp),
-using the same scopes and renderers it names its own output with, and the C spelling and
-`convert-dsdl-to-llvm` read the stamped schema when they spell a body.
+The schema carries no C name either. The C backend names a type from its identity and a member
+through the section scope its header declares the member in, and the object lane renames each
+lowered function to the C link name its header declares before `convert-dsdl-to-llvm` runs.
 `llvmdsdl.headers_available` says the generated header can be included, and gates the includes
 the C backend emits.
-
-`--target-language mlir` stamps the module it prints, which is what makes its symbols the ones
-a generated header declares. It refuses unless every schema was stamped, the embedded catalogue
-otherwise contributing schemas the stamp never reached. `llvmdsdl-schema-symbol-parity` holds
-those symbols against the headers under both naming modes.
 
 ### The target's `size_t`
 

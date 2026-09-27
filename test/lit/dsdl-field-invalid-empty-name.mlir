@@ -8,8 +8,8 @@
 
 module {
   dsdl.schema @test.BadField.1.0 attributes {full_name = "test.BadField", major = 1 : i32, minor = 0 : i32, sealed} {
-    dsdl.field {c_name = "value", name = "", type_name = "saturated uint8"}
-    dsdl.serialization_plan attributes {c_deserialize_symbol = "test__BadField__deserialize_", c_serialize_symbol = "test__BadField__serialize_", c_type_name = "test__BadField", max_bits = 8 : i64, min_bits = 8 : i64} {
+    dsdl.field {name = "", type_name = "saturated uint8"}
+    dsdl.serialization_plan attributes {max_bits = 8 : i64, min_bits = 8 : i64} {
       dsdl.align {bits = 8 : i32}
     }
   }

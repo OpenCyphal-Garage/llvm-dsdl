@@ -23,10 +23,10 @@
 // SMALL-DAG: llvm.func @dsdl_runtime_set_uxx(!llvm.ptr, i32, i32, i64, i8)
 
 module {
-  dsdl.schema @demo.T.1.0 attributes {c_type_name = "demo__T", full_name = "demo.T", header_path = "demo/T_1_0.h", major = 1 : i32, minor = 0 : i32, sealed} {
-    dsdl.field {c_name = "tail", name = "tail", type_name = "saturated uint8[<=4]"}
-    dsdl.serialization_plan attributes {c_deserialize_symbol = "demo__T__deserialize_", c_serialize_symbol = "demo__T__serialize_", c_type_name = "demo__T", max_bits = 40 : i64, min_bits = 8 : i64, sealed} {
-      dsdl.io {alignment_bits = 8 : i64, array_capacity = 4 : i64, array_kind = "variable_inclusive", array_length_prefix_bits = 8 : i64, bit_length = 8 : i64, c_name = "tail", cast_mode = "saturated", kind = "field", max_bits = 40 : i64, min_bits = 8 : i64, name = "tail", scalar_category = "unsigned", type_name = "saturated uint8[<=4]", union_option_index = 0 : i64, union_tag_bits = 0 : i64}
+  dsdl.schema @demo.T.1.0 attributes {full_name = "demo.T", major = 1 : i32, minor = 0 : i32, sealed} {
+    dsdl.field {name = "tail", type_name = "saturated uint8[<=4]"}
+    dsdl.serialization_plan attributes {max_bits = 40 : i64, min_bits = 8 : i64, sealed} {
+      dsdl.io {alignment_bits = 8 : i64, array_capacity = 4 : i64, array_kind = "variable_inclusive", array_length_prefix_bits = 8 : i64, bit_length = 8 : i64, cast_mode = "saturated", kind = "field", max_bits = 40 : i64, min_bits = 8 : i64, name = "tail", scalar_category = "unsigned", type_name = "saturated uint8[<=4]", union_option_index = 0 : i64, union_tag_bits = 0 : i64}
     }
   }
 

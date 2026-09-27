@@ -222,7 +222,8 @@ struct DefinitionNamePolicy final
     /// and Python in a per-namespace one.
     ///
     /// C is false because its namespace is joined into the identifier, so the namespace the manifest
-    /// reports beside the name would double it. C++ is false as it always has been, and the reason
+    /// reports beside the name would double it; the manifest reports C's joined name as
+    /// `qualified_type_name`. C++ is false as it always has been, and the reason
     /// once given for it -- that its emitter builds a namespace-qualified symbol of its own -- is not
     /// what `cppTypeName` does. Whether C++ should report is a question for the phase that takes C++;
     /// see `CLEAN_CODE.md`.

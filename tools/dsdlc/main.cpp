@@ -47,7 +47,6 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/GeneratedNameCollisions.h"
 #include "llvmdsdl/CodeGen/NamingManifest.h"
-#include "llvmdsdl/CodeGen/SchemaNaming.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
 #include "llvmdsdl/CodeGen/emitter/Python.h"
@@ -61,8 +60,6 @@
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Frontend/TargetResolution.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
-#include "llvmdsdl/IR/DSDLOps.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Pass/PassManager.h"
@@ -2134,23 +2131,6 @@ int runDsdlc(int argc, char** argv)
                 llvm::errs() << llvm::toString(std::move(err)) << "\n";
                 return finish("stdout", {}, true);
             }
-        }
-        // Lowering can only guess at the C names, and what it guesses is not what any backend
-        // emits. Stamping them here is what makes the printed symbols the ones a generated
-        // header declares.
-        //
-        // The merged model, because the embedded catalogue contributes schemas of its own and a
-        // module stamped over only some of them names both what a backend emits and what it
-        // does not.
-        const auto        stampSemantic = filterSemanticModule(mergedSemantic, selectedKeys);
-        const std::size_t stamped       = llvmdsdl::stampCNames(*mlirModule, stampSemantic, options.typeNameVersioning);
-        const std::size_t schemaCount =
-            llvm::range_size(mlirModule->getBodyRegion().front().getOps<mlir::dsdl::SchemaOp>());
-        if (stamped != schemaCount)
-        {
-            llvm::errs() << "error: named " << stamped << " of " << schemaCount
-                         << " schemas; the rest would carry names no backend emits\n";
-            return finish("stdout", {}, true);
         }
         if (!options.listInputs && !options.listOutputs)
         {

@@ -14,6 +14,10 @@
 # SCHEMA-DAG: dsdl.schema @ns.A_B.1.0
 # SCHEMA-DAG: dsdl.schema @ns.Svc.1.0
 
+# The schema carries no C spelling: no namespace joined by `__` and no version folded into `_1_0`.
+# RUN: FileCheck %s --check-prefix=NO_C < %t/schemas.mlir
+# NO_C-NOT: {{ns__|_1_0}}
+
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t/schemas.mlir | FileCheck %s --check-prefix=BODY
 # BODY-DAG: func.func @ns.A_B.1.0.serialize(
 # BODY-DAG: func.func @ns.A.B.1.0.serialize(
