@@ -21,6 +21,8 @@
 /// @file
 /// @brief Generated DSDL attribute declarations.
 
+#include "llvmdsdl/IR/DSDLEnums.h.inc"  // IWYU pragma: keep
+
 #define GET_ATTRDEF_CLASSES
 #include "llvmdsdl/IR/DSDLAttrs.h.inc"  // IWYU pragma: keep
 

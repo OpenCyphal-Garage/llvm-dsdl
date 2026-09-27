@@ -244,11 +244,12 @@ std::string render(const LanguageTraits& row)
            " nested=" + flag(c.nestedTypes) + " methods=" + render(c.methods) +
            " internal=" + render(c.internalLinkage) + " errors=" + render(c.errors) +
            " constants=" + render(c.typeConstants) + " constants-share-fields=" + flag(c.constantsShareFieldNamespace) +
-           " reserved=" + render(c.reservedUnderscores) + " | nullable=" + flag(b.nullability.objectPointer) +
-           flag(b.nullability.rawPointer) + flag(b.nullability.accessorBuffer) +
-           " views=" + flag(b.accessorsReturnViews) + " images=" + flag(b.objectsAreByteImages) +
-           " answers-size=" + flag(b.bodiesAnswerSize) + " bool-arrays=" + render(b.boolArrays) +
-           " | namespace-join='" + d.definitionName.namespaceJoin.str() +
+           " reserved=" + render(c.reservedUnderscores) + " classes=" + flag(c.nameClasses.typesApartFromValues) +
+           flag(c.nameClasses.modulesAmongTypes) + flag(c.nameClasses.tags) + flag(c.nameClasses.macros) +
+           " | nullable=" + flag(b.nullability.objectPointer) + flag(b.nullability.rawPointer) +
+           flag(b.nullability.accessorBuffer) + " views=" + flag(b.accessorsReturnViews) +
+           " images=" + flag(b.objectsAreByteImages) + " answers-size=" + flag(b.bodiesAnswerSize) +
+           " bool-arrays=" + render(b.boolArrays) + " | namespace-join='" + d.definitionName.namespaceJoin.str() +
            "' version-in-name=" + flag(d.definitionName.versionInTypeName) +
            " name-reaches-type=" + flag(d.definitionName.typeNameReachesTheType) + " section-join='" +
            d.sectionJoin.str() + "' section-alone=" + flag(d.sectionNamedAlone) +
@@ -286,7 +287,7 @@ bool runLanguageTraitsTests()
     const std::pair<Language, std::string> kExpected[] = {
         {Language::C,
          "c: scopes=000 nested=0 methods=none internal=static errors=status-code constants=enclosing "
-         "constants-share-fields=0 reserved=leading | nullable=111 views=0 images=1 answers-size=0 "
+         "constants-share-fields=0 reserved=leading classes=0011 | nullable=111 views=0 images=1 answers-size=0 "
          "bool-arrays=packed | "
          "namespace-join='__' "
          "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 namespaces=joined "
@@ -297,7 +298,8 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix='ir_'"},
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
-         "constants-share-fields=1 reserved=leading-and-interior | nullable=110 views=1 images=1 answers-size=0 "
+         "constants-share-fields=1 reserved=leading-and-interior classes=0101 | nullable=110 views=1 images=1 "
+         "answers-size=0 "
          "bool-arrays=packed-when-fixed "
          "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
@@ -309,7 +311,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "
-         "constants-share-fields=0 reserved=none | nullable=000 views=1 images=1 answers-size=1 "
+         "constants-share-fields=0 reserved=none classes=1100 | nullable=000 views=1 images=1 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 namespaces=module "
@@ -320,7 +322,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
-         "constants=package constants-share-fields=0 reserved=none | nullable=100 views=1 images=1 "
+         "constants=package constants-share-fields=0 reserved=none classes=0000 | nullable=100 views=1 images=1 "
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
          "namespace-shared=1 namespaces=package helpers=package file-directory-module=0 namespace-type-scope=0 "
@@ -331,7 +333,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::TypeScript,
          "ts: scopes=110 nested=1 methods=member internal=not-exported errors=exception constants=type "
-         "constants-share-fields=0 reserved=none | nullable=100 views=1 images=0 answers-size=1 "
+         "constants-share-fields=0 reserved=none classes=1000 | nullable=100 views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
@@ -342,7 +344,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
-         "constants-share-fields=1 reserved=none | nullable=100 views=1 images=0 answers-size=1 "
+         "constants-share-fields=1 reserved=none classes=0100 | nullable=100 views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "

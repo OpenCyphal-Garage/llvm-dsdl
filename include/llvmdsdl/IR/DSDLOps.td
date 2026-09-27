@@ -17,6 +17,7 @@
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "llvmdsdl/IR/DSDLAttrs.td"
 include "llvmdsdl/IR/DSDLBase.td"
 include "llvmdsdl/IR/DSDLTypes.td"
 
@@ -664,6 +665,97 @@ def DSDL_CallInitializeOp : DSDL_Op<"call_initialize"> {
   let results = (outs I8:$error);
   let assemblyFormat = [{
     $callee `(` $object `)` attr-dict `:` type($object)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// The surface tree
+//===----------------------------------------------------------------------===//
+
+def DSDL_SurfaceOp : DSDL_Op<"surface", [HasParent<"::mlir::ModuleOp">,
+                                         NoTerminator, SingleBlock]> {
+  let summary =
+      "The scopes one target's output opens, and the names declared in them";
+  let description = [{
+    Holds one root `dsdl.scope`: the generated package of `target`, a `--target-language`
+    spelling that names a language. `profile` distinguishes the trees of one language that
+    declare different names. A module holds at most one surface per target and profile.
+
+    The tree names and places the module's entities; the bodies stay top-level functions. A
+    scope other than a `file` scope is a namespace. A `file` scope declares into the namespace
+    that encloses it, as a C or C++ header and a Go file do, except that its imports are its
+    own and may not meet a name that namespace declares.
+
+    Each namespace holds a name once in each class the target's language keeps apart, which
+    its `LanguageTraits` row states. A type scope's name is a type in the namespace that holds
+    it, and a namespace, module or package scope's name is a module there. Macros share one
+    class across the surface, which is the translation unit a set of headers can meet in. No
+    two scopes are written to one path.
+  }];
+  let arguments = (ins StrAttr:$target, OptionalAttr<StrAttr>:$profile);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+  let assemblyFormat = [{
+    `target` `=` $target (`profile` `=` $profile^)? attr-dict-with-keyword $bodyRegion
+  }];
+  let hasVerifier = 1;
+  // The names are checked once every scope and declaration has been verified
+  // itself.
+  let hasRegionVerifier = 1;
+}
+
+def DSDL_ScopeOp
+    : DSDL_Op<"scope", [ParentOneOf<["::mlir::dsdl::SurfaceOp",
+                                     "::mlir::dsdl::ScopeOp"]>,
+                        NoTerminator, SingleBlock,
+                        DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "A scope of the surface tree";
+  let description = [{
+    Holds the scopes and declarations its language opens and writes in it, in that order. A
+    `root` scope is the generated package and is the surface's only child. `path` is the file
+    the scope is written to, relative to the output directory; a `file` scope has one. A
+    `type` scope may name the schema it declares with `of`, and a service's section with
+    `section`.
+  }];
+  let arguments = (ins DSDL_ScopeKindAttr:$kind, StrAttr:$name,
+      OptionalAttr<StrAttr>:$path, OptionalAttr<FlatSymbolRefAttr>:$of,
+      OptionalAttr<StrAttr>:$section);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+  let assemblyFormat = [{
+    `` $kind $name (`path` `=` $path^)? (`of` `=` $of^)? (`section` `=` $section^)?
+    attr-dict-with-keyword $bodyRegion
+  }];
+  let hasVerifier = 1;
+}
+
+def DSDL_DeclOp
+    : DSDL_Op<"decl", [HasParent<"::mlir::dsdl::ScopeOp">,
+                       DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "A name declared in a scope of the surface tree";
+  let description = [{
+    `kind` is what the name declares and `class` the class of names it is declared in, which
+    the kind implies for every kind but an import. `of` names the schema or function the name
+    stands for, and `section` and `member` the service section and the field or constant within
+    it. A declaration is not an MLIR symbol: one symbol table is one namespace, and a scope
+    holds as many classes of name as its language keeps apart.
+  }];
+  let arguments = (ins StrAttr:$name, DSDL_DeclKindAttr:$kind,
+      OptionalAttr<DSDL_NameClassAttr>:$name_class,
+      DefaultValuedAttr<DSDL_VisibilityAttr,
+                        "::mlir::dsdl::Visibility::Public">:$visibility,
+      DefaultValuedAttr<DSDL_OriginAttr,
+                        "::mlir::dsdl::Origin::Definition">:$origin,
+      OptionalAttr<FlatSymbolRefAttr>:$of, OptionalAttr<StrAttr>:$section,
+      OptionalAttr<StrAttr>:$member);
+  let assemblyFormat = [{
+    $name `kind` `=` `` $kind (`class` `=` `` $name_class^)? (`visibility` `=` `` $visibility^)?
+    (`origin` `=` `` $origin^)? (`of` `=` $of^)? (`section` `=` $section^)?
+    (`member` `=` $member^)? attr-dict
+  }];
+  let hasVerifier = 1;
+  let extraClassDeclaration = [{
+    /// The class the name is declared in: `class` where it is given, and otherwise the one
+    /// the kind implies.
+    ::mlir::dsdl::NameClass declaredClass();
   }];
 }
 

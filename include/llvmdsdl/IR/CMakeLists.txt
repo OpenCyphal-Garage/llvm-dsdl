@@ -18,6 +18,8 @@ mlir_tablegen(DSDLTypes.cpp.inc -gen-typedef-defs -typedefs-dialect=dsdl)
 set(LLVM_TARGET_DEFINITIONS DSDLAttrs.td)
 mlir_tablegen(DSDLAttrs.h.inc -gen-attrdef-decls -attrdefs-dialect=dsdl)
 mlir_tablegen(DSDLAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=dsdl)
+mlir_tablegen(DSDLEnums.h.inc -gen-enum-decls)
+mlir_tablegen(DSDLEnums.cpp.inc -gen-enum-defs)
 
 add_public_tablegen_target(LLVMDSDLIRIncGen)
 add_dependencies(mlir-headers LLVMDSDLIRIncGen)
