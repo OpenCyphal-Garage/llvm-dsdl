@@ -215,6 +215,13 @@ struct DefinitionNames final
     /// @brief The stem of the file the definition is written to.
     std::string fileStem;
 
+    /// @brief The file or module scope the definition is declared in.
+    std::size_t fileScope{};
+
+    /// @brief A service's own name, declared as an alias of its request; none for a message, or
+    ///        where a section's type already has the name.
+    std::optional<std::size_t> serviceAlias;
+
     /// @brief The namespace's components, each as the language names a namespace.
     std::vector<std::string> namespaceNames;
 

@@ -18,15 +18,17 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-#include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/ReservedIdentifiers.h"
+#include "llvmdsdl/Support/SectionScopes.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 
 #include <algorithm>
 #include <array>
 #include <ios>
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <map>
 #include <set>
 #include <cctype>
@@ -314,6 +316,7 @@ std::string describeLanguages(const std::vector<std::string>& languages)
 /// @param[in,out] diagnostics Diagnostic sink.
 void checkFileDirectoryCollisions(const std::vector<DiscoveredDefinition>& definitions,
                                   const llvm::ArrayRef<LanguageTraits>     outputLanguages,
+                                  const std::vector<SurfacePlan>&          plans,
                                   DiagnosticEngine&                        diagnostics)
 {
     // What takes one module name: the first definition whose file does, and the first namespace
@@ -333,21 +336,24 @@ void checkFileDirectoryCollisions(const std::vector<DiscoveredDefinition>& defin
     // several languages is one diagnostic naming all of them.
     std::map<std::pair<std::string, std::string>, Collision> collisions;
 
-    for (const LanguageTraits& row : outputLanguages)
+    for (std::size_t language = 0; language < outputLanguages.size(); ++language)
     {
+        const LanguageTraits& row = outputLanguages[language];
         if (!row.composition.fileAndDirectoryAreOneModule)
         {
             continue;
         }
         std::map<std::string, ModuleOwners> modules;
-        for (const auto& def : definitions)
+        for (std::size_t index = 0; index < definitions.size(); ++index)
         {
-            std::string path;
-            std::string namespaceName;
-            for (const auto& component : def.namespaceComponents)
+            const DiscoveredDefinition& def   = definitions[index];
+            const DefinitionNames&      names = plans[language].definitions[index];
+            std::string                 path;
+            std::string                 namespaceName;
+            for (std::size_t depth = 0; depth < def.namespaceComponents.size(); ++depth)
             {
-                path += codegenProjectIdentifier(row.language, IdentifierRole::NamespaceName, component);
-                namespaceName += component;
+                path += names.namespaceNames[depth];
+                namespaceName += def.namespaceComponents[depth];
                 ModuleOwners& owners = modules[path];
                 if (owners.heldBy == nullptr)
                 {
@@ -357,7 +363,7 @@ void checkFileDirectoryCollisions(const std::vector<DiscoveredDefinition>& defin
                 path.push_back('/');
                 namespaceName.push_back('.');
             }
-            path += renderDefinitionFileStem(row.language, def.shortName, def.majorVersion, def.minorVersion);
+            path += names.fileStem;
             ModuleOwners& owners = modules[path];
             if (owners.file == nullptr)
             {
@@ -448,13 +454,35 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
                               "' for target language '" + std::string(language.name) + "'; " + remedy);
     };
 
+    // Each language's names, from the allocation the emitters' names come from, under the run's
+    // versioning and under the versioned scheme the diagnostic suggests.
+    std::vector<DefinitionParts> parts;
+    parts.reserve(definitions.size());
     for (const auto& parsed : definitions)
     {
-        const auto& info = parsed.info;
-        for (const auto& language : outputLanguages)
+        parts.push_back(discoveredParts(parsed.info, parsed.ast.isService(), parsed.ast.isDeprecated()));
+    }
+    std::vector<std::pair<SurfacePlan, SurfacePlan>> plans;
+    plans.reserve(outputLanguages.size());
+    for (const auto& language : outputLanguages)
+    {
+        plans.emplace_back(allocateSurface(language,
+                                           parts,
+                                           SurfaceOptions{.packageName = {}, .versioning = versioning}),
+                           allocateSurface(language,
+                                           parts,
+                                           SurfaceOptions{.packageName = {},
+                                                          .versioning  = TypeNameVersioning::Versioned}));
+    }
+
+    for (std::size_t index = 0; index < definitions.size(); ++index)
+    {
+        const auto& info = definitions[index].info;
+        for (std::size_t row = 0; row < outputLanguages.size(); ++row)
         {
+            const LanguageTraits& language = outputLanguages[row];
             for (const ScopedTypeName& type :
-                 scopedTypeNames(language, info, parsed.ast.isService(), parsed.ast.isDeprecated(), versioning))
+                 scopedTypeNames(language, plans[row].first, plans[row].second, index, info.namespaceComponents))
             {
                 if (type.namespaceName.empty())
                 {
@@ -475,89 +503,92 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
     }
 }
 
-std::string sharedScopeOf(const LanguageTraits& language, const DiscoveredDefinition& info)
+DefinitionParts discoveredParts(const DiscoveredDefinition& info, const bool isService, const bool isDeprecated)
 {
-    // A language that joins the namespace into the identifier declares every definition's in one
-    // global scope. C joins with `__`, which a DSDL name may hold as well, so `ns.A__B` and `ns.A.B`
-    // are both `ns__A__B`.
-    if (!language.composition.definitionName.namespaceJoin.empty())
-    {
-        return "";
-    }
-    // C++ and Go put the short name in a scope of their own per namespace, so that namespace is part
-    // of the key.
-    std::string scope;
-    for (const auto& component : info.namespaceComponents)
-    {
-        scope += codegenProjectIdentifier(language.language, IdentifierRole::NamespaceName, component);
-        scope.push_back('.');
-    }
-    return scope;
+    return DefinitionParts{.ref         = DefinitionRef{.namespaceComponents = info.namespaceComponents,
+                                                        .shortName           = info.shortName,
+                                                        .majorVersion        = info.majorVersion,
+                                                        .minorVersion        = info.minorVersion},
+                           .fixedPortId = info.fixedPortId,
+                           .service     = isService,
+                           .deprecated  = isDeprecated,
+                           .request     = SectionParts{},
+                           .response    = isService ? std::optional<SectionParts>(SectionParts{}) : std::nullopt,
+                           .bodies      = {}};
 }
 
-std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&       language,
-                                            const DiscoveredDefinition& info,
-                                            const bool                  isService,
-                                            const bool                  isDeprecated,
-                                            const TypeNameVersioning    versioning)
+std::string sharedScopeOf(const SurfacePlan& plan, const std::size_t index)
+{
+    // A language that joins the namespace into the identifier opens no scope for it, and declares
+    // every definition's names in one global scope. C joins with `__`, which a DSDL name may hold as
+    // well, so `ns.A__B` and `ns.A.B` are both `ns__A__B`.
+    std::vector<std::string> path;
+    for (std::optional<std::size_t> scope = plan.scopes[plan.definitions[index].fileScope].parent;
+         scope && (plan.scopes[*scope].kind != SurfaceScopeKind::Root);
+         scope = plan.scopes[*scope].parent)
+    {
+        path.push_back(plan.scopes[*scope].name);
+    }
+    std::string out;
+    for (const std::string& component : llvm::reverse(path))
+    {
+        out += component + ".";
+    }
+    return out;
+}
+
+std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&             language,
+                                            const SurfacePlan&                plan,
+                                            const SurfacePlan&                versioned,
+                                            const std::size_t                 index,
+                                            const llvm::ArrayRef<std::string> namespaceComponents)
 {
     std::vector<ScopedTypeName> out;
     if (!language.composition.definitionsShareNamespaceScope)
     {
         return out;
     }
+    const DefinitionNames& names          = plan.definitions[index];
+    const DefinitionNames& versionedNames = versioned.definitions[index];
     if (language.composition.namespaceAndTypeShareScope)
     {
+        std::vector<std::size_t> spaces;
+        for (std::optional<std::size_t> scope = plan.scopes[names.fileScope].parent;
+             scope && (plan.scopes[*scope].kind != SurfaceScopeKind::Root);
+             scope = plan.scopes[*scope].parent)
+        {
+            spaces.insert(spaces.begin(), *scope);
+        }
         std::string parent;
         std::string namespaceName;
-        for (const auto& component : info.namespaceComponents)
+        for (std::size_t depth = 0; depth < spaces.size(); ++depth)
         {
-            const std::string projected =
-                codegenProjectIdentifier(language.language, IdentifierRole::NamespaceName, component);
-            namespaceName += component;
-            out.push_back(ScopedTypeName{parent, projected, projected, "", namespaceName});
-            parent += projected;
-            parent.push_back('.');
+            const std::string& name = plan.scopes[spaces[depth]].name;
+            namespaceName += namespaceComponents[depth];
+            out.push_back(ScopedTypeName{parent, name, name, "", namespaceName});
+            parent += name + ".";
             namespaceName.push_back('.');
         }
     }
 
-    const std::string scope      = sharedScopeOf(language, info);
-    const auto        renderBase = [&](const TypeNameVersioning scheme) {
-        return renderDefinitionTypeName(language.language,
-                                        info.namespaceComponents,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion,
-                                        scheme);
-    };
-    const std::string base          = renderBase(versioning);
-    const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
-    // A deprecated definition's struct is declared under a name of its own, which a sibling may be
-    // called; that name is claimed beside the public one.
-    const bool declaredApart = language.composition.deprecatedTypeDeclaredApart && isDeprecated;
-    const auto claim = [&](const std::string& name, const std::string& versionedName, const llvm::StringRef section) {
-        out.push_back(ScopedTypeName{scope, name, versionedName, section.str(), ""});
-        if (declaredApart)
-        {
-            out.push_back(ScopedTypeName{scope,
-                                         renderDeclaredTypeName(name, true),
-                                         renderDeclaredTypeName(versionedName, true),
-                                         section.str(),
-                                         ""});
-        }
-    };
-    if (!isService)
+    const std::string scope = sharedScopeOf(plan, index);
+    if (names.sections.front().section == "request")
     {
-        claim(base, versionedBase, "");
-        return out;
+        out.push_back(ScopedTypeName{scope, names.typeName, versionedNames.typeName, "", ""});
     }
-    out.push_back(ScopedTypeName{scope, base, versionedBase, "", ""});
-    for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
+    for (std::size_t section = 0; section < names.sections.size(); ++section)
     {
-        claim(renderSectionTypeName(language.language, base, section),
-              renderSectionTypeName(language.language, versionedBase, section),
-              section);
+        const SectionNames& held          = names.sections[section];
+        const SectionNames& versionedHeld = versionedNames.sections[section];
+        out.push_back(ScopedTypeName{scope, held.typeName, versionedHeld.typeName, held.section, ""});
+        // A deprecated definition's struct is declared under a name of its own, which a sibling may
+        // be called; that name is claimed beside the public one.
+        const std::string& declared = plan.scopes[held.typeScope].name;
+        if (declared != held.typeName)
+        {
+            out.push_back(
+                ScopedTypeName{scope, declared, versioned.scopes[versionedHeld.typeScope].name, held.section, ""});
+        }
     }
     return out;
 }
@@ -598,10 +629,26 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
     std::unordered_map<std::string, std::string> versionUnique;
     std::unordered_map<std::string, std::string> generatedOutputNames;
 
+    // Each language's names, from the allocation the emitters' names come from. Nothing is parsed
+    // yet, so each definition is taken as a message; the names compared here do not depend on it.
+    std::vector<DefinitionParts> parts;
+    parts.reserve(definitions.size());
     for (const auto& def : definitions)
     {
-        const std::string lowerName       = toLower(def.fullName);
-        const auto [itName, insertedName] = caseInsensitiveNames.emplace(lowerName, def.fullName);
+        parts.push_back(discoveredParts(def, false, false));
+    }
+    std::vector<SurfacePlan> plans;
+    plans.reserve(outputLanguages.size());
+    for (const LanguageTraits& row : outputLanguages)
+    {
+        plans.push_back(allocateSurface(row, parts, SurfaceOptions{.packageName = {}, .versioning = {}}));
+    }
+
+    for (std::size_t index = 0; index < definitions.size(); ++index)
+    {
+        const DiscoveredDefinition& def       = definitions[index];
+        const std::string           lowerName = toLower(def.fullName);
+        const auto [itName, insertedName]     = caseInsensitiveNames.emplace(lowerName, def.fullName);
         if (!insertedName && itName->second != def.fullName)
         {
             diagnostics.error({def.filePath, 1, 1},
@@ -637,36 +684,42 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         for (const auto& [role, what] : kOutputNames)
         {
             std::map<std::string, std::vector<std::string>> collidedWith;
-            for (const LanguageTraits& row : outputLanguages)
+            for (std::size_t language = 0; language < outputLanguages.size(); ++language)
             {
-                const Language        language     = row.language;
-                const llvm::StringRef languageName = row.name;
-                std::string           namespacePath;
-                for (const auto& component : def.namespaceComponents)
+                const LanguageTraits&  row          = outputLanguages[language];
+                const llvm::StringRef  languageName = row.name;
+                const DefinitionNames& names        = plans[language].definitions[index];
+                std::string            namespacePath;
+                for (std::size_t depth = 0; depth < def.namespaceComponents.size(); ++depth)
                 {
-                    const auto projected =
-                        codegenProjectIdentifierDetailed(language, IdentifierRole::NamespaceName, component);
-                    if (projected.escaped && role == IdentifierRole::FileStem)
+                    const std::string& component = def.namespaceComponents[depth];
+                    // Reported once per language, under the file-stem pass, so a namespace does not
+                    // announce itself again for the type-name pass.
+                    if ((role == IdentifierRole::FileStem) &&
+                        codegenProjectIdentifierDetailed(row.language, IdentifierRole::NamespaceName, component)
+                            .escaped)
                     {
-                        // Reported once per language, under the file-stem pass, so a namespace does
-                        // not announce itself again for the type-name pass.
-                        renameNotes.emplace(std::string(languageName) + ":" + component + ":" + projected.identifier);
+                        renameNotes.emplace(std::string(languageName) + ":" + component + ":" +
+                                            names.namespaceNames[depth]);
                     }
-                    namespacePath += projected.identifier;
+                    namespacePath += names.namespaceNames[depth];
                     namespacePath.push_back('/');
                 }
-                // A file stem is projected from the versioned name, which is how
-                // `renderDefinitionFileStem` writes it: a short name that strops gains a trailing
-                // `_`, and a separator after it would double. The check has to key on what the
-                // emitter writes, so it composes the same name rather than the short one.
-                const std::string source        = (role == IdentifierRole::FileStem)
-                                                      ? (def.shortName + "_" + std::to_string(def.majorVersion) + "_" +
-                                                         std::to_string(def.minorVersion))
-                                                      : def.shortName;
-                const auto        projectedName = codegenProjectIdentifierDetailed(language, role, source);
-                if (projectedName.escaped && role == IdentifierRole::FileStem)
+                std::string outputName = names.typeName;
+                if (role == IdentifierRole::FileStem)
                 {
-                    renameNotes.emplace(std::string(languageName) + ":" + source + ":" + projectedName.identifier);
+                    outputName = names.fileStem;
+                    if (renderDefinitionFileStemDetailed(row.language,
+                                                         def.shortName,
+                                                         def.majorVersion,
+                                                         def.minorVersion)
+                            .escaped)
+                    {
+                        renameNotes.emplace(
+                            std::string(languageName) + ":" +
+                            renderDefinitionFileStemSource(def.shortName, def.majorVersion, def.minorVersion) + ":" +
+                            outputName);
+                    }
                 }
                 std::string key;
                 key.append(languageName)
@@ -674,7 +727,7 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
                     .append(std::to_string(static_cast<int>(role)))
                     .append(":")
                     .append(namespacePath)
-                    .append(projectedName.identifier)
+                    .append(outputName)
                     .append(versionSuffix);
                 const auto [it, inserted] = generatedOutputNames.emplace(key, def.fullName);
                 if (!inserted && it->second != def.fullName)
@@ -722,7 +775,7 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
         }
     }
 
-    checkFileDirectoryCollisions(definitions, outputLanguages, diagnostics);
+    checkFileDirectoryCollisions(definitions, outputLanguages, plans, diagnostics);
 
     return definitions;
 }

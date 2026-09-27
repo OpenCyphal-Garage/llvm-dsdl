@@ -239,7 +239,8 @@ bool runSurfacePlanTests()
                                          "      type Request\n"
                                          "        index : value\n"
                                          "      type Response\n"
-                                         "        path : value\n",
+                                         "        path : value\n"
+                                         "      List : type\n",
                                          "a service") &&
                                   ok;
         const llvmdsdl::DefinitionNames& names = plan.definitions.front();
@@ -362,6 +363,29 @@ bool runSurfacePlanTests()
                                                   "      capacity_check_2 : value private\n",
                                                   "two helpers of one name") &&
                                            ok;
+    }
+
+    // A service's own name is an alias of its request, where no section's type already has it.
+    {
+        DefinitionParts named = message("Request", SectionParts{.fields = {}, .constants = {}});
+        named.service         = true;
+        named.response        = SectionParts{.fields = {}, .constants = {}};
+        ok                    = expect(outline(allocate(Language::Rust, {named})),
+                                       "root pkg\n"
+                                       "  module ns\n"
+                                       "    module request_1_0\n"
+                                       "      type Request\n"
+                                       "      type Response\n",
+                                       "a service named for its request section") &&
+                                ok;
+        ok                    = expect(outline(allocate(Language::C, {named})),
+                                       "root pkg\n"
+                                       "  file Request_1_0\n"
+                                       "    type ns__Request__Request\n"
+                                       "    type ns__Request__Response\n"
+                                       "    ns__Request : type\n",
+                                       "a C service") &&
+                                ok;
     }
 
     // Band 1, the language's reservations: a constant that reaches a name the generator writes at

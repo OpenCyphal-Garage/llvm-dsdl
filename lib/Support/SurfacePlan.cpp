@@ -14,6 +14,7 @@
 
 #include "llvmdsdl/Support/SurfacePlan.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <map>
 #include <optional>
@@ -105,6 +106,7 @@ public:
         const SurfaceScopeKind fileKind =
             row_.composition.definitionsShareNamespaceScope ? SurfaceScopeKind::File : SurfaceScopeKind::Module;
         const std::size_t file = openScope(space, fileKind, names.fileStem, std::nullopt);
+        names.fileScope        = file;
 
         if (definition.service)
         {
@@ -117,6 +119,18 @@ public:
         else
         {
             allocateSection(names, file, "", definition.request, definition.deprecated);
+        }
+        // A service reached by its own name means its request. Where a section's type is already
+        // called that -- a service named `Request` in a language that names a section alone -- the
+        // alias would declare the name twice and stand for itself.
+        if (definition.service && !declaresName(file, names.typeName))
+        {
+            names.serviceAlias = declare(file,
+                                         names.typeName,
+                                         SurfaceDeclKind::Alias,
+                                         NameClass::Type,
+                                         NameOrigin::Generated,
+                                         SurfaceEntity{names.key, "", ""});
         }
         allocateBodies(names, space, file, definition.bodies);
         plan_.definitions.push_back(std::move(names));
@@ -323,6 +337,14 @@ private:
                         NameOrigin::Definition,
                         of(constant));
         }
+    }
+
+    /// @brief Whether @p scope already holds a scope or a declaration named @p name.
+    [[nodiscard]] bool declaresName(const std::size_t scope, const std::string& name) const
+    {
+        return std::ranges::any_of(plan_.scopes[scope].items, [&](const SurfaceItem& item) {
+            return (item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name) == name;
+        });
     }
 
     /// @brief What a lowered function declares, by what it does.

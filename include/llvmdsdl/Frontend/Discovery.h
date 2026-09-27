@@ -18,9 +18,11 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 
 #include "llvm/ADT/ArrayRef.h"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -51,29 +53,39 @@ struct ScopedTypeName final
     std::string namespaceName;
 };
 
-/// @brief The scope @p info's names are declared in, where @p language shares one across definitions.
-/// @param[in] language Naming language.
-/// @param[in] info The definition.
-/// @return The projected namespace path, or empty where the namespace is in the identifier and the
-///         scope is global.
-[[nodiscard]] std::string sharedScopeOf(const LanguageTraits& language, const DiscoveredDefinition& info);
-
-/// @brief Every type name @p info declares in @p language's shared scope.
-///
-/// The definition's, each section's, and a deprecated C++ struct's own; and, where the row's
-/// `namespaceAndTypeShareScope` is set, each namespace's in its parent's scope. Empty where the
-/// language gives every definition a module of its own.
-/// @param[in] language Naming language.
+/// @brief The parts of @p info that naming reads, before its contents are known in full.
 /// @param[in] info The definition.
 /// @param[in] isService Whether the definition is a service.
 /// @param[in] isDeprecated Whether the definition is deprecated.
-/// @param[in] versioning Whether generated type names carry the version.
+/// @return Its parts, with sections that declare nothing.
+[[nodiscard]] DefinitionParts discoveredParts(const DiscoveredDefinition& info, bool isService, bool isDeprecated);
+
+/// @brief The scope the definition at @p index of @p plan declares its names in, where its language
+///        shares one across definitions.
+/// @param[in] plan The definitions' plan.
+/// @param[in] index The definition's position in @p plan.
+/// @return The namespace path, each component followed by `.`, or empty where the namespace is in
+///         the identifier and the scope is global.
+[[nodiscard]] std::string sharedScopeOf(const SurfacePlan& plan, std::size_t index);
+
+/// @brief Every type name the definition at @p index declares in @p language's shared scope.
+///
+/// The definition's, each section's, and a deprecated struct's own where the language declares it
+/// apart; and, where the row's `namespaceAndTypeShareScope` is set, each namespace's in its
+/// parent's scope. Empty where the language gives every definition a module of its own. Each name is
+/// read from the plan, with its versioned form from @p versioned.
+/// @param[in] language Naming language.
+/// @param[in] plan The definitions' plan under the run's versioning.
+/// @param[in] versioned The same definitions' plan under @ref TypeNameVersioning::Versioned.
+/// @param[in] index The definition's position in both plans.
+/// @param[in] namespaceComponents The definition's DSDL namespace, which names a namespace in a
+///            diagnostic.
 /// @return The names, namespaces first.
 [[nodiscard]] std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&       language,
-                                                          const DiscoveredDefinition& info,
-                                                          bool                        isService,
-                                                          bool                        isDeprecated,
-                                                          TypeNameVersioning          versioning);
+                                                          const SurfacePlan&          plan,
+                                                          const SurfacePlan&          versioned,
+                                                          std::size_t                 index,
+                                                          llvm::ArrayRef<std::string> namespaceComponents);
 
 /// @brief Rejects a generated type name that another name declared in its scope also takes.
 ///
@@ -98,7 +110,7 @@ struct ScopedTypeName final
 /// `ns.A__B` and `ns.A.B` are both `ns__A__B`.
 ///
 /// The check runs after parsing because that is where a definition is known to be a service, and it
-/// composes the section name with @ref renderSectionTypeName, the same call the emitters use.
+/// reads each name from `allocateSurface`, which composes them with the calls the emitters use.
 ///
 /// @param[in] definitions Parsed definitions to check.
 /// @param[in] outputLanguages Languages whose output names are checked; empty disables the check.
@@ -140,8 +152,8 @@ void checkScopedTypeNameCollisions(llvm::ArrayRef<ParsedDefinition> definitions,
 ///   or one type name in a selected language. Both projections are many-to-one and they fold
 ///   differently -- `FooBar`/`Foo_bar` meet as file names, `Break`/`Break_` meet once the keyword
 ///   escape fires -- so whichever half collides, one type would be lost or the output would not
-///   compile. The keys come from the same engine the emitters name with, so the check cannot drift
-///   from what is written.
+///   compile. The names come from `allocateSurface`, which composes them with the calls the
+///   emitters use, so the check cannot drift from what is written.
 /// - **File and directory collisions.** A definition whose output file and a namespace whose
 ///   directory take one module name, in a selected language where a file and a directory of one
 ///   name are one module: `ns/File.1.0` beside `ns/file_1_0/` in Rust and Python.
