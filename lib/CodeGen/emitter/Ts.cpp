@@ -41,7 +41,7 @@
 
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
-#include "llvmdsdl/CodeGen/ImportNameScope.h"
+#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -2089,7 +2089,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             if (const auto* referenced = ctx.find(ref))
             {
                 const std::string exported = ctx.typeName(referenced->info);
-                const std::string local    = importNames.claim(ref, exported, /*deprecated=*/false);
+                const std::string local    = importNames.claim(definitionRef(ref), exported, /*deprecated=*/false);
                 if (local != exported)
                 {
                     aliases.emplace(EmitterContext::importAliasKey(referenced->info), local);

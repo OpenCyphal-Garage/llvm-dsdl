@@ -8,8 +8,10 @@
 #===----------------------------------------------------------------------===#
 
 add_library(llvmdsdlSupport
+  BodyNaming.cpp
   CliPath.cpp
   DefinitionNaming.cpp
+  ImportNameScope.cpp
   Diagnostics.cpp
   LanguageTraits.cpp
   NameCanonicalization.cpp

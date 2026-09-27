@@ -204,6 +204,16 @@ std::string renderLoweredAccessorName(const Language        language,
     return renderAccessorName(language, versionedTypeName, verb, member) + suffix.str();
 }
 
+std::string renderDefinitionKey(const DefinitionRef& ref)
+{
+    std::string key;
+    for (const std::string& component : ref.namespaceComponents)
+    {
+        key += component + ".";
+    }
+    return key + ref.shortName + "." + std::to_string(ref.majorVersion) + "." + std::to_string(ref.minorVersion);
+}
+
 std::string renderEnclosedConstantName(const llvm::StringRef typeName, const llvm::StringRef constant)
 {
     return typeName.str() + "_" + constant.str();

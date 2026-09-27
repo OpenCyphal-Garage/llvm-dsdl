@@ -29,6 +29,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringMap.h"
 
+#include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/SectionScopes.h"
@@ -73,6 +74,13 @@ enum class NameClass : std::uint8_t
     Module,
     Tag,
     Macro,
+};
+
+/// @brief Whether a declaration is part of the output's interface.
+enum class SurfaceVisibility : std::uint8_t
+{
+    Public,
+    Private,
 };
 
 /// @brief Whether a name comes from a definition or from the generator.
@@ -132,6 +140,8 @@ struct SurfaceDecl final
     SurfaceDeclKind kind{};
 
     NameClass nameClass{};
+
+    SurfaceVisibility visibility{};
 
     NameOrigin origin{};
 
@@ -210,24 +220,25 @@ struct SurfacePlan final
 /// @brief One definition, as naming needs it.
 struct DefinitionParts final
 {
-    std::vector<std::string> namespaceComponents;
-
-    std::string shortName;
-
-    std::uint32_t majorVersion{};
-
-    std::uint32_t minorVersion{};
+    DefinitionRef ref;
 
     std::optional<std::uint32_t> fixedPortId;
 
     /// @brief Whether the definition is a service, whose sections are its request and response.
     bool service{};
 
+    /// @brief Whether the definition is deprecated.
+    bool deprecated{};
+
     /// @brief A message's section, or a service's request.
     SectionParts request;
 
     /// @brief A service's response.
     std::optional<SectionParts> response;
+
+    /// @brief The lowered functions the definition owns, in the module's order; empty for the
+    ///        definition layer alone.
+    std::vector<BodyParts> bodies;
 };
 
 /// @brief What a run fixes about the names it generates.
@@ -246,6 +257,10 @@ struct SurfaceOptions final
 /// constant, array metadata constant and option tag. Within a scope the names are claimed in bands,
 /// and a later band never moves a name an earlier one claimed: the language's reservations, then
 /// the generator's own names, then the definitions' names in declaration order.
+///
+/// The body layer, where a definition's parts carry its lowered functions: each helper, and where
+/// the bodies are compiled apart from their entry points, each body's link name. A helper is
+/// claimed after the definition layer's names, in the band the language allocates helpers in.
 /// @param[in] row The language's row.
 /// @param[in] definitions The definitions, in the order the plan reports them.
 /// @param[in] options What the run fixes.

@@ -246,6 +246,22 @@ enum class NamespaceForm
     Package,
 };
 
+/// @brief How a lowered helper is named, and in what scope its name is allocated.
+enum class HelperNaming
+{
+    /// @brief Under the link name of its section and version, as the bodies are compiled apart.
+    LinkName,
+
+    /// @brief By the definition's full name and version, in the namespace the definitions share.
+    Binding,
+
+    /// @brief In one scope for the package, each carrying its definition's type name.
+    Package,
+
+    /// @brief In one scope for the definition's own module.
+    Module,
+};
+
 /// @brief How the output composes a language's declarations today.
 struct Composition final
 {
@@ -266,6 +282,9 @@ struct Composition final
 
     /// @brief How a DSDL namespace is opened.
     NamespaceForm namespaces{};
+
+    /// @brief How a lowered helper is named.
+    HelperNaming helpers{};
 
     /// @brief Whether a definition's file and a namespace's directory of one name are one module.
     ///

@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvmdsdl/CodeGen/ImportNameScope.h"
+#include "llvmdsdl/Support/ImportNameScope.h"
 
 #include <cstddef>
 #include <string>
@@ -16,8 +16,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 
-#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
-#include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -36,9 +34,9 @@ void ImportNameScope::reserve(const llvm::StringRef name)
     declared_.insert(name.str());
 }
 
-std::string ImportNameScope::claim(const SemanticTypeRef& ref, const std::string& exported, const bool deprecated)
+std::string ImportNameScope::claim(const DefinitionRef& ref, const std::string& exported, const bool deprecated)
 {
-    const std::string key = renderDefinitionDependencyKey(ref);
+    const std::string key = renderDefinitionKey(ref);
     if (const auto found = claims_.find(key); found != claims_.end())
     {
         return found->second;
@@ -73,9 +71,9 @@ std::string ImportNameScope::claim(const SemanticTypeRef& ref, const std::string
     return local;
 }
 
-std::string ImportNameScope::localName(const SemanticTypeRef& ref, const std::string& exported) const
+std::string ImportNameScope::localName(const DefinitionRef& ref, const std::string& exported) const
 {
-    const auto found = claims_.find(renderDefinitionDependencyKey(ref));
+    const auto found = claims_.find(renderDefinitionKey(ref));
     return (found == claims_.end()) ? exported : found->second;
 }
 

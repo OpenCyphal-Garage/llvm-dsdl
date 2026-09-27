@@ -42,7 +42,7 @@
 #include <utility>
 
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
-#include "llvmdsdl/CodeGen/ImportNameScope.h"
+#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -335,7 +335,7 @@ public:
         {
             return name;
         }
-        return imports_.member(ImportOrigin::Definition, module, name, names_.localName(ref, name));
+        return imports_.member(ImportOrigin::Definition, module, name, names_.localName(definitionRef(ref), name));
     }
 
     /// @brief The class of the type @p fullName names at @p major.@p minor.
@@ -2009,7 +2009,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     for (const SemanticTypeRef& ref : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
     {
-        (void) importNames.claim(ref, ctx.typeName(ref), /*deprecated=*/false);
+        (void) importNames.claim(definitionRef(ref), ctx.typeName(ref), /*deprecated=*/false);
     }
     ImportSet          imports;
     const PyFileNames  file(ctx, imports, importNames, ctx.modulePath(def.info));

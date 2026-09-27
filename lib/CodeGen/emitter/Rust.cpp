@@ -16,7 +16,7 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
-#include "llvmdsdl/CodeGen/ImportNameScope.h"
+#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
@@ -263,7 +263,7 @@ public:
     /// @brief The struct of the definition @p ref, by the name this module imports it under.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        std::string local = names_.localName(ref, ctx_.rustDeclaredTypeName(ref));
+        std::string local = names_.localName(definitionRef(ref), ctx_.rustDeclaredTypeName(ref));
         const auto* def   = ctx_.find(ref);
         if ((def != nullptr) && (definitionTypeKey(def->info) == ownKey_))
         {
@@ -2112,7 +2112,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
             ref.namespaceComponents = resolved->info.namespaceComponents;
             ref.shortName           = resolved->info.shortName;
         }
-        (void) importNames.claim(ref,
+        (void) importNames.claim(definitionRef(ref),
                                  ctx.rustDeclaredTypeName(ref),
                                  (resolved != nullptr) && resolved->request.deprecated);
     }

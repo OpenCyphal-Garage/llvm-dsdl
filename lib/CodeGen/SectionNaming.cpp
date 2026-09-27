@@ -20,6 +20,7 @@
 
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/SectionScopes.h"
@@ -48,18 +49,28 @@ SectionParts sectionParts(const SemanticSection& section)
     return parts;
 }
 
+DefinitionRef definitionRef(const SemanticTypeRef& ref)
+{
+    return DefinitionRef{.namespaceComponents = ref.namespaceComponents,
+                         .shortName           = ref.shortName,
+                         .majorVersion        = ref.majorVersion,
+                         .minorVersion        = ref.minorVersion};
+}
+
 DefinitionParts definitionParts(const SemanticDefinition& definition)
 {
-    return DefinitionParts{.namespaceComponents = definition.info.namespaceComponents,
-                           .shortName           = definition.info.shortName,
-                           .majorVersion        = definition.info.majorVersion,
-                           .minorVersion        = definition.info.minorVersion,
-                           .fixedPortId         = definition.info.fixedPortId,
-                           .service             = definition.isService,
-                           .request             = sectionParts(definition.request),
-                           .response            = definition.response
-                                                      ? std::optional<SectionParts>(sectionParts(*definition.response))
-                                                      : std::nullopt};
+    return DefinitionParts{.ref         = DefinitionRef{.namespaceComponents = definition.info.namespaceComponents,
+                                                        .shortName           = definition.info.shortName,
+                                                        .majorVersion        = definition.info.majorVersion,
+                                                        .minorVersion        = definition.info.minorVersion},
+                           .fixedPortId = definition.info.fixedPortId,
+                           .service     = definition.isService,
+                           .deprecated  = definition.request.deprecated,
+                           .request     = sectionParts(definition.request),
+                           .response    = definition.response
+                                              ? std::optional<SectionParts>(sectionParts(*definition.response))
+                                              : std::nullopt,
+                           .bodies      = {}};
 }
 
 NamingScope makeSectionFieldScope(const Language language, const SemanticSection& section)

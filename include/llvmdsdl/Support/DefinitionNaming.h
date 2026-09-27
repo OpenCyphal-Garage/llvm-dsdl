@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -56,6 +57,26 @@ enum class TypeNameVersioning : std::uint8_t
     /// @brief The version is part of the type name, so every version can be used at once.
     Versioned,
 };
+
+/// @brief A definition's identity, as naming reads it.
+struct DefinitionRef final
+{
+    /// @brief The namespace's components, outermost first.
+    std::vector<std::string> namespaceComponents;
+
+    /// @brief The unqualified DSDL type name.
+    std::string shortName;
+
+    std::uint32_t majorVersion{};
+
+    std::uint32_t minorVersion{};
+};
+
+/// @brief The key a definition is reported and referred to by: `ns.Name.1.0`, which is also its
+///        schema's symbol.
+/// @param[in] ref The definition.
+/// @return The key.
+[[nodiscard]] std::string renderDefinitionKey(const DefinitionRef& ref);
 
 /// @brief Returns how @p language composes a definition's type name.
 /// @param[in] language Naming language.
