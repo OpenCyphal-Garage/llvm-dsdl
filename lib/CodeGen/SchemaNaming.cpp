@@ -88,8 +88,11 @@ void stampCNames(mlir::dsdl::SchemaOp schema, const SemanticDefinition& def, con
             }
         }
         plan.setCTypeNameAttr(mlir::StringAttr::get(context, sectionTypeName));
-        plan.setCSerializeSymbolAttr(mlir::StringAttr::get(context, sectionTypeName + "__serialize_"));
-        plan.setCDeserializeSymbolAttr(mlir::StringAttr::get(context, sectionTypeName + "__deserialize_"));
+        plan.setCSerializeSymbolAttr(
+            mlir::StringAttr::get(context, renderEntryPointName(Language::C, sectionTypeName, EntryPoint::Serialize)));
+        plan.setCDeserializeSymbolAttr(
+            mlir::StringAttr::get(context,
+                                  renderEntryPointName(Language::C, sectionTypeName, EntryPoint::Deserialize)));
     });
 
     schema.walk([&](mlir::dsdl::IOOp io) {

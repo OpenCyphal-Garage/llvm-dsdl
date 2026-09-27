@@ -63,6 +63,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "_",
                 .arrayMetadataConstants         = true,
                 .deprecatedTypeDeclaredApart    = false,
+                .freeFunctions                  = {.entryPointJoin       = "__",
+                                                   .initializer          = true,
+                                                   .accessors            = AccessorNaming::Joined,
+                                                   .unionOptionFunctions = true},
             },
     },
     {
@@ -99,6 +103,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = true,
                 .deprecatedTypeDeclaredApart    = true,
+                .freeFunctions                  = {.entryPointJoin       = "_",
+                                                   .initializer          = false,
+                                                   .accessors            = AccessorNaming::None,
+                                                   .unionOptionFunctions = false},
             },
     },
     {
@@ -135,6 +143,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = false,
                 .deprecatedTypeDeclaredApart    = false,
+                .freeFunctions                  = {},
             },
     },
     {
@@ -171,6 +180,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = false,
                 .deprecatedTypeDeclaredApart    = false,
+                .freeFunctions                  = {.entryPointJoin       = "",
+                                                   .initializer          = false,
+                                                   .accessors            = AccessorNaming::Concatenated,
+                                                   .unionOptionFunctions = false},
             },
     },
     {
@@ -207,6 +220,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = false,
                 .deprecatedTypeDeclaredApart    = false,
+                .freeFunctions                  = {},
             },
     },
     {
@@ -243,6 +257,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = false,
                 .deprecatedTypeDeclaredApart    = false,
+                .freeFunctions                  = {},
             },
     },
 }};

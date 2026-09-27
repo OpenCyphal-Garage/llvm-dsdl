@@ -609,7 +609,7 @@ public:
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
                 entry.members["_tag_"] =
-                    Member{"_tag_",
+                    Member{unionTagMemberName(Language::Rust).str(),
                            tagSteps_.back().get(),
                            accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", "_tag_")),
                            accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", "_tag_"))};
@@ -1259,14 +1259,14 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return names(op.getObject()) + "._tag_ as u64";
+        return names(op.getObject()) + "." + unionTagMemberName(Language::Rust).str() + " as u64";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         const Plan& plan = planOf(op.getObject());
-        w.line(names(op.getObject()) + "._tag_ = " + names(op.getValue()) + " as " +
-               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) + ";");
+        w.line(names(op.getObject()) + "." + unionTagMemberName(Language::Rust).str() + " = " + names(op.getValue()) +
+               " as " + unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) + ";");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
@@ -1898,7 +1898,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         {
             // The tag storage must match the wire tag width (8 bits for <=256 options,
             // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-            w.line("pub _tag_: " + unsignedStorageType(unionTagBits(plan)) + ",");
+            w.line("pub " + unionTagMemberName(Language::Rust).str() + ": " + unsignedStorageType(unionTagBits(plan)) +
+                   ",");
         }
 
         if (fieldCount == 0 && !section.isUnion)
@@ -1975,7 +1976,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         if (section.isUnion)
         {
-            w.line("_tag_: " + std::to_string(init.unionTag) + ",");
+            w.line(unionTagMemberName(Language::Rust).str() + ": " + std::to_string(init.unionTag) + ",");
         }
         if (fieldCount == 0 && !section.isUnion)
         {

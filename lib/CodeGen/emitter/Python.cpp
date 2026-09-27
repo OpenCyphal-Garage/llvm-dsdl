@@ -554,7 +554,7 @@ void emitUnionSectionType(SourceWriter&           w,
     w.open("class " + typeName + ":");
     // A Python union holds one arm: the tag the body stores, and that arm at the default the body
     // gives it. The other arms are absent, which is what `None` says.
-    w.line("_tag: int = " + std::to_string(init.unionTag));
+    w.line(unionTagMemberName(Language::Python).str() + ": int = " + std::to_string(init.unionTag));
 
     const NamingScope fieldIdents = makePyFieldIdents(section);
     for (const auto& field : section.fields)
@@ -657,7 +657,7 @@ public:
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{"_tag",
+                entry.members["_tag_"] = Member{unionTagMemberName(Language::Python).str(),
                                                 tagSteps_.back().get(),
                                                 scope.declare(IdentifierRole::FunctionName, "get__tag_"),
                                                 scope.declare(IdentifierRole::FunctionName, "set__tag_")};
@@ -1197,7 +1197,7 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "int(" + names(op.getObject()) + "._tag)";
+        return "int(" + names(op.getObject()) + "." + unionTagMemberName(Language::Python).str() + ")";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
@@ -1208,7 +1208,7 @@ public:
         const Plan&       plan   = planOf(op.getObject());
         const std::string object = names(op.getObject());
         const std::string tag    = names(op.getValue());
-        line(w, object + "._tag = " + tag);
+        line(w, object + "." + unionTagMemberName(Language::Python).str() + " = " + tag);
         bool first = true;
         for (const std::string& name : plan.order)
         {

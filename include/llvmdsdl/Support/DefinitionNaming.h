@@ -145,6 +145,62 @@ enum class TypeNameVersioning : std::uint8_t
                                                 llvm::StringRef baseTypeName,
                                                 llvm::StringRef sectionName);
 
+/// @brief An operation a section's type is serialised or initialised through.
+enum class EntryPoint : std::uint8_t
+{
+    Serialize,
+    Deserialize,
+    Initialize,
+};
+
+/// @brief What a free function beside a section's type does with one of its members.
+enum class AccessorVerb : std::uint8_t
+{
+    /// @brief Reads a field.
+    Get,
+
+    /// @brief Writes a field.
+    Set,
+
+    /// @brief Tests whether a union holds an option.
+    Is,
+
+    /// @brief Makes an option the one a union holds.
+    Select,
+};
+
+/// @brief Names a free entry point of a section's type.
+///
+/// `List_Request__serialize_` in C and `List_Request_serialize_` in C++. The emitters, the symbols
+/// stamped on a plan and the shared-scope collision check each name one through this.
+/// @param[in] language Naming language, whose row has an entry point join.
+/// @param[in] typeName The section's type name, from @ref renderSectionTypeName.
+/// @param[in] entryPoint The operation.
+/// @return The function's name.
+[[nodiscard]] std::string renderEntryPointName(Language language, llvm::StringRef typeName, EntryPoint entryPoint);
+
+/// @brief Names a free function that reads, writes, tests or selects one member of a section's type.
+///
+/// `List_Request__get_path_` in C and `ListRequestGetPath` in Go.
+/// @param[in] language Naming language, whose row names its accessors as free functions.
+/// @param[in] typeName The section's type name, from @ref renderSectionTypeName.
+/// @param[in] verb What the function does.
+/// @param[in] member The member's name as the language declares it.
+/// @return The function's name.
+[[nodiscard]] std::string renderAccessorName(Language        language,
+                                             llvm::StringRef typeName,
+                                             AccessorVerb    verb,
+                                             llvm::StringRef member);
+
+/// @brief Names a constant declared beside a type, in the scope that encloses it.
+///
+/// C declares every constant of a type this way, `List_Request_EXTENT_BYTES_`, and C++ the
+/// constants of a service's own name, `List_FULL_NAME`.
+/// @param[in] typeName The type's name.
+/// @param[in] constant The constant's name, with any suffix the language puts on it.
+/// @return The constant's name.
+[[nodiscard]] std::string renderEnclosedConstantName(llvm::StringRef typeName, llvm::StringRef constant);
+
 /// @brief The prefix every helper symbol `build-dsdl-plan-bodies` synthesises begins with.
 ///
 /// The pass appends the helper's kind, the schema symbol and a role suffix to reach a whole symbol.

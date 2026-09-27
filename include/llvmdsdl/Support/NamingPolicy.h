@@ -267,6 +267,14 @@ std::string codegenToUpperSnakeCaseIdentifier(Language language, llvm::StringRef
 /// @return The tokens, valid for the process lifetime.
 [[nodiscard]] llvm::ArrayRef<llvm::StringRef> codegenGeneratedConstantTokens();
 
+/// @brief The name a language declares a union's tag under, as a member of the union's type.
+///
+/// The plan names the tag `_tag_`, which no DSDL field can be named, and each language spells that
+/// as a member of its own.
+/// @param[in] language Naming language.
+/// @return The member's name, valid for the process lifetime.
+[[nodiscard]] llvm::StringRef unionTagMemberName(Language language);
+
 /// @brief Projects @p name as Go names something it exports.
 /// @param[in] name The source name.
 /// @return The identifier.

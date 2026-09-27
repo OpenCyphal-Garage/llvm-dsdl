@@ -159,6 +159,40 @@ struct Classification final
     ReservedUnderscores reservedUnderscores{};
 };
 
+/// @brief How a free function that reads or writes one member of a type is named.
+enum class AccessorNaming
+{
+    /// @brief None is free: an accessor is a member of the type, or a method on it.
+    None,
+
+    /// @brief The type's name, the entry point join, the verb and the member, each ending in `_`:
+    ///        `List_Request__get_path_`.
+    Joined,
+
+    /// @brief The type's name, the verb in title case and the member: `ListRequestGetPath`.
+    Concatenated,
+};
+
+/// @brief How the free functions declared beside a section's type are named.
+///
+/// A free function is declared in the scope that holds the type, so its name carries the type's.
+struct FreeFunctionNames final
+{
+    /// @brief What joins the type's name to an entry point, as in `List_Request__serialize_`.
+    ///
+    /// Empty where the entry points are members of the type or methods on it.
+    llvm::StringRef entryPointJoin;
+
+    /// @brief Whether the type is initialised through a free entry point as well.
+    bool initializer{};
+
+    /// @brief How a field's getter and setter are named.
+    AccessorNaming accessors{};
+
+    /// @brief Whether a union's option has a free test and selector, as in `Value__is_integer_`.
+    bool unionOptionFunctions{};
+};
+
 /// @brief How one language composes a definition's type name.
 struct DefinitionNamePolicy final
 {
@@ -233,6 +267,9 @@ struct Composition final
 
     /// @brief Whether a deprecated definition's type is declared under a name of its own.
     bool deprecatedTypeDeclaredApart{};
+
+    /// @brief How the free functions beside a section's type are named.
+    FreeFunctionNames freeFunctions{};
 };
 
 /// @brief One language's row.

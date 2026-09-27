@@ -35,6 +35,7 @@
 namespace
 {
 
+using llvmdsdl::AccessorNaming;
 using llvmdsdl::ConstantsScope;
 using llvmdsdl::ErrorConvention;
 using llvmdsdl::InternalLinkage;
@@ -167,6 +168,20 @@ std::string render(const ReservedUnderscores value)
     return "?";
 }
 
+std::string render(const AccessorNaming value)
+{
+    switch (value)
+    {
+    case AccessorNaming::None:
+        return "none";
+    case AccessorNaming::Joined:
+        return "joined";
+    case AccessorNaming::Concatenated:
+        return "concatenated";
+    }
+    return "?";
+}
+
 std::string flag(const bool value)
 {
     return value ? "1" : "0";
@@ -194,7 +209,10 @@ std::string render(const LanguageTraits& row)
            " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
            " generated-suffix='" + d.generatedConstantSuffix.str() +
            "' array-metadata=" + flag(d.arrayMetadataConstants) +
-           " deprecated-apart=" + flag(d.deprecatedTypeDeclaredApart);
+           " deprecated-apart=" + flag(d.deprecatedTypeDeclaredApart) + " free-entry-join='" +
+           d.freeFunctions.entryPointJoin.str() + "' free-init=" + flag(d.freeFunctions.initializer) +
+           " free-accessors=" + render(d.freeFunctions.accessors) +
+           " free-union-options=" + flag(d.freeFunctions.unionOptionFunctions);
 }
 
 }  // namespace
@@ -222,39 +240,39 @@ bool runLanguageTraitsTests()
          "constants-share-fields=0 reserved=leading | nullable=111 views=0 images=1 | namespace-join='__' "
          "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 "
          "file-directory-module=0 namespace-type-scope=0 constants=enclosing generated-suffix='_' array-metadata=1 "
-         "deprecated-apart=0"},
+         "deprecated-apart=0 free-entry-join='__' free-init=1 free-accessors=joined free-union-options=1"},
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
          "constants-share-fields=1 reserved=leading-and-interior | nullable=110 views=1 images=1 | "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
          "namespace-shared=1 file-directory-module=0 namespace-type-scope=1 constants=type generated-suffix='' "
          "array-metadata=1 "
-         "deprecated-apart=1"},
+         "deprecated-apart=1 free-entry-join='_' free-init=0 free-accessors=none free-union-options=0"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "
          "constants-share-fields=0 reserved=none | nullable=000 views=1 images=1 | namespace-join='' "
          "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 "
          "file-directory-module=1 namespace-type-scope=0 constants=type generated-suffix='' array-metadata=0 "
-         "deprecated-apart=0"},
+         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
          "constants=package constants-share-fields=0 reserved=none | nullable=100 views=1 images=1 | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
          "namespace-shared=1 file-directory-module=0 namespace-type-scope=0 constants=package generated-suffix='' "
          "array-metadata=0 "
-         "deprecated-apart=0"},
+         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=concatenated free-union-options=0"},
         {Language::TypeScript,
          "ts: scopes=110 nested=1 methods=member internal=not-exported errors=exception constants=type "
          "constants-share-fields=0 reserved=none | nullable=100 views=1 images=0 | namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 "
          "file-directory-module=0 namespace-type-scope=0 constants=module generated-suffix='' array-metadata=0 "
-         "deprecated-apart=0"},
+         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
          "constants-share-fields=1 reserved=none | nullable=100 views=1 images=0 | namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 "
          "file-directory-module=1 namespace-type-scope=0 constants=module generated-suffix='' array-metadata=0 "
-         "deprecated-apart=0"},
+         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0"},
     };
     for (const auto& [language, expected] : kExpected)
     {
