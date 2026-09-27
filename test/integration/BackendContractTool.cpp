@@ -45,6 +45,8 @@
 #include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Support/BodyInterface.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/Vocabulary.h"
 #include "llvmdsdl/CodeGen/emitter/Cpp.h"
@@ -660,11 +662,15 @@ struct Session final
         return module;
     }
 
-    /// Runs the pipeline every backend's bodies are translations of, as dsdlc does before emission.
-    static bool lowerBodies(mlir::ModuleOp module)
+    /// Runs the pipeline every backend's bodies are translations of, as dsdlc does before emission:
+    /// under what the backend's generated interface hands a body, which its language's row states.
+    /// `obj` compiles C's bodies, and takes C's row.
+    bool lowerBodies(mlir::ModuleOp module) const
     {
+        const llvmdsdl::LanguageTraits* const traits =
+            llvmdsdl::languageTraitsNamed(args.backend == "obj" ? llvm::StringRef{"c"} : llvm::StringRef{args.backend});
         mlir::PassManager pm(module.getContext());
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm, false);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, false, (traits != nullptr) ? traits->body : llvmdsdl::BodyInterface{});
         return mlir::succeeded(pm.run(module));
     }
 

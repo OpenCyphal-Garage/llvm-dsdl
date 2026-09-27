@@ -12,6 +12,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -19,8 +20,6 @@ import (
 	dsdlruntime "prefixguard_generated/dsdlruntime"
 	prefixguard "prefixguard_generated/prefixguard"
 )
-
-const badArrayLength = -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH
 
 var passed, skipped, failed int
 
@@ -55,9 +54,9 @@ func withPrefix(prefix uint64, prefixBytes int, payloadBytes int) []byte {
 
 // expectRejected records the verdict for a decode that has to fail with a bad array length and
 // leave the array empty.
-func expectRejected(name string, prefix uint64, rc int8, lenAfter int) {
-	if rc != badArrayLength {
-		outcome("FAIL", name, prefix, fmt.Sprintf("rc = %d, want %d", rc, badArrayLength))
+func expectRejected(name string, prefix uint64, err error, lenAfter int) {
+	if !errors.Is(err, dsdlruntime.ErrBadArrayLength) {
+		outcome("FAIL", name, prefix, fmt.Sprintf("error = %v, want %v", err, dsdlruntime.ErrBadArrayLength))
 		return
 	}
 	if lenAfter != 0 {
@@ -69,17 +68,17 @@ func expectRejected(name string, prefix uint64, rc int8, lenAfter int) {
 
 func prefix32RejectsAboveCapacity(prefix uint32) {
 	var obj prefixguard.Prefix32@V1_0@
-	rc, _ := obj.Deserialize(withPrefix(uint64(prefix), 4, 0))
-	expectRejected("prefix32_rejects_above_capacity", uint64(prefix), rc, len(obj.Payload))
+	_, err := obj.Deserialize(withPrefix(uint64(prefix), 4, 0))
+	expectRejected("prefix32_rejects_above_capacity", uint64(prefix), err, len(obj.Payload))
 }
 
 func prefix32AcceptsCapacity() {
 	const capacity = 65536
 	var obj prefixguard.Prefix32@V1_0@
-	rc, consumed := obj.Deserialize(withPrefix(capacity, 4, capacity))
+	consumed, err := obj.Deserialize(withPrefix(capacity, 4, capacity))
 	switch {
-	case rc != dsdlruntime.DSDL_RUNTIME_SUCCESS:
-		outcome("FAIL", "prefix32_accepts_capacity", capacity, fmt.Sprintf("rc = %d, want success", rc))
+	case err != nil:
+		outcome("FAIL", "prefix32_accepts_capacity", capacity, fmt.Sprintf("error = %v, want success", err))
 	case consumed != prefixguard.Prefix32@V1_0@SerializationBufferSizeBytes:
 		outcome("FAIL", "prefix32_accepts_capacity", capacity, fmt.Sprintf("consumed %d bytes, want %d",
 			consumed, prefixguard.Prefix32@V1_0@SerializationBufferSizeBytes))
@@ -93,8 +92,8 @@ func prefix32AcceptsCapacity() {
 
 func prefix64RejectsAboveCapacity(prefix uint64) {
 	var obj prefixguard.Prefix64@V1_0@
-	rc, _ := obj.Deserialize(withPrefix(prefix, 8, 0))
-	expectRejected("prefix64_rejects_above_capacity", prefix, rc, len(obj.Flags))
+	_, err := obj.Deserialize(withPrefix(prefix, 8, 0))
+	expectRejected("prefix64_rejects_above_capacity", prefix, err, len(obj.Flags))
 }
 
 // prefix64RejectsBeyondIndex decodes a length within the type's capacity that int cannot hold,
@@ -106,19 +105,19 @@ func prefix64RejectsBeyondIndex(prefix uint64) {
 		return
 	}
 	var obj prefixguard.Prefix64@V1_0@
-	rc, _ := obj.Deserialize(withPrefix(prefix, 8, 0))
-	expectRejected("prefix64_rejects_beyond_index", prefix, rc, len(obj.Flags))
+	_, err := obj.Deserialize(withPrefix(prefix, 8, 0))
+	expectRejected("prefix64_rejects_beyond_index", prefix, err, len(obj.Flags))
 }
 
 func prefix64AcceptsSmallLength() {
 	var obj prefixguard.Prefix64@V1_0@
 	buffer := withPrefix(3, 8, 1)
 	buffer[8] = 0x05
-	rc, consumed := obj.Deserialize(buffer)
+	consumed, err := obj.Deserialize(buffer)
 	want := []bool{true, false, true}
 	switch {
-	case rc != dsdlruntime.DSDL_RUNTIME_SUCCESS:
-		outcome("FAIL", "prefix64_accepts_small_length", 3, fmt.Sprintf("rc = %d, want success", rc))
+	case err != nil:
+		outcome("FAIL", "prefix64_accepts_small_length", 3, fmt.Sprintf("error = %v, want success", err))
 	case consumed != len(buffer):
 		outcome("FAIL", "prefix64_accepts_small_length", 3, fmt.Sprintf("consumed %d bytes, want %d", consumed, len(buffer)))
 	case len(obj.Flags) != len(want) || obj.Flags[0] != want[0] || obj.Flags[1] != want[1] || obj.Flags[2] != want[2]:

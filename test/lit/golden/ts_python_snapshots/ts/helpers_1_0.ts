@@ -89,17 +89,18 @@ export function makeHelpers(): Helpers {
 
 
 export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
-  let inoutBufferSizeBytes = buffer.length;
+  const size = BigInt(buffer.length);
   let err: number;
+  let v0: number;
   if (obj == null) {
     err = -2;
+    v0 = 0;
   } else {
-    const size = BigInt(inoutBufferSizeBytes);
-    const v0 = size * 8n;
-    const err2 = capacityCheck(v0);
-    const v1 = err2 === 0;
+    const v1 = size * 8n;
+    const err2 = capacityCheck(v1);
+    const v2 = err2 === 0;
     let err3: number;
-    if (v1) {
+    if (v2) {
       const aValue = dsdlRuntime.toBigIntValue(obj.a);
       const value = scalarSigned0Ser(aValue);
       const err4 = dsdlRuntime.writeSigned(buffer, Number(0n), 13, value, false);
@@ -107,9 +108,9 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
     } else {
       err3 = err2;
     }
-    const v2 = err3 === 0;
+    const v3 = err3 === 0;
     let err5: number;
-    if (v2) {
+    if (v3) {
       const bValue = obj.b;
       const value2 = scalarFloat1Ser(bValue);
       const err6 = dsdlRuntime.writeFloat(buffer, Number(13n), 16, value2);
@@ -117,40 +118,40 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
     } else {
       err5 = err3;
     }
-    const v3 = err5 === 0;
+    const v4 = err5 === 0;
     let offset: bigint;
     let err7: number;
-    if (v3) {
+    if (v4) {
       const cCount = BigInt(obj.c.length);
       const err8 = validateArrayLength2(cCount);
-      const v4 = err8 === 0;
+      const v5 = err8 === 0;
       let offset2: bigint;
       let err9: number;
-      if (v4) {
+      if (v5) {
         const count = arrayLengthPrefix2Ser(cCount);
         const err10 = dsdlRuntime.writeUnsigned(buffer, Number(29n), 8, count, false);
-        const v5 = Number(cCount);
+        const v6 = Number(cCount);
         let err11: number;
         err11 = err10;
-        for (let i = 0; i < v5; i += 1) {
-          const v6 = BigInt(i);
-          const v7 = v6 * 8n;
-          const v8 = v7 + 37n;
-          const v9 = err11 === 0;
+        for (let i = 0; i < v6; i += 1) {
+          const v7 = BigInt(i);
+          const v8 = v7 * 8n;
+          const v9 = v8 + 37n;
+          const v10 = err11 === 0;
           let err12: number;
-          if (v9) {
-            const cValue = dsdlRuntime.toBigIntValue(obj.c[Number(v6)]);
+          if (v10) {
+            const cValue = dsdlRuntime.toBigIntValue(obj.c[Number(v7)]);
             const value3 = scalarUnsigned2Ser(cValue);
-            const err13 = dsdlRuntime.writeUnsigned(buffer, Number(v8), 8, value3, false);
+            const err13 = dsdlRuntime.writeUnsigned(buffer, Number(v9), 8, value3, false);
             err12 = err13;
           } else {
             err12 = err11;
           }
           err11 = err12;
         }
-        const v10 = cCount * 8n;
-        const v11 = v10 + 37n;
-        offset2 = v11;
+        const v11 = cCount * 8n;
+        const v12 = v11 + 37n;
+        offset2 = v12;
         err9 = err11;
       } else {
         offset2 = 29n;
@@ -162,38 +163,37 @@ export function serializeHelpersInto(obj: Helpers, buffer: Uint8Array): number {
       offset = 29n;
       err7 = err5;
     }
-    const v12 = err7 === 0;
+    const v13 = err7 === 0;
     let offset3: bigint;
     let err14: number;
-    if (v12) {
+    if (v13) {
       const err15 = dsdlRuntime.writeUnsigned(buffer, Number(offset), 3, 0n, false);
-      const v13 = offset + 3n;
-      offset3 = v13;
+      const v14 = offset + 3n;
+      offset3 = v14;
       err14 = err15;
     } else {
       offset3 = offset;
       err14 = err7;
     }
-    const v14 = err14 === 0;
-    if (v14) {
-      const v15 = offset3 / 8n;
-      inoutBufferSizeBytes = Number(v15);
-    }
+    const v15 = offset3 / 8n;
+    const v16 = Number(v15);
     err = err14;
+    v0 = v16;
   }
   if (err === 0) {
-    return inoutBufferSizeBytes;
+    return v0;
   }
   return err;
 }
 
 export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number {
-  let inoutBufferSizeBytes = buffer.length;
+  const size = BigInt(buffer.length);
   let err: number;
+  let v0: number;
   if (obj == null) {
     err = -2;
+    v0 = 0;
   } else {
-    const size = BigInt(inoutBufferSizeBytes);
     const value = dsdlRuntime.readSignedBigInt(buffer, Number(0n), 13);
     const value2 = scalarSigned0Deser(value);
     obj.a = Number(value2);
@@ -203,40 +203,38 @@ export function deserializeHelpersFrom(obj: Helpers, buffer: Uint8Array): number
     const value5 = dsdlRuntime.readUnsignedBigInt(buffer, Number(29n), 8);
     const count = arrayLengthPrefix2Deser(value5);
     const err2 = validateArrayLength2(count);
-    const v0 = err2 === 0;
-    let v1: bigint;
-    if (v0) {
+    const v1 = err2 === 0;
+    let v2: bigint;
+    if (v1) {
       obj.c = new Array<number>(Number(count));
-      const v2 = Number(count);
-      for (let i = 0; i < v2; i += 1) {
-        const v3 = BigInt(i);
-        const v4 = v3 * 8n;
-        const v5 = v4 + 37n;
-        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v5), 8);
+      const v3 = Number(count);
+      for (let i = 0; i < v3; i += 1) {
+        const v4 = BigInt(i);
+        const v5 = v4 * 8n;
+        const v6 = v5 + 37n;
+        const value6 = dsdlRuntime.readUnsignedBigInt(buffer, Number(v6), 8);
         const value7 = scalarUnsigned2Deser(value6);
-        (obj.c ??= [])[Number(v3)] = Number(value7);
+        (obj.c ??= [])[Number(v4)] = Number(value7);
       }
-      const v6 = count * 8n;
-      const v7 = v6 + 37n;
-      v1 = v7;
+      const v7 = count * 8n;
+      const v8 = v7 + 37n;
+      v2 = v8;
     } else {
-      v1 = 37n;
+      v2 = 37n;
     }
-    const v8 = v1 + 7n;
-    const v9 = v8 / 8n;
-    const v10 = v9 * 8n;
-    const v11 = size * 8n;
-    const v12 = v10 < v11;
-    const v13 = v12 ? v10 : v11;
-    const v14 = err2 === 0;
-    if (v14) {
-      const v15 = v13 / 8n;
-      inoutBufferSizeBytes = Number(v15);
-    }
+    const v9 = v2 + 7n;
+    const v10 = v9 / 8n;
+    const v11 = v10 * 8n;
+    const v12 = size * 8n;
+    const v13 = v11 < v12;
+    const v14 = v13 ? v11 : v12;
+    const v15 = v14 / 8n;
+    const v16 = Number(v15);
     err = err2;
+    v0 = v16;
   }
   if (err === 0) {
-    return inoutBufferSizeBytes;
+    return v0;
   }
   return err;
 }

@@ -17,6 +17,7 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 
 #include <cstdint>
+#include <set>
 #include <string>
 
 #include "llvmdsdl/Semantics/Model.h"
@@ -30,6 +31,35 @@ namespace
 std::string typeKey(const std::string& name, const std::uint32_t major, const std::uint32_t minor)
 {
     return name + ":" + std::to_string(major) + ":" + std::to_string(minor);
+}
+
+/// @brief Whether @p section holds a view; @p visiting ends a walk DSDL forbids from reaching itself.
+bool holdsView(const DefinitionIndex& index, const SemanticSection& section, std::set<const SemanticSection*>& visiting)
+{
+    if (!visiting.insert(&section).second)
+    {
+        return false;
+    }
+    bool holds = false;
+    for (const auto& field : section.fields)
+    {
+        if (field.heldAsView)
+        {
+            holds = true;
+            break;
+        }
+        if (field.resolvedType.compositeType)
+        {
+            const SemanticDefinition* const nested = index.find(*field.resolvedType.compositeType);
+            if ((nested != nullptr) && holdsView(index, nested->request, visiting))
+            {
+                holds = true;
+                break;
+            }
+        }
+    }
+    visiting.erase(&section);
+    return holds;
 }
 
 }  // namespace
@@ -50,6 +80,12 @@ const SemanticDefinition* DefinitionIndex::find(const SemanticTypeRef& ref) cons
         return nullptr;
     }
     return it->second;
+}
+
+bool DefinitionIndex::holdsView(const SemanticSection& section) const
+{
+    std::set<const SemanticSection*> visiting;
+    return llvmdsdl::holdsView(*this, section, visiting);
 }
 
 }  // namespace llvmdsdl

@@ -175,7 +175,8 @@ foreach(_pass versioned unversioned)
 
   # -----------------------------------------------------------------------------------------------
   # Python -- byte-compiled, then every module imported, which is where a name shadowing another
-  # module's shows up.
+  # module's shows up, and every module's top-level names read, which is where one binding
+  # replacing another does.
 
   llvmdsdl_run_or_fail("dsdlc Python generation (${_pass})"
     "${DSDLC}" --target-language python ${_scheme} ${_root_args} --outdir "${_out}/py")
@@ -193,6 +194,32 @@ for module in pkgutil.walk_packages([sys.argv[1] + '/dsdl_gen'], 'dsdl_gen.'):
         bad.append(f'{module.name}: {type(exc).__name__}: {exc}')
 if bad:
     raise SystemExit('generated Python failed to import:\\n' + '\\n'.join(bad))
+"
+    "${_out}/py")
+  # A module binds each of its top-level names once. A second binding -- an import rebound by
+  # another import, or by a class the module declares -- replaces the first without a word, and
+  # every use after it reaches the second.
+  llvmdsdl_run_or_fail("generated Python binding (${_pass})"
+    "${PYTHON_EXECUTABLE}" -c
+"import ast, pathlib, sys
+bad = []
+for path in sorted(pathlib.Path(sys.argv[1]).rglob('*.py')):
+    seen = set()
+    for node in ast.parse(path.read_text()).body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.asname or alias.name.split('.')[0] for alias in node.names]
+        elif isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+            names = [node.name]
+        elif isinstance(node, ast.Assign):
+            names = [target.id for target in node.targets if isinstance(target, ast.Name)]
+        else:
+            continue
+        for name in names:
+            if name in seen:
+                bad.append(f'{path}: {name}')
+            seen.add(name)
+if bad:
+    raise SystemExit('generated Python binds a name twice:\\n' + '\\n'.join(bad))
 "
     "${_out}/py")
 endforeach()

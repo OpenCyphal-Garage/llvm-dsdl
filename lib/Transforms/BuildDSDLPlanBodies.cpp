@@ -1305,13 +1305,23 @@ PlanCursor buildBitpackedArray(mlir::OpBuilder& b,
                                                                  constantI64(b, loc, 0),
                                                                  b.getStringAttr("bool"),
                                                                  b.getI64IntegerAttr(8));
+    // Whether the length varies is stated on the run, since a target may store the two kinds of
+    // array differently.
+    const bool variableLength = isVariableArrayKind(step.arrayKind);
     if (writing)
     {
-        mlir::dsdl::BitWriteOp::create(b, loc, buffer, cursor.bitOffset, count, packed, constantI64(b, loc, 0));
+        mlir::dsdl::BitWriteOp::create(b,
+                                       loc,
+                                       buffer,
+                                       cursor.bitOffset,
+                                       count,
+                                       packed,
+                                       constantI64(b, loc, 0),
+                                       variableLength);
     }
     else
     {
-        mlir::dsdl::BitReadOp::create(b, loc, packed, buffer, capacityBytes, cursor.bitOffset, count);
+        mlir::dsdl::BitReadOp::create(b, loc, packed, buffer, capacityBytes, cursor.bitOffset, count, variableLength);
     }
     if (const auto elements = constantCount(count))
     {

@@ -16,7 +16,6 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/IR/DSDLOps.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Error.h"
@@ -28,7 +27,6 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <map>
 #include <set>
@@ -38,8 +36,6 @@
 #include <system_error>
 #include <vector>
 
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 namespace llvmdsdl
@@ -180,14 +176,6 @@ std::string renderMakeRuleFromPreparedDeps(llvm::StringRef target, const std::ve
 }
 
 }  // namespace
-
-bool plansReadOfSize(const mlir::Value pointer)
-{
-    return llvm::any_of(pointer.getUsers(), [](mlir::Operation* user) {
-        auto load = mlir::dyn_cast<mlir::dsdl::LoadScalarOp>(user);
-        return load && !load.getResult().use_empty();
-    });
-}
 
 std::string accessorSource(const llvm::StringRef kind, const llvm::StringRef field)
 {
@@ -645,31 +633,6 @@ llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path& 
     const std::string           depfileContent =
         renderMakeRuleFromPreparedDeps(absoluteNormalizedPath(outputPath), normalizedSortedDedupDeps);
     return writeGeneratedFile(depfilePath, depfileContent, policy);
-}
-
-std::vector<std::string> includesFor(const llvm::StringRef text, const std::vector<IncludeProvider>& providers)
-{
-    std::vector<std::string> headers;
-    for (const IncludeProvider& provider : providers)
-    {
-        const bool used =
-            std::ranges::any_of(provider.tokens, [&](const llvm::StringRef token) { return text.contains(token); });
-        if (used)
-        {
-            headers.push_back(provider.header.str());
-        }
-    }
-    return headers;
-}
-
-std::string includeLinesFor(const llvm::StringRef text, const std::vector<IncludeProvider>& providers)
-{
-    std::string lines;
-    for (const std::string& header : includesFor(text, providers))
-    {
-        lines += "#include " + header + "\n";
-    }
-    return lines;
 }
 
 }  // namespace llvmdsdl
