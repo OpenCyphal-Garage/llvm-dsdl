@@ -70,7 +70,11 @@ public:
         : row_(row)
         , options_(options)
     {
-        plan_.scopes.push_back(SurfaceScope{.kind = SurfaceScopeKind::Root, .name = options.packageName});
+        plan_.scopes.push_back(SurfaceScope{.kind   = SurfaceScopeKind::Root,
+                                            .name   = options.packageName,
+                                            .parent = std::nullopt,
+                                            .of     = std::nullopt,
+                                            .items  = {}});
     }
 
     void allocate(const DefinitionParts& definition)
@@ -134,7 +138,8 @@ private:
                           const std::optional<SurfaceEntity>& of)
     {
         const std::size_t index = plan_.scopes.size();
-        plan_.scopes.push_back(SurfaceScope{.kind = kind, .name = std::move(name), .parent = parent, .of = of});
+        plan_.scopes.push_back(
+            SurfaceScope{.kind = kind, .name = std::move(name), .parent = parent, .of = of, .items = {}});
         plan_.scopes[parent].items.push_back(SurfaceItem{.scope = true, .index = index});
         return index;
     }

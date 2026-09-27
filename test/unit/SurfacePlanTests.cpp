@@ -214,20 +214,20 @@ bool runSurfacePlanTests()
 
     // A service's sections are each a type, which the index reports under the section's name.
     {
-        DefinitionParts service                = message("List", SectionParts{.fields = {field("index")}});
-        service.service                        = true;
-        service.response                       = SectionParts{.fields = {field("path")}};
-        const SurfacePlan plan                 = allocate(Language::Rust, {service});
-        ok                                     = expect(outline(plan),
-                                                        "root pkg\n"
-                                                        "  module ns\n"
-                                                        "    module list_1_0\n"
-                                                        "      type Request\n"
-                                                        "        index : value\n"
-                                                        "      type Response\n"
-                                                        "        path : value\n",
-                                                        "a service") &&
-                                                 ok;
+        DefinitionParts service = message("List", SectionParts{.fields = {field("index")}, .constants = {}});
+        service.service         = true;
+        service.response        = SectionParts{.fields = {field("path")}, .constants = {}};
+        const SurfacePlan plan  = allocate(Language::Rust, {service});
+        ok                      = expect(outline(plan),
+                                         "root pkg\n"
+                                         "  module ns\n"
+                                         "    module list_1_0\n"
+                                         "      type Request\n"
+                                         "        index : value\n"
+                                         "      type Response\n"
+                                         "        path : value\n",
+                                         "a service") &&
+                                  ok;
         const llvmdsdl::DefinitionNames& names = plan.definitions.front();
         ok                                     = expect(names.key, "ns.List.1.0", "the definition's key") && ok;
         ok                     = expect(names.sections.back().section + " " + names.sections.back().typeName,
@@ -245,7 +245,7 @@ bool runSurfacePlanTests()
     // Band 1, the language's reservations: a constant that reaches a name the generator writes at
     // module scope moves, and so does one the projection's table claims.
     {
-        const SectionParts claimed{.constants = {"FULL_NAME"}};
+        const SectionParts claimed{.fields = {}, .constants = {"FULL_NAME"}};
         ok = expect(constantName(allocate(Language::TypeScript, {message("DSDL", claimed)}), "FULL_NAME"),
                     "DSDL_FULL_NAME_2",
                     "a TypeScript constant that reaches the module's metadata") &&
@@ -261,7 +261,8 @@ bool runSurfacePlanTests()
     }
 
     // Band 2, the generator's own names: Go declares a type's metadata constants before any DSDL one.
-    ok = expect(constantName(allocate(Language::Go, {message("Claimed", SectionParts{.constants = {"FULL_NAME"}})}),
+    ok = expect(constantName(allocate(Language::Go,
+                                      {message("Claimed", SectionParts{.fields = {}, .constants = {"FULL_NAME"}})}),
                              "FULL_NAME"),
                 "ClaimedFullName2",
                 "a Go constant that meets a generated one") &&
