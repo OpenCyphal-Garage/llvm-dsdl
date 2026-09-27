@@ -33,7 +33,6 @@
 #include <algorithm>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <mlir/Support/LLVM.h>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -44,10 +43,8 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-#include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl
@@ -58,59 +55,6 @@ namespace
 std::string fieldKind(const SemanticField& f)
 {
     return f.isPadding ? "padding" : "field";
-}
-
-std::string cTypeNameFromInfo(const DiscoveredDefinition& info, const TypeNameVersioning versioning)
-{
-    return renderDefinitionTypeName(Language::C,
-                                    info.namespaceComponents,
-                                    info.shortName,
-                                    info.majorVersion,
-                                    info.minorVersion,
-                                    versioning);
-}
-
-std::string cTypeNameFromRef(const SemanticTypeRef& ref)
-{
-    std::string out;
-    for (std::size_t i = 0; i < ref.namespaceComponents.size(); ++i)
-    {
-        if (i > 0)
-        {
-            out += "__";
-        }
-        out += codegenProjectIdentifier(Language::C, IdentifierRole::NamespaceName, ref.namespaceComponents[i]);
-    }
-    if (!out.empty())
-    {
-        out += "__";
-    }
-    out += codegenProjectIdentifier(Language::C, IdentifierRole::TypeName, ref.shortName);
-    return out;
-}
-
-std::string headerFileName(const DiscoveredDefinition& info)
-{
-    return renderDefinitionFileStem(Language::C, info.shortName, info.majorVersion, info.minorVersion) + ".h";
-}
-
-std::string relativeHeaderPath(const DiscoveredDefinition& info)
-{
-    std::string path;
-    for (const auto& ns : info.namespaceComponents)
-    {
-        if (!path.empty())
-        {
-            path += "/";
-        }
-        path += ns;
-    }
-    if (!path.empty())
-    {
-        path += "/";
-    }
-    path += headerFileName(info);
-    return path;
 }
 
 llvm::StringRef scalarCategoryName(SemanticScalarCategory category)
@@ -192,12 +136,8 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
 
         mlir::OperationState state(loc, "dsdl.schema");
         state.addAttribute("sym_name",
-                           builder.getStringAttr(renderDefinitionSymbolBase(def.info.fullName,
-                                                                            def.info.majorVersion,
-                                                                            def.info.minorVersion)));
-        state.addAttribute("c_type_name",
-                           builder.getStringAttr(cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned)));
-        state.addAttribute("header_path", builder.getStringAttr(relativeHeaderPath(def.info)));
+                           builder.getStringAttr(renderSchemaSymbol(
+                               SchemaSymbol{def.info.fullName, def.info.majorVersion, def.info.minorVersion})));
         state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));
         state.addAttribute("major", builder.getI32IntegerAttr(static_cast<std::int32_t>(def.info.majorVersion)));
         state.addAttribute("minor", builder.getI32IntegerAttr(static_cast<std::int32_t>(def.info.minorVersion)));
@@ -235,31 +175,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
         builder.setInsertionPointToStart(&schemaBody.front());
 
         auto emitSection = [&](const SemanticSection& section, llvm::StringRef sectionName) {
-            const std::string baseCTypeName    = cTypeNameFromInfo(def.info, TypeNameVersioning::Unversioned);
-            std::string       sectionCTypeName = baseCTypeName;
-            if (def.isService)
-            {
-                if (sectionName == "request")
-                {
-                    sectionCTypeName = renderSectionTypeName(Language::C, sectionCTypeName, "request");
-                }
-                else if (sectionName == "response")
-                {
-                    sectionCTypeName = renderSectionTypeName(Language::C, sectionCTypeName, "response");
-                }
-            }
-
             for (const auto& field : section.fields)
             {
                 mlir::OperationState fieldState(loc, "dsdl.field");
                 fieldState.addAttribute("name", builder.getStringAttr(field.name));
-                // The unscoped default. The C backend stamps the scoped name over this before it
-                // spells the bodies, because only it knows what the struct declaration spells; what
-                // stays here is what keeps hand-driven `dsdl-opt` runs able to name a member at all.
-                fieldState.addAttribute("c_name",
-                                        builder.getStringAttr(codegenProjectIdentifier(Language::C,
-                                                                                       IdentifierRole::FieldName,
-                                                                                       field.name)));
                 fieldState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (field.isPadding)
                 {
@@ -306,13 +225,6 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             {
                 planState.addAttribute("section", builder.getStringAttr(sectionName));
             }
-            planState.addAttribute("c_type_name", builder.getStringAttr(sectionCTypeName));
-            planState.addAttribute("c_serialize_symbol",
-                                   builder.getStringAttr(
-                                       renderEntryPointName(Language::C, sectionCTypeName, EntryPoint::Serialize)));
-            planState.addAttribute("c_deserialize_symbol",
-                                   builder.getStringAttr(
-                                       renderEntryPointName(Language::C, sectionCTypeName, EntryPoint::Deserialize)));
             planState.addAttribute("min_bits", builder.getI64IntegerAttr(section.minBitLength));
             planState.addAttribute("max_bits", builder.getI64IntegerAttr(section.maxBitLength));
             if (section.sealed)
@@ -383,10 +295,6 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 mlir::OperationState ioState(loc, "dsdl.io");
                 ioState.addAttribute("kind", builder.getStringAttr(fieldKind(field)));
                 ioState.addAttribute("name", builder.getStringAttr(field.name));
-                // The unscoped default, as on `dsdl.field` above.
-                ioState.addAttribute("c_name",
-                                     builder.getStringAttr(
-                                         codegenProjectIdentifier(Language::C, IdentifierRole::FieldName, field.name)));
                 ioState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
                 if (const auto doc = docAttrText(field.doc))
                 {
@@ -415,7 +323,6 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.majorVersion)));
                     ioState.addAttribute("composite_minor",
                                          builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.minorVersion)));
-                    ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref)));
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",
                                          builder.getI64IntegerAttr(field.resolvedType.compositeExtentBits));

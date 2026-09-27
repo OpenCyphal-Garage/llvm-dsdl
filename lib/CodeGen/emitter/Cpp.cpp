@@ -52,6 +52,7 @@
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -96,16 +97,6 @@ namespace
 std::string headerFileName(const DiscoveredDefinition& info)
 {
     return renderDefinitionFileStem(Language::Cpp, info.shortName, info.majorVersion, info.minorVersion) + ".hpp";
-}
-
-std::string headerGuard(const DiscoveredDefinition& info)
-{
-    return renderIncludeGuard(Language::Cpp,
-                              "LLVMDSDL_CPP_",
-                              info.fullName,
-                              info.majorVersion,
-                              info.minorVersion,
-                              "_HPP");
 }
 
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
@@ -673,7 +664,12 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return renderHelperBindingIdentifier(Language::Cpp, callee);
+        const auto helper = parsePlanSymbol(callee);
+        if (!helper || (helper->function != PlanFunction::Helper))
+        {
+            llvm::report_fatal_error(llvm::Twine("C++ spelling: a call to a function that is no helper: ") + callee);
+        }
+        return renderHelperBindingIdentifier(Language::Cpp, *helper);
     }
 
     // Statements.
@@ -2365,29 +2361,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     std::ostringstream out;
     std::ostringstream body;
     SourceWriter       w            = makeCppWriter(body);
-    const auto         guard        = headerGuard(def.info);
     const auto         baseTypeName = ctx.cppTypeName(def);
 
     out << generatedCommentLine("C++ backend") << "\n";
     out << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << "\n\n";
-    out << "#ifndef " << guard << "\n";
-    out << "#define " << guard << "\n\n";
-
-    // Under the unversioned scheme this type's name carries no version, so two versions of it are
-    // one identifier. Generating both is fine -- they are separate headers -- but including both is
-    // not, and saying so here beats a cascade of redefinitions from inside generated code.
-    if (ctx.typeNameVersioning() == TypeNameVersioning::Unversioned)
-    {
-        const auto [anyVersion, thisVersion] =
-            renderVersionSentinelMacros(Language::Cpp, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
-        out << "#if defined(" << anyVersion << ") && !defined(" << thisVersion << ")\n";
-        out << "#  error \"" << def.info.fullName
-            << ": two versions of one type in one translation unit, but generated type names are "
-               "unversioned. Regenerate with --versioned-type-names to use both.\"\n";
-        out << "#endif\n";
-        out << "#define " << anyVersion << "\n";
-        out << "#define " << thisVersion << "\n\n";
-    }
+    out << "#pragma once\n\n";
 
     emitNamespaceOpen(w, def.info.namespaceComponents);
 
@@ -2531,7 +2509,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     const std::string declarations = body.str();
     out << llvmdsdl::emitter::c::renderIncludeLines(includes);
     out << "\n" << declarations;
-    out << "\n#endif /* " << guard << " */\n";
+
     return out.str();
 }
 

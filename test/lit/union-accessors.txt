@@ -12,21 +12,21 @@
 # RUN: FileCheck %s --check-prefix=NONE < %t/bodies.mlir
 
 # The tag: one read of its width at offset nought, through the plan's own tag helper.
-# TAG-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get__tag__ir_(
+# TAG-LABEL: func.func @fixtures_union.vendor.Choice.1.0.get._tag_(
 # TAG-SAME:  llvmdsdl.member = "_tag_", llvmdsdl.plan_body = "get"
 # TAG:       %[[OFF:.*]] = arith.constant 0 : i64
 # TAG:       dsdl.read_bits %{{.*}}[%[[OFF]]], size %{{.*}} {width = 8 : i64}
-# TAG:       call @llvmdsdl_plan_union_tag__fixtures_union_vendor_Choice_1_0__deser(
-# TAG-LABEL: func.func @fixtures_union_vendor_Choice_1_0__set__tag__ir_(
+# TAG:       call @fixtures_union.vendor.Choice.1.0.plan.union_tag.deser(
+# TAG-LABEL: func.func @fixtures_union.vendor.Choice.1.0.set._tag_(
 # TAG-SAME:  llvmdsdl.member = "_tag_", llvmdsdl.plan_body = "set"
 
 # Every option at the offset after the tag: a scalar, an element, and a composite's bytes.
-# OPTION-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get_real_ir_(
+# OPTION-LABEL: func.func @fixtures_union.vendor.Choice.1.0.get.real(
 # OPTION:       %[[OFF:.*]] = arith.constant 8 : i64
 # OPTION:       dsdl.read_bits %{{.*}}[%[[OFF]]], size %{{.*}} {width = 32 : i64}
-# OPTION-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get_bytes_ir_(
+# OPTION-LABEL: func.func @fixtures_union.vendor.Choice.1.0.get.bytes(
 # OPTION-SAME:  %{{.*}}: i64, %{{.*}}: i64) -> i64
-# OPTION-LABEL: func.func @fixtures_union_vendor_Choice_1_0__get_quad_ir_(
+# OPTION-LABEL: func.func @fixtures_union.vendor.Choice.1.0.get.quad(
 # OPTION-SAME:  -> !dsdl.ptr<const !dsdl.byte>
 # OPTION:       %[[AT:.*]] = arith.constant 1 : i64
 # OPTION:       arith.cmpi uge, %{{.*}}, %[[AT]]

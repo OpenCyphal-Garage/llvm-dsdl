@@ -69,7 +69,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .freeFunctions                  = {.entryPointJoin       = "__",
                                                    .initializer          = true,
                                                    .accessors            = AccessorNaming::Joined,
-                                                   .unionOptionFunctions = true},
+                                                   .unionOptionFunctions = true,
+                                                   .loweredBodySuffix    = "ir_"},
             },
     },
     {
@@ -111,7 +112,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .freeFunctions                  = {.entryPointJoin       = "_",
                                                    .initializer          = false,
                                                    .accessors            = AccessorNaming::None,
-                                                   .unionOptionFunctions = false},
+                                                   .unionOptionFunctions = false,
+                                                   .loweredBodySuffix    = ""},
             },
     },
     {
@@ -192,7 +194,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .freeFunctions                  = {.entryPointJoin       = "",
                                                    .initializer          = false,
                                                    .accessors            = AccessorNaming::Concatenated,
-                                                   .unionOptionFunctions = false},
+                                                   .unionOptionFunctions = false,
+                                                   .loweredBodySuffix    = ""},
             },
     },
     {

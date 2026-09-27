@@ -190,8 +190,8 @@ claimed-name escapes are many-to-one where case folding is not.
 holds the role table and the pipeline; `NamingScope` in the same header holds the per-region
 uniqueness.
 [`include/llvmdsdl/Support/DefinitionNaming.h`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/include/llvmdsdl/Support/DefinitionNaming.h)
-composes the names built from a definition's identity — its type name, file stem, include guard and
-linkage symbol. Discovery rejects the corpora above.
+composes the names built from a definition's identity — its type name, file stem, entry points and
+accessors. Discovery rejects the corpora above.
 
 The design record, including why each policy is what it is, is
 [Identifier naming](../../development/identifier-stropping.md) under Development.

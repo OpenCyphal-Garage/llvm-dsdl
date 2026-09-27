@@ -14,7 +14,7 @@
 #include "llvmdsdl/Transforms/PlanSteps.h"
 
 #include "llvmdsdl/IR/DSDLOps.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
@@ -141,9 +141,9 @@ mlir::dsdl::SchemaOp nestedSchemaOf(mlir::dsdl::IOOp io)
         return {};
     }
     return module.lookupSymbol<mlir::dsdl::SchemaOp>(
-        renderDefinitionSymbolBase(*io.getCompositeFullName(),
-                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
+        renderSchemaSymbol(SchemaSymbol{io.getCompositeFullName()->str(),
+                                        static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                        static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))}));
 }
 
 std::vector<mlir::dsdl::SchemaOp> schemasReachedBy(mlir::dsdl::SchemaOp schema)

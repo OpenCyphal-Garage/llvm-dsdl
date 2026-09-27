@@ -72,7 +72,6 @@ add_library(llvmdsdlCodeGen
   InitializerRender.cpp
   NamingManifest.cpp
   SchemaLookup.cpp
-  SchemaNaming.cpp
   SectionNaming.cpp
   StorageTypeTokens.cpp
   SourceWriter.cpp

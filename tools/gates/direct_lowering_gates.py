@@ -104,6 +104,10 @@ def object_files(root: Path) -> List[Path]:
 # Gate 1 -- the IR carries the serialisation, not a string holding C that expresses it.
 # ---------------------------------------------------------------------------------------
 
+# A body is named for its definition's identity and what it does: `@ns.Msg.1.0.serialize`.
+LOWERED_BODY = re.compile(r"@[A-Za-z_][\w.]*\.\d+\.\d+(?:\.(?:request|response))?\.(?:serialize|deserialize)\b")
+
+
 def gate_ir_has_no_emitc(args: argparse.Namespace, workdir: Path) -> str:
     schema = run([args.dsdlc, "--target-language", "mlir", str(args.fixtures)])
     if schema.code != 0:
@@ -123,7 +127,7 @@ def gate_ir_has_no_emitc(args: argparse.Namespace, workdir: Path) -> str:
 
     # A body the builder never produced is the object lane not existing, not the conversion
     # being wrong. Told apart here so that the gate reports the one that is true.
-    if "_ir_" not in lowered.out:
+    if not LOWERED_BODY.search(lowered.out):
         raise NotImplementedYet(
             "the pipeline produced no plan bodies to convert; the object lane did not "
             "supply the member names a body is built from")

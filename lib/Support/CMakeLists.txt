@@ -14,6 +14,7 @@ add_library(llvmdsdlSupport
   LanguageTraits.cpp
   NameCanonicalization.cpp
   NamingPolicy.cpp
+  PlanSymbol.cpp
   ScalarStorage.cpp
   Rational.cpp
   ReservedIdentifiers.cpp

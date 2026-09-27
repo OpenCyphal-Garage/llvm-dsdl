@@ -10,18 +10,18 @@
 # RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s
 
-# CHECK-LABEL: func.func @fixtures_vendor_UnionTag_1_0__serialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.UnionTag.1.0.serialize
 # CHECK: dsdl.union_tag %{{.*}} : <const !dsdl.object<"fixtures.vendor.UnionTag.1.0">>
-# CHECK: %[[SER_TAG:.*]] = func.call @llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__ser
-# CHECK: func.call @llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(%[[SER_TAG]])
+# CHECK: %[[SER_TAG:.*]] = func.call @fixtures.vendor.UnionTag.1.0.plan.union_tag.ser
+# CHECK: func.call @fixtures.vendor.UnionTag.1.0.plan.validate_union_tag(%[[SER_TAG]])
 # CHECK: dsdl.write_bits %{{.*}}, %[[SER_TAG]]
 # CHECK: arith.cmpi eq, %[[SER_TAG]]
 # CHECK: arith.cmpi eq, %[[SER_TAG]]
 
-# CHECK-LABEL: func.func @fixtures_vendor_UnionTag_1_0__deserialize_ir_
+# CHECK-LABEL: func.func @fixtures.vendor.UnionTag.1.0.deserialize
 # CHECK: dsdl.read_bits
-# CHECK: %[[DESER_TAG:.*]] = func.call @llvmdsdl_plan_union_tag__fixtures_vendor_UnionTag_1_0__deser
-# CHECK: func.call @llvmdsdl_plan_validate_union_tag__fixtures_vendor_UnionTag_1_0(%[[DESER_TAG]])
+# CHECK: %[[DESER_TAG:.*]] = func.call @fixtures.vendor.UnionTag.1.0.plan.union_tag.deser
+# CHECK: func.call @fixtures.vendor.UnionTag.1.0.plan.validate_union_tag(%[[DESER_TAG]])
 # CHECK: dsdl.set_union_tag %{{.*}}, %[[DESER_TAG]]
 # CHECK: arith.cmpi eq, %[[DESER_TAG]]
 # CHECK: arith.cmpi eq, %[[DESER_TAG]]
