@@ -30,6 +30,7 @@
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/SectionScopes.h"
 #include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl

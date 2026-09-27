@@ -230,6 +230,22 @@ struct DefinitionNamePolicy final
     bool typeNameReachesTheType{true};
 };
 
+/// @brief How the output opens a DSDL namespace.
+enum class NamespaceForm
+{
+    /// @brief It does not: the namespace is joined into each identifier.
+    Joined,
+
+    /// @brief As a namespace, which any number of files may add to.
+    Namespace,
+
+    /// @brief As a module, which a directory declares.
+    Module,
+
+    /// @brief As a package, which the files of one directory share.
+    Package,
+};
+
 /// @brief How the output composes a language's declarations today.
 struct Composition final
 {
@@ -248,6 +264,9 @@ struct Composition final
     /// type the same way without meeting.
     bool definitionsShareNamespaceScope{};
 
+    /// @brief How a DSDL namespace is opened.
+    NamespaceForm namespaces{};
+
     /// @brief Whether a definition's file and a namespace's directory of one name are one module.
     ///
     /// Rust declares either as a `mod`, and Python imports either as its package's attribute.
@@ -260,6 +279,9 @@ struct Composition final
 
     /// @brief Where a type's constants are declared.
     ConstantsScope constants{};
+
+    /// @brief Whether a type's constants, its array metadata and its option tags are macros.
+    bool constantsAreMacros{};
 
     /// @brief What ends the name of a constant the generator composes, such as `_OPTION_TAG`.
     ///

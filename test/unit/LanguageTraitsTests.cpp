@@ -197,6 +197,22 @@ std::string render(const llvmdsdl::BoolArrayStorage value)
     return "?";
 }
 
+std::string render(const llvmdsdl::NamespaceForm value)
+{
+    switch (value)
+    {
+    case llvmdsdl::NamespaceForm::Joined:
+        return "joined";
+    case llvmdsdl::NamespaceForm::Namespace:
+        return "namespace";
+    case llvmdsdl::NamespaceForm::Module:
+        return "module";
+    case llvmdsdl::NamespaceForm::Package:
+        return "package";
+    }
+    return "?";
+}
+
 std::string flag(const bool value)
 {
     return value ? "1" : "0";
@@ -220,10 +236,10 @@ std::string render(const LanguageTraits& row)
            "' version-in-name=" + flag(d.definitionName.versionInTypeName) +
            " name-reaches-type=" + flag(d.definitionName.typeNameReachesTheType) + " section-join='" +
            d.sectionJoin.str() + "' section-alone=" + flag(d.sectionNamedAlone) +
-           " namespace-shared=" + flag(d.definitionsShareNamespaceScope) +
+           " namespace-shared=" + flag(d.definitionsShareNamespaceScope) + " namespaces=" + render(d.namespaces) +
            " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
            " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
-           " generated-suffix='" + d.generatedConstantSuffix.str() +
+           " constant-macros=" + flag(d.constantsAreMacros) + " generated-suffix='" + d.generatedConstantSuffix.str() +
            "' array-metadata=" + flag(d.arrayMetadataConstants) +
            " deprecated-apart=" + flag(d.deprecatedTypeDeclaredApart) + " free-entry-join='" +
            d.freeFunctions.entryPointJoin.str() + "' free-init=" + flag(d.freeFunctions.initializer) +
@@ -257,8 +273,9 @@ bool runLanguageTraitsTests()
          "constants-share-fields=0 reserved=leading | nullable=111 views=0 images=1 answers-size=0 "
          "bool-arrays=packed | "
          "namespace-join='__' "
-         "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 "
-         "file-directory-module=0 namespace-type-scope=0 constants=enclosing generated-suffix='_' array-metadata=1 "
+         "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 namespaces=joined "
+         "file-directory-module=0 namespace-type-scope=0 constants=enclosing constant-macros=1 generated-suffix='_' "
+         "array-metadata=1 "
          "deprecated-apart=0 free-entry-join='__' free-init=1 free-accessors=joined free-union-options=1 "
          "lowered-body-suffix='ir_'"},
         {Language::Cpp,
@@ -267,7 +284,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=packed-when-fixed "
          "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
-         "namespace-shared=1 file-directory-module=0 namespace-type-scope=1 constants=type generated-suffix='' "
+         "namespace-shared=1 namespaces=namespace file-directory-module=0 namespace-type-scope=1 constants=type "
+         "constant-macros=0 generated-suffix='' "
          "array-metadata=1 "
          "deprecated-apart=1 free-entry-join='_' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
@@ -276,8 +294,9 @@ bool runLanguageTraitsTests()
          "constants-share-fields=0 reserved=none | nullable=000 views=1 images=1 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
-         "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 "
-         "file-directory-module=1 namespace-type-scope=0 constants=type generated-suffix='' array-metadata=0 "
+         "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 namespaces=module "
+         "file-directory-module=1 namespace-type-scope=0 constants=type constant-macros=0 generated-suffix='' "
+         "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Go,
@@ -285,7 +304,8 @@ bool runLanguageTraitsTests()
          "constants=package constants-share-fields=0 reserved=none | nullable=100 views=1 images=1 "
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
-         "namespace-shared=1 file-directory-module=0 namespace-type-scope=0 constants=package generated-suffix='' "
+         "namespace-shared=1 namespaces=package file-directory-module=0 namespace-type-scope=0 constants=package "
+         "constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=concatenated free-union-options=0 "
          "lowered-body-suffix=''"},
@@ -294,8 +314,9 @@ bool runLanguageTraitsTests()
          "constants-share-fields=0 reserved=none | nullable=100 views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
-         "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 "
-         "file-directory-module=0 namespace-type-scope=0 constants=module generated-suffix='' array-metadata=0 "
+         "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
+         "file-directory-module=0 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
+         "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Python,
@@ -303,8 +324,9 @@ bool runLanguageTraitsTests()
          "constants-share-fields=1 reserved=none | nullable=100 views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
-         "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 "
-         "file-directory-module=1 namespace-type-scope=0 constants=module generated-suffix='' array-metadata=0 "
+         "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
+         "file-directory-module=1 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
+         "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
     };
@@ -326,6 +348,14 @@ bool runLanguageTraitsTests()
                  row.name.str() + ": a getter's buffer is null only where it answers a pointer");
         t.expect(row.body.nullability.rawPointer || !row.body.nullability.accessorBuffer,
                  row.name.str() + ": a buffer no body sees null is not null to a getter");
+    }
+
+    // A namespace is joined into each identifier exactly where the row names a separator to join it.
+    for (const LanguageTraits& row : llvmdsdl::allLanguageTraits())
+    {
+        t.expect((row.composition.namespaces == llvmdsdl::NamespaceForm::Joined) ==
+                     !row.composition.definitionName.namespaceJoin.empty(),
+                 row.name.str() + ": a joined namespace has a separator, and only a joined one");
     }
 
     // Where the output declares a type's constants somewhere other than its language would. The
