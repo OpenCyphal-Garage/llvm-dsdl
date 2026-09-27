@@ -416,10 +416,7 @@ mod tests {
             .expect_err("reserve_with_pool should fail with out-of-memory");
         assert_eq!(err.kind, AllocationErrorKind::OutOfMemory);
         assert_eq!(err.class_id, AllocationClassId(11));
-        assert_eq!(
-            allocation_error_to_runtime_code(err),
-            DSDL_RUNTIME_ERROR_ALLOCATION_OUT_OF_MEMORY
-        );
+        assert_eq!(Error::from(err), Error::OutOfMemory);
     }
 
     #[test]
@@ -430,10 +427,7 @@ mod tests {
         assert_eq!(err.kind, AllocationErrorKind::PoolUnavailable);
         assert_eq!(err.class_id, AllocationClassId(3));
         assert_eq!(err.requested_bytes, 16);
-        assert_eq!(
-            allocation_error_to_runtime_code(err),
-            DSDL_RUNTIME_ERROR_ALLOCATION_POOL_UNAVAILABLE
-        );
+        assert_eq!(Error::from(err), Error::PoolUnavailable);
     }
 
     #[test]
@@ -444,10 +438,19 @@ mod tests {
         assert_eq!(err.kind, AllocationErrorKind::InvalidRequest);
         assert_eq!(err.class_id, AllocationClassId(9));
         assert_eq!(err.requested_bytes, 12);
+        assert_eq!(Error::from(err), Error::InvalidAllocationRequest);
+    }
+
+    #[test]
+    fn error_answers_the_code_it_was_made_from() {
+        for code in i8::MIN..=-1 {
+            assert_eq!(Error::from_code(code).code(), code);
+        }
         assert_eq!(
-            allocation_error_to_runtime_code(err),
-            DSDL_RUNTIME_ERROR_ALLOCATION_INVALID_REQUEST
+            Error::from_code(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL),
+            Error::BufferTooSmall
         );
+        assert_eq!(Error::from_code(-4), Error::Unrecognised(-4));
     }
 
     #[test]

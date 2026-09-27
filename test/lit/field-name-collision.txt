@@ -15,8 +15,8 @@
 # RUN: cat %t/go/dsdl/cx/c_1_0.go | FileCheck %s --check-prefix=GO
 # GO-DAG: FooBar uint8
 # GO-DAG: FooBar2 uint8
-# GO-DAG: obj.FooBar
-# GO-DAG: obj.FooBar2
+# GO-DAG: c.FooBar
+# GO-DAG: c.FooBar2
 # Constants fold the same way (barBaz / bar_baz -> CBarBaz); they must stay distinct too.
 # GO-DAG: CBarBaz = 1
 # GO-DAG: CBarBaz2 = 2

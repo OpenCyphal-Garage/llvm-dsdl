@@ -8,8 +8,9 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Finds a definition's schema and section plans in the lowered module, and reads from a plan
-/// what a declaration takes from it: the alias verdict and the width of a union's tag.
+/// Finds a definition's schema and section plans in the lowered module, reads from a plan what a
+/// declaration takes from it: the alias verdict and the width of a union's tag, and names the
+/// definition a schema or a composite step refers to.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -29,9 +30,16 @@ namespace llvmdsdl
 {
 
 struct SemanticDefinition;
+struct SemanticTypeRef;
 
 /// @brief The schema of @p def in @p module; null when the module holds none.
 mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& def);
+
+/// @brief The definition @p schema is the schema of.
+SemanticTypeRef typeRefOf(mlir::dsdl::SchemaOp schema);
+
+/// @brief The definition the composite step @p io holds.
+SemanticTypeRef typeRefOf(mlir::dsdl::IOOp io);
 
 /// @brief The serialisation plan of a section of @p schema: "" for a message, "request" or
 /// "response" for a service; null when the schema holds none.

@@ -150,6 +150,14 @@ struct PlanStep final
 /// @return Its steps.
 std::vector<PlanStep> collectPlanSteps(mlir::dsdl::SerializationPlanOp plan);
 
+/// @brief The schema of the composite @p io nests, from the module @p io sits in; null where @p io
+///        nests none or the module holds no schema for it.
+mlir::dsdl::SchemaOp nestedSchemaOf(mlir::dsdl::IOOp io);
+
+/// @brief The schemas whose layouts @p schema reaches through the composites its plans nest,
+///        transitively and each once, in the order a depth-first reach meets them.
+std::vector<mlir::dsdl::SchemaOp> schemasReachedBy(mlir::dsdl::SchemaOp schema);
+
 /// @brief The identity of one plan's object: full name, version, and the section of a service.
 ///
 /// `!dsdl.object` carries it, and every target resolves it to the struct or class it declares.

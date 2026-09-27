@@ -190,15 +190,19 @@ def DSDL_BitWriteOp : DSDL_Op<"bit_write"> {
     `destination_bit_offset` -- the operand order of `dsdl_runtime_copy_bits`, read as a
     destination-first assignment.
 
-    A bool array is stored bitpacked rather than as elements, so it
-    moves as one run rather than a loop. `width` is an operand because that run's length is
-    the array's count, which is not known here.
+    The plan moves a bool array as one run, in the layout the wire wants. `width` is an
+    operand because that run's length is the array's count, which is not known here.
 
     The operation carries memory effects. It is the write, and a plan whose writes folded
     away has serialised nothing.
+
+    `variable_length` marks a run whose array's length varies, which a target may store
+    differently from one of fixed length. A target that stores a bool per element has the
+    run expanded by `dsdl-expand-bool-runs` into `dsdl.write_bit` over the elements.
   }];
   let arguments = (ins DSDL_PtrType:$destination, I64:$destination_bit_offset,
-      I64:$width, DSDL_PtrType:$source, I64:$source_bit_offset);
+      I64:$width, DSDL_PtrType:$source, I64:$source_bit_offset,
+      UnitAttr:$variable_length);
   let assemblyFormat = [{
     $destination `[` $destination_bit_offset `]` `,` $width `,`
     $source `[` $source_bit_offset `]`
@@ -260,12 +264,44 @@ def DSDL_BitReadOp : DSDL_Op<"bit_read"> {
     past it, zero-extending the remainder, which is the tolerance a deserialiser is required
     to have; writing past the end is an error instead. The operands are what
     `dsdl_runtime_get_bits` needs, and the destination is filled from its own beginning.
+
+    `variable_length` is as on `dsdl.bit_write`, and a target that stores a bool per element
+    has the run expanded into `dsdl.read_bit` over the elements.
   }];
   let arguments = (ins DSDL_PtrType:$destination, DSDL_PtrType:$buffer,
-      I64:$buffer_size_bytes, I64:$bit_offset, I64:$width);
+      I64:$buffer_size_bytes, I64:$bit_offset, I64:$width,
+      UnitAttr:$variable_length);
   let assemblyFormat = [{
     $destination `,` $buffer `[` $bit_offset `]` `,` $width `,` `size` $buffer_size_bytes
     attr-dict `:` type($destination) `,` type($buffer)
+  }];
+}
+
+def DSDL_WriteBitOp : DSDL_Op<"write_bit"> {
+  let summary = "Write one bit of the wire buffer from a bool";
+  let description = [{
+    One element of a bool array stored a bool per element, at `bit_offset`. The run it
+    belongs to was bounded before it began, so the write answers nothing.
+    `dsdl-expand-bool-runs` builds it; the plan builder does not.
+  }];
+  let arguments = (ins DSDL_PtrType:$buffer, I64:$bit_offset, I1:$value);
+  let assemblyFormat = [{
+    $buffer `[` $bit_offset `]` `,` $value attr-dict `:` type($buffer)
+  }];
+}
+
+def DSDL_ReadBitOp : DSDL_Op<"read_bit"> {
+  let summary = "Read one bit of the wire buffer as a bool";
+  let description = [{
+    One element of a bool array stored a bool per element, from `bit_offset`. A bit past the
+    end of the buffer reads as zero, as every read past the end does.
+    `dsdl-expand-bool-runs` builds it; the plan builder does not.
+  }];
+  let arguments = (ins DSDL_PtrType:$buffer, I64:$buffer_size_bytes,
+      I64:$bit_offset);
+  let results = (outs I1:$value);
+  let assemblyFormat = [{
+    $buffer `[` $bit_offset `]` `,` `size` $buffer_size_bytes attr-dict `:` type($buffer)
   }];
 }
 
@@ -500,6 +536,18 @@ def DSDL_BufferAtOp : DSDL_Op<"buffer_at", [NoMemoryEffect]> {
                        "type($buffer) `->` type($address)";
 }
 
+def DSDL_BufferLengthOp : DSDL_Op<"buffer_length", [Pure]> {
+  let summary = "The length in bytes of a buffer that carries it";
+  let description = [{
+    A body handed a slice, a `memoryview` or a `Uint8Array` is handed the bytes available as
+    its length, where the plan reads them through the size pointer. `dsdl-fold-body-sizes`
+    builds it; the plan builder does not.
+  }];
+  let arguments = (ins DSDL_PtrType:$buffer);
+  let results = (outs I64:$length);
+  let assemblyFormat = "$buffer attr-dict `:` type($buffer)";
+}
+
 def DSDL_LocalOp : DSDL_Op<"local"> {
   let summary = "A local holding an initial value, addressed";
   let description = [{
@@ -527,6 +575,27 @@ def DSDL_CallSerdesOp : DSDL_Op<"call_serdes"> {
   let assemblyFormat = [{
     $callee `(` $object `,` $buffer `,` $size `)` attr-dict `:`
     type($object) `,` type($buffer) `,` type($size)
+  }];
+}
+
+def DSDL_CallSerdesSizedOp : DSDL_Op<"call_serdes_sized"> {
+  let summary = "Invoke a nested type's entry point, handing it a size and "
+                "taking back what it used";
+  let description = [{
+    What `dsdl.call_serdes` becomes for a target whose nested entry point takes the bytes
+    available as the length of the buffer it is handed, and answers the bytes it consumed
+    beside its error, rather than reading and writing a size through a pointer. `available`
+    is what the plan offers. `consumed` is what the callee used, counted as the target counts
+    a length, and means something only where `error` is zero.
+    `dsdl-fold-nested-call-sizes` builds it; the plan builder does not.
+  }];
+  let arguments = (ins FlatSymbolRefAttr:$callee, StrAttr:$member,
+      StrAttr:$direction, DSDL_PtrType:$object, DSDL_PtrType:$buffer,
+      I64:$available);
+  let results = (outs I8:$error, Index:$consumed);
+  let assemblyFormat = [{
+    $callee `(` $object `,` $buffer `,` $available `)` attr-dict `:`
+    type($object) `,` type($buffer)
   }];
 }
 

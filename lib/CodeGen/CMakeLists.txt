@@ -59,12 +59,13 @@ add_custom_target(llvmdsdl-embedded-sources
 add_library(llvmdsdlCodeGen
   EmbeddedSources.cpp
   BodyTranslator.cpp
-  CompositeImportGraph.cpp
   ConstantLiteralRender.cpp
   DefinitionDependencies.cpp
   DefinitionIndex.cpp
   DefinitionPathProjection.cpp
   EmitCommon.cpp
+  ImportNameScope.cpp
+  ImportSet.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
   InitializerRender.cpp
@@ -80,6 +81,7 @@ add_library(llvmdsdlCodeGen
   Vocabulary.cpp
   emitter/C.cpp
   emitter/CHeaderRender.cpp
+  emitter/CIncludes.cpp
   emitter/Cpp.cpp
   emitter/Go.cpp
   emitter/Python.cpp

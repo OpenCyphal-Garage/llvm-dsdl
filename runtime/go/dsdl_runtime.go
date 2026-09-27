@@ -12,7 +12,11 @@
 // DSDL Go bindings.
 package dsdlruntime
 
-import "math"
+import (
+	"errors"
+	"math"
+	"strconv"
+)
 
 const (
 	// DSDL_RUNTIME_SUCCESS indicates successful runtime execution.
@@ -32,6 +36,67 @@ const (
 	// delimiter header representation in serialised data.
 	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER int8 = 12
 )
+
+// Error is a runtime error code, negative as the runtime returns it, answered as an error.
+type Error int8
+
+// The errors a serialisation, a deserialisation or a field setter answers, one per runtime error
+// code.
+const (
+	// ErrInvalidArgument is an argument the call cannot use.
+	ErrInvalidArgument = Error(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT)
+	// ErrBufferTooSmall is a buffer that cannot hold what is serialised into it.
+	ErrBufferTooSmall = Error(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL)
+	// ErrBadArrayLength is an invalid array-length value in serialised data.
+	ErrBadArrayLength = Error(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH)
+	// ErrBadUnionTag is an invalid union tag value in serialised data.
+	ErrBadUnionTag = Error(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG)
+	// ErrBadDelimiterHeader is a malformed delimiter header in serialised data.
+	ErrBadDelimiterHeader = Error(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER)
+)
+
+// Error answers what the code stands for.
+func (e Error) Error() string {
+	switch e {
+	case ErrInvalidArgument:
+		return "dsdl: invalid argument"
+	case ErrBufferTooSmall:
+		return "dsdl: serialisation buffer too small"
+	case ErrBadArrayLength:
+		return "dsdl: bad array length"
+	case ErrBadUnionTag:
+		return "dsdl: bad union tag"
+	case ErrBadDelimiterHeader:
+		return "dsdl: bad delimiter header"
+	}
+	return "dsdl: unrecognised error code " + strconv.Itoa(int(e))
+}
+
+// ErrorOf answers the error a runtime code names, or nil for success.
+func ErrorOf(code int8) error {
+	if code == DSDL_RUNTIME_SUCCESS {
+		return nil
+	}
+	return Error(code)
+}
+
+// CodeOf answers the runtime code err carries, or success for nil. Every error a generated method
+// answers is an Error; any other error reads as an invalid argument.
+func CodeOf(err error) int8 {
+	if err == nil {
+		return DSDL_RUNTIME_SUCCESS
+	}
+	var code Error
+	if errors.As(err, &code) {
+		return int8(code)
+	}
+	return int8(ErrInvalidArgument)
+}
+
+// Coded answers the runtime code of err beside n, the size a generated method answers with it.
+func Coded(n int, err error) (int8, int) {
+	return CodeOf(err), n
+}
 
 // ChooseMin returns the smaller of a and b.
 func ChooseMin(a, b int) int {

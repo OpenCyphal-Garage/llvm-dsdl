@@ -49,7 +49,6 @@ extern "C"
 #include <string.h>
 
 #include <float.h>
-#include <math.h>  // For isfinite().
 #include <stdbool.h>
 #include <stdint.h>
 #include <assert.h>  // For _Static_assert (C11) static_assert (C23) and assert() if DSDL_RUNTIME_ASSERT is used.

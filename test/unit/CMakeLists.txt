@@ -20,10 +20,11 @@ add_executable(llvmdsdl-unit-tests
   CHeaderRenderTests.cpp
   CodegenDiagnosticTextTests.cpp
   ConstantLiteralRenderTests.cpp
-  CompositeImportGraphTests.cpp
   DefinitionDependenciesTests.cpp
   DefinitionIndexTests.cpp
   DefinitionPathProjectionTests.cpp
+  ImportNameScopeTests.cpp
+  ImportSetTests.cpp
   BodyValueNamingTests.cpp
   HelperBindingNamingTests.cpp
   HelperBodyPlanTests.cpp

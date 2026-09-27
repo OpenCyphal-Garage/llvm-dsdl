@@ -23,7 +23,7 @@ import (
 func main() {
 	wire := []byte{1, 0, 0, 0, 0}
 	binary.LittleEndian.PutUint32(wire[1:], math.Float32bits(5.5))
-	ok := vendor.ChoiceGetTag(wire) == 1 && vendor.ChoiceGetReal(wire) == 5.5 && len(vendor.ChoiceGetQuad(wire)) == 4 && vendor.ChoiceSetTag(wire, 0) == 0
+	ok := vendor.ChoiceGetTag(wire) == 1 && vendor.ChoiceGetReal(wire) == 5.5 && len(vendor.ChoiceGetQuad(wire)) == 4 && vendor.ChoiceSetTag(wire, 0) == nil
 	v := "ok"
 	if !ok {
 		v = "FAILED"

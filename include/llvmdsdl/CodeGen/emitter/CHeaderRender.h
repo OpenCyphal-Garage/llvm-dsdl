@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
+#include "llvmdsdl/CodeGen/emitter/CIncludes.h"
 
 namespace llvmdsdl::emitter::c
 {
@@ -30,8 +31,11 @@ namespace llvmdsdl::emitter::c
 /// @brief Renders C metadata macros for one generated type.
 /// @param[in] typeName Generated C type name stem.
 /// @param[in] metadata The section's facts.
+/// @param[in] file How the header names what it takes from other headers.
 /// @return Ordered macro lines.
-std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata);
+std::vector<std::string> renderTypeMetadataMacros(const std::string&     typeName,
+                                                  const SectionMetadata& metadata,
+                                                  const CFileNames&      file);
 
 /// @brief Renders the guard a folded body carries, refusing a host that does not order bytes as
 ///        the wire does.
@@ -50,12 +54,14 @@ std::vector<std::string> renderLittleEndianGuardLines(const std::string& typeNam
 /// @param[in] majorVersion DSDL major version.
 /// @param[in] minorVersion DSDL minor version.
 /// @param[in] fixedPortId The service's fixed service-ID, where it has one.
+/// @param[in] file How the header names what it takes from other headers.
 /// @return Ordered macro lines.
 std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&           baseTypeName,
                                                           const std::string&           fullName,
                                                           std::uint32_t                majorVersion,
                                                           std::uint32_t                minorVersion,
-                                                          std::optional<std::uint32_t> fixedPortId);
+                                                          std::optional<std::uint32_t> fixedPortId,
+                                                          const CFileNames&            file);
 
 /// @brief Renders service alias bridge lines after request type declaration.
 /// @param[in] baseTypeName Alias base type name.
@@ -69,9 +75,11 @@ std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTy
 /// @brief Renders service alias serialise/deserialize inline wrappers.
 /// @param[in] baseTypeName Alias base type name.
 /// @param[in] requestTypeName Request section generated type name.
+/// @param[in] file How the header names what it takes from other headers.
 /// @return Ordered wrapper lines.
 std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseTypeName,
-                                                        const std::string& requestTypeName);
+                                                        const std::string& requestTypeName,
+                                                        const CFileNames&  file);
 
 }  // namespace llvmdsdl::emitter::c
 

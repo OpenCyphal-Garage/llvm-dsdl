@@ -1,0 +1,40 @@
+# A C file includes the headers that declare the names it writes. A doc comment that mentions a
+# standard function names nothing, and an implementation file includes its own header first and the
+# runtime where a body calls it. The own header declares the bodies, so the implementation file
+# declares only its helpers.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf '# Named in prose, memcpy( and memset( are not includes.\nuint8 value\n@sealed\n' > %t/dsdl/ns/Quiet.1.0.dsdl
+# RUN: printf '@sealed\n' > %t/dsdl/ns/Empty.1.0.dsdl
+# RUN: %dsdlc --target-language c %t/dsdl/ns --outdir %t/c
+# RUN: cat %t/c/ns/Quiet_1_0.h | FileCheck %s --check-prefix=HEADER
+# RUN: cat %t/c/ns/Quiet_1_0.c | FileCheck %s --check-prefix=SOURCE
+# RUN: cat %t/c/ns/Empty_1_0.c | FileCheck %s --check-prefix=EMPTY
+#
+# HEADER:      #include <stdbool.h>
+# HEADER-NEXT: #include <stddef.h>
+# HEADER-NEXT: #include <stdint.h>
+# HEADER-EMPTY:
+# HEADER-NEXT: #include "dsdl_runtime.h"
+# HEADER-EMPTY:
+# HEADER:      /* Named in prose, memcpy( and memset( are not includes. */
+#
+# SOURCE:      #include "ns/Quiet_1_0.h"
+# SOURCE-EMPTY:
+# SOURCE-NEXT: #include <stdbool.h>
+# SOURCE-NEXT: #include <stddef.h>
+# SOURCE-NEXT: #include <stdint.h>
+# SOURCE-EMPTY:
+# SOURCE-NEXT: #include "dsdl_runtime.h"
+# SOURCE-EMPTY:
+# SOURCE-NOT:  {{^[^ ].*_ir_\(.*\);$}}
+# SOURCE:      dsdl_runtime_
+#
+# EMPTY:      #include "ns/Empty_1_0.h"
+# EMPTY-EMPTY:
+# EMPTY-NEXT: #include <stdbool.h>
+# EMPTY-NEXT: #include <stddef.h>
+# EMPTY-NEXT: #include <stdint.h>
+# EMPTY-EMPTY:
+# EMPTY-NOT:  #include
+# EMPTY-NOT:  dsdl_runtime_

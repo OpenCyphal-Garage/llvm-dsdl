@@ -1,7 +1,6 @@
 {
   "judge": "v10.11.0",
   "counts": {
-    "@typescript-eslint/naming-convention": 545,
-    "@typescript-eslint/no-unused-vars": 3
+    "@typescript-eslint/naming-convention": 75
   }
 }

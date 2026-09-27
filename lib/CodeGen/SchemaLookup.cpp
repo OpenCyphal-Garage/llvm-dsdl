@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <string>
 
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -44,6 +45,45 @@ mlir::dsdl::SchemaOp schemaOf(mlir::ModuleOp module, const SemanticDefinition& d
         }
     }
     return {};
+}
+
+namespace
+{
+
+SemanticTypeRef typeRefOf(const llvm::StringRef fullName, const std::uint32_t major, const std::uint32_t minor)
+{
+    SemanticTypeRef                    ref;
+    llvm::SmallVector<llvm::StringRef> components;
+    fullName.split(components, '.', -1, /*KeepEmpty=*/false);
+    for (const llvm::StringRef component : components)
+    {
+        ref.namespaceComponents.push_back(component.str());
+    }
+    if (!ref.namespaceComponents.empty())
+    {
+        ref.shortName = ref.namespaceComponents.back();
+        ref.namespaceComponents.pop_back();
+    }
+    ref.fullName     = fullName.str();
+    ref.majorVersion = major;
+    ref.minorVersion = minor;
+    return ref;
+}
+
+}  // namespace
+
+SemanticTypeRef typeRefOf(mlir::dsdl::SchemaOp schema)
+{
+    return typeRefOf(schema.getFullName(),
+                     static_cast<std::uint32_t>(schema.getMajor()),
+                     static_cast<std::uint32_t>(schema.getMinor()));
+}
+
+SemanticTypeRef typeRefOf(mlir::dsdl::IOOp io)
+{
+    return typeRefOf(io.getCompositeFullName().value_or(llvm::StringRef{}),
+                     static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                     static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0)));
 }
 
 mlir::dsdl::SerializationPlanOp sectionPlan(mlir::dsdl::SchemaOp schema, const llvm::StringRef section)

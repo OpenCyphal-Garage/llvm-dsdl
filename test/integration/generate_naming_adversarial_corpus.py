@@ -150,12 +150,6 @@ def emit_self_shadow(root: pathlib.Path) -> None:
 
     An import shares one namespace with the items the module declares, so the two meet. The
     declaration is the type's public API and keeps the name; the import is what moves.
-
-    Off by default, because TypeScript does not survive it: `projectCompositeImports` allocates no
-    local name for an import, so the module imports `Owner`, `makeOwner` and the two body functions
-    beside its own, and tsc answers TS2440. Rust reached the same shape and was given an import
-    scope; TypeScript has none yet. `--include-self-shadow` is the reproduction, and turning it on
-    is the first step of giving TypeScript one.
     """
     write(root / "adv" / "shadow" / "inner" / "Owner.1.0.dsdl", f"uint8 value\n{SEALED}")
     write(
@@ -251,12 +245,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--outdir", required=True, type=pathlib.Path)
     parser.add_argument(
-        "--include-self-shadow",
-        action="store_true",
-        help="add the axis where a definition's own name is its dependency's, which TypeScript "
-        "does not yet survive",
-    )
-    parser.add_argument(
         "--no-version-multiplicity",
         action="store_true",
         help="leave out the axes that need several versions of one definition at once, which only "
@@ -274,8 +262,7 @@ def main() -> int:
     emit_root_namespaces(root)
     emit_cross_namespace(root)
     emit_claimed_namespaces(root)
-    if args.include_self_shadow:
-        emit_self_shadow(root)
+    emit_self_shadow(root)
     emit_members(root)
     emit_sections(root)
     emit_deprecated(root)

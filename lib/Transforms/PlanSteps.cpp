@@ -15,6 +15,8 @@
 
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -49,15 +51,7 @@ std::string valueOrEmpty(const std::optional<llvm::StringRef> value)
 /// when they agree, since a composite is padded to a boundary; anything else is left as varying.
 std::optional<std::int64_t> nestedFixedBits(mlir::dsdl::IOOp io)
 {
-    auto module = io->getParentOfType<mlir::ModuleOp>();
-    if (!module || !io.isComposite() || !io.getCompositeFullName())
-    {
-        return std::nullopt;
-    }
-    auto schema = module.lookupSymbol<mlir::dsdl::SchemaOp>(
-        renderDefinitionSymbolBase(*io.getCompositeFullName(),
-                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
-                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
+    mlir::dsdl::SchemaOp schema = nestedSchemaOf(io);
     if (!schema || schema.getBody().empty())
     {
         return std::nullopt;
@@ -137,6 +131,39 @@ std::vector<PlanStep> collectPlanSteps(mlir::dsdl::SerializationPlanOp plan)
         }
     }
     return steps;
+}
+
+mlir::dsdl::SchemaOp nestedSchemaOf(mlir::dsdl::IOOp io)
+{
+    auto module = io->getParentOfType<mlir::ModuleOp>();
+    if (!module || !io.isComposite() || !io.getCompositeFullName())
+    {
+        return {};
+    }
+    return module.lookupSymbol<mlir::dsdl::SchemaOp>(
+        renderDefinitionSymbolBase(*io.getCompositeFullName(),
+                                   static_cast<std::uint32_t>(io.getCompositeMajor().value_or(0)),
+                                   static_cast<std::uint32_t>(io.getCompositeMinor().value_or(0))));
+}
+
+std::vector<mlir::dsdl::SchemaOp> schemasReachedBy(mlir::dsdl::SchemaOp schema)
+{
+    std::vector<mlir::dsdl::SchemaOp>          reached;
+    llvm::SmallVector<mlir::dsdl::SchemaOp, 8> pending{schema};
+    llvm::SmallPtrSet<mlir::Operation*, 8>     seen;
+    while (!pending.empty())
+    {
+        const mlir::dsdl::SchemaOp at = pending.pop_back_val();
+        at->walk([&](mlir::dsdl::IOOp io) {
+            mlir::dsdl::SchemaOp nested = nestedSchemaOf(io);
+            if (nested && seen.insert(nested.getOperation()).second)
+            {
+                reached.push_back(nested);
+                pending.push_back(nested);
+            }
+        });
+    }
+    return reached;
 }
 
 }  // namespace llvmdsdl

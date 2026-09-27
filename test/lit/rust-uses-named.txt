@@ -1,0 +1,14 @@
+# A Rust module imports the nested definitions it names, in the order of their paths, which is
+# rustfmt's.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns/array
+# RUN: printf 'uint8 value\n@sealed\n' > %t/dsdl/ns/Empty.1.0.dsdl
+# RUN: printf 'uint8 value\n@sealed\n' > %t/dsdl/ns/array/Bit.1.0.dsdl
+# RUN: printf 'ns.Empty.1.0 empty\nns.array.Bit.1.0 bit\n@sealed\n' > %t/dsdl/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/dsdl/ns --outdir %t/rust
+# RUN: cat %t/rust/src/ns/holder_1_0.rs | FileCheck %s
+#
+# CHECK:      use crate::ns::array::bit_1_0::Bit;
+# CHECK-NEXT: use crate::ns::empty_1_0::Empty;
+# CHECK-EMPTY:
+# CHECK-NEXT: fn
