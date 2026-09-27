@@ -206,7 +206,7 @@ filesystem-truthful. The binary lands in the depfile instead.
 | `main.cpp` `explicitKeys` | Unions the expanded builtin keys into the explicit set. |
 | `UavcanEmbeddedCatalog.{h,cpp}` | `expandEmbeddedCatalogSelector` → `EmbeddedSelectorExpansion{typeKeys, suggestions}`. |
 | `DepfilePlanner.{h,cpp}` | Done in §4; needed no further change for `+`. |
-| `main.cpp` `printUsage` | `--help` text. |
+| `main.cpp` `printHelp` | `--help` text. |
 | `README.md`, `docs/reference/commands/dsdlc.md` | User-facing documentation. |
 
 Two things the design predicted and the implementation did **not** need:
