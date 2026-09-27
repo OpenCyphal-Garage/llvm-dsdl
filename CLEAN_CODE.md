@@ -14,11 +14,11 @@ This is the plan to bring the declaration half under a contract of its own.
 
 ## The output
 
-Taking `uavcan.file.List.0.2` from the regulated corpus, at `8c2f0a7`:
+Taking `uavcan.file.List.0.2` from the regulated corpus, at `b1c5dbe8`:
 
 | | the section type | a synthesised helper |
 |---|---|---|
-| C | `struct uavcan__file__List__Request` | `int8_t llvmdsdl_plan_capacity_check__uavcan_file_List_0_2__request` |
+| C | `struct uavcan__file__List__Request` | `int8_t llvmdsdl_plan_capacity_check__uavcan__file__List_0_2__Request` |
 | C++ | `struct uavcan::file::List_Request` | `inline std::int8_t uavcan::file::mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request` |
 | Rust | `pub struct Request` in `uavcan::file::list_0_2` | `fn capacity_check_request` |
 | Go | `type ListRequest struct` | `func listCapacityCheckRequest` |
@@ -70,11 +70,12 @@ So the declaration half has a policy for *how a name is spelled* and none for *w
 lives*. Since the second question is answered six times in six emitters, it is answered the same
 way six times.
 
-The helper name shows the cost twice over. `lib/Transforms/Passes.cpp` mints
-`llvmdsdl_plan_capacity_check__<schema>__<section>` as the MLIR symbol. `renderHelperBindingIdentifier`
-re-mangles that string at render time into `mlir_llvmdsdl_…`, collapsing `__` for C++ alone. C uses
-the first and C++ the second. One symbol, two spellings, computed in two places — which is what
-happens when a name is decided away from the references to it.
+The helper name shows the cost. `lib/Transforms/Passes.cpp` mints the helper's identity,
+`uavcan.file.List.0.2.request.plan.capacity_check`, as the MLIR symbol. C spells it
+`llvmdsdl_plan_capacity_check__uavcan__file__List_0_2__Request` in its emitter, and
+`renderHelperBindingIdentifier` spells it `mlir_llvmdsdl_plan_capacity_check_uavcan_file_List_0_2_request`
+for C++. Each spelling is composed away from the scope that declares it, so each restates the whole
+definition that scope already names.
 
 ## Language classification
 
@@ -105,37 +106,210 @@ capability, and stays where profiles are.
 
 ## The surface tree
 
-A pass — `project-dsdl-surface` — runs at the end of `lower-dsdl-bodies`, after every body
-transformation, parameterised by the target language. It reads the classification and produces:
+A pass, `project-dsdl-surface`, runs last in `lower-dsdl-bodies` for a target. It builds a tree of
+the scopes that target's output opens, with every identifier the output declares allocated in its
+scope, and the emitters read names and placements from the tree instead of composing them. The
+pipeline registered without a target builds no tree.
 
-- a tree of scopes, each a `SymbolTable`, mirroring what the target language will actually open —
-  namespaces and classes for C++, modules for Rust, one package for Go, one module for C, and for
-  the type's own scope wherever the language has one;
-- every declaration placed in a scope, carrying its kind (type, field, constant, method, free
-  function, helper) and its visibility;
-- every identifier allocated within its scope, through the existing role and `NamingScope`
-  machinery, so that nothing restates its own address;
-- every symbol reference in every body rewritten to match, through `SymbolTable::replaceAllSymbolUses`.
+### The tree names the IR
 
-The last point is why this belongs in the IR rather than in a codegen-side structure beside
-`SectionMetadata`. `SectionMetadata` holds facts, nothing references it, and a struct is the right
-home for it. A declaration's name is referenced — by `func.call` in the bodies, by `dsdl.call_serdes`
-across definitions, by the naming manifest, and by the collision check in `Discovery`. A name
-decided anywhere other than where the references live acquires a second spelling, which is the
-defect already in the tree. MLIR's nested symbol tables and `SymbolRefAttr` exist for this, and the
-verifier will then reject a scope whose declarations collide rather than leaving it to a consumer's
-compiler.
+An IR symbol is an identity: it says which schema, helper or body a reference means. A name in the
+tree is a spelling, and so is its place. In C++'s target shape the tree puts `serialize` in
+`List_0_2::Request` and `capacity_check` there as a private static member, and the renderer writes
+the flat `func.func` the pipeline built into that position. Clang compiles C++ member functions to
+flat functions in LLVM IR in the same way: the nesting lives in the declarations.
 
-Placing the pass at the end of the pipeline contains the cost. Every pass upstream keeps walking a
-flat module of `func.func`; only the emitters and the manifest see the tree.
+Bodies stay top-level functions, and their symbols do not change:
 
-Two consumers move onto the tree in the same change, or they drift from it:
+- three of the ways a body refers to an entity are strings a symbol rename would not reach: the
+  helper names on plan steps, `llvmdsdl.schema_sym`, and the `!dsdl.object` identity;
+- `planBodySymbol` recomposes a nested call's callee from the full name and version rather than
+  looking it up;
+- `schemaFunctions`, `PlanBodyLookups`, `schemaOf`, the emitters' accessor lookup,
+  `cloneFunctionsOf` and the canonicaliser nested on `func.func` read a flat module;
+- the object lane exports every function, and renames each function and each call into another
+  definition to the C link name it reads back from the symbol through `parsePlanSymbol`, so a body's
+  symbol is what its ABI name is spelt from.
 
-- `renderNamingManifest` reports the identifiers a backend writes. It must read the tree rather
-  than recompute the projection, which is what makes it a report rather than a second opinion.
-- `Discovery` rejects two definitions whose generated type names or file stems collide, today by
-  calling `renderSectionTypeName` itself. Renaming under the tree without moving the check makes
-  it reject collisions that no longer exist and miss ones that do.
+Moving the bodies into scope ops and rewriting their references with `replaceAllSymbolUses` would
+produce the same output at the cost of every item above. A symbol is renamed only in the object lane,
+before LLVM conversion, to the C link name its header declares; there a symbol is also what a linker
+reads.
+
+The tree is built from three ops in `DSDLOps.td`, with typed attributes:
+
+| op | holds | attributes |
+|---|---|---|
+| `dsdl.surface` | the root scope for one target, only when a target is set | `target`, `profile` |
+| `dsdl.scope` | scopes and declarations, in the order the language opens and writes them | `kind` (root, namespace, module, package, file, type), `name`, `path` for the file a scope is written to, `of` for a type |
+| `dsdl.decl` | nothing: a leaf | `name`, `kind`, `class`, `visibility`, `origin` (definition or generated), and `of` with `section` and `member` where it names an entity |
+
+```mlir
+dsdl.surface target = "rust" profile = "std" {
+ dsdl.scope root "llvmdsdl_generated" path = "src/lib.rs" {
+  dsdl.decl "dsdl_runtime" kind = module origin = generated
+  dsdl.scope module "uavcan" path = "src/uavcan/mod.rs" {
+   dsdl.scope module "file" path = "src/uavcan/file/mod.rs" {
+    dsdl.scope module "list_0_2" path = "src/uavcan/file/list_0_2.rs" {
+      dsdl.decl "Path" kind = import class = type of = @uavcan.file.Path.2.0
+      dsdl.decl "capacity_check_request" kind = helper class = value visibility = private
+          of = @uavcan.file.List.0.2.request.plan.capacity_check
+      dsdl.scope type "Request" of = @uavcan.file.List.0.2 section = "request" {
+        dsdl.decl "entry_index" kind = field of = @uavcan.file.List.0.2
+            section = "request" member = "entry_index"
+        dsdl.decl "FULL_NAME" kind = constant origin = generated
+        dsdl.decl "serialize" kind = entry of = @uavcan.file.List.0.2.request.serialize
+      }
+      dsdl.decl "List" kind = alias class = type origin = generated
+    }
+   }
+  }
+ }
+}
+```
+
+A declaration is not an MLIR symbol. One symbol table is one namespace, and a scope holds as many
+name classes as its language gives it; a symbol table per class would split a scope's declarations
+and lose the order the renderer writes them in. The verifier checks each scope's names per class and
+resolves every `of` against the module's symbol table:
+
+| language | name classes in one scope |
+|---|---|
+| C | ordinary identifiers and struct tags; macros across the translation unit |
+| C++ | one per scope; macros across the translation unit |
+| Rust | types and values |
+| Go | one per package, across its files |
+| TypeScript | types and values |
+| Python | one per scope |
+
+### What the tree holds
+
+The tree holds every name declared at file, namespace and type scope, generated ones included:
+metadata constants, wrappers, guards, `to_bytes`, `AppendBinary`, pool constants. The allocator cannot
+reproduce today's names without them, since a DSDL constant's ordinal depends on the generated names
+claimed before it. Names a language binds in the scope by importing them are declarations too:
+Python's `dataclass` and `field`, TypeScript's `dsdlRuntime`, Go's package names. Names inside a
+function stay with the body translator's value naming.
+
+The root is the generated package: the crate, the npm package, the Python package or the Go module,
+and for C and C++ the output directory. It carries the package's name from the command line or its
+default, and holds the generator's root-level names as generated declarations: Rust's `dsdl_runtime`
+module, Python's `_runtime_loader`, `_dsdl_runtime` and `__version__`, Go's `dsdlruntime`,
+TypeScript's `dsdl_runtime`, and the identifiers the C and C++ runtime headers declare. Those names are
+reserved as each language's projection table reserves them today, so the output does not change, and
+a root namespace that meets one is reported with every other collision.
+
+The root namespaces are the root's children, and each namespace scope names the file it is written
+to: Rust's `mod.rs`, Python's `__init__.py`, and TypeScript's `index.ts` once TypeScript's phase
+replaces the flat root index. A directory is a scope whose subdirectories and files share one name
+class, since Rust's `pub mod`, Python's package attributes and TypeScript's import paths name both in
+one space. Until TypeScript's phase, the flat root `index.ts` stays with the TypeScript emitter, outside
+the tree: its aliases share a namespace with nothing but one another.
+
+A tree is built per language and C++ profile. `pmr` declares `_memory_resource` and
+`set_memory_resource`, and `--cpp-profile both` builds two trees; the Rust profile and memory mode
+declare the same items. The object lane reads C's tree.
+
+### One allocator, three callers
+
+Discovery checks collisions for every language inside `parseDefinitions`, and the language server
+calls it on each analysis (`lib/LSP/Analysis.cpp:646`). An analysis run renders the manifest for every
+language before any MLIR exists, and the pass runs after lowering, for one target. All three call one
+library, `allocateSurface`, which takes a language row, a profile and the definitions as parts and
+answers a surface plan. The composers and scope builders move behind it.
+
+The plan has two layers:
+
+- the **definition layer** covers files, types, sections, fields, constants, option tags and imports,
+  and needs only the parts the front end has;
+- the **body layer** covers helpers, entry points and accessors, and needs the lowered symbols, which
+  only the pass has.
+
+Discovery and an analysis run's manifest see the definition layer. A collision with a helper or an
+entry point is reported by the verifier in a generation run, and a generation run's manifest reports
+the whole tree for its target.
+
+Within a scope, names are claimed in five bands, and a later band never moves a name an earlier band
+claimed:
+
+1. language reservations: keywords, runtime-owned names, reserved namespaces;
+2. generated claims: `FULL_NAME`, `EXTENT_BYTES`, the metadata constants, `_tag_`, pool constants;
+3. declarations, in declaration order: types, fields, constants, array metadata, option tags,
+   accessors, entry points;
+4. helpers, qualified by type where a package holds many definitions;
+5. imports, claimed last, so a declaration keeps its public name and the import takes the alias.
+
+Bands 1 to 3 are the definition layer, and band 4 is the body layer. Band 5 is `ImportNameScope`'s
+rule, which Rust, TypeScript and Python follow today.
+
+### The drift the tree removes
+
+Six stages decide names from their own inputs today, and they disagree in places:
+
+- a C++ struct is allocated twice: `makeSectionFieldScope` declares its union option tags, and the
+  C++ spelling's scope does not;
+- the driver's repair notes build `makeSectionConstantScope` for every language, where Go allocates
+  with `makeGoConstantScope`;
+- Discovery composes the file stem itself, to match `renderDefinitionFileStem`;
+- Go's accessors, TypeScript's accessors, C's wrappers and Rust's pool constants are declared in no
+  scope, and Go's import aliases are checked only against one another;
+- TypeScript's root `index.ts` aliases each module by its path and a counter, so `ns.FileList.1.0`
+  and `ns.file.List.1.0` both reach `ns_file_list_1_0`, and which one gets `_1` depends on the rest of
+  the run;
+- the manifest omits entry points, accessors, helpers, import aliases, guards, the Rust module name
+  and the C++ type name.
+
+Some of today's pools are split where the language has one scope: Rust's helpers are kept apart from
+its module's values, C++'s option tags are in one of its two scopes, and Go's and TypeScript's
+accessors are in none. Phase 4 reproduces each split through a `Composition` flag, and each merge
+lands afterwards in a change of its own, with an adversarial axis that reaches the collision it
+fixes. The oracle covers the corpora, so a merge inside the refactor would pass it unexamined.
+
+## Spelling a reference
+
+A reference is written the way a person writing at that spot would write it: as the shortest spelling
+that the language's own name lookup, starting at the reference, resolves to the declaration it means.
+Inside `struct Request` a constant is `EXTENT_BYTES`; at namespace scope it is
+`List_0_2::Request::EXTENT_BYTES`.
+
+The resolver tries candidates shortest first and writes the first that resolves:
+
+1. the bare name;
+2. the receiver form, where the language reaches the site's own type through one: Rust's `Self::`,
+   Python's `self.` or `cls.`, a Go receiver, TypeScript's companion `const`;
+3. the name qualified by its enclosing scopes, outward, while each qualifier is within the horizon;
+4. an import's local name, for a declaration in another file of a language that imports;
+5. the rooted path, with C++'s leading `::` only where the tree shows the root name shadowed.
+
+Resolving a candidate repeats the language's lookup over the tree: the scopes the site sees, in the
+language's order, checking the name classes the reference's position considers. Member access
+through a value, such as `self.directory_path.serialize(…)`, writes the member's name after the value
+and is never qualified.
+
+| language | a function body sees, in order | its own type's members | its own type |
+|---|---|---|---|
+| C | one file scope; every name is global and carries its path | the bare name | the bare name |
+| C++ | the block, the completed class, each enclosing class, each enclosing namespace, the global namespace | bare, through class-member lookup and the implicit `this` | bare |
+| Rust | the block, the module's items, its `use` declarations, the prelude | `Self::X`, and `self.x` for fields | `Self` |
+| Go | the block, the package across its files, the file's imports, the universe | through the receiver; constants and helpers are package-level and bare | bare |
+| TypeScript | the block, each enclosing function, the module's declarations and imports, the globals | through the companion `const` | bare |
+| Python | the function, each enclosing function, the module's definitions and imports, the builtins | `self.X`, `cls.X` in a classmethod, the class name in a staticmethod | `cls` in a classmethod, the class name elsewhere |
+
+A shorter spelling is safe only where no declaration the resolver cannot see could capture it, so the
+resolver shortens through two kinds of scope: a definition's own scopes, which one file declares
+whole, and the C++ namespace or Go package a definition shares with the run's other definitions of its
+DSDL namespace, whose names Discovery and the verifier keep distinct. An enclosing C++ namespace is
+open to any header, so a reference that leaves its own namespace is written from the root:
+`uavcan::si::unit::length::Scalar`. A spelling captured by a nearer declaration is lengthened until it
+resolves; a field named `Path` of type `Path` is declared `uavcan::file::Path Path{};`.
+
+A resolver per language, `spell(site, declaration)`, answers each spelling from the tree, where a site
+is a scope together with what the enclosing function is to its type. Nothing stores a spelling per
+reference. The lookup model is a `Lookup` part of the `LanguageTraits` row, which
+`llvmdsdl-language-classification` holds to naming no language. C++ writes rooted names today, such as
+`::uavcan::file::Path` inside its own namespace, so phase 4 reproduces them through a `Composition`
+column, `qualification = rooted`, which C++'s phase sets to `shortest` in the change that nests its
+types.
 
 ## One renderer, one declaration spelling per language
 
@@ -147,7 +321,8 @@ closing scopes, emitting declarations in dependency order, placing definitions �
 The renderer holds: scope nesting and ordering, forward declarations where a language needs them,
 which declarations are public, and where a body is attached. The spelling holds: how this language
 opens a namespace, writes a field, declares a constant, spells a signature, marks a declaration
-internal, and returns an error.
+internal, and returns an error. Every reference the renderer writes, in a declaration or a body, is
+spelled by `spell(site, declaration)`.
 
 This is where the string emission falls. `tools/count_emission_sites.py` counts the calls that write
 generated text. When phase 2 took the count the six emitters held 1,230, 918 of them outside the
@@ -234,7 +409,7 @@ qualifies a clash with as much of its namespace as tells it apart: `TemperatureS
 type brings its factory and its two body functions with it, so a clash there is judged on all four
 names. Python had claimed no name at all: a module holding three `Scalar`s imported each under one
 name, and every field was built as the last of them. Go aliases a package rather than a type, with
-`pkg_`. The scope, and Go's aliases with it, belongs to the surface tree.
+`pkg_`. The scope is band 5 of the surface tree's allocation, and Go's aliases join it there.
 
 ## Where each language lands
 
@@ -285,7 +460,9 @@ mechanism rather than a convention over one.
 declares into the type namespace, the second into the value namespace — so `ListRequest` is both
 the type a consumer annotates with and the object the operations hang off, and
 `ListRequest.deserialize(bytes)` completes in an editor where a free function named after its type
-does not. Helpers stay module-private and take camelCase names.
+does not. Helpers stay module-private and take camelCase names. Each directory's `index.ts`
+re-exports its subdirectories and modules under their own names, so a consumer writes
+`uavcan.file.list_0_2`.
 
 ## Phases
 
@@ -483,15 +660,17 @@ The C and C++ judge was installed after the sweep, and read 4,808 findings over 
 one, and the C++, read at C++20 with the accessors taking spans, to 4,946. With each file including
 the headers that declare what it names, the C comes to 4,804 and the C++ to 4,461, and the C to
 4,803 once the runtime header includes only what it uses. An implementation file that declares only
-its helpers, and leaves its bodies to its header, takes the C to 3,990.
+its helpers, and leaves its bodies to its header, takes the C to 3,990. Naming the IR by DSDL
+identity leaves the C at 3,990 and takes the C++ to 4,294: its headers lose their version sentinels
+and guard with `#pragma once`.
 
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
-| 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan_file_List_0_2__request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
+| 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan__file__List_0_2__Request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
 | 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
-| 1,497 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, 334 `LLVMDSDL_SELECTED_*_` guards, and the section types and facts the C++ phase nests |
+| 1,163 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, and the section types and facts the C++ phase nests |
 | 996 | Python | `E501` | long lines |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
@@ -503,6 +682,7 @@ What is left is per-language.
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
 | 168 | C++ | `modernize-concat-nested-namespaces` | `namespace uavcan { namespace node {`, where C++17 writes `namespace uavcan::node {` |
+| 167 | C++ | `portability-avoid-pragma-once` | `#pragma once`, one per header |
 | 158 | Rust | `unnecessary_cast` | a load casts to the storage type where the field already spells it |
 | 123 | C, C++ | `readability-redundant-parentheses` | `!(rejected)`, 123 in each |
 | 75 | TypeScript | `naming-convention` | accessor names that keep a field's underscores (`getScalarMeter_per_second_per_second`) |
@@ -634,11 +814,21 @@ With the bool runs, TypeScript's `naming-convention` fell to 75, the six `_bitN_
 `no-unused-vars` to none. C++'s `modernize-use-auto` rose by three: the new loops convert their
 index with a cast, which the C++ spelling of a cast declares with its type named twice.
 
-**4 — The surface tree.** `project-dsdl-surface`, the scope ops, symbol allocation and reference
-rewriting. The first profile reproduces today's output exactly, so the whole phase changes no
-generated byte. Gate: the byte-diff oracle over the showroom and the regulated corpus for all seven
-targets, before and against after — zero diff — plus lit tests on the scope structure and a
-verifier that rejects a colliding scope.
+**4 — The surface tree.** `project-dsdl-surface`, its ops, the allocator and the reference resolver,
+as [The surface tree](#the-surface-tree) and [Spelling a reference](#spelling-a-reference) describe.
+The tree reproduces today's output, so the phase changes no generated byte over the corpora. It lands
+in eight steps, each with a gate that fails before the step and passes after it:
+
+| step | what lands | gate |
+|---|---|---|
+| 4.0 | the oracle as a CI lane behind the `surface` label: `tools/determinism/corpus_determinism.py` over the merge base and the head, for every target, over the showroom, the regulated corpus and the views, accessors-only and adversarial fixtures, with the naming manifests and the lowered MLIR | green on a change that moves no output and red on a seeded one-byte change, which a self-test holds |
+| 4.1 | `dsdl.surface`, `dsdl.scope` and `dsdl.decl`, their verifier, and `dsdl-opt` round-tripping | lit: a tree prints and parses back, a collision in one class is rejected, the same name in two classes is accepted, and an `of` that resolves to nothing is rejected |
+| 4.2 | `allocateSurface`, with the composers and scope builders behind it, and the resolver with each language's `Lookup`; the manifest renders from the allocator's plan | every manifest byte-identical over the corpora; unit tests of the bands and of each lookup model; `llvmdsdl-language-classification` |
+| 4.3 | Discovery's two collision checks call the allocator | Discovery's lit tests unchanged; the adversarial gate |
+| 4.4 | the pass writes the plan into the module for its target and profile | lit tests of each language's tree; the tree's names equal the manifest's; `lower-dsdl-bodies-neutral.txt` unchanged; the oracle at zero |
+| 4.5 | the emitters read the tree, one language per change, in the order Rust, C, Go, Python, TypeScript, C++, each deleting its own composition and scopes | per language: the oracle at zero; emission sites do not rise; `llvmdsdl-emitter-ir-queries` stays empty; the adversarial gate |
+| 4.6 | a generation run's manifest reports the whole tree for its target | the new fields pinned in lit; the existing fields unchanged |
+| 4.7 | each split pool merged into the scope the language has, one change per pool | an adversarial axis reaching the collision the split hid; the oracle at zero over the corpora |
 
 **5 — The declaration renderer.** `DeclarationSpelling` and the shared renderer; the hand-assembled
 signatures and scope prefixes are deleted from all six emitters. Still no generated byte changes.
@@ -727,12 +917,12 @@ twice fails it.
 | each language's own compiler and linter, at maximum strictness, over the regulated corpus | 1, then 6–11 | the output is accepted by the tools that judge that language |
 | the adversarial corpus, compiled in every backend | 1 onwards | a generated name does not meet another generated name |
 | the name emitted, asserted in lit | 1 onwards | a rule no compiler enforces still holds |
-| byte-diff of all seven targets before and after | 2, 4, 5 | a mechanism change changes no output |
+| byte-diff of all seven targets before and after, by `corpus_determinism.py` against the merge base | 2, 4, 5 | a mechanism change changes no output |
 | no language compared by name outside the classification, `llvmdsdl-language-classification` | 2 onwards | a new language is a row, not a search |
 | no emitter queries the IR to decide what a body means, `llvmdsdl-emitter-ir-queries` | 3 onwards | a plan's semantics are stated once, in the IR |
 | emission sites per emitter, held to a baseline by `llvmdsdl-emission-sites` | 2 onwards, falling from 5 | the shape is stated once, the syntax six times |
 | round-trip, the C↔language parity lanes, cross-language equivalence | all | the wire is unchanged |
-| naming manifest against the surface tree | 4 onwards | the manifest reports what the backend writes |
+| a generation run's naming manifest against the surface tree | 4 onwards | the manifest reports what the backend writes |
 | no in-source diagnostic suppression in generated output | 6–11 | a warning is answered by changing what is emitted |
 
 The last row is the existing rule, applied where it was not. `#pragma GCC diagnostic ignored` was
@@ -804,3 +994,29 @@ fails until a file binds one; no fallback stands in. There are no named packs: C
 example file, not a flag. The concepts that follow -- a bounded vector, an optional, a variant --
 arrive one change each, when generated code needs them, each with a lit fixture whose binding
 overrides every operation.
+
+**A body stays a flat function, and the tree places it.** The tree names each schema and function
+and decides where each language declares it; the IR's symbols and the bodies' references do not
+change. Moving the bodies into scope ops would produce the same output after converting three kinds of
+string reference to symbols and changing every consumer that reads a flat module at once
+([The surface tree](#the-tree-names-the-ir) lists them).
+
+**Rust moves onto the tree first**, then C, Go, Python, TypeScript and C++. Rust's output is already
+its target shape, so moving it first tests the tree against the shape it exists to express. C first
+would have proven the object lane's integration in the first change; C second still proves it before
+four more emitters depend on the tree.
+
+**An analysis run's manifest reports the definition layer.** Build rules and the language server's
+hover read it, and neither needs a helper's or an entry point's name; a build rule that does reads a
+generation run's manifest. Lowering once per language would have made the analysis manifest complete,
+at six lowerings per analysis run.
+
+**The tree is rooted at the generated package.** A root namespace that meets one of the generator's
+root-level names is then reported with every other collision. Rooting it at the DSDL namespaces would
+have kept those names in each language's reserved-name table only, and given the tree no scope
+without a DSDL source.
+
+**TypeScript's index becomes per-directory barrels, in TypeScript's phase.** A module's public path
+then follows from its own DSDL name, so adding a definition cannot rename another's export. The
+public import surface changes; keeping the flat index would have kept it, with each alias unique only
+against the run's other aliases.
