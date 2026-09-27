@@ -15,17 +15,17 @@ import (
 
 // The default is the zero value; the spec's definition is deserialising nothing over it.
 type serdes interface {
-	Serialize(buffer []byte) (int8, int)
-	Deserialize(buffer []byte) (int8, int)
+	Serialize(buffer []byte) (int, error)
+	Deserialize(buffer []byte) (int, error)
 }
 
 func check(name string, a serdes, b serdes) bool {
-	dcode, _ := b.Deserialize([]byte{})
+	_, derr := b.Deserialize([]byte{})
 	wa := make([]byte, 4096)
 	wb := make([]byte, 4096)
-	sa, na := a.Serialize(wa)
-	sb, nb := b.Serialize(wb)
-	same := dcode == 0 && sa == 0 && sb == 0 && na == nb && bytes.Equal(wa[:na], wb[:nb])
+	na, aerr := a.Serialize(wa)
+	nb, berr := b.Serialize(wb)
+	same := derr == nil && aerr == nil && berr == nil && na == nb && bytes.Equal(wa[:na], wb[:nb])
 	verdict := "same"
 	if !same {
 		verdict = "DIFFER"

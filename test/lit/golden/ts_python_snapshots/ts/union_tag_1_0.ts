@@ -69,34 +69,35 @@ export const UNION_TAG_FIRST_OPTION_TAG = 0;
 export const UNION_TAG_SECOND_OPTION_TAG = 1;
 
 export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number {
-  let inoutBufferSizeBytes = buffer.length;
+  const size = BigInt(buffer.length);
   let err: number;
+  let v0: number;
   if (obj == null) {
     err = -2;
+    v0 = 0;
   } else {
-    const size = BigInt(inoutBufferSizeBytes);
-    const v0 = size * 8n;
-    const err2 = capacityCheck(v0);
+    const v1 = size * 8n;
+    const err2 = capacityCheck(v1);
     const tag = dsdlRuntime.toBigIntValue(obj._tag);
     const tag2 = unionTagSer(tag);
     const err3 = validateUnionTag(tag2);
-    const v1 = err2 === 0;
-    const v2 = v1 ? err3 : err2;
-    const v3 = v2 === 0;
+    const v2 = err2 === 0;
+    const v3 = v2 ? err3 : err2;
+    const v4 = v3 === 0;
     let err4: number;
-    if (v3) {
+    if (v4) {
       const err5 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
       err4 = err5;
     } else {
-      err4 = v2;
+      err4 = v3;
     }
-    const v4 = tag2 === 0n;
-    const v5 = v4 ? 16n : 8n;
+    const v5 = tag2 === 0n;
+    const v6 = v5 ? 16n : 8n;
     let err6: number;
-    if (v4) {
-      const v6 = err4 === 0;
+    if (v5) {
+      const v7 = err4 === 0;
       let err7: number;
-      if (v6) {
+      if (v7) {
         const firstValue = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
         const value = scalarUnsigned0Ser(firstValue);
         const err8 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 8, value, false);
@@ -108,13 +109,13 @@ export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number
     } else {
       err6 = err4;
     }
-    const v7 = tag2 === 1n;
-    const v8 = v7 ? 24n : v5;
+    const v8 = tag2 === 1n;
+    const v9 = v8 ? 24n : v6;
     let err9: number;
-    if (v7) {
-      const v9 = err4 === 0;
+    if (v8) {
+      const v10 = err4 === 0;
       let err10: number;
-      if (v9) {
+      if (v10) {
         const secondValue = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
         const value2 = scalarUnsigned1Ser(secondValue);
         const err11 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 16, value2, false);
@@ -126,62 +127,59 @@ export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number
     } else {
       err9 = err6;
     }
-    const v10 = err9 === 0;
-    if (v10) {
-      const v11 = v8 / 8n;
-      inoutBufferSizeBytes = Number(v11);
-    }
+    const v11 = v9 / 8n;
+    const v12 = Number(v11);
     err = err9;
+    v0 = v12;
   }
   if (err === 0) {
-    return inoutBufferSizeBytes;
+    return v0;
   }
   return err;
 }
 
 export function deserializeUnionTagFrom(obj: UnionTag, buffer: Uint8Array): number {
-  let inoutBufferSizeBytes = buffer.length;
+  const size = BigInt(buffer.length);
   let err: number;
+  let v0: number;
   if (obj == null) {
     err = -2;
+    v0 = 0;
   } else {
-    const size = BigInt(inoutBufferSizeBytes);
     const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 8);
     const tag = unionTagDeser(value);
     const err2 = validateUnionTag(tag);
-    const v0 = err2 === 0;
-    if (v0) {
+    const v1 = err2 === 0;
+    if (v1) {
       (obj as { _tag: number })._tag = Number(tag);
     }
-    const v1 = tag === 0n;
-    const v2 = v1 ? 16n : 8n;
-    if (v1) {
+    const v2 = tag === 0n;
+    const v3 = v2 ? 16n : 8n;
+    if (v2) {
       const value2 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 8);
       const value3 = scalarUnsigned0Deser(value2);
       (obj as { first: number }).first = Number(value3);
     }
-    const v3 = tag === 1n;
-    const v4 = v3 ? 24n : v2;
-    if (v3) {
+    const v4 = tag === 1n;
+    const v5 = v4 ? 24n : v3;
+    if (v4) {
       const value4 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 16);
       const value5 = scalarUnsigned1Deser(value4);
       (obj as { second: number }).second = Number(value5);
     }
-    const v5 = v4 + 7n;
-    const v6 = v5 / 8n;
-    const v7 = v6 * 8n;
-    const v8 = size * 8n;
-    const v9 = v7 < v8;
-    const v10 = v9 ? v7 : v8;
-    const v11 = err2 === 0;
-    if (v11) {
-      const v12 = v10 / 8n;
-      inoutBufferSizeBytes = Number(v12);
-    }
+    const v6 = v5 + 7n;
+    const v7 = v6 / 8n;
+    const v8 = v7 * 8n;
+    const v9 = size * 8n;
+    const v10 = v8 < v9;
+    const v11 = v10 ? v8 : v9;
+    const v12 = v11 / 8n;
+    const v13 = Number(v12);
     err = err2;
+    v0 = v13;
   }
   if (err === 0) {
-    return inoutBufferSizeBytes;
+    return v0;
   }
   return err;
 }

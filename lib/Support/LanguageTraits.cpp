@@ -20,6 +20,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
+#include "llvmdsdl/Support/BodyInterface.h"
 #include "llvmdsdl/Support/Language.h"
 
 namespace llvmdsdl
@@ -49,6 +50,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .nullability          = {.objectPointer = true, .rawPointer = true, .accessorBuffer = true},
                 .accessorsReturnViews = false,
                 .objectsAreByteImages = true,
+                .bodiesAnswerSize     = false,
+                .boolArrays           = BoolArrayStorage::Packed,
             },
         // No scope below the file, so a composed name carries the whole path.
         .composition =
@@ -90,6 +93,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .nullability          = {.objectPointer = true, .rawPointer = true, .accessorBuffer = false},
                 .accessorsReturnViews = true,
                 .objectsAreByteImages = true,
+                .bodiesAnswerSize     = false,
+                .boolArrays           = BoolArrayStorage::PackedWhenFixed,
             },
         // A section is flattened into its service's namespace-scope name rather than nested in it.
         .composition =
@@ -107,7 +112,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .freeFunctions                  = {.entryPointJoin       = "_",
                                                    .initializer          = false,
                                                    .accessors            = AccessorNaming::None,
-                                                   .unionOptionFunctions = false},
+                                                   .unionOptionFunctions = false,
+                                                   .loweredBodySuffix    = ""},
             },
     },
     {
@@ -130,6 +136,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .nullability          = {.objectPointer = false, .rawPointer = false, .accessorBuffer = false},
                 .accessorsReturnViews = true,
                 .objectsAreByteImages = true,
+                .bodiesAnswerSize     = true,
+                .boolArrays           = BoolArrayStorage::PerElement,
             },
         // Each definition and version is a module, which is what encloses a service's sections.
         .composition =
@@ -167,6 +175,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .nullability          = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
                 .accessorsReturnViews = true,
                 .objectsAreByteImages = true,
+                .bodiesAnswerSize     = true,
+                .boolArrays           = BoolArrayStorage::PerElement,
             },
         // A package holds a whole DSDL namespace, so a constant's name carries its type's.
         .composition =
@@ -184,7 +194,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .freeFunctions                  = {.entryPointJoin       = "",
                                                    .initializer          = false,
                                                    .accessors            = AccessorNaming::Concatenated,
-                                                   .unionOptionFunctions = false},
+                                                   .unionOptionFunctions = false,
+                                                   .loweredBodySuffix    = ""},
             },
     },
     {
@@ -207,6 +218,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .nullability          = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
                 .accessorsReturnViews = true,
                 .objectsAreByteImages = false,
+                .bodiesAnswerSize     = true,
+                .boolArrays           = BoolArrayStorage::PerElement,
             },
         // A type's constants are the module's, where the classification puts them on the type.
         .composition =
@@ -244,6 +257,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .nullability          = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
                 .accessorsReturnViews = true,
                 .objectsAreByteImages = false,
+                .bodiesAnswerSize     = true,
+                .boolArrays           = BoolArrayStorage::PerElement,
             },
         // A type's constants are the module's, where the classification puts them on the class.
         .composition =

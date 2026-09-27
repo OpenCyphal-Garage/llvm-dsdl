@@ -220,8 +220,6 @@ def main() -> int:
         "void* memmove(void*, const void*, size_t);\n"
         "void* memset(void*, int, size_t);\n"
         "void* memcpy(void*, const void*, size_t);\n", encoding="utf-8")
-    (shim / "math.h").write_text(
-        "#pragma once\n#define isfinite(x) __builtin_isfinite(x)\n", encoding="utf-8")
     (shim / "assert.h").write_text(
         "#pragma once\n#define assert(x) ((void) 0)\n", encoding="utf-8")
 

@@ -579,6 +579,7 @@ import (
 	"strings"
 	"unsafe"
 
+	dsdlruntime "uavcan_dsdl_generated/dsdlruntime"
 	diagnosticpkg "uavcan_dsdl_generated/uavcan/diagnostic"
 	filepkg "uavcan_dsdl_generated/uavcan/file"
 	internetudppkg "uavcan_dsdl_generated/uavcan/internet/udp"
@@ -1058,11 +1059,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.Heartbeat@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1076,11 +1077,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.ExecuteCommand@V1_3@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1094,11 +1095,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.ExecuteCommand@V1_3@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1112,11 +1113,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.ID@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1130,11 +1131,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.Mode@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1148,11 +1149,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.Version@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1166,11 +1167,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.Health@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1184,11 +1185,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.IOStatistics@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1202,11 +1203,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.GetInfo@V1_0@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1220,11 +1221,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj diagnosticpkg.Record@V1_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1238,11 +1239,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj diagnosticpkg.Severity@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1256,11 +1257,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj registerpkg.Value@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1274,11 +1275,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj registerpkg.Access@V1_0@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1292,11 +1293,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj registerpkg.Access@V1_0@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1310,11 +1311,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj registerpkg.Name@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1328,11 +1329,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj registerpkg.List@V1_0@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1346,11 +1347,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj registerpkg.List@V1_0@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1364,11 +1365,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.List@V0_2@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1382,11 +1383,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.List@V0_2@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1400,11 +1401,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Read@V1_1@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1418,11 +1419,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Read@V1_1@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1436,11 +1437,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Write@V1_1@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1454,11 +1455,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Write@V1_1@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1472,11 +1473,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Modify@V1_1@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1490,11 +1491,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Modify@V1_1@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1508,11 +1509,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.GetInfo@V0_2@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1526,11 +1527,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.GetInfo@V0_2@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1544,11 +1545,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Error@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1562,11 +1563,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.GetTransportStatistics@V0_1@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1580,11 +1581,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj node.GetTransportStatistics@V0_1@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1598,11 +1599,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.Frame@V0_2@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1616,11 +1617,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.DataClassic@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1634,11 +1635,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.Error@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1652,11 +1653,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.DataFD@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1670,11 +1671,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.RTR@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1688,11 +1689,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.Manifestation@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1706,11 +1707,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.ArbitrationID@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1724,11 +1725,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.BaseArbitrationID@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1742,11 +1743,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metacan.ExtendedArbitrationID@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1760,11 +1761,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metaserialpkg.Fragment@V0_2@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1778,11 +1779,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metaethernetpkg.Frame@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1796,11 +1797,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metaethernetpkg.EtherType@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1814,11 +1815,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metaudppkg.Endpoint@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1832,11 +1833,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj metaudppkg.Frame@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1850,11 +1851,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj timepkg.Synchronization@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1868,11 +1869,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj timepkg.SynchronizedTimestamp@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1886,11 +1887,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj timepkg.TimeSystem@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1904,11 +1905,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj timepkg.TAIInfo@V0_1@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1922,11 +1923,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj timepkg.GetSynchronizationMasterInfo@V0_1@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1940,11 +1941,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj timepkg.GetSynchronizationMasterInfo@V0_1@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1958,11 +1959,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj internetudppkg.OutgoingPacket@V0_2@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1976,11 +1977,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj internetudppkg.HandleIncomingPacket@V0_2@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -1994,11 +1995,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj internetudppkg.HandleIncomingPacket@V0_2@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2013,11 +2014,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitanglepkg.Quaternion@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2032,11 +2033,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitaccelerationpkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2051,11 +2052,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitforcepkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2070,11 +2071,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitlengthpkg.WideVector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2089,11 +2090,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunittorquepkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2108,11 +2109,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisampleanglepkg.Quaternion@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2127,11 +2128,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisampleaccelerationpkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2146,11 +2147,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisampleforcepkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2165,11 +2166,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisampletorquepkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2184,11 +2185,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitvelocitypkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2203,11 +2204,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisamplevelocitypkg.Vector3@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2221,11 +2222,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitemperaturepkg.Scalar@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2239,11 +2240,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisampletemperaturepkg.Scalar@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2257,11 +2258,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj siunitvoltagepkg.Scalar@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2275,11 +2276,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj sisamplevoltagepkg.Scalar@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2293,11 +2294,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Natural8@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2312,11 +2313,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Real16@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2330,11 +2331,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Real32@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2348,11 +2349,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Bit@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2366,11 +2367,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Bit@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2384,11 +2385,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Integer8@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2402,11 +2403,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Integer16@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2420,11 +2421,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Integer32@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2438,11 +2439,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Integer64@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2456,11 +2457,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Natural8@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2474,11 +2475,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Natural16@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2492,11 +2493,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Natural32@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2510,11 +2511,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Natural64@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2528,11 +2529,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Real16@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2546,11 +2547,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Real32@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2564,11 +2565,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivescalarpkg.Real64@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2582,11 +2583,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Integer8@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2600,11 +2601,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Integer16@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2618,11 +2619,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Integer32@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2636,11 +2637,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Integer64@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2654,11 +2655,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Natural16@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2672,11 +2673,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Natural32@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2690,11 +2691,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Natural64@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2708,11 +2709,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primarray.Real64@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2726,11 +2727,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivepkg.Empty@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2744,11 +2745,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivepkg.String@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2762,11 +2763,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj primitivepkg.Unstructured@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2780,11 +2781,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj filepkg.Path@V2_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2798,11 +2799,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnppkg.NodeIDAllocationData@V2_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2816,11 +2817,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnpclusterpkg.Entry@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2834,11 +2835,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnpclusterpkg.AppendEntries@V1_0@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2852,11 +2853,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnpclusterpkg.AppendEntries@V1_0@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2870,11 +2871,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnpclusterpkg.RequestVote@V1_0@Request
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2888,11 +2889,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnpclusterpkg.RequestVote@V1_0@Response
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2906,11 +2907,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj pnpclusterpkg.Discovery@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2924,11 +2925,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj nodeport.ServiceID@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2942,11 +2943,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj nodeport.SubjectID@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2960,11 +2961,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj nodeport.ServiceIDList@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2978,11 +2979,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj nodeport.SubjectIDList@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -2996,11 +2997,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj nodeport.ID@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -3014,11 +3015,11 @@ func buildParityCases(baseIterations int) []parityCase {
 			},
 			goRoundtrip: func(input []byte, output []byte) (int8, int, int8, int) {
 				var obj nodeport.List@V1_0@
-				desRC, consumed := obj.Deserialize(input)
+				desRC, consumed := dsdlruntime.Coded(obj.Deserialize(input))
 				if desRC < 0 {
 					return desRC, consumed, 0, 0
 				}
-				serRC, serSize := obj.Serialize(output)
+				serRC, serSize := dsdlruntime.Coded(obj.Serialize(output))
 				return desRC, consumed, serRC, serSize
 			},
 		},
@@ -4435,7 +4436,7 @@ func runCGoParity(iterations int) error {
 		}
 		if outcome.cDeserializeRC >= 0 {
 			var obj primarray.Real16@V1_0@
-			rc, _ := obj.Deserialize(nanInput)
+			rc, _ := dsdlruntime.Coded(obj.Deserialize(nanInput))
 			if rc >= 0 && len(obj.Value) == 1 && !math.IsNaN(float64(obj.Value[0])) {
 				return fmt.Errorf("real16_nan_vector: expected NaN value after deserialize")
 			}

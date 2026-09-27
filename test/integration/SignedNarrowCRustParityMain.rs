@@ -13,8 +13,18 @@
 use std::fmt::Write as _;
 use std::os::raw::c_int;
 
+use signed_narrow_generated::dsdl_runtime;
 use signed_narrow_generated::vendor::int3sat_1_0::Int3Sat;
 use signed_narrow_generated::vendor::int3trunc_1_0::Int3Trunc;
+
+/// A deserialisation's outcome as the C harness reports it: the runtime's code, and the size
+/// consumed, which is the whole buffer where it failed.
+fn deserialize_as_c(result: Result<usize, dsdl_runtime::Error>, buffer: &[u8]) -> (i8, usize) {
+    match result {
+        Ok(consumed) => (0, consumed),
+        Err(error) => (error.code(), buffer.len()),
+    }
+}
 
 const MAX_IO_BUFFER: usize = 64;
 
@@ -97,7 +107,7 @@ fn run_case<T>(
     max_serialized: usize,
     c_roundtrip: CRoundtripFn,
     rust_deserialize: fn(&mut T, &[u8]) -> (i8, usize),
-    rust_serialize: fn(&T, &mut [u8]) -> Result<usize, i8>,
+    rust_serialize: fn(&T, &mut [u8]) -> Result<usize, dsdl_runtime::Error>,
     rng_state: &mut u64,
 ) -> Result<(), String>
 where
@@ -155,7 +165,7 @@ where
         let rust_ser_result = rust_serialize(&obj, &mut rust_output[..max_serialized]);
         let (rust_ser_rc, rust_ser_size) = match rust_ser_result {
             Ok(size) => (0i8, size),
-            Err(rc) => (rc, 0usize),
+            Err(error) => (error.code(), 0usize),
         };
 
         let size_mismatch = rust_ser_size != c_result.serialize_size;
@@ -182,18 +192,18 @@ where
 }
 
 fn int3sat_deserialize(out: &mut Int3Sat, buffer: &[u8]) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    deserialize_as_c(out.deserialize(buffer), buffer)
 }
 
-fn int3sat_serialize(obj: &Int3Sat, buffer: &mut [u8]) -> Result<usize, i8> {
+fn int3sat_serialize(obj: &Int3Sat, buffer: &mut [u8]) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
 fn int3trunc_deserialize(out: &mut Int3Trunc, buffer: &[u8]) -> (i8, usize) {
-    out.deserialize_with_consumed(buffer)
+    deserialize_as_c(out.deserialize(buffer), buffer)
 }
 
-fn int3trunc_serialize(obj: &Int3Trunc, buffer: &mut [u8]) -> Result<usize, i8> {
+fn int3trunc_serialize(obj: &Int3Trunc, buffer: &mut [u8]) -> Result<usize, dsdl_runtime::Error> {
     obj.serialize(buffer)
 }
 
@@ -204,7 +214,7 @@ fn run_directed_checks() -> Result<(), String> {
                                     value: i8,
                                     expected_byte: u8,
                                     c_fn: unsafe extern "C" fn(i8, *mut u8, usize, *mut CCaseResult) -> c_int,
-                                    rust_fn: fn(i8, &mut [u8]) -> Result<usize, i8>|
+                                    rust_fn: fn(i8, &mut [u8]) -> Result<usize, dsdl_runtime::Error>|
      -> Result<(), String> {
         let mut c_result_local = CCaseResult::default();
         let mut c_out_local = [0u8; 8];
@@ -216,8 +226,8 @@ fn run_directed_checks() -> Result<(), String> {
             return Err(format!("C directed serialize call failed in {name} status={c_status}"));
         }
 
-        let rust_size = rust_fn(value, &mut r_out_local[..1]).map_err(|rc| {
-            format!("Rust directed serialize failed in {name} rc={rc}")
+        let rust_size = rust_fn(value, &mut r_out_local[..1]).map_err(|error| {
+            format!("Rust directed serialize failed in {name} error={error}")
         })?;
 
         if c_result_local.serialize_rc != 0 || c_result_local.serialize_size != rust_size {
@@ -237,11 +247,11 @@ fn run_directed_checks() -> Result<(), String> {
         Ok(())
     };
 
-    let sat_rust = |value: i8, buffer: &mut [u8]| -> Result<usize, i8> {
+    let sat_rust = |value: i8, buffer: &mut [u8]| -> Result<usize, dsdl_runtime::Error> {
         let obj = Int3Sat { value };
         obj.serialize(buffer)
     };
-    let trunc_rust = |value: i8, buffer: &mut [u8]| -> Result<usize, i8> {
+    let trunc_rust = |value: i8, buffer: &mut [u8]| -> Result<usize, dsdl_runtime::Error> {
         let obj = Int3Trunc { value };
         obj.serialize(buffer)
     };
@@ -293,7 +303,7 @@ fn run_directed_checks() -> Result<(), String> {
         }
 
         let mut rust_obj = Int3Sat::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[sample]);
+        let (rust_rc, rust_consumed) = deserialize_as_c(rust_obj.deserialize(&[sample]), &[sample]);
         if rust_rc != 0 || rust_consumed != 1 || rust_obj.value != c_value || rust_obj.value != expected {
             return Err(format!(
                 "Int3Sat sign-extension mismatch sample={sample:02X} C(value={}) Rust(rc={},consumed={},value={}) expected={expected}",
@@ -321,7 +331,7 @@ fn run_directed_checks() -> Result<(), String> {
         }
 
         let mut rust_obj = Int3Trunc::default();
-        let (rust_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&[sample]);
+        let (rust_rc, rust_consumed) = deserialize_as_c(rust_obj.deserialize(&[sample]), &[sample]);
         if rust_rc != 0 || rust_consumed != 1 || rust_obj.value != c_value || rust_obj.value != expected {
             return Err(format!(
                 "Int3Trunc sign-extension mismatch sample={sample:02X} C(value={}) Rust(rc={},consumed={},value={}) expected={expected}",

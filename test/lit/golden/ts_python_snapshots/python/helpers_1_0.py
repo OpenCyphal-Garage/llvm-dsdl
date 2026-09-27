@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 
-from fixtures_snapshot_py._runtime_loader import runtime as dsdl_runtime, error_message
+from fixtures_snapshot_py._runtime_loader import error_message, runtime as dsdl_runtime
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.Helpers"
@@ -90,55 +90,53 @@ class Helpers:
         return value
 
     def _serialize_into(self, buffer: memoryview) -> int:
-        inout_buffer_size_bytes = len(buffer)
+        size = len(buffer)
         if self is None:
             err = -2
+            v0 = 0
         else:
-            size = inout_buffer_size_bytes
-            v0 = size * 8
-            err_2 = _capacity_check(v0)
-            v1 = err_2 == 0
-            if v1:
+            v1 = size * 8
+            err_2 = _capacity_check(v1)
+            v2 = err_2 == 0
+            if v2:
                 a_value = int(self.a)
                 value = _scalar_signed_0_ser(a_value)
                 err_4 = dsdl_runtime.write_signed(buffer, 0, 13, value, False)
                 err_3 = err_4
             else:
                 err_3 = err_2
-            v2 = err_3 == 0
-            if v2:
+            v3 = err_3 == 0
+            if v3:
                 b_value = float(self.b)
                 value_2 = _scalar_float_1_ser(b_value)
                 err_6 = dsdl_runtime.write_float(buffer, 13, 16, value_2)
                 err_5 = err_6
             else:
                 err_5 = err_3
-            v3 = err_5 == 0
-            if v3:
+            v4 = err_5 == 0
+            if v4:
                 c_count = len(self.c)
                 err_8 = _validate_array_length_2(c_count)
-                v4 = err_8 == 0
-                if v4:
+                v5 = err_8 == 0
+                if v5:
                     count = _array_length_prefix_2_ser(c_count)
                     err_10 = dsdl_runtime.write_unsigned(buffer, 29, 8, count, False)
-                    v5 = c_count
                     err_11 = err_10
-                    for i in range(0, v5, 1):
-                        v6 = i
-                        v7 = v6 * 8
-                        v8 = v7 + 37
-                        v9 = err_11 == 0
-                        if v9:
-                            c_value = int(self.c[v6])
+                    for i in range(0, c_count, 1):
+                        v6 = i * 8
+                        v7 = v6 + 37
+                        v8 = err_11 == 0
+                        if v8:
+                            c_value = int(self.c[i])
                             value_3 = _scalar_unsigned_2_ser(c_value)
-                            err_13 = dsdl_runtime.write_unsigned(buffer, v8, 8, value_3, False)
+                            err_13 = dsdl_runtime.write_unsigned(buffer, v7, 8, value_3, False)
                             err_12 = err_13
                         else:
                             err_12 = err_11
                         err_11 = err_12
-                    v10 = c_count * 8
-                    v11 = v10 + 37
-                    offset_2 = v11
+                    v9 = c_count * 8
+                    v10 = v9 + 37
+                    offset_2 = v10
                     err_9 = err_11
                 else:
                     offset_2 = 29
@@ -148,30 +146,28 @@ class Helpers:
             else:
                 offset = 29
                 err_7 = err_5
-            v12 = err_7 == 0
-            if v12:
+            v11 = err_7 == 0
+            if v11:
                 err_15 = dsdl_runtime.write_unsigned(buffer, offset, 3, 0, False)
-                v13 = offset + 3
-                offset_3 = v13
+                v12 = offset + 3
+                offset_3 = v12
                 err_14 = err_15
             else:
                 offset_3 = offset
                 err_14 = err_7
-            v14 = err_14 == 0
-            if v14:
-                v15 = offset_3 // 8
-                inout_buffer_size_bytes = v15
+            v13 = offset_3 // 8
             err = err_14
+            v0 = v13
         if err == 0:
-            return inout_buffer_size_bytes
+            return v0
         return err
 
     def _deserialize_from(self, buffer: memoryview) -> int:
-        inout_buffer_size_bytes = len(buffer)
+        size = len(buffer)
         if self is None:
             err = -2
+            v0 = 0
         else:
-            size = inout_buffer_size_bytes
             value = dsdl_runtime.read_signed(buffer, 0, 13)
             value_2 = _scalar_signed_0_deser(value)
             self.a = value_2
@@ -181,33 +177,29 @@ class Helpers:
             value_5 = dsdl_runtime.read_unsigned(buffer, 29, 8)
             count = _array_length_prefix_2_deser(value_5)
             err_2 = _validate_array_length_2(count)
-            v0 = err_2 == 0
-            if v0:
+            v1 = err_2 == 0
+            if v1:
                 self.c = [0] * count
-                v2 = count
-                for i in range(0, v2, 1):
-                    v3 = i
-                    v4 = v3 * 8
-                    v5 = v4 + 37
-                    value_6 = dsdl_runtime.read_unsigned(buffer, v5, 8)
+                for i in range(0, count, 1):
+                    v3 = i * 8
+                    v4 = v3 + 37
+                    value_6 = dsdl_runtime.read_unsigned(buffer, v4, 8)
                     value_7 = _scalar_unsigned_2_deser(value_6)
-                    self.c[v3] = value_7
-                v6 = count * 8
-                v7 = v6 + 37
-                v1 = v7
+                    self.c[i] = value_7
+                v5 = count * 8
+                v6 = v5 + 37
+                v2 = v6
             else:
-                v1 = 37
-            v8 = v1 + 7
-            v9 = v8 // 8
-            v10 = v9 * 8
-            v11 = size * 8
-            v12 = v10 < v11
-            v13 = (v10 if v12 else v11)
-            v14 = err_2 == 0
-            if v14:
-                v15 = v13 // 8
-                inout_buffer_size_bytes = v15
+                v2 = 37
+            v7 = v2 + 7
+            v8 = v7 // 8
+            v9 = v8 * 8
+            v10 = size * 8
+            v11 = v9 < v10
+            v12 = (v9 if v11 else v10)
+            v13 = v12 // 8
             err = err_2
+            v0 = v13
         if err == 0:
-            return inout_buffer_size_bytes
+            return v0
         return err

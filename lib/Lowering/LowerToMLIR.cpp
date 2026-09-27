@@ -33,7 +33,6 @@
 #include <algorithm>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <mlir/Support/LLVM.h>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>

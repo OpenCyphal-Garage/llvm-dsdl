@@ -301,6 +301,24 @@ public:
     {
         return {};
     }
+    void writeBit(SourceWriter& /*w*/, mlir::dsdl::WriteBitOp /*op*/, const ValueNames& /*names*/) const override {}
+    void returnWithSize(SourceWriter& /*w*/, llvm::StringRef /*error*/, llvm::StringRef /*used*/) const override {}
+    [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp /*op*/,
+                                           const ValueNames& /*names*/) const override
+    {
+        return {};
+    }
+    [[nodiscard]] std::string readBit(mlir::dsdl::ReadBitOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return {};
+    }
+    void declareCallSerdesSized(SourceWriter& /*w*/,
+                                llvm::StringRef /*error*/,
+                                llvm::StringRef /*consumed*/,
+                                mlir::dsdl::CallSerdesSizedOp /*op*/,
+                                const ValueNames& /*names*/) const override
+    {
+    }
 };
 
 /// @brief A body that reads an array's length: one operation that states a role.

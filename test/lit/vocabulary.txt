@@ -48,6 +48,8 @@
 # RUN: %dsdlc --target-language cpp --cpp-profile autosar --vocabulary %S/../../examples/vocabulary/cpp-autosar-cetl.yaml %S/fixtures_host_image --outdir %t/cetl > /dev/null
 # RUN: cat %t/cetl/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=CETL
 # CETL:      #include "cetl/pf20/span.hpp"
+# CETL-EMPTY:
+# CETL-NEXT: #include "dsdl_runtime.h"
 # CETL-NEXT: #include "dsdl_runtime.hpp"
 # CETL:      static std::uint16_t get_b(const cetl::pf20::span<const std::uint8_t> buffer)
 # CETL-NEXT: {

@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/emitter/CIncludes.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
@@ -38,24 +39,27 @@ std::string defineConstant(const std::string& typeName, const llvm::StringRef co
 
 }  // namespace
 
-std::vector<std::string> renderTypeMetadataMacros(const std::string& typeName, const SectionMetadata& metadata)
+std::vector<std::string> renderTypeMetadataMacros(const std::string&     typeName,
+                                                  const SectionMetadata& metadata,
+                                                  const CFileNames&      file)
 {
-    std::vector<std::string> lines = {
+    const auto               boolean = [&](const bool value) { return file.standard(value ? "true" : "false"); };
+    std::vector<std::string> lines   = {
         defineConstant(typeName, "FULL_NAME_") + "\"" + metadata.fullName + "\"",
         defineConstant(typeName, "FULL_NAME_AND_VERSION_") + "\"" + metadata.fullName + "." +
             std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"",
         defineConstant(typeName, "EXTENT_BYTES_") + std::to_string(metadata.extentBytes) + "UL",
         defineConstant(typeName, "SERIALIZATION_BUFFER_SIZE_BYTES_") +
             std::to_string(metadata.serializationBufferSizeBytes) + "UL",
-        defineConstant(typeName, "WIRE_FLAT_") + (metadata.wireFlat.holds ? "true" : "false"),
+        defineConstant(typeName, "WIRE_FLAT_") + boolean(metadata.wireFlat.holds),
         defineConstant(typeName, "WIRE_FLAT_REASON_") + "\"" + metadata.wireFlat.reason + "\"",
-        defineConstant(typeName, "HOST_IMAGE_") + (metadata.hostImage.holds ? "true" : "false"),
+        defineConstant(typeName, "HOST_IMAGE_") + boolean(metadata.hostImage.holds),
         defineConstant(typeName, "HOST_IMAGE_REASON_") + "\"" + metadata.hostImage.reason + "\"",
-        defineConstant(typeName, "IS_DEPRECATED_") + (metadata.deprecated ? "true" : "false"),
+        defineConstant(typeName, "IS_DEPRECATED_") + boolean(metadata.deprecated),
     };
     if (metadata.declaresPortId)
     {
-        lines.push_back(defineConstant(typeName, "HAS_FIXED_PORT_ID_") + (metadata.fixedPortId ? "true" : "false"));
+        lines.push_back(defineConstant(typeName, "HAS_FIXED_PORT_ID_") + boolean(metadata.fixedPortId.has_value()));
         if (metadata.fixedPortId)
         {
             lines.push_back(defineConstant(typeName, "FIXED_PORT_ID_") + std::to_string(*metadata.fixedPortId) + "U");
@@ -68,13 +72,14 @@ std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&    
                                                           const std::string&                 fullName,
                                                           const std::uint32_t                majorVersion,
                                                           const std::uint32_t                minorVersion,
-                                                          const std::optional<std::uint32_t> fixedPortId)
+                                                          const std::optional<std::uint32_t> fixedPortId,
+                                                          const CFileNames&                  file)
 {
     std::vector<std::string> lines = {
         defineConstant(baseTypeName, "FULL_NAME_") + "\"" + fullName + "\"",
         defineConstant(baseTypeName, "FULL_NAME_AND_VERSION_") + "\"" + fullName + "." + std::to_string(majorVersion) +
             "." + std::to_string(minorVersion) + "\"",
-        defineConstant(baseTypeName, "HAS_FIXED_PORT_ID_") + (fixedPortId ? "true" : "false"),
+        defineConstant(baseTypeName, "HAS_FIXED_PORT_ID_") + file.standard(fixedPortId ? "true" : "false"),
     };
     if (fixedPortId)
     {
@@ -115,7 +120,8 @@ std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTy
 }
 
 std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseTypeName,
-                                                        const std::string& requestTypeName)
+                                                        const std::string& requestTypeName,
+                                                        const CFileNames&  file)
 {
     const std::string objectType = renderCTagSpelling(requestTypeName);
     const auto        base       = [&baseTypeName](const EntryPoint entryPoint) {
@@ -124,18 +130,21 @@ std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseT
     const auto request = [&requestTypeName](const EntryPoint entryPoint) {
         return renderEntryPointName(Language::C, requestTypeName, entryPoint);
     };
+    const std::string status = file.standard("int8_t");
+    const std::string byte   = file.standard("uint8_t");
+    const std::string size   = file.standard("size_t");
     return {
-        "static inline int8_t " + base(EntryPoint::Serialize) + "(const " + objectType +
-            "* const obj, uint8_t* const buffer, size_t* const inout_buffer_size_bytes)",
+        "static inline " + status + " " + base(EntryPoint::Serialize) + "(const " + objectType + "* const obj, " +
+            byte + "* const buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + request(EntryPoint::Serialize) + "(obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline int8_t " + base(EntryPoint::Deserialize) + "(" + objectType +
-            "* const out_obj, const uint8_t* buffer, size_t* const inout_buffer_size_bytes)",
+        "static inline " + status + " " + base(EntryPoint::Deserialize) + "(" + objectType + "* const out_obj, const " +
+            byte + "* buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + request(EntryPoint::Deserialize) + "(out_obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline int8_t " + base(EntryPoint::Initialize) + "(" + objectType + "* const out_obj)",
+        "static inline " + status + " " + base(EntryPoint::Initialize) + "(" + objectType + "* const out_obj)",
         "{",
         "  return " + request(EntryPoint::Initialize) + "(out_obj);",
         "}",
