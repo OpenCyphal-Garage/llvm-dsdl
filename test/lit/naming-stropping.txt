@@ -396,7 +396,7 @@
 # The manifest reports the identifiers the backend writes, so the stems it names are the
 # files on disk. An analysis target reports every language at once.
 # RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
-# RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note
+# RUN: %{python} %S/check_naming_manifest.py %t/names.json %t/note %t/c %t/ts %t/py
 
 # Asking what a name will become is not asking for a file: --list-outputs is what a build system runs
 # at configure time, and it implies a dry run.

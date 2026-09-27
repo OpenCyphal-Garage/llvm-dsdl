@@ -501,7 +501,8 @@ void emitUnionOptionTagMacros(SourceWriter&          w,
     for (const auto& option : metadata.unionOptions)
     {
         w.line("#define " +
-               renderEnclosedConstantName(typeName,
+               renderDeclaredConstantName(Language::C,
+                                          typeName,
                                           constScope.get(IdentifierRole::MacroName,
                                                          unionOptionTagName(Language::C, option.name))) +
                " " + std::to_string(option.tag) + "U");
@@ -685,7 +686,8 @@ void emitSectionConstants(SourceWriter&          w,
     {
         emitAttachedDocC(w, c.doc);
         const std::string literal = valueToCExpr(c.type, c.value);
-        w.line("#define " + renderEnclosedConstantName(typeName, constScope.get(IdentifierRole::ConstantName, c.name)) +
+        w.line("#define " +
+               renderDeclaredConstantName(Language::C, typeName, constScope.get(IdentifierRole::ConstantName, c.name)) +
                " (" + (std::holds_alternative<bool>(c.value.data) ? file.standard(literal) : literal) + ")");
     }
     if (!section.constants.empty())
@@ -726,7 +728,8 @@ void emitUnionOptionWrappers(SourceWriter&          w,
     for (const auto& option : metadata.unionOptions)
     {
         const std::string member = fieldScope.get(IdentifierRole::FieldName, option.name);
-        const std::string tag = renderEnclosedConstantName(typeName,
+        const std::string tag = renderDeclaredConstantName(Language::C,
+                                                           typeName,
                                                            tagScope.get(IdentifierRole::MacroName,
                                                                         unionOptionTagName(Language::C, option.name)));
 

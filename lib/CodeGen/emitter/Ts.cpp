@@ -450,26 +450,25 @@ void emitUnionOptionTags(SourceWriter&          w,
     const NamingScope tagScope = makeSectionConstantScope(Language::TypeScript, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
-        w.line("export const " + prefixupper + "_" +
-               tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::TypeScript, option.name)) + " = " +
-               std::to_string(option.tag) + ";");
+        w.line("export const " +
+               renderDeclaredConstantName(Language::TypeScript,
+                                          prefix,
+                                          tagScope.get(IdentifierRole::MacroName,
+                                                       unionOptionTagName(Language::TypeScript, option.name))) +
+               " = " + std::to_string(option.tag) + ";");
     }
 }
 
 void emitSectionConstants(SourceWriter& w, const std::string& prefix, const SemanticSection& section)
 {
-    std::vector<std::string> constNames;
-    constNames.reserve(section.constants.size());
-    for (const auto& constant : section.constants)
-    {
-        constNames.push_back(constant.name);
-    }
     const auto prefixupper       = codegenProjectIdentifier(Language::TypeScript, IdentifierRole::ConstantName, prefix);
     NamingScope const constScope = makeSectionConstantScope(Language::TypeScript, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocTs(w, constant.doc);
-        const auto constName = prefixupper + "_" + constScope.get(IdentifierRole::ConstantName, constant.name);
+        const auto constName = renderDeclaredConstantName(Language::TypeScript,
+                                                          prefix,
+                                                          constScope.get(IdentifierRole::ConstantName, constant.name));
         w.line("export const " + constName + " = " + tsConstValue(constant.type, constant.value) + ";");
     }
 }

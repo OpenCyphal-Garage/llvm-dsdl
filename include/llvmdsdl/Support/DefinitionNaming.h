@@ -190,6 +190,21 @@ enum class AccessorVerb : std::uint8_t
 /// @return The constant's name.
 [[nodiscard]] std::string renderEnclosedConstantName(llvm::StringRef typeName, llvm::StringRef constant);
 
+/// @brief Names a section's constant, or its union's option tag, as the language declares it.
+///
+/// Where the language declares a type's constants in the type's own scope, the declared name is the
+/// one the section's scope allocates. C declares them in the scope enclosing the type, and TypeScript
+/// and Python at module scope, each carrying the type's name: `ns__List__Request_EXTENT_BYTES_`,
+/// `LIST_REQUEST_EXTENT_BYTES`. A language that declares them in the package's scope composes the
+/// whole name in that scope, and has no use for this.
+/// @param[in] language The language.
+/// @param[in] sectionTypeName The section's type name.
+/// @param[in] allocated The name the section's constant scope allocates.
+/// @return The declared name.
+[[nodiscard]] std::string renderDeclaredConstantName(Language        language,
+                                                     llvm::StringRef sectionTypeName,
+                                                     llvm::StringRef allocated);
+
 /// @brief Renders how generated C names a composite type where it is used: `struct <typeName>`.
 ///
 /// The typedef carries `__attribute__((deprecated))` when the definition is deprecated; the tag

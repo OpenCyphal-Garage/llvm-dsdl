@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <string>
 #include <utility>
 
@@ -206,6 +207,27 @@ std::string renderLoweredAccessorName(const Language        language,
 std::string renderEnclosedConstantName(const llvm::StringRef typeName, const llvm::StringRef constant)
 {
     return typeName.str() + "_" + constant.str();
+}
+
+std::string renderDeclaredConstantName(const Language        language,
+                                       const llvm::StringRef sectionTypeName,
+                                       const llvm::StringRef allocated)
+{
+    switch (languageTraits(language).composition.constants)
+    {
+    case ConstantsScope::Type:
+        return allocated.str();
+    case ConstantsScope::Enclosing:
+        return renderEnclosedConstantName(sectionTypeName, allocated);
+    case ConstantsScope::Module:
+        return renderEnclosedConstantName(codegenProjectIdentifier(language,
+                                                                   IdentifierRole::ConstantName,
+                                                                   sectionTypeName),
+                                          allocated);
+    case ConstantsScope::Package:
+        break;
+    }
+    llvm::report_fatal_error("a constant in the package's scope is named whole by that scope");
 }
 
 std::string renderCTagSpelling(const llvm::StringRef typeName)

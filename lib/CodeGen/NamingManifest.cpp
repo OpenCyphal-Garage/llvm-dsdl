@@ -79,9 +79,8 @@ llvm::json::Object renderSection(const Language                           langua
 {
     const NamingScope fieldScope = makeSectionFieldScope(language, section);
 
-    // Constants in a package's scope carry the type they belong to, so the name is one identifier
-    // rather than a prefix a consumer joins to a token, and it is built by the scope the emitter
-    // builds.
+    // A constant in a package's scope is named whole by the scope the emitter builds; every other
+    // language's scope allocates a name that `renderDeclaredConstantName` then declares.
     const bool        goLike     = languageTraits(language).composition.constants == ConstantsScope::Package;
     const NamingScope constScope = goLike
                                        ? makeGoConstantScope(section, sectionTypeName)
@@ -104,7 +103,9 @@ llvm::json::Object renderSection(const Language                           langua
     {
         constants[constant.name] =
             goLike ? constScope.get(IdentifierRole::ConstantName, goConstantKey({sectionTypeName, constant.name}))
-                   : constScope.get(IdentifierRole::ConstantName, constant.name);
+                   : renderDeclaredConstantName(language,
+                                                sectionTypeName,
+                                                constScope.get(IdentifierRole::ConstantName, constant.name));
     }
 
     llvm::json::Object out;
@@ -132,7 +133,10 @@ llvm::json::Object renderSection(const Language                           langua
             option["name"] = goLike
                                  ? constScope.get(IdentifierRole::ConstantName,
                                                   goConstantKey({sectionTypeName, field.name, "OPTION_TAG"}))
-                                 : constScope.get(IdentifierRole::MacroName, unionOptionTagName(language, field.name));
+                                 : renderDeclaredConstantName(language,
+                                                              sectionTypeName,
+                                                              constScope.get(IdentifierRole::MacroName,
+                                                                             unionOptionTagName(language, field.name)));
             option["tag"]  = static_cast<std::int64_t>(field.unionOptionIndex);
             options[field.name] = std::move(option);
         }
