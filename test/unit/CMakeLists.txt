@@ -121,6 +121,19 @@ if(PYTHON_EXECUTABLE)
     PROPERTIES
       LABELS "unit;python"
   )
+
+  add_test(
+    NAME llvmdsdl-corpus-determinism-tool-tests
+    COMMAND
+      ${CMAKE_COMMAND} -E env DSDLC=$<TARGET_FILE:dsdlc>
+        ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/determinism/test_corpus_determinism.py
+  )
+
+  set_tests_properties(
+    llvmdsdl-corpus-determinism-tool-tests
+    PROPERTIES
+      LABELS "unit;python"
+  )
 else()
   message(STATUS "Skipping Python unit tests: python3 unavailable")
 endif()

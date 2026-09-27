@@ -64,9 +64,9 @@ The lock is enforced **at configure time** by the build system and **again** by 
 
 - **Cross-architecture determinism gate:** the `corpus` jobs generate the full UAVCAN corpus for all
   six backends on x86-64 and on arm64, from the same source and the same toolchain, and
-  `cross-arch-determinism` compares the manifests byte-for-byte with `--require-c`. Identical input
-  and identical toolchain means a difference could only come from the architecture — word size,
-  alignment, floating-point formatting reaching emitted text.
+  `cross-arch-determinism` compares the manifests byte-for-byte. Identical input and identical
+  toolchain means a difference could only come from the architecture — word size, alignment,
+  floating-point formatting reaching emitted text.
 
 Comparing two *standard libraries* instead — libstdc++ against libc++ — is the obvious-looking
 alternative and does not work here: a project shipping one toolchain has no such divergence to
