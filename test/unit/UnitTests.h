@@ -94,9 +94,9 @@ bool runAliasLayoutTests();
 /// @return True when every case in the suite passed.
 bool runRuntimeTests();
 
-/// @brief Runs the CHeaderRenderTests suite.
+/// @brief Runs the SourceWriterTests suite.
 /// @return True when every case in the suite passed.
-bool runCHeaderRenderTests();
+bool runSourceWriterTests();
 
 /// @brief Runs the ConstantLiteralRenderTests suite.
 /// @return True when every case in the suite passed.

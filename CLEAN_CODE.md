@@ -320,9 +320,9 @@ its types.
 ## One renderer, one declaration spelling per language
 
 `translateFunction` holds the structure of a body and asks a `BodySpelling` for the language.
-The declaration half takes the same shape: a shared renderer walks the surface tree — opening and
-closing scopes, emitting declarations in dependency order, placing definitions — and asks a
-`DeclarationSpelling` for the syntax.
+The declaration half takes the same shape: a shared renderer, `DeclarationRenderer`, walks the
+surface tree — opening and closing scopes, emitting declarations in dependency order, placing
+definitions — and asks a `DeclarationSpelling` for the syntax.
 
 The renderer holds: the order of a file's parts, from a layout each language states; scope nesting;
 forward declarations where a language needs them; which declarations are public; and where a body is
@@ -1025,6 +1025,12 @@ and index as an `index`, with the conversions in the body, so the C the backend 
 object the `obj` target assembles take one signature; the object target lowers an `index` to the
 target's `size_t`. A composite getter writes its size only where the caller hands it a pointer. The
 header publishes each accessor under the section's name by a forward that converts nothing.
+
+C's renderer change moves C's declaration half onto `DeclarationRenderer`. C's layout names the
+parts of its header and of its source file, and of a section; each generated constant is one
+`#define` whose value is read off the facts by what the declaration states; each lowered function's
+signature is spelt once, for its prototype, its definition and the forward that publishes it. C's
+declaration count falls from 152 to 52.
 
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on

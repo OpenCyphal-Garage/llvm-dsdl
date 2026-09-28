@@ -76,6 +76,13 @@ public:
     /// @brief Emits an empty line, with no indentation.
     void blank();
 
+    /// @brief Begins a new unit: the next line is preceded by an empty one, unless it is the first
+    ///        line written or already follows an empty one.
+    ///
+    /// Separation takes effect only where a line follows, so a unit that writes nothing adds no
+    /// empty line and none follows the last.
+    void separate();
+
     /// @brief Emits @p text at the current depth, then descends one level.
     /// @param[in] text The block-opening line.
     void open(const std::string& text);
@@ -109,9 +116,18 @@ public:
     }
 
 private:
+    /// @brief Writes the empty line a separation asked for, where one is due.
+    void begin();
+
     std::ostringstream& out_;
     IndentPolicy        policy_;
     int                 depth_{0};
+    /// @brief Whether a line has been written.
+    bool written_{false};
+    /// @brief Whether the last line written was empty.
+    bool afterBlank_{false};
+    /// @brief Whether the next line begins a unit.
+    bool separating_{false};
 };
 
 }  // namespace llvmdsdl
