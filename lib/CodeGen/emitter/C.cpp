@@ -1086,6 +1086,44 @@ void cloneFunctionsOf(mlir::dsdl::SchemaOp schema, mlir::ModuleOp source, mlir::
     }
 }
 
+/// @brief Marks each integer parameter and result narrower than 32 bits with the extension the C
+///        ABI gives the type the header declares for it.
+///
+/// A caller compiled from the header takes an `int8_t` or a `bool` its callee answers as already
+/// extended to 32 bits, and hands its own narrow arguments extended the same way. An object that
+/// answers `-2` in the low byte alone reads as 254. The header spells a one-bit integer `bool`,
+/// which the ABI zero-extends, and a wider one `intN_t`, which it sign-extends.
+void markNarrowIntegerExtensions(mlir::ModuleOp module)
+{
+    const auto extension = [](const mlir::Type type) -> std::optional<llvm::StringRef> {
+        const auto integer = mlir::dyn_cast<mlir::IntegerType>(type);
+        if (!integer || (integer.getWidth() >= 32))
+        {
+            return std::nullopt;
+        }
+        return (integer.getWidth() == 1) ? mlir::LLVM::LLVMDialect::getZExtAttrName()
+                                         : mlir::LLVM::LLVMDialect::getSExtAttrName();
+    };
+    const mlir::UnitAttr marked = mlir::UnitAttr::get(module.getContext());
+    for (mlir::func::FuncOp fn : module.getBodyRegion().front().getOps<mlir::func::FuncOp>())
+    {
+        for (const auto& [index, type] : llvm::enumerate(fn.getArgumentTypes()))
+        {
+            if (const auto name = extension(type))
+            {
+                fn.setArgAttr(static_cast<unsigned>(index), *name, marked);
+            }
+        }
+        for (const auto& [index, type] : llvm::enumerate(fn.getResultTypes()))
+        {
+            if (const auto name = extension(type))
+            {
+                fn.setResultAttr(static_cast<unsigned>(index), *name, marked);
+            }
+        }
+    }
+}
+
 /// @brief Lowers a per-definition module the rest of the way and assembles it.
 ///
 /// `convert-dsdl-to-llvm` leaves func, arith and scf standing; the upstream conversions finish
@@ -1097,6 +1135,7 @@ void cloneFunctionsOf(mlir::dsdl::SchemaOp schema, mlir::ModuleOp source, mlir::
 /// @return Success or a description of what failed.
 llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std::string& object)
 {
+    markNarrowIntegerExtensions(module);
     mlir::PassManager pm(module.getContext());
     pm.addPass(mlir::createSCFToControlFlowPass());
     pm.addPass(mlir::createArithToLLVMConversionPass());

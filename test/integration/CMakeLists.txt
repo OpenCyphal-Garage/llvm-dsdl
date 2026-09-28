@@ -4004,6 +4004,26 @@ if(LLVMDSDL_LLVM_OBJDUMP)
   )
 endif()
 
+# The object target's entry points answer their error codes as the C ABI extends an `int8_t`, read
+# by a caller compiled at -O2 from the header the object target wrote.
+if(CMAKE_C_COMPILER)
+  add_test(
+    NAME llvmdsdl-object-calling-convention
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/object-calling-convention-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjectCallingConvention.cmake
+  )
+  set_tests_properties(
+    llvmdsdl-object-calling-convention
+    PROPERTIES
+      LABELS "integration;object;abi;release-blocking"
+  )
+endif()
+
 # The serialisation primitives are `static inline` in the runtime header, so an object has no
 # symbol to link against and builds its own. Two implementations of one wire format.
 find_program(LLVMDSDL_MLIR_OPT NAMES mlir-opt HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin)
