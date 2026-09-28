@@ -806,6 +806,22 @@ bool runSurfacePlanTests()
                                 ok;
     }
 
+    // Go claims a type's accessors among the values its file declares, after every one of them: a
+    // DSDL constant `GET_SPEED` keeps its name, and the getter of `speed` moves.
+    {
+        DefinitionParts flat = message("Flat", SectionParts{.fields = {field("speed")}, .constants = {"GET_SPEED"}});
+        flat.bodies          = {body("ns.Flat.1.0.get.speed"), body("ns.Flat.1.0.set.speed")};
+        std::string accessors;
+        for (const llvmdsdl::SurfaceDecl& decl : allocate(Language::Go, {flat}).decls)
+        {
+            if (decl.kind == llvmdsdl::SurfaceDeclKind::Accessor)
+            {
+                accessors += decl.name + "\n";
+            }
+        }
+        ok = expect(accessors, "FlatGetSpeed2\nFlatSetSpeed\n", "Go's accessors among its constants") && ok;
+    }
+
     // Python's generated names: the definition's facts at the top of its module, the bodies as
     // the class's own methods and the ones a consumer calls over them, and the accessors among
     // the fields, whose names they share a class with. A module imports each class its fields

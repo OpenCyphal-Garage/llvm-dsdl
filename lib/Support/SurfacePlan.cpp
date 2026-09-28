@@ -774,16 +774,32 @@ private:
             {
                 return;
             }
+            // An accessor is claimed among the values its file declares, after every one of them,
+            // so a DSDL constant `GET_SPEED` keeps its name and the getter of `speed` moves.
+            const std::optional<NamePartition> values =
+                namePartition(row_.classification.nameClasses, NameClass::Value);
+            std::vector<std::string> declared;
+            for (const SurfaceItem& item : plan_.scopes[file].items)
+            {
+                if (namePartition(row_.classification.nameClasses, classOf(item)) == values)
+                {
+                    declared.push_back(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
+                }
+            }
+            const std::vector<llvm::StringRef> reserved(declared.begin(), declared.end());
+            NamingScope                        pool(language, reserved);
             for (const BodyParts& body : bodies)
             {
                 const bool getter = body.plan.function == PlanFunction::Get;
                 if ((body.plan.section == section.section) && (getter || (body.plan.function == PlanFunction::Set)))
                 {
                     (void) declare(file,
-                                   renderAccessorName(language,
-                                                      section.typeName,
-                                                      getter ? AccessorVerb::Get : AccessorVerb::Set,
-                                                      member(body.plan.member)),
+                                   pool.declare(IdentifierRole::FunctionName,
+                                                body.symbol,
+                                                renderAccessorName(language,
+                                                                   section.typeName,
+                                                                   getter ? AccessorVerb::Get : AccessorVerb::Set,
+                                                                   member(body.plan.member))),
                                    SurfaceDeclKind::Accessor,
                                    NameClass::Value,
                                    NameOrigin::Generated,
