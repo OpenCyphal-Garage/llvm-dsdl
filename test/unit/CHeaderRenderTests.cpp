@@ -246,10 +246,15 @@ bool runCHeaderRenderTests()
         std::cerr << "renderServiceAliasWrapperLines recorded includes other than <stddef.h> and <stdint.h>\n";
         return false;
     }
-    // Serialise, deserialise and initialise, four lines each.
-    if (wrappers.size() != 12U)
+    // Serialise, deserialise and initialise, four lines each and an empty line after each.
+    if (wrappers.size() != 15U)
     {
-        std::cerr << "renderServiceAliasWrapperLines expected 12 lines\n";
+        std::cerr << "renderServiceAliasWrapperLines expected 15 lines\n";
+        return false;
+    }
+    if (!wrappers[4].empty() || !wrappers[9].empty() || !wrappers[14].empty())
+    {
+        std::cerr << "renderServiceAliasWrapperLines left no empty line after a wrapper\n";
         return false;
     }
     if (wrappers[0] != "static inline int8_t uavcan__srv__NodeInfo__serialize_(const struct "
@@ -259,7 +264,7 @@ bool runCHeaderRenderTests()
         std::cerr << "renderServiceAliasWrapperLines serialize signature mismatch\n";
         return false;
     }
-    if (wrappers[6] !=
+    if (wrappers[7] !=
         "  return uavcan__srv__NodeInfo__Request__deserialize_(out_obj, buffer, inout_buffer_size_bytes);")
     {
         std::cerr << "renderServiceAliasWrapperLines deserialize body mismatch\n";
