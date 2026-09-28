@@ -38,25 +38,25 @@
   "counts": {
     "llvm-22": {
       "aarch64-unknown-linux-gnu": {
-        "vendor__Flat_1_0__deserialize_ir_": 38,
-        "vendor__Flat_1_0__serialize_ir_": 16,
+        "vendor__Flat_1_0__deserialize_ir_": 40,
+        "vendor__Flat_1_0__serialize_ir_": 17,
         "vendor__Arr_1_0__deserialize_ir_": 42,
-        "vendor__Arr_1_0__serialize_ir_": 19,
+        "vendor__Arr_1_0__serialize_ir_": 20,
         "vendor__Nested_1_0__deserialize_ir_": 42,
-        "vendor__Nested_1_0__serialize_ir_": 19,
+        "vendor__Nested_1_0__serialize_ir_": 20,
         "vendor__Padded_1_0__deserialize_ir_": 39,
-        "vendor__Padded_1_0__serialize_ir_": 33,
+        "vendor__Padded_1_0__serialize_ir_": 34,
         "vendor__Flat_1_0__get_a_ir_": 19,
-        "vendor__Flat_1_0__set_a_ir_": 20,
+        "vendor__Flat_1_0__set_a_ir_": 21,
         "vendor__Padded_1_0__get_b_ir_": 17,
         "vendor__Arr_1_0__get_head_ir_": 13,
         "vendor__Nested_1_0__get_inner_ir_": 4,
         "views:fixtures_views__vendor__Frame_1_0__deserialize_ir_": 75,
-        "views:fixtures_views__vendor__Frame_1_0__serialize_ir_": 60,
-        "plain:fixtures_views__vendor__Frame_1_0__deserialize_ir_": 75,
-        "plain:fixtures_views__vendor__Frame_1_0__serialize_ir_": 49,
+        "views:fixtures_views__vendor__Frame_1_0__serialize_ir_": 61,
+        "plain:fixtures_views__vendor__Frame_1_0__deserialize_ir_": 76,
+        "plain:fixtures_views__vendor__Frame_1_0__serialize_ir_": 50,
         "plain:fixtures_aliasable__vendor__Pose_1_0__deserialize_ir_": 61,
-        "plain:fixtures_aliasable__vendor__Pose_1_0__serialize_ir_": 19
+        "plain:fixtures_aliasable__vendor__Pose_1_0__serialize_ir_": 20
       },
       "x86_64-unknown-linux-gnu": {
         "vendor__Flat_1_0__deserialize_ir_": 47,
