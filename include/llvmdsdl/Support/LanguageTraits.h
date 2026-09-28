@@ -438,6 +438,10 @@ struct Composition final
     /// @brief Where a type's constants are declared.
     ConstantsScope constants{};
 
+    /// @brief How a service's own constants, declared beside its section types, are named: after the
+    ///        service's name as a constant of that scope is named after its type's.
+    ConstantsScope serviceConstants{};
+
     /// @brief Whether a type's constants, its array metadata and its option tags are macros.
     bool constantsAreMacros{};
 

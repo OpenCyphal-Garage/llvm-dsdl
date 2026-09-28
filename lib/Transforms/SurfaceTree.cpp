@@ -189,9 +189,11 @@ mlir::dsdl::GeneratedFact irGeneratedFact(const GeneratedFact fact)
     case GeneratedFact::VersionMajor:
         return mlir::dsdl::GeneratedFact::VersionMajor;
     case GeneratedFact::VersionMinor:
+        return mlir::dsdl::GeneratedFact::VersionMinor;
+    case GeneratedFact::MemoryResource:
         break;
     }
-    return mlir::dsdl::GeneratedFact::VersionMinor;
+    return mlir::dsdl::GeneratedFact::MemoryResource;
 }
 
 GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
@@ -263,9 +265,11 @@ GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
     case mlir::dsdl::GeneratedFact::VersionMajor:
         return GeneratedFact::VersionMajor;
     case mlir::dsdl::GeneratedFact::VersionMinor:
+        return GeneratedFact::VersionMinor;
+    case mlir::dsdl::GeneratedFact::MemoryResource:
         break;
     }
-    return GeneratedFact::VersionMinor;
+    return GeneratedFact::MemoryResource;
 }
 
 SurfaceScopeKind scopeKindOf(const mlir::dsdl::ScopeKind kind)

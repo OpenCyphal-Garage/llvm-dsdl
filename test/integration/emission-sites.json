@@ -1,15 +1,15 @@
 {
   "C": {
     "body": 42,
-    "declaration": 118
+    "declaration": 110
   },
   "Cpp": {
     "body": 54,
-    "declaration": 106
+    "declaration": 97
   },
   "Rust": {
     "body": 60,
-    "declaration": 113
+    "declaration": 104
   },
   "Go": {
     "body": 58,

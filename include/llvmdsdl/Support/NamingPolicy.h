@@ -410,7 +410,17 @@ struct AccessorVerbs final
     /// @brief Whether an accessor is keyed on its field's name as the type declares it, rather than
     ///        as DSDL writes it.
     bool keyedByDeclaredName{};
+
+    /// @brief Whether the verb is joined to a name that begins with `_` by a further `_`, which a
+    ///        language that reserves the doubled underscore does not do.
+    bool joinedBeforeUnderscore{};
 };
+
+/// @brief The data members @p profile of @p language adds to a section's type.
+/// @param[in] language Naming language.
+/// @param[in] profile The profile; empty for none.
+/// @return The members, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<GeneratedName> generatedProfileDataMembers(Language language, llvm::StringRef profile);
 
 /// @brief The verbs of @p language's member accessors. They are allocated with the type's fields
 ///        where the language keeps no class of names for fields, and apart from them where it does.

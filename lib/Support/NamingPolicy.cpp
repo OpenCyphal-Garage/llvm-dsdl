@@ -869,8 +869,9 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT_"}};
-    // Go's are constants of the package, each named by the type's name and the fact's token.
-    static constexpr std::array<GeneratedName, 12> kGo =
+    // Go's are constants of the package, each named by the type's name and the fact's token; C++'s
+    // are static members of the type.
+    static constexpr std::array<GeneratedName, 12> kFacts =
         {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
          GeneratedName{GeneratedFact::IsDeprecated, "IS_DEPRECATED"},
          GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION"},
@@ -890,8 +891,8 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
     case Language::C:
         return kC;
     case Language::Go:
-        return kGo;
     case Language::Cpp:
+        return kFacts;
     case Language::TypeScript:
     case Language::Python:
         break;
@@ -908,16 +909,15 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
     static constexpr std::array<GeneratedName, 1> kTag = {GeneratedName{GeneratedFact::UnionTag, "_tag"}};
     switch (language)
     {
-    case Language::Rust:
     case Language::C:
+    case Language::Cpp:
+    case Language::Rust:
         return kMembers;
     case Language::Go:
         return kGo;
     case Language::TypeScript:
     case Language::Python:
         return kTag;
-    case Language::Cpp:
-        break;
     }
     return {};
 }
@@ -939,6 +939,15 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES_"},
          GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES_"}};
+    // C++ names a service by an alias of its request, with the service's own identity and the
+    // request's sizes beside it.
+    static constexpr std::array<GeneratedName, 6> kCpp =
+        {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
+         GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION"},
+         GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES"},
+         GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES"},
+         GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
+         GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"}};
     switch (language)
     {
     case Language::Rust:
@@ -947,6 +956,7 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
     case Language::C:
         return kC;
     case Language::Cpp:
+        return kCpp;
     case Language::TypeScript:
     case Language::Python:
         break;
@@ -1005,23 +1015,32 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
                                                                      .name   = "from_bytes",
                                                                      .beside = false}};
     // The encoding package's interfaces: BinaryAppender, BinaryMarshaler and BinaryUnmarshaler.
-    static constexpr std::array<WrapperName, 3> kGo         = {WrapperName{.fact   = GeneratedFact::AppendWireImage,
-                                                                           .wraps  = PlanFunction::Serialize,
-                                                                           .name   = "AppendBinary",
-                                                                           .beside = false},
-                                                               WrapperName{.fact   = GeneratedFact::WireImage,
-                                                                           .wraps  = PlanFunction::Serialize,
-                                                                           .name   = "MarshalBinary",
-                                                                           .beside = false},
-                                                               WrapperName{.fact   = GeneratedFact::FromWireImage,
-                                                                           .wraps  = PlanFunction::Deserialize,
-                                                                           .name   = "UnmarshalBinary",
-                                                                           .beside = false}};
-    static constexpr std::array<WrapperName, 2> kPython     = {WrapperName{.fact   = GeneratedFact::WireImage,
+    static constexpr std::array<WrapperName, 3> kGo     = {WrapperName{.fact   = GeneratedFact::AppendWireImage,
+                                                                       .wraps  = PlanFunction::Serialize,
+                                                                       .name   = "AppendBinary",
+                                                                       .beside = false},
+                                                           WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                       .wraps  = PlanFunction::Serialize,
+                                                                       .name   = "MarshalBinary",
+                                                                       .beside = false},
+                                                           WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                       .wraps  = PlanFunction::Deserialize,
+                                                                       .name   = "UnmarshalBinary",
+                                                                       .beside = false}};
+    static constexpr std::array<WrapperName, 2> kPython = {WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                       .wraps  = PlanFunction::Serialize,
+                                                                       .name   = "serialize",
+                                                                       .beside = false},
+                                                           WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                       .wraps  = PlanFunction::Deserialize,
+                                                                       .name   = "deserialize",
+                                                                       .beside = false}};
+    // C++'s methods call the free functions the bodies are.
+    static constexpr std::array<WrapperName, 2> kCpp        = {WrapperName{.fact   = GeneratedFact::Serialize,
                                                                            .wraps  = PlanFunction::Serialize,
                                                                            .name   = "serialize",
                                                                            .beside = false},
-                                                               WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                               WrapperName{.fact   = GeneratedFact::Deserialize,
                                                                            .wraps  = PlanFunction::Deserialize,
                                                                            .name   = "deserialize",
                                                                            .beside = false}};
@@ -1043,8 +1062,9 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
         return kPython;
     case Language::TypeScript:
         return kTypeScript;
-    case Language::C:
     case Language::Cpp:
+        return kCpp;
+    case Language::C:
         break;
     }
     return {};
@@ -1103,16 +1123,48 @@ std::optional<AccessorVerbs> memberAccessorVerbs(const Language language)
     switch (language)
     {
     case Language::Rust:
-        return AccessorVerbs{.getter = "get", .setter = "set", .tagFirst = true, .keyedByDeclaredName = true};
-    case Language::Python:
-        return AccessorVerbs{.getter = "get", .setter = "set", .tagFirst = false, .keyedByDeclaredName = false};
-    case Language::C:
+        return AccessorVerbs{.getter                 = "get",
+                             .setter                 = "set",
+                             .tagFirst               = true,
+                             .keyedByDeclaredName    = true,
+                             .joinedBeforeUnderscore = true};
     case Language::Cpp:
+        return AccessorVerbs{.getter                 = "get",
+                             .setter                 = "set",
+                             .tagFirst               = false,
+                             .keyedByDeclaredName    = false,
+                             .joinedBeforeUnderscore = false};
+    case Language::Python:
+        return AccessorVerbs{.getter                 = "get",
+                             .setter                 = "set",
+                             .tagFirst               = false,
+                             .keyedByDeclaredName    = false,
+                             .joinedBeforeUnderscore = true};
+    case Language::C:
     case Language::Go:
     case Language::TypeScript:
         break;
     }
     return std::nullopt;
+}
+
+llvm::ArrayRef<GeneratedName> generatedProfileDataMembers(const Language language, const llvm::StringRef profile)
+{
+    // A `pmr` object holds the resource its containers allocate from.
+    static constexpr std::array<GeneratedName, 1> kPmr = {
+        GeneratedName{GeneratedFact::MemoryResource, "_memory_resource"}};
+    switch (language)
+    {
+    case Language::Cpp:
+        return (profile == "pmr") ? llvm::ArrayRef<GeneratedName>(kPmr) : llvm::ArrayRef<GeneratedName>{};
+    case Language::C:
+    case Language::Rust:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
 }
 
 llvm::StringRef unionTagMemberName(const Language language)

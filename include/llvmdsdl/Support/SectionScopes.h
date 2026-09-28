@@ -69,6 +69,9 @@ struct SectionParts final
 
     /// @brief Whether the section is a union.
     bool isUnion{};
+
+    /// @brief Whether the section's object is its wire image, which the lowering decides.
+    bool hostImage{};
 };
 
 /// @brief Which of the two constants a variable- or fixed-length array field contributes.
