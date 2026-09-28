@@ -468,11 +468,16 @@ void checkScopedTypeNameCollisions(const llvm::ArrayRef<ParsedDefinition> defini
     {
         plans.emplace_back(allocateSurface(language,
                                            parts,
-                                           SurfaceOptions{.packageName = {}, .versioning = versioning}),
+                                           SurfaceOptions{.packageName   = {},
+                                                          .versioning    = versioning,
+                                                          .accessorsOnly = false,
+                                                          .profile       = {}}),
                            allocateSurface(language,
                                            parts,
-                                           SurfaceOptions{.packageName = {},
-                                                          .versioning  = TypeNameVersioning::Versioned}));
+                                           SurfaceOptions{.packageName   = {},
+                                                          .versioning    = TypeNameVersioning::Versioned,
+                                                          .accessorsOnly = false,
+                                                          .profile       = {}}));
     }
 
     for (std::size_t index = 0; index < definitions.size(); ++index)
@@ -641,7 +646,12 @@ std::vector<DiscoveredDefinition> discoverDefinitions(const std::vector<std::str
     plans.reserve(outputLanguages.size());
     for (const LanguageTraits& row : outputLanguages)
     {
-        plans.push_back(allocateSurface(row, parts, SurfaceOptions{.packageName = {}, .versioning = {}}));
+        plans.push_back(allocateSurface(row,
+                                        parts,
+                                        SurfaceOptions{.packageName   = {},
+                                                       .versioning    = {},
+                                                       .accessorsOnly = false,
+                                                       .profile       = {}}));
     }
 
     for (std::size_t index = 0; index < definitions.size(); ++index)

@@ -156,8 +156,12 @@ std::string renderNamingManifest(const SemanticModule&                semantic,
     llvm::json::Object byLanguage;
     for (const LanguageTraits& row : languages)
     {
-        const SurfacePlan plan =
-            allocateSurface(row, definitions, SurfaceOptions{.packageName = {}, .versioning = typeNameVersioning});
+        const SurfacePlan  plan = allocateSurface(row,
+                                                  definitions,
+                                                  SurfaceOptions{.packageName   = {},
+                                                                 .versioning    = typeNameVersioning,
+                                                                 .accessorsOnly = false,
+                                                                 .profile       = {}});
         llvm::json::Object byType;
         for (const DefinitionNames& definition : plan.definitions)
         {
