@@ -1,26 +1,32 @@
 {
   "C": {
-    "body": 42,
-    "declaration": 110
+    "body": 41,
+    "declaration": 155,
+    "support": 0
   },
   "Cpp": {
-    "body": 54,
-    "declaration": 97
+    "body": 53,
+    "declaration": 99,
+    "support": 0
   },
   "Rust": {
     "body": 60,
-    "declaration": 104
+    "declaration": 89,
+    "support": 19
   },
   "Go": {
-    "body": 58,
-    "declaration": 100
+    "body": 57,
+    "declaration": 98,
+    "support": 3
   },
   "Ts": {
-    "body": 42,
-    "declaration": 72
+    "body": 41,
+    "declaration": 68,
+    "support": 9
   },
   "Python": {
-    "body": 7,
-    "declaration": 77
+    "body": 6,
+    "declaration": 60,
+    "support": 23
   }
 }

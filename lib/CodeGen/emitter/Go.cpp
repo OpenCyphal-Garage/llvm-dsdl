@@ -24,6 +24,7 @@
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Go.h"
+#include "llvmdsdl/CodeGen/emitter/GoPackaging.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <array>
@@ -2392,15 +2393,6 @@ llvm::Expected<std::string> loadGoRuntime()
                                    "embedded runtime source missing: go/dsdl_runtime.go");
 }
 
-std::string renderGoMod(const Options& options)
-{
-    std::ostringstream out;
-    out << generatedCommentLine("Go backend module metadata") << "\n";
-    out << "module " << options.moduleName << "\n\n";
-    out << "go 1.22\n";
-    return out.str();
-}
-
 }  // namespace
 
 /// @brief A file that fails to compile on a big-endian architecture, naming the reason.
@@ -2515,7 +2507,9 @@ llvm::Error emit(const SemanticModule& semantic,
     {
         if (options.emitGoMod)
         {
-            if (auto err = writeGeneratedFile(outRoot / "go.mod", renderGoMod(options), options.writePolicy))
+            if (auto err = writeGeneratedFile(outRoot / "go.mod",
+                                              renderGoMod(options, generatedCommentLine("Go backend module metadata")),
+                                              options.writePolicy))
             {
                 return err;
             }
