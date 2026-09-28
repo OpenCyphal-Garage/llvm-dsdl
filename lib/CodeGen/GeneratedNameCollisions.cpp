@@ -14,9 +14,11 @@
 
 #include "llvmdsdl/CodeGen/GeneratedNameCollisions.h"
 
+#include <cstddef>
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvm/ADT/ArrayRef.h"
@@ -31,6 +33,7 @@
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/SectionScopes.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
@@ -234,17 +237,43 @@ void checkGeneratedNameCollisions(const SemanticModule&                module,
                                   "' for target language '" + std::string(language.name) + "'; rename one of them");
         };
 
-    for (const auto& def : module.definitions)
+    // Each language's names, from the allocation the emitters' names come from, under the run's
+    // versioning and under the versioned scheme.
+    std::vector<DefinitionParts> parts;
+    parts.reserve(module.definitions.size());
+    for (const SemanticDefinition& def : module.definitions)
     {
-        const auto& info = def.info;
-        for (const auto& language : outputLanguages)
+        parts.push_back(definitionParts(def));
+    }
+    std::vector<std::pair<SurfacePlan, SurfacePlan>> plans;
+    plans.reserve(outputLanguages.size());
+    for (const LanguageTraits& language : outputLanguages)
+    {
+        plans.emplace_back(allocateSurface(language,
+                                           parts,
+                                           SurfaceOptions{.packageName = {}, .versioning = versioning}),
+                           allocateSurface(language,
+                                           parts,
+                                           SurfaceOptions{.packageName = {},
+                                                          .versioning  = TypeNameVersioning::Versioned}));
+    }
+
+    for (std::size_t index = 0; index < module.definitions.size(); ++index)
+    {
+        const SemanticDefinition& def  = module.definitions[index];
+        const auto&               info = def.info;
+        for (std::size_t row = 0; row < outputLanguages.size(); ++row)
         {
+            const LanguageTraits& language = outputLanguages[row];
             if (!language.composition.definitionsShareNamespaceScope)
             {
                 continue;
             }
+            const SurfacePlan&     plan           = plans[row].first;
+            const DefinitionNames& names          = plan.definitions[index];
+            const DefinitionNames& versionedNames = plans[row].second.definitions[index];
             for (const ScopedTypeName& type :
-                 scopedTypeNames(language, info, def.isService, def.request.deprecated, versioning))
+                 scopedTypeNames(language, plan, plans[row].second, index, info.namespaceComponents))
             {
                 const bool namespaceName = !type.namespaceName.empty();
                 record(language,
@@ -257,43 +286,27 @@ void checkGeneratedNameCollisions(const SemanticModule&                module,
                              false});
             }
 
-            const std::string scope    = sharedScopeOf(language, info);
+            const std::string scope    = sharedScopeOf(plan, index);
             const auto        claimFor = [&](const std::string& section) {
                 return [&, section](const std::string& name) {
                     record(language, scope, name, Claim{info.fullName, section, info.filePath, "", true});
                 };
             };
-            const auto renderBase = [&](const TypeNameVersioning scheme) {
-                return renderDefinitionTypeName(language.language,
-                                                info.namespaceComponents,
-                                                info.shortName,
-                                                info.majorVersion,
-                                                info.minorVersion,
-                                                scheme);
-            };
-            const std::string base          = renderBase(versioning);
-            const std::string versionedBase = renderBase(TypeNameVersioning::Versioned);
             if (!def.isService)
             {
-                forEachGeneratedName(language, def.request, base, versionedBase, claimFor(""));
+                forEachGeneratedName(language, def.request, names.typeName, versionedNames.typeName, claimFor(""));
                 continue;
             }
-            forEachServiceName(language, base, claimFor(""));
-            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
+            forEachServiceName(language, names.typeName, claimFor(""));
+            for (std::size_t section = 0; section < names.sections.size(); ++section)
             {
-                const SemanticSection* held = &def.request;
-                if (section == "response")
-                {
-                    held = def.response ? &*def.response : nullptr;
-                }
-                if (held != nullptr)
-                {
-                    forEachGeneratedName(language,
-                                         *held,
-                                         renderSectionTypeName(language.language, base, section),
-                                         renderSectionTypeName(language.language, versionedBase, section),
-                                         claimFor(section.str()));
-                }
+                const SectionNames&    held   = names.sections[section];
+                const SemanticSection& source = (held.section == "response") ? *def.response : def.request;
+                forEachGeneratedName(language,
+                                     source,
+                                     held.typeName,
+                                     versionedNames.sections[section].typeName,
+                                     claimFor(held.section));
             }
         }
     }

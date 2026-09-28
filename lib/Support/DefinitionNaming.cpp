@@ -66,10 +66,17 @@ std::string renderDefinitionTypeName(const Language                    language,
     return out;
 }
 
-std::string renderDefinitionFileStem(const Language        language,
-                                     const llvm::StringRef shortName,
-                                     const std::uint32_t   majorVersion,
-                                     const std::uint32_t   minorVersion)
+std::string renderDefinitionFileStemSource(const llvm::StringRef shortName,
+                                           const std::uint32_t   majorVersion,
+                                           const std::uint32_t   minorVersion)
+{
+    return shortName.str() + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
+}
+
+ProjectedIdentifier renderDefinitionFileStemDetailed(const Language        language,
+                                                     const llvm::StringRef shortName,
+                                                     const std::uint32_t   majorVersion,
+                                                     const std::uint32_t   minorVersion)
 {
     // Projected as one name rather than a projected short name with the version appended. A short
     // name that strops -- `Break`, which reaches Rust's keyword `break` -- gains a trailing `_`,
@@ -80,10 +87,18 @@ std::string renderDefinitionFileStem(const Language        language,
     // stropping and also a DSDL name that ends in one: `Break_` reaches `break_1_0` here and
     // `break__1_0` the other way round. That is the same fold, and it is the point -- a stem is one
     // identifier, so its separators normalise once. Two short names that fold onto one stem are a
-    // collision, which `Discovery` composes the same name to find.
-    const std::string composed =
-        shortName.str() + "_" + std::to_string(majorVersion) + "_" + std::to_string(minorVersion);
-    return codegenProjectIdentifier(language, IdentifierRole::FileStem, composed);
+    // collision, which `Discovery` reads from the surface plan to find.
+    return codegenProjectIdentifierDetailed(language,
+                                            IdentifierRole::FileStem,
+                                            renderDefinitionFileStemSource(shortName, majorVersion, minorVersion));
+}
+
+std::string renderDefinitionFileStem(const Language        language,
+                                     const llvm::StringRef shortName,
+                                     const std::uint32_t   majorVersion,
+                                     const std::uint32_t   minorVersion)
+{
+    return renderDefinitionFileStemDetailed(language, shortName, majorVersion, minorVersion).identifier;
 }
 
 namespace

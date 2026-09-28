@@ -98,6 +98,15 @@ struct DefinitionRef final
                                                    std::uint32_t               minorVersion,
                                                    TypeNameVersioning          versioning);
 
+/// @brief The name a definition's file stem is projected from: the short name and the version.
+/// @param[in] shortName Unqualified DSDL type name.
+/// @param[in] majorVersion Major version.
+/// @param[in] minorVersion Minor version.
+/// @return The name, as in `Break_1_0`.
+[[nodiscard]] std::string renderDefinitionFileStemSource(llvm::StringRef shortName,
+                                                         std::uint32_t   majorVersion,
+                                                         std::uint32_t   minorVersion);
+
 /// @brief Renders the output file stem for one definition, without an extension.
 ///
 /// Callers append their own extension and any role suffix (`_abi`, `_c_shim`). The stem is projected
@@ -106,7 +115,18 @@ struct DefinitionRef final
 /// @param[in] shortName Unqualified DSDL type name.
 /// @param[in] majorVersion Major version.
 /// @param[in] minorVersion Minor version.
-/// @return The stem.
+/// @return The stem, and whether projecting it escaped it.
+[[nodiscard]] ProjectedIdentifier renderDefinitionFileStemDetailed(Language        language,
+                                                                   llvm::StringRef shortName,
+                                                                   std::uint32_t   majorVersion,
+                                                                   std::uint32_t   minorVersion);
+
+/// @brief @ref renderDefinitionFileStemDetailed's identifier.
+/// @param[in] language Naming language.
+/// @param[in] shortName Unqualified DSDL type name.
+/// @param[in] majorVersion Major version.
+/// @param[in] minorVersion Minor version.
+/// @return The file stem.
 [[nodiscard]] std::string renderDefinitionFileStem(Language        language,
                                                    llvm::StringRef shortName,
                                                    std::uint32_t   majorVersion,
