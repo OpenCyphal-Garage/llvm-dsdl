@@ -62,6 +62,7 @@
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "llvmdsdl/Semantics/AliasLayout.h"
@@ -2120,23 +2121,23 @@ int runDsdlc(int argc, char** argv)
         }
     }
 
-    // Written before the language dispatch so it is available for every target, including the
-    // analysis ones: asking what a name will be generated as is a question you ask *before*
-    // generating, and `ast` already checks every backend's output names for the same reason.
-    //
-    // Not on a dry run, though, and not while listing. `--list-outputs` implies a dry run and is what
+    // Not written on a dry run, and not while listing. `--list-outputs` implies a dry run and is what
     // a build system calls at configure time to learn what will be produced; writing a file then puts
     // one in a tree the caller was told nothing would be touched. The prune step below declines for
     // the same reason.
-    if (!options.namingManifest.empty() && !options.dryRun && !options.listInputs && !options.listOutputs)
-    {
+    const bool writesNamingManifest =
+        !options.namingManifest.empty() && !options.dryRun && !options.listInputs && !options.listOutputs;
+    const auto writeNamingManifest = [&](const std::optional<Language>                   target,
+                                         const llvm::ArrayRef<llvmdsdl::ManifestSurface> surfaces) -> bool {
         const auto manifestSemantic = filterSemanticModule(localSemantic, selectedKeys);
         const auto manifestLanguages =
             outputLanguages.empty() ? namingLanguagesForTarget(options.targetLanguage) : outputLanguages;
         const std::string manifest = llvmdsdl::renderNamingManifest(manifestSemantic,
                                                                     manifestLanguages,
                                                                     llvmdsdl::kVersionString,
-                                                                    options.typeNameVersioning);
+                                                                    options.typeNameVersioning,
+                                                                    target,
+                                                                    surfaces);
 
         // A relative manifest path is measured from --outdir, which nothing has had reason to
         // create yet at this point in the run.
@@ -2148,7 +2149,7 @@ int runDsdlc(int argc, char** argv)
             if (ec)
             {
                 llvm::errs() << "cannot create naming manifest directory: " << manifestParent.string() << "\n";
-                return finish("stdout", {}, true);
+                return false;
             }
         }
 
@@ -2156,14 +2157,25 @@ int runDsdlc(int argc, char** argv)
         if (!stream.good())
         {
             llvm::errs() << "cannot write naming manifest: " << options.namingManifest << "\n";
-            return finish("stdout", {}, true);
+            return false;
         }
         stream << manifest;
         if (!stream.good())
         {
             llvm::errs() << "failed writing naming manifest: " << options.namingManifest << "\n";
-            return finish("stdout", {}, true);
+            return false;
         }
+        return true;
+    };
+
+    // A run that generates no language writes its manifest before the language dispatch, so it is
+    // available for the analysis targets: asking what a name will be generated as is a question you
+    // ask *before* generating, and `ast` already checks every backend's output names for the same
+    // reason. A run that generates one reports the surface its lowering writes, once it has.
+    const llvmdsdl::LanguageTraits* const manifestTarget = traitsOf(options.targetLanguage);
+    if (writesNamingManifest && !surfaceProjectionOf(options, manifestTarget) && !writeNamingManifest(std::nullopt, {}))
+    {
+        return finish("stdout", {}, true);
     }
 
     if (options.targetLanguage == "ast")
@@ -2325,6 +2337,25 @@ int runDsdlc(int argc, char** argv)
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        if (writesNamingManifest && surface)
+        {
+            std::vector<llvmdsdl::ManifestSurface> surfaces;
+            for (const std::string& profile :
+                 surface->profiles.empty() ? std::vector<std::string>{std::string{}} : surface->profiles)
+            {
+                auto tree = llvmdsdl::SurfaceTree::read(*mlirModule, *targetTraits, profile);
+                if (!tree)
+                {
+                    llvm::errs() << "error: " << llvm::toString(tree.takeError()) << "\n";
+                    return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+                }
+                surfaces.push_back(llvmdsdl::ManifestSurface{.profile = profile, .plan = tree->plan()});
+            }
+            if (!writeNamingManifest(targetTraits->language, surfaces))
+            {
+                return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+            }
         }
     }
 

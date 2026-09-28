@@ -1,0 +1,92 @@
+# A generation run's naming manifest reports the whole surface its lowering wrote for its target:
+# each definition's file, helpers, imports and guards, and each section's declared type, entry
+# points, the functions that wrap them, accessors, methods, and the members and constants the
+# generator adds, keyed by the fact each states. A service's own names are the definition's. C++
+# reports each profile's surface apart where the run writes several. Every name an analysis run
+# reports, a generation run reports unchanged.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
+# RUN: printf '@union\nuint8 small\nuint16 large\n@sealed\n---\nuint8 ok\n@sealed\n' > %t/dsdl/ns/Ask.1.0.dsdl
+# RUN: printf '@deprecated\nuint8 a\n@sealed\n' > %t/dsdl/ns/Old.1.0.dsdl
+# RUN: printf 'ns.Msg.1.0 msg\n@sealed\n' > %t/dsdl/ns/Hold.1.0.dsdl
+# RUN: %dsdlc --target-language ast %t/dsdl/ns --naming-manifest %t/ast.json > /dev/null
+#
+# RUN: %dsdlc --target-language c --outdir %t/c %t/dsdl/ns --naming-manifest %t/c.json
+# RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/c.json
+# RUN: %{python} %S/check_manifest_layers.py flat %t/c.json c ns.Ask.1.0 | FileCheck %s --check-prefix=C
+# RUN: %dsdlc --target-language cpp --cpp-profile both --outdir %t/cpp %t/dsdl/ns --naming-manifest %t/cpp.json
+# RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/cpp.json
+# RUN: %{python} %S/check_manifest_layers.py flat %t/cpp.json cpp ns.Msg.1.0 | FileCheck %s --check-prefix=CPP
+# RUN: %dsdlc --target-language rust --outdir %t/rust %t/dsdl/ns --naming-manifest %t/rust.json
+# RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/rust.json
+# RUN: %{python} %S/check_manifest_layers.py flat %t/rust.json rust ns.Hold.1.0 | FileCheck %s --check-prefix=RUST
+# RUN: %dsdlc --target-language go --go-module m --outdir %t/go %t/dsdl/ns --naming-manifest %t/go.json
+# RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/go.json
+# RUN: %{python} %S/check_manifest_layers.py flat %t/go.json go ns.Ask.1.0 | FileCheck %s --check-prefix=GO
+# RUN: %dsdlc --target-language ts --ts-module m --outdir %t/ts %t/dsdl/ns --naming-manifest %t/ts.json
+# RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/ts.json
+# RUN: %{python} %S/check_manifest_layers.py flat %t/ts.json ts ns.Hold.1.0 | FileCheck %s --check-prefix=TS
+# RUN: %dsdlc --target-language python --outdir %t/python %t/dsdl/ns --naming-manifest %t/python.json
+# RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/python.json
+# RUN: %{python} %S/check_manifest_layers.py flat %t/python.json python ns.Old.1.0 | FileCheck %s --check-prefix=PY
+#
+# An analysis run reports the definition layer alone.
+# RUN: %{python} %S/check_manifest_layers.py flat %t/ast.json cpp ns.Msg.1.0 | FileCheck %s --check-prefix=AST
+#
+# C:      alias = ns__Ask
+# C-NEXT: file = ns/Ask_1_0.h
+# C:      generated/full_name = ns__Ask_FULL_NAME_
+# C:      guards/include_guard = LLVMDSDL_NS__ASK_1_0_H
+# C:      helpers/0 = llvmdsdl_plan_capacity_check__ns__Ask_1_0__Request
+# C:      request/declared_type = ns__Ask__Request
+# C-NEXT: request/entry_points/deserialize = ns__Ask_1_0__Request__deserialize_ir_
+# C:      request/methods/option_test/small = ns__Ask__Request__is_small_
+# C:      request/tag = ns__Ask__Request
+# C:      request/wrappers/serialize = ns__Ask__Request__serialize_
+# C:      response/accessors/ok/get = ns__Ask_1_0__Response__get_ok_ir_
+# C:      response/wrappers/get/ok = ns__Ask__Response__get_ok_
+# C:      wrappers/serialize = ns__Ask__serialize_
+#
+# CPP:      message/constants/LIMIT = LIMIT
+# CPP:      profiles/pmr/file = pmr/ns/Msg_1_0.hpp
+# CPP:      profiles/pmr/message/declared_type = Msg
+# CPP-NEXT: profiles/pmr/message/entry_points/deserialize = Msg_deserialize_
+# CPP-NEXT: profiles/pmr/message/entry_points/serialize = Msg_serialize_
+# CPP-NEXT: profiles/pmr/message/generated/array_capacity/items = ITEMS_ARRAY_CAPACITY
+# CPP:      profiles/pmr/message/generated/memory_resource = _memory_resource
+# CPP:      profiles/pmr/message/wrappers/serialize = serialize
+# CPP:      profiles/std/file = std/ns/Msg_1_0.hpp
+# CPP-NOT:  memory_resource
+#
+# RUST:      file = src/ns/hold_1_0.rs
+# RUST:      helpers/0 = capacity_check
+# RUST-NEXT: imports/ns.Msg.1.0/type = Msg
+# RUST:      message/entry_points/serialize = serialize
+# RUST:      message/generated/memory_mode = __LLVMDSDL_MEMORY_MODE
+# RUST:      message/wrappers/wire_image = to_bytes
+#
+# GO:      generated/has_fixed_port_id = AskHasFixedPortID
+# GO:      request/entry_points/initialize = NewAskRequest
+# GO:      request/generated/union_tag = Tag
+# GO:      request/wrappers/append_wire_image = AppendBinary
+# GO:      response/accessors/ok/get = AskResponseGetOk
+# GO-NEXT: response/accessors/ok/set = AskResponseSetOk
+#
+# TS:      imports/ns.Msg.1.0/deserialize = deserializeMsgFrom
+# TS-NEXT: imports/ns.Msg.1.0/initialize = makeMsg
+# TS-NEXT: imports/ns.Msg.1.0/serialize = serializeMsgInto
+# TS-NEXT: imports/ns.Msg.1.0/type = Msg
+# TS:      message/entry_points/initialize = makeHold
+# TS:      message/generated/generator_version = LLVMDSDL_GENERATOR_VERSION
+# TS:      message/wrappers/wire_image = serializeHold
+#
+# PY:      file = dsdl_gen/ns/old_1_0.py
+# PY:      message/accessors/a/get = get_a
+# PY:      message/entry_points/serialize = _serialize_into
+# PY:      message/generated/is_deprecated = DSDL_IS_DEPRECATED
+# PY:      message/wrappers/from_wire_image = deserialize
+#
+# AST-NOT: file =
+# AST-NOT: entry_points
+# AST-NOT: profiles

@@ -53,6 +53,9 @@ void writeSurface(mlir::OpBuilder&   builder,
                   llvm::StringRef    profile,
                   llvm::StringRef    directory);
 
+/// @brief The name `dsdl.decl` spells @p fact with.
+[[nodiscard]] llvm::StringRef generatedFactName(GeneratedFact fact);
+
 /// @brief A target's surface, read from the module the lowering wrote it into.
 ///
 /// The tree reads into the plan it was written from: every scope and declaration at its place, in

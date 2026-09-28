@@ -16,16 +16,28 @@
 
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
+#include <optional>
 #include <string>
 
 namespace llvmdsdl
 {
+
+/// @brief The surface a generation run's lowering wrote for its target, for one profile.
+struct ManifestSurface final
+{
+    /// @brief The profile; empty for a language without profiles.
+    std::string profile;
+
+    SurfacePlan plan;
+};
 
 /// @brief Renders the DSDL-name to generated-identifier map as JSON.
 ///
@@ -38,10 +50,17 @@ namespace llvmdsdl
 /// @return The manifest as pretty-printed JSON, newline-terminated.
 /// @param[in] typeNameVersioning The scheme this invocation generated under. The names below depend
 ///            on it, so a consumer should not have to infer which one produced them.
-[[nodiscard]] std::string renderNamingManifest(const SemanticModule&          semantic,
-                                               llvm::ArrayRef<LanguageTraits> languages,
-                                               llvm::StringRef                toolVersion,
-                                               TypeNameVersioning             typeNameVersioning);
+/// @param[in] target The language a generation run generated, whose definitions report the whole
+///            surface its lowering wrote; none for an analysis run, which reports the definition
+///            layer alone.
+/// @param[in] surfaces The target's surfaces, one for each profile. Where there are several, each
+///            definition reports each under `profiles`.
+[[nodiscard]] std::string renderNamingManifest(const SemanticModule&           semantic,
+                                               llvm::ArrayRef<LanguageTraits>  languages,
+                                               llvm::StringRef                 toolVersion,
+                                               TypeNameVersioning              typeNameVersioning,
+                                               std::optional<Language>         target   = std::nullopt,
+                                               llvm::ArrayRef<ManifestSurface> surfaces = {});
 
 }  // namespace llvmdsdl
 

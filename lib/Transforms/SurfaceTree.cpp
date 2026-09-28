@@ -272,6 +272,16 @@ GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
     return GeneratedFact::MemoryResource;
 }
 
+}  // namespace
+
+llvm::StringRef generatedFactName(const GeneratedFact fact)
+{
+    return mlir::dsdl::stringifyGeneratedFact(irGeneratedFact(fact));
+}
+
+namespace
+{
+
 SurfaceScopeKind scopeKindOf(const mlir::dsdl::ScopeKind kind)
 {
     switch (kind)
