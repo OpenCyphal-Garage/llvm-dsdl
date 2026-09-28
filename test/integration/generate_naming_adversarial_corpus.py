@@ -195,6 +195,8 @@ def emit_members(root: pathlib.Path) -> None:
     write(base / "TagUnion.1.0.dsdl", f"@union\nuint32 tag_\nfloat32 real\nuint8 other\n{SEALED}")
     # A field whose name composes onto another field's accessor.
     write(base / "Accessors.1.0.dsdl", f"uint8 get_foo\nuint8 foo\nuint8 set_bar\nuint8 bar\n{SEALED}")
+    # Constants named as a field's accessors are, which Go declares in one namespace with them.
+    write(base / "AccessorConstants.1.0.dsdl", f"uint8 GET_SPEED = 1\nuint8 SET_SPEED = 2\nuint8 speed\n{SEALED}")
     # Fields named after the constants the backends declare beside them.
     claimed = "\n".join(f"uint8 {name}" for name in CLAIMED_MEMBERS)
     write(base / "Claimed.1.0.dsdl", f"{claimed}\n{SEALED}")
