@@ -2375,7 +2375,6 @@ int runDsdlc(int argc, char** argv)
         {
             llvmdsdl::emitter::c::Options emitOptions;
             emitOptions.outDir                    = options.outDir;
-            emitOptions.typeNameVersioning        = options.typeNameVersioning;
             emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
             emitOptions.hostImageFolded           = hostImageFolded;
             emitOptions.accessorsOnly             = options.aliasableOnly;
@@ -2398,7 +2397,6 @@ int runDsdlc(int argc, char** argv)
         }
         llvmdsdl::emitter::c::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.hostImageFolded           = hostImageFolded;
         emitOptions.accessorsOnly             = options.aliasableOnly;
@@ -2425,7 +2423,6 @@ int runDsdlc(int argc, char** argv)
     case Language::Cpp: {
         llvmdsdl::emitter::cpp::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.profile                   = options.cppProfile;
         emitOptions.emitDeprecationAttributes = options.emitDeprecationAttributes;
         emitOptions.hostImageFolded           = hostImageFolded;
@@ -2452,7 +2449,6 @@ int runDsdlc(int argc, char** argv)
     case Language::Rust: {
         llvmdsdl::emitter::rust::Options emitOptions;
         emitOptions.outDir                    = options.outDir;
-        emitOptions.typeNameVersioning        = options.typeNameVersioning;
         emitOptions.crateName                 = options.rustCrateName;
         emitOptions.profile                   = options.rustProfile;
         emitOptions.runtimeSpecialization     = options.rustRuntimeSpecialization;
@@ -2507,7 +2503,6 @@ int runDsdlc(int argc, char** argv)
     case Language::TypeScript: {
         llvmdsdl::emitter::ts::Options emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning    = options.typeNameVersioning;
         emitOptions.moduleName            = options.tsModuleName;
         emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
@@ -2532,8 +2527,6 @@ int runDsdlc(int argc, char** argv)
     case Language::Python: {
         llvmdsdl::emitter::python::Options emitOptions;
         emitOptions.outDir                = options.outDir;
-        emitOptions.typeNameVersioning    = options.typeNameVersioning;
-        emitOptions.packageName           = options.pyPackageName;
         emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.accessorsOnly         = options.aliasableOnly;

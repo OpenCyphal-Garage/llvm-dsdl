@@ -62,12 +62,6 @@ enum class Profile
 /// @brief Configuration options for C++ code generation.
 struct Options final
 {
-    /// @brief Whether generated type names carry the definition's version.
-    ///
-    /// Unversioned by default: most code speaks one version of a type and reads better without the
-    /// suffix. Set when the consuming code handles two versions of one type side by side and needs
-    /// them to be distinct identifiers in its own source.
-    TypeNameVersioning typeNameVersioning{TypeNameVersioning::Unversioned};
     /// @brief Output directory root.
     std::string outDir;
 
