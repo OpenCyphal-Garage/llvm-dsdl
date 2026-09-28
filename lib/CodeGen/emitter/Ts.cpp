@@ -23,6 +23,7 @@
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
+#include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Ts.h"
 
 #include <algorithm>
@@ -39,7 +40,6 @@
 #include <cstdint>
 #include <utility>
 
-#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -2208,357 +2208,17 @@ std::string renderPackageJson(const Options& options)
     return out.str();
 }
 
-std::string renderTsRuntimeModule(const RuntimeSpecialization runtimeSpecialization)
+/// @brief The runtime the generated modules call, for @p runtimeSpecialization, from the source
+///        carried in this binary.
+llvm::Expected<std::string> loadTsRuntimeModule(const RuntimeSpecialization runtimeSpecialization)
 {
-    std::ostringstream out;
-    SourceWriter       w = makeTsWriter(out);
-    w.line(generatedCommentLine("TypeScript runtime scaffold"));
-    w.blank();
-    w.open("export function toBigIntValue(value: number | bigint): bigint {");
-    w.open("if (typeof value === \"bigint\") {");
-    w.line("return value;");
-    w.close("}");
-    w.open("if (!Number.isFinite(value)) {");
-    w.line("return 0n;");
-    w.close("}");
-    w.line("return BigInt(Math.trunc(value));");
-    w.close("}");
-    w.blank();
-    w.open("function maskBits(lenBits: number): bigint {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0n;");
-    w.close("}");
-    w.line("return (1n << BigInt(lenBits)) - 1n;");
-    w.close("}");
-    w.blank();
-    w.open("export function byteLengthForBits(totalBits: number): number {");
-    w.open("if (totalBits <= 0) {");
-    w.line("return 0;");
-    w.close("}");
-    w.line("return Math.floor((totalBits + 7) / 8);");
-    w.close("}");
-    w.blank();
-    w.open("export function errorMessage(code: number): string {");
-    w.open("switch (code) {");
-    w.line("case -2: return \"invalid argument\";");
-    w.line("case -3: return \"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\";");
-    w.line("case -10: return \"array length out of range\";");
-    w.line("case -11: return \"invalid union tag\";");
-    w.line("case -12: return \"invalid delimiter header\";");
-    w.line("default: return \"serialisation error \" + code;");
-    w.close("}");
-    w.close("}");
-    w.blank();
-    w.open("function setRawBit(buf: Uint8Array, offBits: number, bit: boolean): void {");
-    w.line("const byteIndex = Math.floor(offBits / 8);");
-    w.line("const bitIndex = offBits % 8;");
-    w.open("if (byteIndex < 0 || byteIndex >= buf.length) {");
-    w.line("throw new Error(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\");");
-    w.close("}");
-    w.line("const mask = 1 << bitIndex;");
-    w.open("if (bit) {");
-    w.line("buf[byteIndex] = (buf[byteIndex] | mask) & 0xff;");
-    w.midway("} else {");
-    w.line("buf[byteIndex] = (buf[byteIndex] & (~mask)) & 0xff;");
-    w.close("}");
-    w.close("}");
-    w.blank();
-    w.open("function getRawBit(buf: Uint8Array, offBits: number): boolean {");
-    w.line("const byteIndex = Math.floor(offBits / 8);");
-    w.line("const bitIndex = offBits % 8;");
-    w.open("if (byteIndex < 0 || byteIndex >= buf.length) {");
-    w.line("return false;");
-    w.close("}");
-    w.line("return ((buf[byteIndex] >> bitIndex) & 1) === 1;");
-    w.close("}");
-    w.blank();
-    w.open("function writeUnsignedBits(");
-    w.line("buf: Uint8Array,");
-    w.line("offBits: number,");
-    w.line("lenBits: number,");
-    w.line("value: bigint");
-    w.midway("): void {");
-    w.open("for (let i = 0; i < lenBits; ++i) {");
-    w.line("const bit = ((value >> BigInt(i)) & 1n) === 1n;");
-    w.line("setRawBit(buf, offBits + i, bit);");
-    w.close("}");
-    w.close("}");
-    w.blank();
-    w.open("function readUnsignedBits(buf: Uint8Array, offBits: number, lenBits: number): bigint {");
-    w.line("let out = 0n;");
-    w.open("for (let i = 0; i < lenBits; ++i) {");
-    w.open("if (getRawBit(buf, offBits + i)) {");
-    w.line("out |= (1n << BigInt(i));");
-    w.close("}");
-    w.close("}");
-    w.line("return out;");
-    w.close("}");
-    w.blank();
-    w.open("export function setBit(buf: Uint8Array, offBits: number, value: boolean): number {");
-    w.line("setRawBit(buf, offBits, !!value);");
-    w.line("return 0;");
-    w.close("}");
-    w.blank();
-    w.open("export function getBit(buf: Uint8Array, offBits: number): boolean {");
-    w.line("return getRawBit(buf, offBits);");
-    w.close("}");
-    w.blank();
-    w.open("export function copyBits(");
-    w.line("dst: Uint8Array,");
-    w.line("dstOffBits: number,");
-    w.line("src: Uint8Array,");
-    w.line("srcOffBits: number,");
-    w.line("lenBits: number");
-    w.midway("): void {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return;");
-    w.close("}");
-    if (runtimeSpecialization == RuntimeSpecialization::Fast)
+    const std::string key =
+        (runtimeSpecialization == RuntimeSpecialization::Fast) ? "ts/dsdl_runtime_fast.ts" : "ts/dsdl_runtime.ts";
+    if (const auto data = embedded_sources::find(key))
     {
-        w.open("if (dst !== src && dstOffBits % 8 === 0 && srcOffBits % 8 === 0 && lenBits % 8 === 0) {");
-        w.line("const dstStart = Math.floor(dstOffBits / 8);");
-        w.line("const srcStart = Math.floor(srcOffBits / 8);");
-        w.line("const byteLen = Math.floor(lenBits / 8);");
-        w.open("if (dstStart >= 0 && srcStart >= 0 &&");
-        w.line("dstStart + byteLen <= dst.length && srcStart + byteLen <= src.length) {");
-        w.line("dst.set(src.subarray(srcStart, srcStart + byteLen), dstStart);");
-        w.line("return;");
-        w.close("}");
-        w.close("}");
+        return generatedCommentLine("TypeScript runtime scaffold") + "\n\n" + std::string(*data);
     }
-    w.open("for (let i = 0; i < lenBits; ++i) {");
-    w.line("setRawBit(dst, dstOffBits + i, getRawBit(src, srcOffBits + i));");
-    w.close("}");
-    w.close("}");
-    w.blank();
-    w.open("export function extractBits(");
-    w.line("src: Uint8Array,");
-    w.line("srcOffBits: number,");
-    w.line("lenBits: number");
-    w.midway("): Uint8Array {");
-    if (runtimeSpecialization == RuntimeSpecialization::Fast)
-    {
-        w.open("if (srcOffBits % 8 === 0 && lenBits % 8 === 0) {");
-        w.line("const srcStart = Math.floor(srcOffBits / 8);");
-        w.line("const byteLen = Math.floor(lenBits / 8);");
-        w.open("if (srcStart >= 0 && srcStart + byteLen <= src.length) {");
-        w.line("return src.slice(srcStart, srcStart + byteLen);");
-        w.close("}");
-        w.close("}");
-    }
-    w.line("const out = new Uint8Array(byteLengthForBits(lenBits));");
-    w.line("copyBits(out, 0, src, srcOffBits, lenBits);");
-    w.line("return out;");
-    w.close("}");
-    w.blank();
-    w.open("export function writeUnsigned(");
-    w.line("buf: Uint8Array,");
-    w.line("offBits: number,");
-    w.line("lenBits: number,");
-    w.line("value: number | bigint,");
-    w.line("saturating: boolean");
-    w.midway("): number {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0;");
-    w.close("}");
-    w.line("const max = maskBits(lenBits);");
-    w.line("let inValue = toBigIntValue(value);");
-    w.open("if (saturating) {");
-    w.open("if (inValue < 0n) {");
-    w.line("inValue = 0n;");
-    w.midway("} else if (inValue > max) {");
-    w.line("inValue = max;");
-    w.close("}");
-    w.midway("} else {");
-    w.line("inValue = BigInt.asUintN(lenBits, inValue);");
-    w.close("}");
-    w.line("writeUnsignedBits(buf, offBits, lenBits, inValue);");
-    w.line("return 0;");
-    w.close("}");
-    w.blank();
-    w.open("export function writeSigned(");
-    w.line("buf: Uint8Array,");
-    w.line("offBits: number,");
-    w.line("lenBits: number,");
-    w.line("value: number | bigint,");
-    w.line("saturating: boolean");
-    w.midway("): number {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0;");
-    w.close("}");
-    w.line("let inValue = toBigIntValue(value);");
-    w.open("if (saturating) {");
-    w.line("const min = -(1n << BigInt(lenBits - 1));");
-    w.line("const max = (1n << BigInt(lenBits - 1)) - 1n;");
-    w.open("if (inValue < min) {");
-    w.line("inValue = min;");
-    w.midway("} else if (inValue > max) {");
-    w.line("inValue = max;");
-    w.close("}");
-    w.close("}");
-    w.line("writeUnsignedBits(buf, offBits, lenBits, BigInt.asUintN(lenBits, inValue));");
-    w.line("return 0;");
-    w.close("}");
-    w.blank();
-    w.open("function float32ToBits(value: number): number {");
-    w.line("const bytes = new ArrayBuffer(4);");
-    w.line("const view = new DataView(bytes);");
-    w.line("view.setFloat32(0, value, true);");
-    w.line("return view.getUint32(0, true);");
-    w.close("}");
-    w.blank();
-    w.open("function bitsToFloat32(bits: number): number {");
-    w.line("const bytes = new ArrayBuffer(4);");
-    w.line("const view = new DataView(bytes);");
-    w.line("view.setUint32(0, bits >>> 0, true);");
-    w.line("return view.getFloat32(0, true);");
-    w.close("}");
-    w.blank();
-    w.open("function float64ToBits(value: number): bigint {");
-    w.line("const bytes = new ArrayBuffer(8);");
-    w.line("const view = new DataView(bytes);");
-    w.line("view.setFloat64(0, value, true);");
-    w.line("return view.getBigUint64(0, true);");
-    w.close("}");
-    w.blank();
-    w.open("function bitsToFloat64(bits: bigint): number {");
-    w.line("const bytes = new ArrayBuffer(8);");
-    w.line("const view = new DataView(bytes);");
-    w.line("view.setBigUint64(0, bits, true);");
-    w.line("return view.getFloat64(0, true);");
-    w.close("}");
-    w.blank();
-    w.open("function float16ToBits(value: number): number {");
-    w.open("if (Number.isNaN(value)) {");
-    w.line("return 0x7e00;");
-    w.close("}");
-    w.open("if (value === Infinity) {");
-    w.line("return 0x7c00;");
-    w.close("}");
-    w.open("if (value === -Infinity) {");
-    w.line("return 0xfc00;");
-    w.close("}");
-    w.line("const bits = float32ToBits(value);");
-    w.line("const sign = (bits >>> 16) & 0x8000;");
-    w.line("let exp = ((bits >>> 23) & 0xff) - 127 + 15;");
-    w.line("let mant = bits & 0x7fffff;");
-    w.open("if (exp <= 0) {");
-    w.open("if (exp < -10) {");
-    w.line("return sign;");
-    w.close("}");
-    w.line("mant = (mant | 0x800000) >>> (1 - exp);");
-    w.open("if ((mant & 0x1000) !== 0) {");
-    w.line("mant += 0x2000;");
-    w.close("}");
-    w.line("return sign | (mant >>> 13);");
-    w.close("}");
-    w.open("if (exp >= 0x1f) {");
-    w.line("return sign | 0x7c00;");
-    w.close("}");
-    w.open("if ((mant & 0x1000) !== 0) {");
-    w.line("mant += 0x2000;");
-    w.open("if ((mant & 0x800000) !== 0) {");
-    w.line("mant = 0;");
-    w.line("exp += 1;");
-    w.open("if (exp >= 0x1f) {");
-    w.line("return sign | 0x7c00;");
-    w.close("}");
-    w.close("}");
-    w.close("}");
-    w.line("return sign | (exp << 10) | (mant >>> 13);");
-    w.close("}");
-    w.blank();
-    w.open("function bitsToFloat16(bits: number): number {");
-    w.line("const sign = (bits & 0x8000) !== 0 ? -1 : 1;");
-    w.line("const exp = (bits >>> 10) & 0x1f;");
-    w.line("const mant = bits & 0x03ff;");
-    w.open("if (exp === 0) {");
-    w.open("if (mant === 0) {");
-    w.line("return sign * 0;");
-    w.close("}");
-    w.line("return sign * Math.pow(2, -14) * (mant / 1024);");
-    w.close("}");
-    w.open("if (exp === 0x1f) {");
-    w.line("return mant === 0 ? sign * Infinity : Number.NaN;");
-    w.close("}");
-    w.line("return sign * Math.pow(2, exp - 15) * (1 + (mant / 1024));");
-    w.close("}");
-    w.blank();
-    w.open("export function writeFloat(");
-    w.line("buf: Uint8Array,");
-    w.line("offBits: number,");
-    w.line("lenBits: number,");
-    w.line("value: number");
-    w.midway("): number {");
-    w.open("if (lenBits === 16) {");
-    w.line("writeUnsignedBits(buf, offBits, lenBits, BigInt(float16ToBits(value)));");
-    w.line("return 0;");
-    w.close("}");
-    w.open("if (lenBits === 32) {");
-    w.line("writeUnsignedBits(buf, offBits, lenBits, BigInt(float32ToBits(value)));");
-    w.line("return 0;");
-    w.close("}");
-    w.open("if (lenBits === 64) {");
-    w.line("writeUnsignedBits(buf, offBits, lenBits, float64ToBits(value));");
-    w.line("return 0;");
-    w.close("}");
-    w.line("throw new Error(\"unsupported float bit length \" + lenBits);");
-    w.close("}");
-    w.blank();
-    w.open("export function readFloat(buf: Uint8Array, offBits: number, lenBits: number): number {");
-    w.open("if (lenBits === 16) {");
-    w.line("return bitsToFloat16(Number(readUnsignedBits(buf, offBits, lenBits)));");
-    w.close("}");
-    w.open("if (lenBits === 32) {");
-    w.line("return bitsToFloat32(Number(readUnsignedBits(buf, offBits, lenBits)));");
-    w.close("}");
-    w.open("if (lenBits === 64) {");
-    w.line("return bitsToFloat64(readUnsignedBits(buf, offBits, lenBits));");
-    w.close("}");
-    w.line("throw new Error(\"unsupported float bit length \" + lenBits);");
-    w.close("}");
-    w.blank();
-    w.open("export function readUnsignedBigInt(");
-    w.line("buf: Uint8Array,");
-    w.line("offBits: number,");
-    w.line("lenBits: number");
-    w.midway("): bigint {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0n;");
-    w.close("}");
-    w.line("return readUnsignedBits(buf, offBits, lenBits);");
-    w.close("}");
-    w.blank();
-    w.open("export function readSignedBigInt(");
-    w.line("buf: Uint8Array,");
-    w.line("offBits: number,");
-    w.line("lenBits: number");
-    w.midway("): bigint {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0n;");
-    w.close("}");
-    w.line("const raw = readUnsignedBits(buf, offBits, lenBits);");
-    w.line("const signBit = 1n << BigInt(lenBits - 1);");
-    w.open("if ((raw & signBit) !== 0n) {");
-    w.line("return raw - (1n << BigInt(lenBits));");
-    w.close("}");
-    w.line("return raw;");
-    w.close("}");
-    w.blank();
-    w.open("export function readUnsigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0;");
-    w.close("}");
-    w.line("return Number(readUnsignedBigInt(buf, offBits, lenBits));");
-    w.close("}");
-    w.blank();
-    w.open("export function readSigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
-    w.open("if (lenBits <= 0) {");
-    w.line("return 0;");
-    w.close("}");
-    w.line("return Number(readSignedBigInt(buf, offBits, lenBits));");
-    w.close("}");
-    return out.str();
+    return llvm::createStringError(llvm::inconvertibleErrorCode(), "embedded runtime source missing: %s", key.c_str());
 }
 
 }  // namespace
@@ -2597,9 +2257,12 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
                 return err;
             }
         }
-        if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.ts",
-                                          renderTsRuntimeModule(options.runtimeSpecialization),
-                                          options.writePolicy))
+        auto runtime = loadTsRuntimeModule(options.runtimeSpecialization);
+        if (!runtime)
+        {
+            return runtime.takeError();
+        }
+        if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.ts", *runtime, options.writePolicy))
         {
             return err;
         }

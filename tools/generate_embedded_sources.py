@@ -52,6 +52,8 @@ MANIFEST: tuple[tuple[str, str], ...] = (
     ("python/_dsdl_runtime.py", "runtime/python/_dsdl_runtime.py"),
     ("python/_dsdl_runtime_fast.py", "runtime/python/_dsdl_runtime_fast.py"),
     ("python/_runtime_loader.py", "runtime/python/_runtime_loader.py"),
+    ("ts/dsdl_runtime.ts", "runtime/ts/dsdl_runtime.ts"),
+    ("ts/dsdl_runtime_fast.ts", "runtime/ts/dsdl_runtime_fast.ts"),
     ("vocabulary/cpp.yaml", "vocabulary/cpp.yaml"),
 )
 
