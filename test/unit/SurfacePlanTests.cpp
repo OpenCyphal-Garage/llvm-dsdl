@@ -34,15 +34,34 @@ using llvmdsdl::SurfacePlan;
 
 FieldParts field(const std::string& name, const bool array = false, const std::uint32_t option = 0)
 {
-    return FieldParts{.name = name, .padding = false, .array = array, .unionOptionIndex = option};
+    return FieldParts{.name             = name,
+                      .padding          = false,
+                      .array            = array,
+                      .unionOptionIndex = option,
+                      .composite        = std::nullopt,
+                      .view             = false};
 }
 
-DefinitionParts message(const std::string& shortName, SectionParts section)
+llvmdsdl::DefinitionRef ref(const std::string& space, const std::string& shortName)
 {
-    return DefinitionParts{.ref         = llvmdsdl::DefinitionRef{.namespaceComponents = {"ns"},
-                                                                  .shortName           = shortName,
-                                                                  .majorVersion        = 1,
-                                                                  .minorVersion        = 0},
+    return llvmdsdl::DefinitionRef{.namespaceComponents = {space},
+                                   .shortName           = shortName,
+                                   .majorVersion        = 1,
+                                   .minorVersion        = 0};
+}
+
+/// @brief A field holding the definition @p held.
+FieldParts holding(const std::string& name, llvmdsdl::DefinitionRef held, const bool view = false)
+{
+    FieldParts out = field(name);
+    out.composite  = std::move(held);
+    out.view       = view;
+    return out;
+}
+
+DefinitionParts message(const std::string& shortName, SectionParts section, const std::string& space = "ns")
+{
+    return DefinitionParts{.ref         = ref(space, shortName),
                            .fixedPortId = std::nullopt,
                            .service     = false,
                            .deprecated  = false,
@@ -51,11 +70,13 @@ DefinitionParts message(const std::string& shortName, SectionParts section)
                            .bodies      = {}};
 }
 
-SurfacePlan allocate(const Language language, const std::vector<DefinitionParts>& definitions)
+SurfacePlan allocate(const Language                      language,
+                     const std::vector<DefinitionParts>& definitions,
+                     const std::string&                  packageName = "pkg")
 {
     return llvmdsdl::allocateSurface(llvmdsdl::languageTraits(language),
                                      definitions,
-                                     llvmdsdl::SurfaceOptions{.packageName = "pkg"});
+                                     llvmdsdl::SurfaceOptions{.packageName = packageName});
 }
 
 const char* kindName(const llvmdsdl::SurfaceScopeKind kind)
@@ -120,6 +141,35 @@ std::string outline(const SurfacePlan& plan)
 {
     std::string out;
     outline(plan, 0, "", out);
+    return out;
+}
+
+/// @brief Each scope the plan places in a file, and the file.
+std::string placements(const SurfacePlan& plan)
+{
+    std::string out;
+    for (const llvmdsdl::SurfaceScope& scope : plan.scopes)
+    {
+        if (!scope.path.empty())
+        {
+            out += std::string(kindName(scope.kind)) + " " + scope.name + ": " + scope.path + "\n";
+        }
+    }
+    return out;
+}
+
+/// @brief The imports the first definition's file makes: the local name, and what it names.
+std::string imports(const SurfacePlan& plan)
+{
+    std::string out;
+    for (const llvmdsdl::SurfaceItem& item : plan.scopes[plan.definitions.front().fileScope].items)
+    {
+        const llvmdsdl::SurfaceDecl& decl = plan.decls[item.index];
+        if (!item.scope && (decl.kind == llvmdsdl::SurfaceDeclKind::Import))
+        {
+            out += decl.name + " " + decl.of->schema + "\n";
+        }
+    }
     return out;
 }
 
@@ -443,6 +493,65 @@ bool runSurfacePlanTests()
                         row + ": an option's tag value") &&
                  ok;
         }
+    }
+
+    // Each scope a language writes to a file of its own is placed there: a module-per-definition
+    // language's files are under its source directory, and a namespace's own declarations in the
+    // namespace's file.
+    ok = expect(placements(allocate(Language::Rust, {message("Msg", limited)})),
+                "root pkg: src/lib.rs\n"
+                "namespace ns: src/ns/mod.rs\n"
+                "module msg_1_0: src/ns/msg_1_0.rs\n",
+                "Rust's files") &&
+         ok;
+    ok = expect(placements(allocate(Language::Python, {message("Msg", limited)}, "top.pkg")),
+                "root top.pkg: top/pkg/__init__.py\n"
+                "namespace ns: top/pkg/ns/__init__.py\n"
+                "module msg_1_0: top/pkg/ns/msg_1_0.py\n",
+                "Python's files, under the package's directories") &&
+         ok;
+    ok = expect(placements(allocate(Language::C, {message("Msg", limited)})),
+                "file Msg_1_0: ns/Msg_1_0.h\n",
+                "C's files") &&
+         ok;
+
+    // Band 5, the imports. A file imports each definition its fields hold, in the order of the
+    // definitions' names, and a field holding a view names no type. What the file declares is
+    // reserved first, so an import that meets it takes as much of its namespace as tells it apart.
+    {
+        const std::vector<DefinitionParts>
+            definitions{message("Holder",
+                                SectionParts{.fields    = {holding("mine", ref("other", "Holder")),
+                                                           holding("near", ref("b", "Scalar")),
+                                                           holding("far", ref("a", "Scalar")),
+                                                           holding("seen", ref("ns", "Viewed"), true),
+                                                           holding("elsewhere", ref("absent", "Thing"))},
+                                             .constants = {}}),
+                        message("Holder", SectionParts{}, "other"),
+                        message("Scalar", SectionParts{}, "a"),
+                        message("Scalar", SectionParts{}, "b"),
+                        message("Viewed", SectionParts{})};
+        ok = expect(imports(allocate(Language::Rust, definitions)),
+                    "Scalar a.Scalar.1.0\n"
+                    "BScalar b.Scalar.1.0\n"
+                    "OtherHolder other.Holder.1.0\n",
+                    "Rust's imports") &&
+             ok;
+        ok = expect(imports(allocate(Language::Python, definitions)),
+                    "Scalar a.Scalar.1.0\n"
+                    "BScalar b.Scalar.1.0\n"
+                    "OtherHolder other.Holder.1.0\n",
+                    "Python's imports") &&
+             ok;
+        ok = expect(imports(allocate(Language::Cpp, definitions)), "", "C++ includes rather than imports") && ok;
+
+        // A deprecated definition is imported under the name it is declared under.
+        std::vector<DefinitionParts> deprecated{message("Holder",
+                                                        SectionParts{.fields    = {holding("old", ref("ns", "Old"))},
+                                                                     .constants = {}}),
+                                                message("Old", SectionParts{})};
+        deprecated.back().deprecated = true;
+        ok = expect(imports(allocate(Language::Rust, deprecated)), "Old_ ns.Old.1.0\n", "a deprecated import") && ok;
     }
 
     return ok;

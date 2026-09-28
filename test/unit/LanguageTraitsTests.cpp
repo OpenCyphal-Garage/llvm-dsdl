@@ -229,6 +229,22 @@ std::string render(const llvmdsdl::HelperNaming value)
     return "?";
 }
 
+std::string render(const llvmdsdl::ImportNaming value)
+{
+    switch (value)
+    {
+    case llvmdsdl::ImportNaming::None:
+        return "none";
+    case llvmdsdl::ImportNaming::Package:
+        return "package";
+    case llvmdsdl::ImportNaming::Type:
+        return "type";
+    case llvmdsdl::ImportNaming::TypeAndFunctions:
+        return "type-and-functions";
+    }
+    return "?";
+}
+
 std::string render(const llvmdsdl::MemberReach value)
 {
     switch (value)
@@ -289,7 +305,10 @@ std::string render(const LanguageTraits& row)
            d.sectionJoin.str() + "' section-alone=" + flag(d.sectionNamedAlone) +
            " namespace-shared=" + flag(d.definitionsShareNamespaceScope) + " namespaces=" + render(d.namespaces) +
            " extension='" + d.fileExtension.str() + "' directories-projected=" + flag(d.directoriesProjected) +
-           " helpers=" + render(d.helpers) + " qualification=" + render(d.qualification) +
+           " source='" + d.sourceDirectory.str() + "' package-directory=" + flag(d.packageDirectory) +
+           " namespace-file='" + d.namespaceFile.str() + "' root-file='" + d.rootFile.str() +
+           "' imports=" + render(d.imports) + " helpers=" + render(d.helpers) +
+           " qualification=" + render(d.qualification) +
            " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
            " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
            " constant-macros=" + flag(d.constantsAreMacros) + " generated-suffix='" + d.generatedConstantSuffix.str() +
@@ -328,7 +347,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=packed | "
          "namespace-join='__' "
          "version-in-name=1 name-reaches-type=0 section-join='__' section-alone=0 namespace-shared=1 namespaces=joined "
-         "extension='.h' directories-projected=0 "
+         "extension='.h' directories-projected=0 source='' package-directory=0 namespace-file='' root-file='' "
+         "imports=none "
          "helpers=link-name qualification=shortest "
          "file-directory-module=0 namespace-type-scope=0 constants=enclosing constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
@@ -342,7 +362,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=packed-when-fixed "
          "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='_' section-alone=0 "
-         "namespace-shared=1 namespaces=namespace extension='.hpp' directories-projected=0 helpers=binding "
+         "namespace-shared=1 namespaces=namespace extension='.hpp' directories-projected=0 source='' "
+         "package-directory=0 namespace-file='' root-file='' imports=none helpers=binding "
          "qualification=rooted file-directory-module=0 "
          "namespace-type-scope=1 "
          "constants=type "
@@ -357,7 +378,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=0 name-reaches-type=1 section-join='' section-alone=1 namespace-shared=0 namespaces=module "
-         "extension='.rs' directories-projected=1 "
+         "extension='.rs' directories-projected=1 source='src/' package-directory=0 namespace-file='mod.rs' "
+         "root-file='lib.rs' imports=type "
          "helpers=module qualification=shortest "
          "file-directory-module=1 namespace-type-scope=0 constants=type constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
@@ -369,7 +391,8 @@ bool runLanguageTraitsTests()
          "nullable=100 views=1 images=1 "
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 "
-         "namespace-shared=1 namespaces=package extension='.go' directories-projected=1 helpers=package "
+         "namespace-shared=1 namespaces=package extension='.go' directories-projected=1 source='' package-directory=0 "
+         "namespace-file='' root-file='' imports=package helpers=package "
          "qualification=shortest file-directory-module=0 "
          "namespace-type-scope=0 "
          "constants=package "
@@ -384,7 +407,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
-         "extension='.ts' directories-projected=1 "
+         "extension='.ts' directories-projected=1 source='' package-directory=0 namespace-file='' root-file='index.ts' "
+         "imports=type-and-functions "
          "helpers=module qualification=shortest "
          "file-directory-module=0 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
@@ -397,7 +421,8 @@ bool runLanguageTraitsTests()
          "bool-arrays=per-element | "
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' section-alone=0 namespace-shared=0 namespaces=module "
-         "extension='.py' directories-projected=1 "
+         "extension='.py' directories-projected=1 source='' package-directory=1 namespace-file='__init__.py' "
+         "root-file='__init__.py' imports=type "
          "helpers=module qualification=shortest "
          "file-directory-module=1 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "

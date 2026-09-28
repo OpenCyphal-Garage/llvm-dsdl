@@ -23,11 +23,14 @@
 #include <vector>
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 
 #include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -59,20 +62,58 @@ std::optional<SurfaceScopeKind> namespaceScopeKind(const NamespaceForm form)
     return std::nullopt;
 }
 
+/// @brief The directory, under the output directory, @p row writes a package's source files in.
+std::string sourceDirectoryOf(const LanguageTraits& row, const llvm::StringRef packageName)
+{
+    std::string directory = row.composition.sourceDirectory.str();
+    if (row.composition.packageDirectory && !packageName.empty())
+    {
+        llvm::SmallVector<llvm::StringRef, 4> components;
+        packageName.split(components, '.');
+        for (const llvm::StringRef component : components)
+        {
+            directory += component.str() + "/";
+        }
+    }
+    return directory;
+}
+
+/// @brief The order a file's imports are claimed in: by the definition's full name, then its version.
+std::string importOrder(const DefinitionRef& ref)
+{
+    std::string fullName;
+    for (const std::string& component : ref.namespaceComponents)
+    {
+        fullName += component + ".";
+    }
+    return fullName + ref.shortName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
+}
+
 /// @brief Builds one language's plan, a definition at a time.
 class Allocator final
 {
 public:
-    Allocator(const LanguageTraits& row, const SurfaceOptions& options)
+    Allocator(const LanguageTraits&                 row,
+              const llvm::ArrayRef<DefinitionParts> definitions,
+              const SurfaceOptions&                 options)
         : row_(row)
         , options_(options)
+        , sourceDirectory_(sourceDirectoryOf(row, options.packageName))
     {
+        for (const DefinitionParts& definition : definitions)
+        {
+            deprecated_[renderDefinitionKey(definition.ref)] = definition.deprecated;
+        }
         plan_.scopes.push_back(SurfaceScope{.kind   = SurfaceScopeKind::Root,
                                             .name   = options.packageName,
                                             .path   = {},
                                             .parent = std::nullopt,
                                             .of     = std::nullopt,
                                             .items  = {}});
+        if (!row.composition.rootFile.empty())
+        {
+            plan_.scopes.front().path = sourceDirectory_ + row.composition.rootFile.str();
+        }
     }
 
     void allocate(const DefinitionParts& definition)
@@ -97,31 +138,33 @@ public:
         }
         names.fixedPortId = definition.fixedPortId;
 
-        std::size_t space = 0;
+        // A definition's file, and a namespace's own, is written to the namespace's directory.
+        const std::vector<std::string>& directories =
+            row_.composition.directoriesProjected ? names.namespaceNames : definition.ref.namespaceComponents;
+        std::string directory = sourceDirectory_;
+        std::size_t space     = 0;
         if (const std::optional<SurfaceScopeKind> kind = namespaceScopeKind(row_.composition.namespaces))
         {
-            for (const std::string& name : names.namespaceNames)
+            for (const auto& [name, component] : llvm::zip_equal(names.namespaceNames, directories))
             {
-                space = namespaceScope(space, *kind, name);
+                directory += component + "/";
+                space = namespaceScope(space, *kind, name, directory);
+            }
+        }
+        else
+        {
+            for (const std::string& component : directories)
+            {
+                directory += component + "/";
             }
         }
         // A definition that shares its namespace's scope is a file of it; one that does not is a
         // module of its own.
         const SurfaceScopeKind fileKind =
             row_.composition.definitionsShareNamespaceScope ? SurfaceScopeKind::File : SurfaceScopeKind::Module;
-        const std::size_t file = openScope(space, fileKind, names.fileStem, std::nullopt);
-        names.fileScope        = file;
-        // A file is written to its namespace's directory; a module's path is its language's own.
-        if (fileKind == SurfaceScopeKind::File)
-        {
-            std::string path;
-            for (const std::string& component :
-                 row_.composition.directoriesProjected ? names.namespaceNames : definition.ref.namespaceComponents)
-            {
-                path += component + "/";
-            }
-            plan_.scopes[file].path = path + names.fileStem + row_.composition.fileExtension.str();
-        }
+        const std::size_t file  = openScope(space, fileKind, names.fileStem, std::nullopt);
+        names.fileScope         = file;
+        plan_.scopes[file].path = directory + names.fileStem + row_.composition.fileExtension.str();
 
         if (definition.service)
         {
@@ -148,6 +191,7 @@ public:
                                          SurfaceEntity{names.key, "", "", ""});
         }
         allocateBodies(names, space, file, definition.bodies);
+        allocateImports(definition, file);
         plan_.definitions.push_back(std::move(names));
     }
 
@@ -170,8 +214,12 @@ private:
     }
 
     /// @brief The scope a namespace component opens in @p parent: opened by the first definition in
-    ///        it and found by the others.
-    std::size_t namespaceScope(const std::size_t parent, const SurfaceScopeKind kind, const std::string& name)
+    ///        it and found by the others. It is written to @p directory's namespace file, where the
+    ///        language writes one.
+    std::size_t namespaceScope(const std::size_t      parent,
+                               const SurfaceScopeKind kind,
+                               const std::string&     name,
+                               const std::string&     directory)
     {
         for (const SurfaceItem& item : plan_.scopes[parent].items)
         {
@@ -180,7 +228,12 @@ private:
                 return item.index;
             }
         }
-        return openScope(parent, kind, name, std::nullopt);
+        const std::size_t scope = openScope(parent, kind, name, std::nullopt);
+        if (!row_.composition.namespaceFile.empty())
+        {
+            plan_.scopes[scope].path = directory + row_.composition.namespaceFile.str();
+        }
+        return scope;
     }
 
     std::size_t declare(const std::size_t       scope,
@@ -354,6 +407,17 @@ private:
         }
     }
 
+    /// @brief The class of names @p item is named in: a type scope's name is a type, and a namespace's
+    ///        or a module's is a module.
+    [[nodiscard]] NameClass classOf(const SurfaceItem& item) const
+    {
+        if (!item.scope)
+        {
+            return plan_.decls[item.index].nameClass;
+        }
+        return (plan_.scopes[item.index].kind == SurfaceScopeKind::Type) ? NameClass::Type : NameClass::Module;
+    }
+
     /// @brief Whether @p scope already holds a scope or a declaration named @p name.
     [[nodiscard]] bool declaresName(const std::size_t scope, const std::string& name) const
     {
@@ -457,9 +521,80 @@ private:
         }
     }
 
+    /// @brief Declares the local name @p definition's file imports each definition it holds under.
+    ///
+    /// Band 5. What the file declares in the class an import is made in is reserved first, so the
+    /// import is what moves. A field holding a definition as a view names no type of it.
+    void allocateImports(const DefinitionParts& definition, const std::size_t file)
+    {
+        // Go's package imports, and TypeScript's, which bring a type's functions with it, are named
+        // by their emitters.
+        if (row_.composition.imports != ImportNaming::Type)
+        {
+            return;
+        }
+        const NameClasses&                 classes   = row_.classification.nameClasses;
+        const std::optional<NamePartition> partition = namePartition(classes, NameClass::Type);
+        ImportNameScope                    scope(row_.language);
+        for (const SurfaceItem& item : plan_.scopes[file].items)
+        {
+            if (namePartition(classes, classOf(item)) == partition)
+            {
+                scope.reserve(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
+            }
+        }
+        std::map<std::string, DefinitionRef> composites;
+        for (const SectionParts* section : {&definition.request, definition.response ? &*definition.response : nullptr})
+        {
+            if (section == nullptr)
+            {
+                continue;
+            }
+            for (const FieldParts& field : section->fields)
+            {
+                if (field.composite && !field.view)
+                {
+                    composites.try_emplace(importOrder(*field.composite), *field.composite);
+                }
+            }
+        }
+        const std::string own = renderDefinitionKey(definition.ref);
+        for (const auto& [order, ref] : composites)
+        {
+            const std::string key   = renderDefinitionKey(ref);
+            const auto        found = deprecated_.find(key);
+            // The tree names a definition the module holds, and a definition does not import itself.
+            if ((key == own) || (found == deprecated_.end()))
+            {
+                continue;
+            }
+            const bool        apart    = found->second && row_.composition.deprecatedTypeDeclaredApart;
+            const std::string exported = renderDeclaredTypeName(renderDefinitionTypeName(row_.language,
+                                                                                         ref.namespaceComponents,
+                                                                                         ref.shortName,
+                                                                                         ref.majorVersion,
+                                                                                         ref.minorVersion,
+                                                                                         options_.versioning),
+                                                                apart);
+            (void) declare(file,
+                           scope.claim(ref, exported, apart),
+                           SurfaceDeclKind::Import,
+                           NameClass::Type,
+                           NameOrigin::Definition,
+                           SurfaceEntity{key, "", "", ""},
+                           SurfaceVisibility::Private);
+        }
+    }
+
     const LanguageTraits& row_;
     const SurfaceOptions& options_;
     SurfacePlan           plan_;
+
+    /// @brief The directory the source files are written in, ending in `/` where it is not empty.
+    std::string sourceDirectory_;
+
+    /// @brief Whether each definition is deprecated, by its key.
+    llvm::StringMap<bool> deprecated_;
 
     /// @brief The helper pool of each package, by the package's scope.
     std::map<std::size_t, NamingScope> packagePools_;
@@ -489,7 +624,7 @@ SurfacePlan allocateSurface(const LanguageTraits&                 row,
                             const llvm::ArrayRef<DefinitionParts> definitions,
                             const SurfaceOptions&                 options)
 {
-    Allocator allocator(row, options);
+    Allocator allocator(row, definitions, options);
     for (const DefinitionParts& definition : definitions)
     {
         allocator.allocate(definition);

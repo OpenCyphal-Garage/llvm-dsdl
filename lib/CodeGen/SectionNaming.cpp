@@ -36,10 +36,14 @@ SectionParts sectionParts(const SemanticSection& section)
     parts.fields.reserve(section.fields.size());
     for (const SemanticField& field : section.fields)
     {
-        parts.fields.push_back(FieldParts{.name             = field.name,
-                                          .padding          = field.isPadding,
-                                          .array            = field.resolvedType.arrayKind != ArrayKind::None,
-                                          .unionOptionIndex = field.unionOptionIndex});
+        const std::optional<SemanticTypeRef>& composite = field.resolvedType.compositeType;
+        parts.fields.push_back(
+            FieldParts{.name             = field.name,
+                       .padding          = field.isPadding,
+                       .array            = field.resolvedType.arrayKind != ArrayKind::None,
+                       .unionOptionIndex = field.unionOptionIndex,
+                       .composite        = composite ? std::optional(definitionRef(*composite)) : std::nullopt,
+                       .view             = field.heldAsView});
     }
     parts.constants.reserve(section.constants.size());
     for (const SemanticConstant& constant : section.constants)
@@ -57,12 +61,17 @@ DefinitionRef definitionRef(const SemanticTypeRef& ref)
                          .minorVersion        = ref.minorVersion};
 }
 
+DefinitionRef definitionRef(const DiscoveredDefinition& info)
+{
+    return DefinitionRef{.namespaceComponents = info.namespaceComponents,
+                         .shortName           = info.shortName,
+                         .majorVersion        = info.majorVersion,
+                         .minorVersion        = info.minorVersion};
+}
+
 DefinitionParts definitionParts(const SemanticDefinition& definition)
 {
-    return DefinitionParts{.ref         = DefinitionRef{.namespaceComponents = definition.info.namespaceComponents,
-                                                        .shortName           = definition.info.shortName,
-                                                        .majorVersion        = definition.info.majorVersion,
-                                                        .minorVersion        = definition.info.minorVersion},
+    return DefinitionParts{.ref         = definitionRef(definition.info),
                            .fixedPortId = definition.info.fixedPortId,
                            .service     = definition.isService,
                            .deprecated  = definition.request.deprecated,

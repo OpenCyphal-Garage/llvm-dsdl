@@ -120,6 +120,8 @@ struct SurfaceEntity final
 
     /// @brief The lowered function, where the declaration names one.
     std::string function;
+
+    friend bool operator==(const SurfaceEntity&, const SurfaceEntity&) = default;
 };
 
 /// @brief One entry of a scope: a scope nested in it, or a declaration made in it.
@@ -294,6 +296,10 @@ struct SurfaceOptions final
 /// The body layer, where a definition's parts carry its lowered functions: each helper, and where
 /// the bodies are compiled apart from their entry points, each body's link name. A helper is
 /// claimed after the definition layer's names, in the band the language allocates helpers in.
+///
+/// Last, the local name a file imports each definition its fields hold under, where the language
+/// imports a definition's type by name. A scope the language writes to a file of its own carries
+/// the file's path.
 /// @param[in] row The language's row.
 /// @param[in] definitions The definitions, in the order the plan reports them.
 /// @param[in] options What the run fixes.

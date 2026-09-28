@@ -114,7 +114,7 @@ Transforms are where normalisation and contract hardening happen. The pass set i
 - `dsdl-verify-alias-layout`
 - `build-dsdl-plan-bodies`
 - optional `optimize-dsdl-lowered-serdes` pipeline: the canonicaliser and common-subexpression elimination over the helpers and bodies
-- `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of; for a target it ends with `project-dsdl-surface`, which writes the target's surface
+- `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of; for a target it ends with `project-dsdl-surface`, which writes the target's surface, and an emitter reads the names and files its output declares from that surface through `SurfaceTree`
 - `convert-dsdl-to-llvm` and `emit-dsdl-runtime`
 
 Key files:
@@ -123,6 +123,7 @@ Key files:
 - [`include/llvmdsdl/Transforms/LoweredSerDesContract.h`](include/llvmdsdl/Transforms/LoweredSerDesContract.h)
 - [`lib/Transforms/Passes.cpp`](lib/Transforms/Passes.cpp)
 - [`include/llvmdsdl/Transforms/PlanSteps.h`](include/llvmdsdl/Transforms/PlanSteps.h)
+- [`include/llvmdsdl/Transforms/SurfaceTree.h`](include/llvmdsdl/Transforms/SurfaceTree.h)
 - [`lib/Transforms/BuildDSDLPlanBodies.cpp`](lib/Transforms/BuildDSDLPlanBodies.cpp)
 - [`lib/Transforms/ConvertDSDLToLLVM.cpp`](lib/Transforms/ConvertDSDLToLLVM.cpp)
 

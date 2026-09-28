@@ -12,6 +12,7 @@ add_library(llvmdsdlTransforms
   Passes.cpp
   PlanSteps.cpp
   ProjectDSDLSurface.cpp
+  SurfaceTree.cpp
   BuildDSDLPlanBodies.cpp
   ConvertDSDLToLLVM.cpp
   EmitDSDLRuntime.cpp

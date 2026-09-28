@@ -16,7 +16,6 @@
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
-#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
@@ -38,14 +37,12 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
-#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/Support/SectionScopes.h"
 #include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
@@ -58,6 +55,9 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -121,16 +121,11 @@ void emitAttachedDocRust(SourceWriter& w, const AttachedDoc& doc)
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const TypeNameVersioning typeNameVersioning)
+    EmitterContext(const SemanticModule& semantic, const SurfaceTree& tree, const TypeNameVersioning typeNameVersioning)
         : index_(semantic)
+        , tree_(tree)
         , typeNameVersioning_(typeNameVersioning)
     {
-    }
-
-    /// @brief Whether generated type names carry the definition's version.
-    TypeNameVersioning typeNameVersioning() const
-    {
-        return typeNameVersioning_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -143,11 +138,14 @@ public:
         return index_.holdsView(section);
     }
 
-    static std::string rustModuleName(const DiscoveredDefinition& info)
+    /// @brief The surface the output declares.
+    const SurfaceTree& tree() const
     {
-        return renderDefinitionFileStem(Language::Rust, info.shortName, info.majorVersion, info.minorVersion);
+        return tree_;
     }
 
+    /// @brief The type name of the definition @p info describes, which a service's port-ID constants
+    ///        carry.
     std::string rustTypeName(const DiscoveredDefinition& info) const
     {
         return renderDefinitionTypeName(Language::Rust,
@@ -158,88 +156,90 @@ public:
                                         typeNameVersioning_);
     }
 
-    std::string rustTypeName(const SemanticTypeRef& ref) const
+    /// @brief The path, from the crate's root, of the module the definition keyed @p key is declared in.
+    std::string rustModulePath(const llvm::StringRef key) const
     {
-        if (const auto* def = find(ref))
+        const Lookup&            lookup = languageTraits(Language::Rust).classification.lookup;
+        std::vector<std::string> names;
+        for (const std::size_t scope : tree_.pathTo(tree_.definitionScope(key)))
         {
-            return rustTypeName(def->info);
+            names.push_back(tree_.scope(scope).name);
         }
-
-        DiscoveredDefinition tmp;
-        tmp.shortName           = ref.shortName;
-        tmp.namespaceComponents = ref.namespaceComponents;
-        tmp.majorVersion        = ref.majorVersion;
-        tmp.minorVersion        = ref.minorVersion;
-        return rustTypeName(tmp);
-    }
-
-    /// @brief The name @p def's struct is declared under; see renderDeclaredTypeName.
-    std::string rustDeclaredTypeName(const SemanticDefinition& def) const
-    {
-        return renderDeclaredTypeName(rustTypeName(def.info), def.request.deprecated);
-    }
-
-    /// @brief The declared name of the definition @p ref names, for spelling its type.
-    ///
-    /// A reference that resolves to nothing is spelled with its public name: nothing says it is
-    /// deprecated.
-    std::string rustDeclaredTypeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return rustDeclaredTypeName(*def);
-        }
-        return rustTypeName(ref);
-    }
-
-    /// @brief The `use` path of the struct the definition @p ref names.
-    std::string rustTypePath(const SemanticTypeRef& ref) const
-    {
-        return rustModulePath(ref) + "::" + rustDeclaredTypeName(ref);
-    }
-
-    /// @brief The path of the module the definition @p ref is generated into.
-    std::string rustModulePath(const SemanticTypeRef& ref) const
-    {
-        std::ostringstream out;
-        out << "crate";
-        for (const auto& ns : ref.namespaceComponents)
-        {
-            out << "::" << codegenProjectIdentifier(Language::Rust, IdentifierRole::NamespaceName, ns);
-        }
-        if (const auto* def = find(ref))
-        {
-            out << "::" << rustModuleName(def->info);
-            return out.str();
-        }
-        DiscoveredDefinition tmp;
-        tmp.shortName           = ref.shortName;
-        tmp.namespaceComponents = ref.namespaceComponents;
-        tmp.majorVersion        = ref.majorVersion;
-        tmp.minorVersion        = ref.minorVersion;
-        out << "::" << rustModuleName(tmp);
-        return out.str();
+        return lookup.rootPrefix.str() + llvm::join(names, lookup.separator);
     }
 
 private:
     DefinitionIndex    index_;
+    const SurfaceTree& tree_;
     TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
+};
+
+/// @brief One section's names, as the surface declares them.
+class SectionSurface final
+{
+public:
+    SectionSurface(const SurfaceTree& tree, std::string key, std::string section)
+        : tree_(tree)
+        , key_(std::move(key))
+        , section_(std::move(section))
+        , scope_(tree.typeScope(key_, section_))
+    {
+    }
+
+    /// @brief The name the section's type is declared under.
+    [[nodiscard]] const std::string& declaredName() const
+    {
+        return tree_.scope(scope_).name;
+    }
+
+    /// @brief The name the section's type is public under: an alias of it, where the type is
+    ///        declared under a name of its own.
+    [[nodiscard]] const std::string& publicName() const
+    {
+        const SurfaceDecl* const alias =
+            tree_.find(*tree_.scope(scope_).parent, SurfaceDeclKind::Alias, SurfaceEntity{key_, section_, {}, {}});
+        return (alias != nullptr) ? alias->name : declaredName();
+    }
+
+    /// @brief The name of the DSDL field @p member.
+    [[nodiscard]] const std::string& field(const llvm::StringRef member) const
+    {
+        return tree_.nameOf(scope_, SurfaceDeclKind::Field, SurfaceEntity{key_, section_, member.str(), {}});
+    }
+
+    /// @brief The name of the DSDL constant @p member.
+    [[nodiscard]] const std::string& constant(const llvm::StringRef member) const
+    {
+        return tree_.nameOf(scope_, SurfaceDeclKind::Constant, SurfaceEntity{key_, section_, member.str(), {}});
+    }
+
+    /// @brief The name of the tag constant of the union option @p member.
+    [[nodiscard]] const std::string& option(const llvm::StringRef member) const
+    {
+        return tree_.nameOf(scope_, SurfaceDeclKind::Option, SurfaceEntity{key_, section_, member.str(), {}});
+    }
+
+private:
+    const SurfaceTree& tree_;
+    std::string        key_;
+    std::string        section_;
+    std::size_t        scope_{};
 };
 
 /// @brief How one Rust module names what it takes from other modules, recording each import.
 ///
 /// Every name the module writes from outside itself is named here. A standard or runtime name is
 /// written as its full path, which needs no import; a nested definition's struct is imported under
-/// the local name the context allocated for it, and the `use` declarations written from the set
+/// the local name the surface declares for it, and the `use` declarations written from the set
 /// once the module is rendered hold what the module names and nothing else.
 class RustFileNames final
 {
 public:
-    RustFileNames(const EmitterContext& ctx, ImportSet& imports, const ImportNameScope& names, std::string ownKey)
+    RustFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownKey)
         : ctx_(ctx)
         , imports_(imports)
-        , names_(names)
         , ownKey_(std::move(ownKey))
+        , file_(ctx.tree().definitionScope(ownKey_))
     {
     }
 
@@ -263,23 +263,24 @@ public:
     /// @brief The struct of the definition @p ref, by the name this module imports it under.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        std::string local = names_.localName(definitionRef(ref), ctx_.rustDeclaredTypeName(ref));
-        const auto* def   = ctx_.find(ref);
-        if ((def != nullptr) && (definitionTypeKey(def->info) == ownKey_))
+        const SurfaceTree& tree     = ctx_.tree();
+        const std::string  key      = renderDefinitionKey(definitionRef(ref));
+        const std::string& declared = tree.scope(tree.typeScope(key, {})).name;
+        if (key == ownKey_)
         {
-            return local;
+            return declared;
         }
         return imports_.member(ImportOrigin::Definition,
-                               ctx_.rustModulePath(ref),
-                               ctx_.rustDeclaredTypeName(ref),
-                               local);
+                               ctx_.rustModulePath(key),
+                               declared,
+                               tree.nameOf(file_, SurfaceDeclKind::Import, SurfaceEntity{key, {}, {}, {}}));
     }
 
 private:
-    const EmitterContext&  ctx_;
-    ImportSet&             imports_;
-    const ImportNameScope& names_;
-    std::string            ownKey_;
+    const EmitterContext& ctx_;
+    ImportSet&            imports_;
+    std::string           ownKey_;
+    std::size_t           file_{};
 };
 
 /// @brief The `use` declarations of a module that names @p imports, in the order of their paths.
@@ -498,7 +499,10 @@ class RustSpelling final : public BodySpelling
     struct Member;
 
 public:
-    RustSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const std::set<std::string>& lifetimeSections)
+    RustSpelling(mlir::ModuleOp               module,
+                 mlir::dsdl::SchemaOp         schema,
+                 const SurfaceTree&           tree,
+                 const std::set<std::string>& lifetimeSections)
         : symbols_(module)
     {
         // A helper is a private item of the module the definition is generated into, and the module
@@ -513,10 +517,11 @@ public:
         }
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            Plan entry;
+            Plan                 entry;
+            const std::string    section = plan.getSection().value_or(llvm::StringRef{}).str();
+            const SectionSurface names(tree, schema.getSymName().str(), section);
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
-            entry.lifetime     = lifetimeSections.contains(plan.getSection().value_or(llvm::StringRef{}).str());
-            NamingScope                   scope(Language::Rust);
+            entry.lifetime     = lifetimeSections.contains(section);
             std::vector<mlir::dsdl::IOOp> fields;
             std::vector<std::string>      variableArrays;
             if (!plan.getBody().empty())
@@ -527,7 +532,6 @@ public:
                     {
                         continue;
                     }
-                    (void) scope.declare(IdentifierRole::FieldName, io.getName());
                     fields.push_back(io);
                     if (io.isVariableArray())
                     {
@@ -567,7 +571,7 @@ public:
             }
             for (mlir::dsdl::IOOp io : fields)
             {
-                const std::string field = scope.get(IdentifierRole::FieldName, io.getName());
+                const std::string& field = names.field(io.getName());
                 entry.members[io.getName()] =
                     Member{field,
                            io,
@@ -1691,7 +1695,7 @@ struct SectionBodies final
 };
 
 llvm::Error emitSectionType(SourceWriter&                         w,
-                            const std::string&                    typeName,
+                            const SectionSurface&                 names,
                             const SemanticSection&                section,
                             const RustFileNames&                  file,
                             const Options&                        options,
@@ -1721,7 +1725,6 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         init = std::move(*initRead);
     }
-    const NamingScope        fieldScope = makeSectionFieldScope(Language::Rust, section);
     std::vector<std::string> variableArrayFields;
     for (const auto& field : section.fields)
     {
@@ -1739,7 +1742,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         poolClassConstants.emplace_back(constName, nextPoolClassId++);
     }
 
-    const auto declaredName = renderDeclaredTypeName(typeName, section.deprecated);
+    const std::string& declaredName = names.declaredName();
     // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
     // entry points that read a buffer take it for that lifetime.
     const bool        holdsView = ctx.holdsView(section);
@@ -1786,8 +1789,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                 continue;
             }
             emitAttachedDocRust(w, field.doc);
-            w.line("pub " + fieldScope.get(IdentifierRole::FieldName, field.name) + ": " + rustMemberType(field, file) +
-                   ",");
+            w.line("pub " + names.field(field.name) + ": " + rustMemberType(field, file) + ",");
         }
 
         if (section.isUnion)
@@ -1811,7 +1813,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         {
             w.line(rustDeprecatedAttribute(definitionFullName, metadata.majorVersion, metadata.minorVersion));
         }
-        w.line("pub type " + typeName + generics + " = " + declaredName + generics + ";");
+        w.line("pub type " + names.publicName() + generics + " = " + declaredName + generics + ";");
         w.blank();
     }
 
@@ -1825,7 +1827,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
-            const std::string rustMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            const std::string& rustMember = names.field(member.fieldName);
             w.line("const _: () = assert!(" + RustFileNames::core("mem::offset_of") + "!(" + declaredName + ", " +
                    rustMember + ") == " + std::to_string(member.offsetBytes) + "usize, \"" + declaredName + "." +
                    rustMember + ": not at the offset its serialisation assumes\");");
@@ -1854,13 +1856,12 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             const auto found = defaults.find(field.name);
             if (found == defaults.end())
             {
-                llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + typeName + " does not set '" +
-                                         field.name + "'");
+                llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + declaredName +
+                                         " does not set '" + field.name + "'");
             }
             if (isVariableArray(field.resolvedType.arrayKind))
             {
-                w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-                       RustFileNames::runtime("DsdlVec::with_contract") + "(" +
+                w.line(names.field(field.name) + ": " + RustFileNames::runtime("DsdlVec::with_contract") + "(" +
                        RustFileNames::runtime("VarArrayMemoryContract::new") +
                        "("
                        "Self::__LLVMDSDL_MEMORY_MODE, "
@@ -1868,8 +1869,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                        poolClassConstExprByField.at(field.name) + ")),");
                 continue;
             }
-            w.line(fieldScope.get(IdentifierRole::FieldName, field.name) + ": " +
-                   rustDefaultFromBody(field.resolvedType, *found->second, file) + ",");
+            w.line(names.field(field.name) + ": " + rustDefaultFromBody(field.resolvedType, *found->second, file) +
+                   ",");
         }
         if (section.isUnion)
         {
@@ -1925,27 +1926,18 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     if (metadata.isUnion)
     {
         w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(metadata.unionOptions.size()) + ";");
-        const NamingScope tagScope = makeSectionConstantScope(Language::Rust, section, {});
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("pub const " +
-                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Rust, option.name)) + ": " +
-                   unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag) + ";");
+            w.line("pub const " + names.option(option.name) + ": " + unsignedStorageType(metadata.unionTagBits) +
+                   " = " + std::to_string(option.tag) + ";");
         }
     }
 
-    std::vector<std::string> constNames;
-    constNames.reserve(section.constants.size());
-    for (const auto& c : section.constants)
-    {
-        constNames.push_back(c.name);
-    }
-    NamingScope const constScope = makeSectionConstantScope(Language::Rust, section, {});
     for (const auto& c : section.constants)
     {
         emitAttachedDocRust(w, c.doc);
-        w.line("pub const " + constScope.get(IdentifierRole::ConstantName, c.name) + ": " +
-               rustConstType(c.type, c.value) + " = " + rustConstValue(c.type, c.value) + ";");
+        w.line("pub const " + names.constant(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
+               rustConstValue(c.type, c.value) + ";");
     }
     w.blank();
 
@@ -2017,10 +2009,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // The declarations and bodies first, naming what they take from other modules as they write
     // it; the `use` declarations are written after, from what was named.
+    const std::string                    key = schema.getSymName().str();
     ImportSet                            imports;
-    ImportNameScope                      importNames(Language::Rust);
-    const RustFileNames                  file(ctx, imports, importNames, definitionTypeKey(def.info));
-    const RustSpelling                   spelling(module, schema, lifetimeSections);
+    const RustFileNames                  file(ctx, imports, key);
+    const RustSpelling                   spelling(module, schema, ctx.tree(), lifetimeSections);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2072,51 +2064,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return head.str() + (uses.empty() ? "" : uses + "\n") + out.str();
     };
 
-    // The local name each nested definition would be imported under, allocated over every one
-    // the module refers to. An accessors-only file names no other type: a composite's getter
-    // answers its bytes, and a view holds them.
-    const auto deps = options.accessorsOnly ? std::vector<SemanticTypeRef>{}
-                                            : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
-
-    const auto selfKey = definitionTypeKey(def.info);
-
-    // The module's own declarations are reserved first, so a composite whose short name meets one
-    // of them is the side that takes an alias.
-    {
-        const auto declaredBase = ctx.rustDeclaredTypeName(def);
-        importNames.reserve(declaredBase);
-        importNames.reserve(ctx.rustTypeName(def.info));
-        if (def.isService)
-        {
-            for (const llvm::StringRef section : {llvm::StringRef("request"), llvm::StringRef("response")})
-            {
-                const auto sectionType = renderSectionTypeName(Language::Rust, declaredBase, section);
-                importNames.reserve(sectionType);
-                importNames.reserve(renderDeclaredTypeName(sectionType, def.request.deprecated));
-            }
-        }
-    }
-
-    for (const auto& depRef : deps)
-    {
-        if ((depRef.fullName + ":" + std::to_string(depRef.majorVersion) + ":" + std::to_string(depRef.minorVersion)) ==
-            selfKey)
-        {
-            continue;
-        }
-
-        SemanticTypeRef ref      = depRef;
-        const auto*     resolved = ctx.find(depRef);
-        if (resolved != nullptr)
-        {
-            ref.namespaceComponents = resolved->info.namespaceComponents;
-            ref.shortName           = resolved->info.shortName;
-        }
-        (void) importNames.claim(definitionRef(ref),
-                                 ctx.rustDeclaredTypeName(ref),
-                                 (resolved != nullptr) && resolved->request.deprecated);
-    }
-
     // The helpers the plans call, ahead of the types whose bodies call them.
     for (const mlir::func::FuncOp helper : helpers)
     {
@@ -2127,12 +2074,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.blank();
     }
 
-    const auto baseType = ctx.rustTypeName(def.info);
-
     if (!def.isService)
     {
         if (auto err = emitSectionType(w,
-                                       baseType,
+                                       SectionSurface(ctx.tree(), key, {}),
                                        def.request,
                                        file,
                                        options,
@@ -2149,11 +2094,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return assemble();
     }
 
-    const auto reqType  = renderSectionTypeName(Language::Rust, baseType, "request");
-    const auto respType = renderSectionTypeName(Language::Rust, baseType, "response");
-
+    const SectionSurface request(ctx.tree(), key, "request");
     if (auto err = emitSectionType(w,
-                                   reqType,
+                                   request,
                                    def.request,
                                    file,
                                    options,
@@ -2172,7 +2115,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         out << "\n";
         if (auto err = emitSectionType(w,
-                                       respType,
+                                       SectionSurface(ctx.tree(), key, "response"),
                                        *def.response,
                                        file,
                                        options,
@@ -2189,17 +2132,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     out << "\n";
-    // The alias says that a service reached by its own name means its request. A service named
-    // `Request` already says it: the section carries that name, so the alias would declare the
-    // name a second time and stand for itself. The constants below are the service's own and are
-    // declared either way.
-    // The guard covers both sections, not just the one the alias stands for: a service named
-    // `Response` declares that name as its response, and the alias would declare it again.
-    const std::string declaredReq  = renderDeclaredTypeName(reqType, def.request.deprecated);
-    const std::string declaredResp = renderDeclaredTypeName(respType, def.request.deprecated);
-    const bool        aliasNeeded =
-        (baseType != reqType) && (baseType != declaredReq) && (baseType != respType) && (baseType != declaredResp);
-    if (aliasNeeded)
+    // The alias says that a service reached by its own name means its request. The constants below
+    // are the service's own and are declared either way.
+    const SurfaceDecl* const alias =
+        ctx.tree().find(ctx.tree().definitionScope(key), SurfaceDeclKind::Alias, SurfaceEntity{key, {}, {}, {}});
+    if (alias != nullptr)
     {
         if (def.request.deprecated && options.emitDeprecationAttributes)
         {
@@ -2208,11 +2145,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         // The alias names the request, so it carries the request's lifetime when the request holds
         // a view.
         const std::string baseGenerics = ctx.holdsView(def.request) ? "<'a>" : "";
-        w.line("pub type " + baseType + baseGenerics + " = " + declaredReq + baseGenerics + ";");
+        w.line("pub type " + alias->name + baseGenerics + " = " + request.declaredName() + baseGenerics + ";");
     }
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
-    const auto baseConstPrefix = codegenProjectIdentifier(Language::Rust, IdentifierRole::ConstantName, baseType);
+    const auto baseConstPrefix =
+        codegenProjectIdentifier(Language::Rust, IdentifierRole::ConstantName, ctx.rustTypeName(def.info));
     w.line("pub const " + baseConstPrefix +
            "_HAS_FIXED_PORT_ID: bool = " + (def.info.fixedPortId ? "true;" : "false;"));
     if (def.info.fixedPortId)
@@ -2294,8 +2232,14 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
+    auto tree = SurfaceTree::read(module, languageTraits(Language::Rust));
+    if (!tree)
+    {
+        return tree.takeError();
+    }
     std::filesystem::path const outRoot(options.outDir);
-    std::filesystem::path const srcRoot          = outRoot / "src";
+    std::filesystem::path const rootFile         = outRoot / tree->scope(0).path;
+    std::filesystem::path const srcRoot          = rootFile.parent_path();
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     // Support artifacts are rendered from content compiled into this binary, so whether to write
@@ -2348,12 +2292,12 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         }
     }
 
-    const EmitterContext ctx(semantic, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, *tree, options.typeNameVersioning);
+    PlanBodyLookups      lookups(module);
 
-    std::map<std::string, std::set<std::string>> dirToSubdirs;
-    std::map<std::string, std::set<std::string>> dirToFiles;
-    PlanBodyLookups                              lookups(module);
-
+    // The scopes the crate declares a module for: each written definition's, and each namespace
+    // around one.
+    std::set<std::size_t> declared;
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -2361,45 +2305,43 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
             continue;
         }
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
-
-        std::vector<std::string> ns;
-        ns.reserve(def.info.namespaceComponents.size());
-        for (const auto& c : def.info.namespaceComponents)
+        const std::size_t              scope = tree->definitionScope(renderDefinitionKey(definitionRef(def.info)));
+        for (const std::size_t enclosing : tree->pathTo(scope))
         {
-            ns.push_back(codegenProjectIdentifier(Language::Rust, IdentifierRole::NamespaceName, c));
-        }
-
-        std::string dirRel;
-        std::string parentRel;
-        for (const auto& component : ns)
-        {
-            dirToSubdirs[parentRel].insert(component);
-            if (!dirRel.empty())
-            {
-                dirRel += "/";
-            }
-            dirRel += component;
-            parentRel = dirRel;
-        }
-
-        const auto modName = EmitterContext::rustModuleName(def.info);
-        dirToFiles[dirRel].insert(modName);
-
-        std::filesystem::path dir = srcRoot;
-        if (!dirRel.empty())
-        {
-            dir /= dirRel;
+            declared.insert(enclosing);
         }
         auto file = renderDefinitionFile(def, ctx, options, module, lookups);
         if (!file)
         {
             return file.takeError();
         }
-        if (auto err = writeGeneratedFile(dir / (modName + ".rs"), *file, options.writePolicy, requiredTypeKeys))
+        if (auto err =
+                writeGeneratedFile(outRoot / tree->scope(scope).path, *file, options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
     }
+
+    // The `mod` declarations of @p scope's children: its namespaces, then its definitions' modules.
+    const auto declareChildren = [&](SourceWriter& w, const std::size_t scope) {
+        std::set<std::string> namespaces;
+        std::set<std::string> modules;
+        for (const SurfaceItem& item : tree->scope(scope).items)
+        {
+            if (item.scope && declared.contains(item.index))
+            {
+                const SurfaceScope& child = tree->scope(item.index);
+                (child.kind == SurfaceScopeKind::Namespace ? namespaces : modules).insert(child.name);
+            }
+        }
+        for (const std::set<std::string>* names : {&namespaces, &modules})
+        {
+            for (const std::string& name : *names)
+            {
+                w.line("pub mod " + name + ";");
+            }
+        }
+    };
 
     std::ostringstream lib;
     SourceWriter       libW = makeRustWriter(lib);
@@ -2408,65 +2350,36 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     libW.line("#[cfg(not(feature = \"std\"))]");
     libW.line("extern crate alloc;");
     libW.line("pub mod dsdl_runtime;");
-
-    if (dirToSubdirs.contains(""))
-    {
-        for (const auto& sub : dirToSubdirs[""])
-        {
-            libW.line("pub mod " + sub + ";");
-        }
-    }
-    if (dirToFiles.contains(""))
-    {
-        for (const auto& file : dirToFiles[""])
-        {
-            libW.line("pub mod " + file + ";");
-        }
-    }
-
-    if (auto err = writeGeneratedFile(srcRoot / "lib.rs", lib.str(), options.writePolicy, options.selectedTypeKeys))
+    declareChildren(libW, 0);
+    if (auto err = writeGeneratedFile(rootFile, lib.str(), options.writePolicy, options.selectedTypeKeys))
     {
         return err;
     }
 
-    std::set<std::string> dirs;
-    for (const auto& [d, _] : dirToSubdirs)
+    // Each namespace's module file, in the order of its directory.
+    std::map<std::string, std::size_t> namespaces;
+    for (const std::size_t scope : declared)
     {
-        if (!d.empty())
+        if (tree->scope(scope).kind == SurfaceScopeKind::Namespace)
         {
-            dirs.insert(d);
+            std::string directory;
+            for (const std::size_t enclosing : tree->pathTo(scope))
+            {
+                directory += (directory.empty() ? "" : "/") + tree->scope(enclosing).name;
+            }
+            namespaces.emplace(directory, scope);
         }
     }
-    for (const auto& [d, _] : dirToFiles)
-    {
-        if (!d.empty())
-        {
-            dirs.insert(d);
-        }
-    }
-
-    for (const auto& dirRel : dirs)
+    for (const auto& [directory, scope] : namespaces)
     {
         std::ostringstream mod;
         SourceWriter       modW = makeRustWriter(mod);
         modW.line(generatedCommentLine("Rust backend module index"));
-        if (dirToSubdirs.contains(dirRel))
-        {
-            for (const auto& sub : dirToSubdirs[dirRel])
-            {
-                modW.line("pub mod " + sub + ";");
-            }
-        }
-        if (dirToFiles.contains(dirRel))
-        {
-            for (const auto& file : dirToFiles[dirRel])
-            {
-                modW.line("pub mod " + file + ";");
-            }
-        }
-
-        std::filesystem::path const dir = srcRoot / dirRel;
-        if (auto err = writeGeneratedFile(dir / "mod.rs", mod.str(), options.writePolicy, options.selectedTypeKeys))
+        declareChildren(modW, scope);
+        if (auto err = writeGeneratedFile(outRoot / tree->scope(scope).path,
+                                          mod.str(),
+                                          options.writePolicy,
+                                          options.selectedTypeKeys))
         {
             return err;
         }

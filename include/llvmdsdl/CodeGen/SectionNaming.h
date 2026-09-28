@@ -37,6 +37,11 @@ namespace llvmdsdl
 /// @return The definition's identity.
 [[nodiscard]] DefinitionRef definitionRef(const SemanticTypeRef& ref);
 
+/// @brief The identity of the definition @p info describes, as naming reads it.
+/// @param[in] info The definition.
+/// @return The definition's identity.
+[[nodiscard]] DefinitionRef definitionRef(const DiscoveredDefinition& info);
+
 /// @brief The parts of @p definition that naming reads.
 /// @param[in] definition The definition.
 /// @return Its parts.
