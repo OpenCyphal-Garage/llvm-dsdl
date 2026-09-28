@@ -19,6 +19,7 @@ add_library(llvmdsdlSupport
   PlanSymbol.cpp
   ScalarStorage.cpp
   SectionScopes.cpp
+  SurfaceLookup.cpp
   SurfacePlan.cpp
   Rational.cpp
   ReservedIdentifiers.cpp

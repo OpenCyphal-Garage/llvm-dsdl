@@ -21,6 +21,7 @@ int main()
     ok      = runLanguageTraitsTests() && ok;
     ok      = runPlanSymbolTests() && ok;
     ok      = runSurfacePlanTests() && ok;
+    ok      = runSurfaceLookupTests() && ok;
     ok      = runCliPathTests() && ok;
     ok      = runFlatSetTests() && ok;
     ok      = runEvaluatorTests() && ok;

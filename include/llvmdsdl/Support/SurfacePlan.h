@@ -76,6 +76,22 @@ enum class NameClass : std::uint8_t
     Macro,
 };
 
+/// @brief A class of names as one language keeps them apart, where several classes may be one.
+enum class NamePartition : std::uint8_t
+{
+    Values,
+    Types,
+    Modules,
+    Tags,
+    Macros,
+};
+
+/// @brief The partition @p nameClass falls in, as @p classes keep names apart.
+/// @param[in] classes The language's name classes.
+/// @param[in] nameClass The class.
+/// @return The partition, or none where the language has no such class.
+[[nodiscard]] std::optional<NamePartition> namePartition(const NameClasses& classes, NameClass nameClass);
+
 /// @brief Whether a declaration is part of the output's interface.
 enum class SurfaceVisibility : std::uint8_t
 {
@@ -150,6 +166,9 @@ struct SurfaceDecl final
 
     /// @brief The scope the declaration is made in.
     std::size_t scope{};
+
+    /// @brief For an import of a namespace, module or package, the scope it binds.
+    std::optional<std::size_t> binds;
 };
 
 /// @brief A union option's declaration and the tag value that selects it.

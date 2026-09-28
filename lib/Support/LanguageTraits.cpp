@@ -45,6 +45,14 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .reservedUnderscores          = ReservedUnderscores::Leading,
                 .nameClasses =
                     {.typesApartFromValues = false, .modulesAmongTypes = false, .tags = true, .macros = true},
+                .lookup = {.separator                  = "",
+                           .rootPrefix                 = "",
+                           .rootPrefixOnlyWhenShadowed = false,
+                           .enclosingNamespaces        = false,
+                           .ownMembers                 = MemberReach::None,
+                           .selfType                   = "",
+                           .selfInstance               = "",
+                           .selfClass                  = ""},
             },
         // Handed pointers throughout, and a structure is its bytes.
         .body =
@@ -64,6 +72,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .definitionsShareNamespaceScope = true,
                 .namespaces                     = NamespaceForm::Joined,
                 .helpers                        = HelperNaming::LinkName,
+                .qualification                  = Qualification::Shortest,
                 .fileAndDirectoryAreOneModule   = false,
                 .namespaceAndTypeShareScope     = false,
                 .constants                      = ConstantsScope::Enclosing,
@@ -93,6 +102,14 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .reservedUnderscores          = ReservedUnderscores::LeadingAndInterior,
                 .nameClasses =
                     {.typesApartFromValues = false, .modulesAmongTypes = true, .tags = false, .macros = true},
+                .lookup = {.separator                  = "::",
+                           .rootPrefix                 = "::",
+                           .rootPrefixOnlyWhenShadowed = true,
+                           .enclosingNamespaces        = true,
+                           .ownMembers                 = MemberReach::Bare,
+                           .selfType                   = "",
+                           .selfInstance               = "",
+                           .selfClass                  = ""},
             },
         // Serialise and deserialise take pointers; a field accessor takes a span.
         .body =
@@ -112,6 +129,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .definitionsShareNamespaceScope = true,
                 .namespaces                     = NamespaceForm::Namespace,
                 .helpers                        = HelperNaming::Binding,
+                .qualification                  = Qualification::Rooted,
                 .fileAndDirectoryAreOneModule   = false,
                 .namespaceAndTypeShareScope     = true,
                 .constants                      = ConstantsScope::Type,
@@ -141,6 +159,14 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .reservedUnderscores          = ReservedUnderscores::None,
                 .nameClasses =
                     {.typesApartFromValues = true, .modulesAmongTypes = true, .tags = false, .macros = false},
+                .lookup = {.separator                  = "::",
+                           .rootPrefix                 = "crate::",
+                           .rootPrefixOnlyWhenShadowed = false,
+                           .enclosingNamespaces        = false,
+                           .ownMembers                 = MemberReach::SelfType,
+                           .selfType                   = "Self",
+                           .selfInstance               = "",
+                           .selfClass                  = ""},
             },
         // Handed a reference, a slice and a local, none of which can be null.
         .body =
@@ -160,6 +186,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .definitionsShareNamespaceScope = false,
                 .namespaces                     = NamespaceForm::Module,
                 .helpers                        = HelperNaming::Module,
+                .qualification                  = Qualification::Shortest,
                 .fileAndDirectoryAreOneModule   = true,
                 .namespaceAndTypeShareScope     = false,
                 .constants                      = ConstantsScope::Type,
@@ -185,6 +212,14 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .reservedUnderscores          = ReservedUnderscores::None,
                 .nameClasses =
                     {.typesApartFromValues = false, .modulesAmongTypes = false, .tags = false, .macros = false},
+                .lookup = {.separator                  = ".",
+                           .rootPrefix                 = "",
+                           .rootPrefixOnlyWhenShadowed = false,
+                           .enclosingNamespaces        = false,
+                           .ownMembers                 = MemberReach::None,
+                           .selfType                   = "",
+                           .selfInstance               = "",
+                           .selfClass                  = ""},
             },
         // Handed an object a caller may still omit, beside a slice.
         .body =
@@ -204,6 +239,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .definitionsShareNamespaceScope = true,
                 .namespaces                     = NamespaceForm::Package,
                 .helpers                        = HelperNaming::Package,
+                .qualification                  = Qualification::Shortest,
                 .fileAndDirectoryAreOneModule   = false,
                 .namespaceAndTypeShareScope     = false,
                 .constants                      = ConstantsScope::Package,
@@ -233,6 +269,14 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .reservedUnderscores          = ReservedUnderscores::None,
                 .nameClasses =
                     {.typesApartFromValues = true, .modulesAmongTypes = false, .tags = false, .macros = false},
+                .lookup = {.separator                  = ".",
+                           .rootPrefix                 = "",
+                           .rootPrefixOnlyWhenShadowed = false,
+                           .enclosingNamespaces        = false,
+                           .ownMembers                 = MemberReach::TypeName,
+                           .selfType                   = "",
+                           .selfInstance               = "",
+                           .selfClass                  = ""},
             },
         // Handed an object a caller may still omit, beside a `Uint8Array`; an object has no layout.
         .body =
@@ -252,6 +296,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .definitionsShareNamespaceScope = false,
                 .namespaces                     = NamespaceForm::Module,
                 .helpers                        = HelperNaming::Module,
+                .qualification                  = Qualification::Shortest,
                 .fileAndDirectoryAreOneModule   = false,
                 .namespaceAndTypeShareScope     = false,
                 .constants                      = ConstantsScope::Module,
@@ -277,6 +322,14 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .reservedUnderscores          = ReservedUnderscores::None,
                 .nameClasses =
                     {.typesApartFromValues = false, .modulesAmongTypes = true, .tags = false, .macros = false},
+                .lookup = {.separator                  = ".",
+                           .rootPrefix                 = "",
+                           .rootPrefixOnlyWhenShadowed = false,
+                           .enclosingNamespaces        = false,
+                           .ownMembers                 = MemberReach::Instance,
+                           .selfType                   = "",
+                           .selfInstance               = "self",
+                           .selfClass                  = "cls"},
             },
         // Handed an object a caller may still omit, beside a `memoryview`; an object has no layout.
         .body =
@@ -296,6 +349,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .definitionsShareNamespaceScope = false,
                 .namespaces                     = NamespaceForm::Module,
                 .helpers                        = HelperNaming::Module,
+                .qualification                  = Qualification::Shortest,
                 .fileAndDirectoryAreOneModule   = true,
                 .namespaceAndTypeShareScope     = false,
                 .constants                      = ConstantsScope::Module,

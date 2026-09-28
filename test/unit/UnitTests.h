@@ -52,6 +52,7 @@ bool runTargetLanguagesTests();
 bool runLanguageTraitsTests();
 bool runPlanSymbolTests();
 bool runSurfacePlanTests();
+bool runSurfaceLookupTests();
 
 /// @brief Runs the CliPathTests suite.
 /// @return True when every case in the suite passed.
