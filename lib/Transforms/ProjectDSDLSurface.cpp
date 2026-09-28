@@ -92,6 +92,7 @@ SectionParts sectionParts(mlir::dsdl::SchemaOp schema, mlir::dsdl::Serialization
                 FieldParts{.name             = field.getName().str(),
                            .padding          = field.getPadding(),
                            .array            = step && step.isArray(),
+                           .variableLength   = step && step.isVariableArray(),
                            .unionOptionIndex = static_cast<std::uint32_t>(field.getUnionOptionIndex().value_or(0)),
                            .composite        = step ? compositeOf(step) : std::nullopt,
                            .view             = step && step.getHeldAsView()});
@@ -181,6 +182,7 @@ struct ProjectDSDLSurfacePass final
         }
         package_.setValue(projection.packageName);
         versioned_.setValue(projection.versioning == TypeNameVersioning::Versioned);
+        accessorsOnly_.setValue(projection.accessorsOnly);
     }
 
     llvm::StringRef getArgument() const final
@@ -215,9 +217,10 @@ struct ProjectDSDLSurfacePass final
         const SurfacePlan plan =
             allocateSurface(*row,
                             parts,
-                            SurfaceOptions{.packageName = package_.getValue(),
-                                           .versioning  = versioned_ ? TypeNameVersioning::Versioned
-                                                                     : TypeNameVersioning::Unversioned});
+                            SurfaceOptions{.packageName   = package_.getValue(),
+                                           .versioning    = versioned_ ? TypeNameVersioning::Versioned
+                                                                       : TypeNameVersioning::Unversioned,
+                                           .accessorsOnly = accessorsOnly_});
         mlir::OpBuilder builder = mlir::OpBuilder::atBlockEnd(&module.getBodyRegion().front());
         if (profiles_.empty())
         {
@@ -248,6 +251,10 @@ struct ProjectDSDLSurfacePass final
                                        "versioned-type-names",
                                        llvm::cl::desc("Whether a type's name carries its version"),
                                        llvm::cl::init(false)};
+    Option<bool>            accessorsOnly_{*this,
+                                           "accessors-only",
+                                           llvm::cl::desc("Whether the run writes accessors and no data members"),
+                                           llvm::cl::init(false)};
 };
 
 }  // namespace

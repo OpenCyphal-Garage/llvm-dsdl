@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvm/ADT/StringRef.h"
@@ -43,6 +44,9 @@ struct FieldParts final
 
     /// @brief Whether the field is an array of either kind.
     bool array{};
+
+    /// @brief Whether the field is an array whose length varies.
+    bool variableLength{};
 
     /// @brief The tag value that selects the field, where the section is a union.
     std::uint32_t unionOptionIndex{};
@@ -146,6 +150,17 @@ enum class ArrayMetadataKind : std::uint8_t
 /// @param[in] section The section whose fields are being named.
 /// @return A scope with every field declared.
 [[nodiscard]] NamingScope makeSectionFieldScope(Language language, const SectionParts& section);
+
+/// @brief The names of @p section's pool-class constants, by DSDL field, in field order: one for each
+///        variable-length array, where the language declares them.
+///
+/// Each is the prefix @ref generatedTypeMembers gives the fact, then the field's name as a constant;
+/// a name two fields reach takes `_1`, `_2` and so on after the first.
+/// @param[in] language Naming language.
+/// @param[in] section The section.
+/// @return The DSDL field's name and the constant's, for each.
+[[nodiscard]] std::vector<std::pair<std::string, std::string>> poolClassConstantNames(Language            language,
+                                                                                      const SectionParts& section);
 
 /// @brief Builds the constant-name scope for @p section in @p language.
 ///

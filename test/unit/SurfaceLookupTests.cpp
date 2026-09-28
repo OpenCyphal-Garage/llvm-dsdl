@@ -84,6 +84,7 @@ public:
                                                                                                       .section = {},
                                                                                                       .member  = {},
                                                                                                       .function = {}}),
+                                                   .fact  = std::nullopt,
                                                    .scope = scope,
                                                    .binds = binds});
         const SurfaceItem item{.scope = false, .index = index};
@@ -151,7 +152,7 @@ bool runSurfaceLookupTests()
         const auto list    = tree.scope(listHdr, SurfaceScopeKind::Type, "List_0_2");
         const auto request = tree.scope(list, SurfaceScopeKind::Type, "Request");
         const auto extent  = tree.decl(request, "EXTENT_BYTES", SurfaceDeclKind::Constant, NameClass::Value);
-        (void) tree.decl(request, "Path", SurfaceDeclKind::Field, NameClass::Value);
+        (void) tree.decl(request, "Path", SurfaceDeclKind::Field, NameClass::Field);
         const auto pathHdr = tree.scope(file, SurfaceScopeKind::File, "Path_2_0");
         const auto path    = tree.scope(pathHdr, SurfaceScopeKind::Type, "Path");
         const auto si      = tree.scope(uavcan, SurfaceScopeKind::Namespace, "si");

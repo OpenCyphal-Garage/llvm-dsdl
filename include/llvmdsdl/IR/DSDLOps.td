@@ -741,8 +741,10 @@ def DSDL_DeclOp
     `kind` is what the name declares and `class` the class of names it is declared in, which
     the kind implies for every kind but an import. `of` names the schema or function the name
     stands for, and `section` and `member` the service section and the field or constant within
-    it. A declaration is not an MLIR symbol: one symbol table is one namespace, and a scope
-    holds as many classes of name as its language keeps apart.
+    it. `fact` is what a generated declaration states, where its kind and `of` do not tell it
+    apart from another: `FULL_NAME` and `EXTENT_BYTES` both stand for a section. A declaration
+    is not an MLIR symbol: one symbol table is one namespace, and a scope holds as many classes
+    of name as its language keeps apart.
   }];
   let arguments = (ins StrAttr:$name, DSDL_DeclKindAttr:$kind,
       OptionalAttr<DSDL_NameClassAttr>:$name_class,
@@ -750,12 +752,13 @@ def DSDL_DeclOp
                         "::mlir::dsdl::Visibility::Public">:$visibility,
       DefaultValuedAttr<DSDL_OriginAttr,
                         "::mlir::dsdl::Origin::Definition">:$origin,
+      OptionalAttr<DSDL_GeneratedFactAttr>:$fact,
       OptionalAttr<FlatSymbolRefAttr>:$of, OptionalAttr<StrAttr>:$section,
       OptionalAttr<StrAttr>:$member);
   let assemblyFormat = [{
     $name `kind` `=` `` $kind (`class` `=` `` $name_class^)? (`visibility` `=` `` $visibility^)?
-    (`origin` `=` `` $origin^)? (`of` `=` $of^)? (`section` `=` $section^)?
-    (`member` `=` $member^)? attr-dict
+    (`origin` `=` `` $origin^)? (`fact` `=` `` $fact^)? (`of` `=` $of^)?
+    (`section` `=` $section^)? (`member` `=` $member^)? attr-dict
   }];
   let hasVerifier = 1;
   let extraClassDeclaration = [{

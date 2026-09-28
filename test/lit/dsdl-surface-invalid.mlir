@@ -18,6 +18,32 @@ dsdl.surface target = "rust" {
 
 // -----
 
+// A C++ structure's fields and its member functions are one class, where Rust keeps them apart.
+// CHECK: error: 'dsdl.decl' op declares 'size' as a value in scope 'Request', which already declares it as a field
+// CHECK: note: declared here
+dsdl.surface target = "cpp" {
+  dsdl.scope root "" {
+    dsdl.scope type "Request" {
+      dsdl.decl "size" kind = field
+      dsdl.decl "size" kind = accessor origin = generated
+    }
+  }
+}
+
+// -----
+
+// A fact is what a generated declaration states.
+// CHECK: error: 'dsdl.decl' op states a fact, which only a generated declaration does
+dsdl.surface target = "rust" {
+  dsdl.scope root "llvmdsdl_generated" path = "src/lib.rs" {
+    dsdl.scope type "Request" {
+      dsdl.decl "FULL_NAME" kind = constant fact = full_name
+    }
+  }
+}
+
+// -----
+
 // C++ declares a namespace beside a structure, and the two may not share a name.
 // CHECK: error: 'dsdl.scope' op declares 'file' as a module in scope 'uavcan', which already declares it as a type
 // CHECK: note: declared here

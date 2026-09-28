@@ -15,12 +15,17 @@
 #include "llvmdsdl/Support/SectionScopes.h"
 
 #include <array>
+#include <cstdint>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
@@ -34,13 +39,13 @@ namespace
 /// @brief True when @p language declares a section's fields and constants into one region.
 ///
 /// That is where the output declares a type's constants in the type's own scope and the language
-/// makes those constants and the fields one namespace. C++ does both. Rust declares its constants
-/// in the type's scope as associated items, which are apart from the fields; the others declare
-/// them outside the type, and C emits them as macros carrying the type name as a prefix.
+/// keeps no class of names for the fields. C++ does both. Rust declares its constants in the
+/// type's scope as associated items, which are apart from the fields; the others declare them
+/// outside the type, and C emits them as macros carrying the type name as a prefix.
 bool constantsShareTheFieldScope(const Language language)
 {
     const LanguageTraits& traits = languageTraits(language);
-    return (traits.composition.constants == ConstantsScope::Type) && traits.classification.constantsShareFieldNamespace;
+    return (traits.composition.constants == ConstantsScope::Type) && !traits.classification.nameClasses.fieldsApart;
 }
 
 /// @brief Declares @p section's non-padding fields into @p scope, in DSDL order.
@@ -309,6 +314,36 @@ NamingScope makeSectionFieldScope(const Language language, const SectionParts& s
         declareConstantRegion(scope, section, language);
     }
     return scope;
+}
+
+std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const Language      language,
+                                                                        const SectionParts& section)
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    const auto* const pool = llvm::find_if(generatedTypeMembers(language), [](const GeneratedName& name) {
+        return name.fact == GeneratedFact::PoolClass;
+    });
+    if (pool == generatedTypeMembers(language).end())
+    {
+        return out;
+    }
+    std::set<std::string> used;
+    for (const FieldParts& field : section.fields)
+    {
+        if (field.padding || !field.variableLength)
+        {
+            continue;
+        }
+        const std::string base =
+            pool->name.str() + codegenProjectIdentifier(language, IdentifierRole::ConstantName, field.name);
+        std::string name = base;
+        for (std::uint32_t suffix = 1U; !used.insert(name).second; ++suffix)
+        {
+            name = base + "_" + std::to_string(suffix);
+        }
+        out.emplace_back(field.name, name);
+    }
+    return out;
 }
 
 NamingScope makeSectionConstantScope(const Language        language,

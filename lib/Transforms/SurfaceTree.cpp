@@ -36,6 +36,7 @@
 
 #include "llvmdsdl/IR/DSDLAttrs.h"
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
@@ -111,10 +112,104 @@ mlir::dsdl::NameClass irNameClass(const NameClass nameClass)
         return mlir::dsdl::NameClass::Module;
     case NameClass::Tag:
         return mlir::dsdl::NameClass::Tag;
+    case NameClass::Field:
+        return mlir::dsdl::NameClass::Field;
     case NameClass::Macro:
         break;
     }
     return mlir::dsdl::NameClass::Macro;
+}
+
+mlir::dsdl::GeneratedFact irGeneratedFact(const GeneratedFact fact)
+{
+    switch (fact)
+    {
+    case GeneratedFact::FullName:
+        return mlir::dsdl::GeneratedFact::FullName;
+    case GeneratedFact::FullNameAndVersion:
+        return mlir::dsdl::GeneratedFact::FullNameAndVersion;
+    case GeneratedFact::IsDeprecated:
+        return mlir::dsdl::GeneratedFact::IsDeprecated;
+    case GeneratedFact::ExtentBytes:
+        return mlir::dsdl::GeneratedFact::ExtentBytes;
+    case GeneratedFact::SerializationBufferSizeBytes:
+        return mlir::dsdl::GeneratedFact::SerializationBufferSizeBytes;
+    case GeneratedFact::WireFlat:
+        return mlir::dsdl::GeneratedFact::WireFlat;
+    case GeneratedFact::WireFlatReason:
+        return mlir::dsdl::GeneratedFact::WireFlatReason;
+    case GeneratedFact::HostImage:
+        return mlir::dsdl::GeneratedFact::HostImage;
+    case GeneratedFact::HostImageReason:
+        return mlir::dsdl::GeneratedFact::HostImageReason;
+    case GeneratedFact::UnionOptionCount:
+        return mlir::dsdl::GeneratedFact::UnionOptionCount;
+    case GeneratedFact::HasFixedPortId:
+        return mlir::dsdl::GeneratedFact::HasFixedPortId;
+    case GeneratedFact::FixedPortId:
+        return mlir::dsdl::GeneratedFact::FixedPortId;
+    case GeneratedFact::MemoryMode:
+        return mlir::dsdl::GeneratedFact::MemoryMode;
+    case GeneratedFact::InlineThresholdBytes:
+        return mlir::dsdl::GeneratedFact::InlineThresholdBytes;
+    case GeneratedFact::PoolClass:
+        return mlir::dsdl::GeneratedFact::PoolClass;
+    case GeneratedFact::ArrayCapacity:
+        return mlir::dsdl::GeneratedFact::ArrayCapacity;
+    case GeneratedFact::ArrayIsVariableLength:
+        return mlir::dsdl::GeneratedFact::ArrayIsVariableLength;
+    case GeneratedFact::UnionTag:
+        return mlir::dsdl::GeneratedFact::UnionTag;
+    case GeneratedFact::Placeholder:
+        break;
+    }
+    return mlir::dsdl::GeneratedFact::Placeholder;
+}
+
+GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
+{
+    switch (fact)
+    {
+    case mlir::dsdl::GeneratedFact::FullName:
+        return GeneratedFact::FullName;
+    case mlir::dsdl::GeneratedFact::FullNameAndVersion:
+        return GeneratedFact::FullNameAndVersion;
+    case mlir::dsdl::GeneratedFact::IsDeprecated:
+        return GeneratedFact::IsDeprecated;
+    case mlir::dsdl::GeneratedFact::ExtentBytes:
+        return GeneratedFact::ExtentBytes;
+    case mlir::dsdl::GeneratedFact::SerializationBufferSizeBytes:
+        return GeneratedFact::SerializationBufferSizeBytes;
+    case mlir::dsdl::GeneratedFact::WireFlat:
+        return GeneratedFact::WireFlat;
+    case mlir::dsdl::GeneratedFact::WireFlatReason:
+        return GeneratedFact::WireFlatReason;
+    case mlir::dsdl::GeneratedFact::HostImage:
+        return GeneratedFact::HostImage;
+    case mlir::dsdl::GeneratedFact::HostImageReason:
+        return GeneratedFact::HostImageReason;
+    case mlir::dsdl::GeneratedFact::UnionOptionCount:
+        return GeneratedFact::UnionOptionCount;
+    case mlir::dsdl::GeneratedFact::HasFixedPortId:
+        return GeneratedFact::HasFixedPortId;
+    case mlir::dsdl::GeneratedFact::FixedPortId:
+        return GeneratedFact::FixedPortId;
+    case mlir::dsdl::GeneratedFact::MemoryMode:
+        return GeneratedFact::MemoryMode;
+    case mlir::dsdl::GeneratedFact::InlineThresholdBytes:
+        return GeneratedFact::InlineThresholdBytes;
+    case mlir::dsdl::GeneratedFact::PoolClass:
+        return GeneratedFact::PoolClass;
+    case mlir::dsdl::GeneratedFact::ArrayCapacity:
+        return GeneratedFact::ArrayCapacity;
+    case mlir::dsdl::GeneratedFact::ArrayIsVariableLength:
+        return GeneratedFact::ArrayIsVariableLength;
+    case mlir::dsdl::GeneratedFact::UnionTag:
+        return GeneratedFact::UnionTag;
+    case mlir::dsdl::GeneratedFact::Placeholder:
+        break;
+    }
+    return GeneratedFact::Placeholder;
 }
 
 SurfaceScopeKind scopeKindOf(const mlir::dsdl::ScopeKind kind)
@@ -183,6 +278,8 @@ NameClass nameClassOf(const mlir::dsdl::NameClass nameClass)
         return NameClass::Module;
     case mlir::dsdl::NameClass::Tag:
         return NameClass::Tag;
+    case mlir::dsdl::NameClass::Field:
+        return NameClass::Field;
     case mlir::dsdl::NameClass::Macro:
         break;
     }
@@ -240,18 +337,19 @@ void readScope(SurfacePlan& plan, mlir::dsdl::ScopeOp op, const std::optional<st
         }
         auto              decl     = llvm::cast<mlir::dsdl::DeclOp>(child);
         const std::size_t position = plan.decls.size();
-        plan.decls.push_back(SurfaceDecl{.name       = decl.getName().str(),
-                                         .kind       = declKindOf(decl.getKind()),
-                                         .nameClass  = nameClassOf(decl.declaredClass()),
-                                         .visibility = (decl.getVisibility() == mlir::dsdl::Visibility::Private)
-                                                           ? SurfaceVisibility::Private
-                                                           : SurfaceVisibility::Public,
-                                         .origin     = (decl.getOrigin() == mlir::dsdl::Origin::Generated)
-                                                           ? NameOrigin::Generated
-                                                           : NameOrigin::Definition,
-                                         .of         = entityOf(decl.getOfAttr(), decl.getSection(), decl.getMember()),
-                                         .scope      = index,
-                                         .binds      = std::nullopt});
+        plan.decls.push_back(
+            SurfaceDecl{.name       = decl.getName().str(),
+                        .kind       = declKindOf(decl.getKind()),
+                        .nameClass  = nameClassOf(decl.declaredClass()),
+                        .visibility = (decl.getVisibility() == mlir::dsdl::Visibility::Private)
+                                          ? SurfaceVisibility::Private
+                                          : SurfaceVisibility::Public,
+                        .origin     = (decl.getOrigin() == mlir::dsdl::Origin::Generated) ? NameOrigin::Generated
+                                                                                          : NameOrigin::Definition,
+                        .of         = entityOf(decl.getOfAttr(), decl.getSection(), decl.getMember()),
+                        .fact       = decl.getFact() ? std::optional(generatedFactOf(*decl.getFact())) : std::nullopt,
+                        .scope      = index,
+                        .binds      = std::nullopt});
         plan.scopes[index].items.push_back(SurfaceItem{.scope = false, .index = position});
     }
 }
@@ -355,6 +453,9 @@ private:
                                                                    (decl.origin == NameOrigin::Generated)
                                                                        ? mlir::dsdl::Origin::Generated
                                                                        : mlir::dsdl::Origin::Definition),
+                                       decl.fact
+                                           ? mlir::dsdl::GeneratedFactAttr::get(context, irGeneratedFact(*decl.fact))
+                                           : mlir::dsdl::GeneratedFactAttr{},
                                        of,
                                        section,
                                        member);
@@ -388,6 +489,13 @@ void writeSurface(mlir::OpBuilder&      builder,
 SurfaceTree::SurfaceTree(SurfacePlan plan)
     : plan_(std::move(plan))
 {
+    for (const auto [index, decl] : llvm::enumerate(plan_.decls))
+    {
+        if (decl.of && !decl.of->function.empty())
+        {
+            functions_.try_emplace({decl.of->function, decl.kind}, index);
+        }
+    }
 }
 
 llvm::Expected<SurfaceTree> SurfaceTree::read(mlir::ModuleOp        module,
@@ -446,7 +554,10 @@ std::size_t SurfaceTree::definitionScope(const llvm::StringRef key) const
     llvm::report_fatal_error(llvm::Twine("the surface declares no type of ") + key);
 }
 
-const SurfaceDecl* SurfaceTree::find(const std::size_t scope, const SurfaceDeclKind kind, const SurfaceEntity& of) const
+const SurfaceDecl* SurfaceTree::find(const std::size_t                  scope,
+                                     const SurfaceDeclKind              kind,
+                                     const SurfaceEntity&               of,
+                                     const std::optional<GeneratedFact> fact) const
 {
     for (const SurfaceItem& item : plan_.scopes.at(scope).items)
     {
@@ -455,7 +566,7 @@ const SurfaceDecl* SurfaceTree::find(const std::size_t scope, const SurfaceDeclK
             continue;
         }
         const SurfaceDecl& decl = plan_.decls[item.index];
-        if ((decl.kind == kind) && decl.of && (*decl.of == of))
+        if ((decl.kind == kind) && decl.of && (*decl.of == of) && (decl.fact == fact))
         {
             return &decl;
         }
@@ -463,16 +574,27 @@ const SurfaceDecl* SurfaceTree::find(const std::size_t scope, const SurfaceDeclK
     return nullptr;
 }
 
-const std::string& SurfaceTree::nameOf(const std::size_t     scope,
-                                       const SurfaceDeclKind kind,
-                                       const SurfaceEntity&  of) const
+const std::string& SurfaceTree::nameOf(const std::size_t                  scope,
+                                       const SurfaceDeclKind              kind,
+                                       const SurfaceEntity&               of,
+                                       const std::optional<GeneratedFact> fact) const
 {
-    if (const SurfaceDecl* const decl = find(scope, kind, of))
+    if (const SurfaceDecl* const decl = find(scope, kind, of, fact))
     {
         return decl->name;
     }
     llvm::report_fatal_error(llvm::Twine("scope '") + plan_.scopes.at(scope).name + "' of the surface declares no " +
                              "name for " + of.schema + " " + of.section + " " + of.member + of.function);
+}
+
+const std::string& SurfaceTree::nameOf(const llvm::StringRef symbol, const SurfaceDeclKind kind) const
+{
+    const auto found = functions_.find({symbol.str(), kind});
+    if (found == functions_.end())
+    {
+        llvm::report_fatal_error(llvm::Twine("the surface declares no name for ") + symbol);
+    }
+    return plan_.decls[found->second].name;
 }
 
 std::vector<std::size_t> SurfaceTree::pathTo(const std::size_t scope) const

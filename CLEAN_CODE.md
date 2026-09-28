@@ -83,14 +83,14 @@ The classification is the input the surface layer reads. One row per language, s
 language can express, indexed by the questions a declaration's shape depends on. The rows are
 `LanguageTraits` in `llvmdsdl/Support/LanguageTraits.h`, and `LanguageTraitsTests` pins each.
 
-| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | constants and fields one namespace | reserved by underscores | name classes in one scope |
+| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | fields a class of their own | reserved by underscores | name classes in one scope |
 |---|---|---|---|---|---|---|---|---|---|
-| C | none | no | no | `static` | status code | macros in the enclosing scope | no | leading `__`, `_X` | ordinary identifiers and structure tags; macros across the translation unit |
-| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | yes | those, and `__` anywhere | one; macros across the translation unit |
-| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | no | none | types, modules among them, and values |
+| C | none | no | no | `static` | status code | macros in the enclosing scope | yes | leading `__`, `_X` | ordinary identifiers and structure tags; macros across the translation unit |
+| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | no | those, and `__` anywhere | one; macros across the translation unit |
+| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | yes | none | types, modules among them, values, and fields |
 | Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none | one per package, across its files |
-| Python | class | yes | yes | `_` prefix | exception | class attribute | yes | none | one |
-| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | no | none | types and values; modules by path |
+| Python | class | yes | yes | `_` prefix | exception | class attribute | no | none | one |
+| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | yes | none | types and values; modules by path |
 
 A row is a claim about the language, not a preference, which is what makes it testable and what
 keeps it out of the emitters. Two consequences follow directly and are worth stating because they
@@ -142,7 +142,7 @@ The tree is built from three ops in `DSDLOps.td`, with typed attributes:
 |---|---|---|
 | `dsdl.surface` | the root scope for one target, only when a target is set | `target`, and `profile` where one language's profiles declare different names |
 | `dsdl.scope` | scopes and declarations, in the order the language opens and writes them | `kind` (root, namespace, module, package, file, type), `name`, `path` for the file a scope is written to, and `of` with `section` for a type |
-| `dsdl.decl` | nothing: a leaf | `name`, `kind`, `class` (which the kind implies for every kind but an import), `visibility` (public or private), `origin` (definition or generated), and `of` with `section` and `member` where it names an entity |
+| `dsdl.decl` | nothing: a leaf | `name`, `kind`, `class` (which the kind implies for every kind but an import), `visibility` (public or private), `origin` (definition or generated), `fact` where a generated name states one its kind and `of` do not tell apart, and `of` with `section` and `member` where it names an entity |
 
 ```mlir
 dsdl.surface target = "rust" {
@@ -157,7 +157,8 @@ dsdl.surface target = "rust" {
       dsdl.scope type "Request" of = @uavcan.file.List.0.2 section = "request" {
         dsdl.decl "entry_index" kind = field of = @uavcan.file.List.0.2
             section = "request" member = "entry_index"
-        dsdl.decl "FULL_NAME" kind = constant origin = generated
+        dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name
+            of = @uavcan.file.List.0.2 section = "request"
         dsdl.decl "serialize" kind = entry of = @uavcan.file.List.0.2.request.serialize
       }
       dsdl.decl "List" kind = alias origin = generated
@@ -899,7 +900,18 @@ the files its output writes; a run of several C++ profiles places each profile's
 directory the profile names. The `imports` column states how a file names what it takes from
 another definition's file, and the allocator claims band 5 where a file imports a definition's type
 by name, as Rust and Python do, reserving what the file declares in the class an import is made in.
-The second part moves Rust's helpers, accessors, entry points and generated constants.
+
+The second part has landed, and Rust's composition and scopes with it. Rust reads its helpers,
+entry points, the functions that wrap them, its accessors, its generated constants and data members,
+and a service's own constants from the tree. The members a language's type holds beyond its DSDL
+names are spelling tables in `NamingPolicy`: `generatedTypeMembers`, `generatedDataMembers`,
+`generatedServiceConstants`, `entryPointNames` and `memberAccessorVerbs`, each filled for a language
+in its step 4.5 change. A generated declaration states a fact, the `fact` attribute of
+`dsdl.decl`, so a reader finds `FULL_NAME` by what it states rather than by its spelling, and the
+array metadata constants of C and C++ carry theirs. A structure's fields are a name class of their
+own where the row's `fieldsApart` says so: a Rust field `get_foo` and the getter of a field `foo`
+are two names. An accessors-only run declares no data member in any language, and the tree omits
+them. Rust's bodies reserve the module's helper names against their locals.
 
 **5 — The declaration renderer.** `DeclarationSpelling` and the shared renderer; the hand-assembled
 signatures and scope prefixes are deleted from all six emitters. Still no generated byte changes.

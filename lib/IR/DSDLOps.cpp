@@ -639,6 +639,8 @@ std::optional<Partition> partitionOf(const NameClass nameClass, const llvmdsdl::
         return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Tag);
     case NameClass::Macro:
         return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Macro);
+    case NameClass::Field:
+        return llvmdsdl::namePartition(classes, llvmdsdl::NameClass::Field);
     }
     return std::nullopt;
 }
@@ -1050,6 +1052,7 @@ NameClass DeclOp::declaredClass()
     case DeclKind::Guard:
         return NameClass::Macro;
     case DeclKind::Field:
+        return NameClass::Field;
     case DeclKind::Constant:
     case DeclKind::Option:
     case DeclKind::Entry:
@@ -1072,6 +1075,10 @@ LogicalResult DeclOp::verify()
     if ((getSection() || getMember()) && !getOf())
     {
         return emitOpError("names a section or a member of no entity");
+    }
+    if (getFact() && (getOrigin() != Origin::Generated))
+    {
+        return emitOpError("states a fact, which only a generated declaration does");
     }
     if ((getKind() == DeclKind::Field) &&
         (llvm::cast<ScopeOp>(getOperation()->getParentOp()).getKind() != ScopeKind::Type))

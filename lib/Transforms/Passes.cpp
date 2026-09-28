@@ -2969,7 +2969,9 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager&           pm,
     // After everything, since it names the bodies the passes above leave.
     if (surface != nullptr)
     {
-        pm.addPass(createProjectDSDLSurfacePass(*surface));
+        SurfaceProjection projection = *surface;
+        projection.accessorsOnly     = accessorsOnly;
+        pm.addPass(createProjectDSDLSurfacePass(projection));
     }
 }
 
@@ -2990,6 +2992,10 @@ struct LowerDSDLBodiesOptions final : public mlir::PassPipelineOptions<LowerDSDL
                                       "versioned-type-names",
                                       llvm::cl::desc("Whether a type's name carries its version"),
                                       llvm::cl::init(false)};
+    Option<bool>            accessorsOnly{*this,
+                                          "accessors-only",
+                                          llvm::cl::desc("Whether the run keeps the accessors and no other body"),
+                                          llvm::cl::init(false)};
 };
 
 void addLowerDSDLBodiesPipelineFor(mlir::OpPassManager& pm, const LowerDSDLBodiesOptions& options)
@@ -3000,12 +3006,17 @@ void addLowerDSDLBodiesPipelineFor(mlir::OpPassManager& pm, const LowerDSDLBodie
         addLowerDSDLBodiesPipeline(pm, false);
         return;
     }
-    const SurfaceProjection projection{.target      = options.target.getValue(),
-                                       .profiles    = {options.profiles.begin(), options.profiles.end()},
-                                       .packageName = options.package.getValue(),
-                                       .versioning  = options.versioned ? TypeNameVersioning::Versioned
-                                                                        : TypeNameVersioning::Unversioned};
-    addLowerDSDLBodiesPipeline(pm, false, (row != nullptr) ? row->body : BodyInterface{}, false, &projection);
+    const SurfaceProjection projection{.target        = options.target.getValue(),
+                                       .profiles      = {options.profiles.begin(), options.profiles.end()},
+                                       .packageName   = options.package.getValue(),
+                                       .versioning    = options.versioned ? TypeNameVersioning::Versioned
+                                                                          : TypeNameVersioning::Unversioned,
+                                       .accessorsOnly = options.accessorsOnly};
+    addLowerDSDLBodiesPipeline(pm,
+                               false,
+                               (row != nullptr) ? row->body : BodyInterface{},
+                               options.accessorsOnly,
+                               &projection);
 }
 
 }  // namespace
