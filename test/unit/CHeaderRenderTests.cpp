@@ -10,10 +10,16 @@
 #include <string>
 #include <vector>
 
+#include <llvm/ADT/StringRef.h>
+
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/CodeGen/emitter/CHeaderRender.h"
 #include "llvmdsdl/CodeGen/emitter/CIncludes.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
+#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 
 #include "UnitTests.h"
 
@@ -29,6 +35,32 @@ std::vector<std::string> pathsOf(const llvmdsdl::ImportSet& includes)
         paths.push_back(module.path);
     }
     return paths;
+}
+
+/// @brief Names each of @p typeName's macros as C's surface does: the type's name, `_`, and the name
+///        C's table gives the fact.
+/// @param[in] typeName A literal, which outlives the names.
+llvmdsdl::emitter::c::NameOfFact macrosOf(const llvm::StringRef typeName)
+{
+    return [typeName](const llvmdsdl::GeneratedFact fact) {
+        for (const llvmdsdl::GeneratedName& member : llvmdsdl::generatedTypeMembers(llvmdsdl::Language::C))
+        {
+            if (member.fact == fact)
+            {
+                return llvmdsdl::renderEnclosedConstantName(typeName, member.name);
+            }
+        }
+        return std::string{};
+    };
+}
+
+/// @brief Names each of @p typeName's entry points as C does.
+/// @param[in] typeName A literal, which outlives the names.
+llvmdsdl::emitter::c::NameOfEntryPoint entryPointsOf(const llvm::StringRef typeName)
+{
+    return [typeName](const llvmdsdl::EntryPoint entryPoint) {
+        return llvmdsdl::renderEntryPointName(llvmdsdl::Language::C, typeName, entryPoint);
+    };
 }
 
 }  // namespace
@@ -49,7 +81,7 @@ bool runCHeaderRenderTests()
     metadata.hostImage                    = {false, "storage-width"};
 
     const auto metadataLines =
-        llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata, metadataFile);
+        llvmdsdl::emitter::c::renderTypeMetadataMacros(macrosOf("uavcan__node__Heartbeat"), metadata, metadataFile);
     if (metadataLines.size() != 10U)
     {
         std::cerr << "renderTypeMetadataMacros expected 10 lines\n";
@@ -95,7 +127,7 @@ bool runCHeaderRenderTests()
     // A message that has a subject-ID declares it beside the flag that says it has one.
     metadata.fixedPortId = 7509U;
     const auto withPortId =
-        llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata, metadataFile);
+        llvmdsdl::emitter::c::renderTypeMetadataMacros(macrosOf("uavcan__node__Heartbeat"), metadata, metadataFile);
     if ((withPortId.size() != 11U) || (withPortId[10] != "#define uavcan__node__Heartbeat_FIXED_PORT_ID_ 7509U"))
     {
         std::cerr << "renderTypeMetadataMacros port-ID value mismatch\n";
@@ -104,13 +136,14 @@ bool runCHeaderRenderTests()
 
     // A service's request is not the type the service is reached through, so it declares neither.
     metadata.declaresPortId = false;
-    if (llvmdsdl::emitter::c::renderTypeMetadataMacros("uavcan__node__Heartbeat", metadata, metadataFile).size() != 9U)
+    if (llvmdsdl::emitter::c::renderTypeMetadataMacros(macrosOf("uavcan__node__Heartbeat"), metadata, metadataFile)
+            .size() != 9U)
     {
         std::cerr << "renderTypeMetadataMacros emitted a port-ID for a section that declares none\n";
         return false;
     }
 
-    const auto aliasIdentity = llvmdsdl::emitter::c::renderServiceAliasIdentityMacros("uavcan__srv__NodeInfo",
+    const auto aliasIdentity = llvmdsdl::emitter::c::renderServiceAliasIdentityMacros(macrosOf("uavcan__srv__NodeInfo"),
                                                                                       "uavcan.srv.NodeInfo",
                                                                                       2,
                                                                                       1,
@@ -134,12 +167,13 @@ bool runCHeaderRenderTests()
 
     // A service that has a service-ID declares it on the alias, which is the type that stands for
     // the service; its request and response declare nothing.
-    const auto aliasWithPortId = llvmdsdl::emitter::c::renderServiceAliasIdentityMacros("uavcan__node__ExecuteCommand",
-                                                                                        "uavcan.node.ExecuteCommand",
-                                                                                        1,
-                                                                                        3,
-                                                                                        435U,
-                                                                                        metadataFile);
+    const auto aliasWithPortId =
+        llvmdsdl::emitter::c::renderServiceAliasIdentityMacros(macrosOf("uavcan__node__ExecuteCommand"),
+                                                               "uavcan.node.ExecuteCommand",
+                                                               1,
+                                                               3,
+                                                               435U,
+                                                               metadataFile);
     if (aliasWithPortId.size() != 4U)
     {
         std::cerr << "renderServiceAliasIdentityMacros expected 4 lines with a port-ID\n";
@@ -151,9 +185,12 @@ bool runCHeaderRenderTests()
         return false;
     }
 
-    const auto aliasBridge = llvmdsdl::emitter::c::renderServiceAliasBridgeLines("uavcan__srv__NodeInfo",
-                                                                                 "uavcan__srv__NodeInfo__Request",
-                                                                                 false);
+    const auto aliasBridge =
+        llvmdsdl::emitter::c::renderServiceAliasBridgeLines("uavcan__srv__NodeInfo",
+                                                            "struct uavcan__srv__NodeInfo__Request",
+                                                            macrosOf("uavcan__srv__NodeInfo"),
+                                                            macrosOf("uavcan__srv__NodeInfo__Request"),
+                                                            false);
     // The typedef and the two size macros. Aliasability is per payload, so it is stated on the
     // request and the response, each under its own name.
     if (aliasBridge.size() != 3U)
@@ -177,9 +214,12 @@ bool runCHeaderRenderTests()
         return false;
     }
 
-    const auto deprecatedBridge = llvmdsdl::emitter::c::renderServiceAliasBridgeLines("uavcan__srv__NodeInfo",
-                                                                                      "uavcan__srv__NodeInfo__Request",
-                                                                                      true);
+    const auto deprecatedBridge =
+        llvmdsdl::emitter::c::renderServiceAliasBridgeLines("uavcan__srv__NodeInfo",
+                                                            "struct uavcan__srv__NodeInfo__Request",
+                                                            macrosOf("uavcan__srv__NodeInfo"),
+                                                            macrosOf("uavcan__srv__NodeInfo__Request"),
+                                                            true);
     if (deprecatedBridge[0] !=
         "typedef struct uavcan__srv__NodeInfo__Request uavcan__srv__NodeInfo __attribute__((deprecated));")
     {
@@ -196,9 +236,11 @@ bool runCHeaderRenderTests()
 
     llvmdsdl::ImportSet                    wrapperIncludes;
     const llvmdsdl::emitter::c::CFileNames wrapperFile(wrapperIncludes, "uavcan/srv/NodeInfo_1_0.h");
-    const auto wrappers = llvmdsdl::emitter::c::renderServiceAliasWrapperLines("uavcan__srv__NodeInfo",
-                                                                               "uavcan__srv__NodeInfo__Request",
-                                                                               wrapperFile);
+    const auto                             wrappers =
+        llvmdsdl::emitter::c::renderServiceAliasWrapperLines(entryPointsOf("uavcan__srv__NodeInfo"),
+                                                             entryPointsOf("uavcan__srv__NodeInfo__Request"),
+                                                             "struct uavcan__srv__NodeInfo__Request",
+                                                             wrapperFile);
     if (pathsOf(wrapperIncludes) != std::vector<std::string>{"<stddef.h>", "<stdint.h>"})
     {
         std::cerr << "renderServiceAliasWrapperLines recorded includes other than <stddef.h> and <stdint.h>\n";

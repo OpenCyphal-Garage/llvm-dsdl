@@ -83,6 +83,31 @@ enum class GeneratedFact : std::uint8_t
 
     /// @brief The member a structure with no fields holds.
     Placeholder,
+
+    /// @brief The macro that keeps a header from being read twice.
+    IncludeGuard,
+
+    /// @brief The macro saying a translation unit holds a version of the definition, under a type
+    ///        name the versions share.
+    SelectedType,
+
+    /// @brief The macro saying a translation unit holds this version of the definition.
+    SelectedVersion,
+
+    /// @brief Whether a union holds one option.
+    OptionTest,
+
+    /// @brief Makes a union hold one option.
+    OptionSelect,
+
+    /// @brief A service's serialisation, which is its request's.
+    Serialize,
+
+    /// @brief A service's deserialisation, which is its request's.
+    Deserialize,
+
+    /// @brief A service's initialisation, which is its request's.
+    Initialize,
 };
 
 }  // namespace llvmdsdl

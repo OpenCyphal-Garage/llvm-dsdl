@@ -304,12 +304,36 @@ struct GeneratedName final
 [[nodiscard]] llvm::ArrayRef<GeneratedName> generatedDataMembers(Language language);
 
 /// @brief The constants the generator declares for a service beside its sections' types, each
-///        named by the service's name as a constant, `_`, and the name here.
+///        named by the service's name and the name here, as the language names a constant declared
+///        beside a type.
 ///
 /// A language whose emitter names these itself has none here.
 /// @param[in] language Naming language.
 /// @return The constants, valid for the process lifetime.
 [[nodiscard]] llvm::ArrayRef<GeneratedName> generatedServiceConstants(Language language);
+
+/// @brief A macro the generator guards a file with, and the fact it states.
+struct GuardName final
+{
+    GeneratedFact fact{};
+
+    /// @brief What comes before the definition's type name.
+    llvm::StringRef prefix;
+
+    /// @brief What comes after it.
+    llvm::StringRef suffix;
+
+    /// @brief Whether the type name is the one carrying the version, whatever the run's scheme.
+    bool versioned{};
+};
+
+/// @brief The macros the generator guards a definition's file with, each named by its prefix, the
+///        definition's type name and its suffix, projected as a macro.
+///
+/// A language whose emitter names these itself has none here.
+/// @param[in] language Naming language.
+/// @return The macros, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<GuardName> generatedFileGuards(Language language);
 
 /// @brief How an entry point of a section's type is named, and the function that wraps it.
 struct EntryPointName final

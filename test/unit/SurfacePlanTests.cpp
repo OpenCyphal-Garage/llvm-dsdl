@@ -255,6 +255,7 @@ bool runSurfacePlanTests()
                 "  file Msg_1_0\n"
                 "    type ns__Msg\n"
                 "      value : field\n"
+                "    ns__Msg : tag\n"
                 "    ns__Msg_LIMIT : macro\n",
                 "C's plan") &&
          ok;
@@ -358,7 +359,8 @@ bool runSurfacePlanTests()
                                      "root pkg\n"
                                      "  file Msg_1_0\n"
                                      "    type ns__Msg\n"
-                                     "      value : field\n",
+                                     "      value : field\n"
+                                     "    ns__Msg : tag\n",
                                      "a deprecated C type") &&
                               ok;
     }
@@ -377,6 +379,9 @@ bool runSurfacePlanTests()
                                        "root pkg\n"
                                        "  file Msg_1_0\n"
                                        "    type ns__Msg\n"
+                                       "    ns__Msg : tag\n"
+                                       "    ns__Msg__serialize_ : value\n"
+                                       "    ns__Msg__get_speed_ : value\n"
                                        "    llvmdsdl_plan_capacity_check__ns__Msg_1_0 : value\n"
                                        "    llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__0__ser : value\n"
                                        "    ns__Msg_1_0__serialize_ir_ : value\n"
@@ -465,7 +470,9 @@ bool runSurfacePlanTests()
                                        "root pkg\n"
                                        "  file Request_1_0\n"
                                        "    type ns__Request__Request\n"
+                                       "    ns__Request__Request : tag\n"
                                        "    type ns__Request__Response\n"
+                                       "    ns__Request__Response : tag\n"
                                        "    ns__Request : type\n",
                                        "a C service") &&
                                 ok;
@@ -655,6 +662,79 @@ bool runSurfacePlanTests()
             }
         }
         ok = expect(service, "LIST_HAS_FIXED_PORT_ID\nLIST_FIXED_PORT_ID\n", "a Rust service's own constants") && ok;
+    }
+
+    // C's generated names are macros and free functions beside the type: the header's guards, the
+    // structure's tag, its facts, a wrapper of each body a caller reaches, and a union's test and
+    // selector of each option. A service's own facts and entry points are named after it.
+    {
+        DefinitionParts pick = message("Pick",
+                                       SectionParts{.fields    = {field("small", false, 0), field("large", false, 1)},
+                                                    .constants = {},
+                                                    .isUnion   = true});
+        pick.bodies          = {body("ns.Pick.1.0.serialize"), body("ns.Pick.1.0.get._tag_")};
+        ok                   = expect(outline(allocate(Language::C, {pick}), true),
+                                      "root pkg\n"
+                                      "  file Pick_1_0\n"
+                                      "    LLVMDSDL_NS__PICK_1_0_H : macro\n"
+                                      "    LLVMDSDL_SELECTED_NS__PICK_ : macro\n"
+                                      "    LLVMDSDL_SELECTED_NS__PICK_1_0_ : macro\n"
+                                      "    type ns__Pick\n"
+                                      "      small : field\n"
+                                      "      large : field\n"
+                                      "      _tag_ : field\n"
+                                      "    ns__Pick : tag\n"
+                                      "    ns__Pick_FULL_NAME_ : macro\n"
+                                      "    ns__Pick_FULL_NAME_AND_VERSION_ : macro\n"
+                                      "    ns__Pick_EXTENT_BYTES_ : macro\n"
+                                      "    ns__Pick_SERIALIZATION_BUFFER_SIZE_BYTES_ : macro\n"
+                                      "    ns__Pick_WIRE_FLAT_ : macro\n"
+                                      "    ns__Pick_WIRE_FLAT_REASON_ : macro\n"
+                                      "    ns__Pick_HOST_IMAGE_ : macro\n"
+                                      "    ns__Pick_HOST_IMAGE_REASON_ : macro\n"
+                                      "    ns__Pick_IS_DEPRECATED_ : macro\n"
+                                      "    ns__Pick_HAS_FIXED_PORT_ID_ : macro\n"
+                                      "    ns__Pick_UNION_OPTION_COUNT_ : macro\n"
+                                      "    ns__Pick_SMALL_OPTION_TAG_ : macro\n"
+                                      "    ns__Pick_LARGE_OPTION_TAG_ : macro\n"
+                                      "    ns__Pick__serialize_ : value\n"
+                                      "    ns__Pick__get__tag__ : value\n"
+                                      "    ns__Pick__is_small_ : value\n"
+                                      "    ns__Pick__select_small_ : value\n"
+                                      "    ns__Pick__is_large_ : value\n"
+                                      "    ns__Pick__select_large_ : value\n"
+                                      "    ns__Pick_1_0__serialize_ir_ : value\n"
+                                      "    ns__Pick_1_0__get__tag__ir_ : value\n",
+                                      "C's generated names") &&
+                               ok;
+
+        DefinitionParts list   = message("List", SectionParts{.fields = {}, .constants = {}});
+        list.service           = true;
+        list.fixedPortId       = 408;
+        list.response          = SectionParts{.fields = {}, .constants = {}};
+        list.bodies            = {body("ns.List.1.0.request.serialize"), body("ns.List.1.0.request.deserialize")};
+        const SurfacePlan plan = allocate(Language::C, {list});
+        std::string       service;
+        for (const llvmdsdl::SurfaceItem& item : plan.scopes[plan.definitions.front().fileScope].items)
+        {
+            const llvmdsdl::SurfaceDecl* const decl = item.scope ? nullptr : &plan.decls[item.index];
+            if ((decl != nullptr) && decl->fact && (decl->of->section.empty()) &&
+                (decl->kind != llvmdsdl::SurfaceDeclKind::Guard))
+            {
+                service += decl->name + "\n";
+            }
+        }
+        ok = expect(service,
+                    "ns__List_FULL_NAME_\n"
+                    "ns__List_FULL_NAME_AND_VERSION_\n"
+                    "ns__List_HAS_FIXED_PORT_ID_\n"
+                    "ns__List_FIXED_PORT_ID_\n"
+                    "ns__List_EXTENT_BYTES_\n"
+                    "ns__List_SERIALIZATION_BUFFER_SIZE_BYTES_\n"
+                    "ns__List__serialize_\n"
+                    "ns__List__deserialize_\n",
+                    "a C service's own names") &&
+             ok;
     }
 
     // Rust's accessors are allocated in a pool of their own, apart from the fields: a field

@@ -855,11 +855,26 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT"}};
+    // C's are macros beside the type, each carrying the type's name before it.
+    static constexpr std::array<GeneratedName, 12> kC =
+        {GeneratedName{GeneratedFact::FullName, "FULL_NAME_"},
+         GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION_"},
+         GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES_"},
+         GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES_"},
+         GeneratedName{GeneratedFact::WireFlat, "WIRE_FLAT_"},
+         GeneratedName{GeneratedFact::WireFlatReason, "WIRE_FLAT_REASON_"},
+         GeneratedName{GeneratedFact::HostImage, "HOST_IMAGE_"},
+         GeneratedName{GeneratedFact::HostImageReason, "HOST_IMAGE_REASON_"},
+         GeneratedName{GeneratedFact::IsDeprecated, "IS_DEPRECATED_"},
+         GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID_"},
+         GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
+         GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT_"}};
     switch (language)
     {
     case Language::Rust:
         return kRust;
     case Language::C:
+        return kC;
     case Language::Cpp:
     case Language::Go:
     case Language::TypeScript:
@@ -871,13 +886,13 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
 
 llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
 {
-    static constexpr std::array<GeneratedName, 2> kRust = {GeneratedName{GeneratedFact::UnionTag, "_tag_"},
-                                                           GeneratedName{GeneratedFact::Placeholder, "_dummy_"}};
+    static constexpr std::array<GeneratedName, 2> kMembers = {GeneratedName{GeneratedFact::UnionTag, "_tag_"},
+                                                              GeneratedName{GeneratedFact::Placeholder, "_dummy_"}};
     switch (language)
     {
     case Language::Rust:
-        return kRust;
     case Language::C:
+        return kMembers;
     case Language::Cpp:
     case Language::Go:
     case Language::TypeScript:
@@ -894,11 +909,21 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
     static constexpr std::array<GeneratedName, 2> kRust = {GeneratedName{GeneratedFact::HasFixedPortId,
                                                                          "HAS_FIXED_PORT_ID"},
                                                            GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"}};
+    // C names a service by a typedef of its request, and the service's facts are macros beside it:
+    // its own identity, and the request's sizes under the service's name.
+    static constexpr std::array<GeneratedName, 6> kC =
+        {GeneratedName{GeneratedFact::FullName, "FULL_NAME_"},
+         GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION_"},
+         GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID_"},
+         GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
+         GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES_"},
+         GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES_"}};
     switch (language)
     {
     case Language::Rust:
         return kRust;
     case Language::C:
+        return kC;
     case Language::Cpp:
     case Language::Go:
     case Language::TypeScript:
@@ -920,6 +945,32 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
         return kRust;
     case Language::C:
     case Language::Cpp:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
+}
+
+llvm::ArrayRef<GuardName> generatedFileGuards(const Language language)
+{
+    static constexpr std::array<GuardName, 3> kC =
+        {GuardName{.fact = GeneratedFact::IncludeGuard, .prefix = "LLVMDSDL_", .suffix = "_H", .versioned = true},
+         GuardName{.fact      = GeneratedFact::SelectedType,
+                   .prefix    = "LLVMDSDL_SELECTED_",
+                   .suffix    = "_",
+                   .versioned = false},
+         GuardName{.fact      = GeneratedFact::SelectedVersion,
+                   .prefix    = "LLVMDSDL_SELECTED_",
+                   .suffix    = "_",
+                   .versioned = true}};
+    switch (language)
+    {
+    case Language::C:
+        return kC;
+    case Language::Cpp:
+    case Language::Rust:
     case Language::Go:
     case Language::TypeScript:
     case Language::Python:

@@ -33,6 +33,7 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SectionScopes.h"
 
 namespace llvmdsdl
@@ -88,6 +89,11 @@ enum class NamePartition : std::uint8_t
     Macros,
     Fields,
 };
+
+/// @brief What a lowered function doing @p function is declared as.
+/// @param[in] function What the function does.
+/// @return The kind: an entry point, an accessor or a helper.
+[[nodiscard]] SurfaceDeclKind loweredFunctionKind(PlanFunction function);
 
 /// @brief The partition @p nameClass falls in, as @p classes keep names apart.
 /// @param[in] classes The language's name classes.
