@@ -3,8 +3,8 @@
 
 // A surface tree for each language prints and parses back, in the custom form and in the generic
 // one. Each tree declares one name in two classes its language keeps apart: a C structure's tag
-// and its typedef, a TypeScript interface and a constant, a Rust module and a function, and a Go
-// package's two files importing one package under one name. Two versions of one C definition
+// and its typedef, a TypeScript interface and a constant, a Rust module and a function, a Rust
+// field and an accessor, and a Go package's two files importing one package under one name. Two versions of one C definition
 // declare one type name, as the unversioned scheme generates them, and a TypeScript namespace's
 // directory and a definition's module of one name are two paths.
 
@@ -37,6 +37,7 @@ module {
     }
   }
   func.func private @uavcan.file.List.0.2.request.serialize()
+  func.func private @uavcan.file.List.0.2.request.get.entry_index()
   func.func private @uavcan.file.List.0.2.request.plan.capacity_check()
 
   // CHECK-LABEL: dsdl.surface target = "rust" {
@@ -47,8 +48,9 @@ module {
   // CHECK-NEXT:        dsdl.decl "capacity_check_request" kind = helper visibility = private of = @uavcan.file.List.0.2.request.plan.capacity_check
   // CHECK-NEXT:        dsdl.scope type "Request" of = @uavcan.file.List.0.2 section = "request" {
   // CHECK-NEXT:          dsdl.decl "entry_index" kind = field of = @uavcan.file.List.0.2 section = "request" member = "entry_index"
-  // CHECK-NEXT:          dsdl.decl "FULL_NAME" kind = constant origin = generated
+  // CHECK-NEXT:          dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @uavcan.file.List.0.2 section = "request"
   // CHECK-NEXT:          dsdl.decl "serialize" kind = entry of = @uavcan.file.List.0.2.request.serialize
+  // CHECK-NEXT:          dsdl.decl "entry_index" kind = accessor origin = generated of = @uavcan.file.List.0.2.request.get.entry_index
   // CHECK-NEXT:        }
   // CHECK-NEXT:        dsdl.decl "List" kind = alias origin = generated
   // CHECK:           dsdl.decl "file" kind = helper
@@ -62,8 +64,9 @@ module {
             dsdl.decl "capacity_check_request" kind = helper visibility = private of = @uavcan.file.List.0.2.request.plan.capacity_check
             dsdl.scope type "Request" of = @uavcan.file.List.0.2 section = "request" {
               dsdl.decl "entry_index" kind = field of = @uavcan.file.List.0.2 section = "request" member = "entry_index"
-              dsdl.decl "FULL_NAME" kind = constant origin = generated
+              dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @uavcan.file.List.0.2 section = "request"
               dsdl.decl "serialize" kind = entry of = @uavcan.file.List.0.2.request.serialize
+              dsdl.decl "entry_index" kind = accessor origin = generated of = @uavcan.file.List.0.2.request.get.entry_index
             }
             dsdl.decl "List" kind = alias origin = generated
           }

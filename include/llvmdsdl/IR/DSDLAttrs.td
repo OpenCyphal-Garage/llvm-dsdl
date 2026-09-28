@@ -71,11 +71,39 @@ def DSDL_NameClass
     : I32Enum<"NameClass", "The class of names a declaration is made in",
               [I32EnumCase<"Value", 0, "value">, I32EnumCase<"Type", 1, "type">,
                I32EnumCase<"Module", 2, "module">, I32EnumCase<"Tag", 3, "tag">,
-               I32EnumCase<"Macro", 4, "macro">]> {
+               I32EnumCase<"Macro", 4, "macro">, I32EnumCase<"Field", 5, "field">]> {
   let cppNamespace = "::mlir::dsdl";
 }
 
 def DSDL_NameClassAttr : EnumAttr<DSDL_Dialect, DSDL_NameClass, "name_class">;
+
+def DSDL_GeneratedFact
+    : I32Enum<"GeneratedFact", "What a generated declaration states",
+              [I32EnumCase<"FullName", 0, "full_name">,
+               I32EnumCase<"FullNameAndVersion", 1, "full_name_and_version">,
+               I32EnumCase<"IsDeprecated", 2, "is_deprecated">,
+               I32EnumCase<"ExtentBytes", 3, "extent_bytes">,
+               I32EnumCase<"SerializationBufferSizeBytes", 4,
+                           "serialization_buffer_size_bytes">,
+               I32EnumCase<"WireFlat", 5, "wire_flat">,
+               I32EnumCase<"WireFlatReason", 6, "wire_flat_reason">,
+               I32EnumCase<"HostImage", 7, "host_image">,
+               I32EnumCase<"HostImageReason", 8, "host_image_reason">,
+               I32EnumCase<"UnionOptionCount", 9, "union_option_count">,
+               I32EnumCase<"HasFixedPortId", 10, "has_fixed_port_id">,
+               I32EnumCase<"FixedPortId", 11, "fixed_port_id">,
+               I32EnumCase<"MemoryMode", 12, "memory_mode">,
+               I32EnumCase<"InlineThresholdBytes", 13, "inline_threshold_bytes">,
+               I32EnumCase<"PoolClass", 14, "pool_class">,
+               I32EnumCase<"ArrayCapacity", 15, "array_capacity">,
+               I32EnumCase<"ArrayIsVariableLength", 16, "array_is_variable_length">,
+               I32EnumCase<"UnionTag", 17, "union_tag">,
+               I32EnumCase<"Placeholder", 18, "placeholder">]> {
+  let cppNamespace = "::mlir::dsdl";
+}
+
+def DSDL_GeneratedFactAttr
+    : EnumAttr<DSDL_Dialect, DSDL_GeneratedFact, "generated_fact">;
 
 def DSDL_Visibility
     : I32Enum<"Visibility",

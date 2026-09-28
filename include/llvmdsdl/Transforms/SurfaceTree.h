@@ -19,7 +19,10 @@
 #define LLVMDSDL_TRANSFORMS_SURFACE_TREE_H
 
 #include <cstddef>
+#include <map>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <llvm/ADT/StringRef.h>
@@ -28,6 +31,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
 
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 
@@ -80,13 +84,23 @@ public:
     /// @return Its index; a fatal error where the tree holds none.
     [[nodiscard]] std::size_t definitionScope(llvm::StringRef key) const;
 
-    /// @brief The declaration of @p kind made in @p scope for @p of.
+    /// @brief The declaration of @p kind made in @p scope for @p of, stating @p fact.
     /// @return The declaration, or null where the scope makes none.
-    [[nodiscard]] const SurfaceDecl* find(std::size_t scope, SurfaceDeclKind kind, const SurfaceEntity& of) const;
+    [[nodiscard]] const SurfaceDecl* find(std::size_t                  scope,
+                                          SurfaceDeclKind              kind,
+                                          const SurfaceEntity&         of,
+                                          std::optional<GeneratedFact> fact = std::nullopt) const;
 
-    /// @brief The name of the declaration of @p kind made in @p scope for @p of.
+    /// @brief The name of the declaration of @p kind made in @p scope for @p of, stating @p fact.
     /// @return The name; a fatal error where the scope makes no such declaration.
-    [[nodiscard]] const std::string& nameOf(std::size_t scope, SurfaceDeclKind kind, const SurfaceEntity& of) const;
+    [[nodiscard]] const std::string& nameOf(std::size_t                  scope,
+                                            SurfaceDeclKind              kind,
+                                            const SurfaceEntity&         of,
+                                            std::optional<GeneratedFact> fact = std::nullopt) const;
+
+    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol.
+    /// @return The name; a fatal error where the surface makes no such declaration.
+    [[nodiscard]] const std::string& nameOf(llvm::StringRef symbol, SurfaceDeclKind kind) const;
 
     /// @brief The scopes from the root's child to @p scope, outermost first.
     [[nodiscard]] std::vector<std::size_t> pathTo(std::size_t scope) const;
@@ -95,6 +109,9 @@ private:
     explicit SurfaceTree(SurfacePlan plan);
 
     SurfacePlan plan_;
+
+    /// @brief Each declaration of a lowered function, by the function's symbol and the kind.
+    std::map<std::pair<std::string, SurfaceDeclKind>, std::size_t> functions_;
 };
 
 }  // namespace llvmdsdl

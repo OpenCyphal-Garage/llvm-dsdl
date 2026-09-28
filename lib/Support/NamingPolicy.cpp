@@ -32,9 +32,11 @@
 
 #include "llvm/ADT/StringSet.h"
 
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NameCanonicalization.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
 {
@@ -832,6 +834,114 @@ const RolePolicy& LanguageNamingPolicy::roleFor(const IdentifierRole role) const
 llvm::ArrayRef<llvm::StringRef> codegenGeneratedConstantTokens()
 {
     return runtimeOwnedNames(Language::Rust, IdentifierRole::ConstantName);
+}
+
+llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
+{
+    // A variable-length array's memory contract is read from the three `__LLVMDSDL_` constants.
+    static constexpr std::array<GeneratedName, 15> kRust =
+        {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
+         GeneratedName{GeneratedFact::IsDeprecated, "IS_DEPRECATED"},
+         GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION"},
+         GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES"},
+         GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES"},
+         GeneratedName{GeneratedFact::WireFlat, "WIRE_FLAT"},
+         GeneratedName{GeneratedFact::WireFlatReason, "WIRE_FLAT_REASON"},
+         GeneratedName{GeneratedFact::HostImage, "HOST_IMAGE"},
+         GeneratedName{GeneratedFact::HostImageReason, "HOST_IMAGE_REASON"},
+         GeneratedName{GeneratedFact::MemoryMode, "__LLVMDSDL_MEMORY_MODE"},
+         GeneratedName{GeneratedFact::InlineThresholdBytes, "__LLVMDSDL_INLINE_THRESHOLD_BYTES"},
+         GeneratedName{GeneratedFact::PoolClass, "__LLVMDSDL_POOL_CLASS_"},
+         GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
+         GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"},
+         GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT"}};
+    switch (language)
+    {
+    case Language::Rust:
+        return kRust;
+    case Language::C:
+    case Language::Cpp:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
+}
+
+llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
+{
+    static constexpr std::array<GeneratedName, 2> kRust = {GeneratedName{GeneratedFact::UnionTag, "_tag_"},
+                                                           GeneratedName{GeneratedFact::Placeholder, "_dummy_"}};
+    switch (language)
+    {
+    case Language::Rust:
+        return kRust;
+    case Language::C:
+    case Language::Cpp:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
+}
+
+llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
+{
+    // A Rust type alias carries no associated constants, and the service is named by an alias of
+    // its request, so the service's own facts are constants beside it.
+    static constexpr std::array<GeneratedName, 2> kRust = {GeneratedName{GeneratedFact::HasFixedPortId,
+                                                                         "HAS_FIXED_PORT_ID"},
+                                                           GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"}};
+    switch (language)
+    {
+    case Language::Rust:
+        return kRust;
+    case Language::C:
+    case Language::Cpp:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
+}
+
+llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
+{
+    // Rust initialises through `Default`, a trait's method, which the type's own items do not hold.
+    static constexpr std::array<EntryPointName, 2> kRust =
+        {EntryPointName{PlanFunction::Serialize, "serialize", "to_bytes"},
+         EntryPointName{PlanFunction::Deserialize, "deserialize", "from_bytes"}};
+    switch (language)
+    {
+    case Language::Rust:
+        return kRust;
+    case Language::C:
+    case Language::Cpp:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
+}
+
+std::optional<AccessorVerbs> memberAccessorVerbs(const Language language)
+{
+    switch (language)
+    {
+    case Language::Rust:
+        return AccessorVerbs{.getter = "get", .setter = "set"};
+    case Language::C:
+    case Language::Cpp:
+    case Language::Go:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return std::nullopt;
 }
 
 llvm::StringRef unionTagMemberName(const Language language)

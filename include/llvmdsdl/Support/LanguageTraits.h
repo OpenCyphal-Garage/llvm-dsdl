@@ -145,6 +145,10 @@ struct NameClasses final
 
     /// @brief Whether the language has macros, whose one class spans the translation unit.
     bool macros{};
+
+    /// @brief Whether a structure's fields are a class of their own, apart from its constants and
+    ///        methods.
+    bool fieldsApart{};
 };
 
 /// @brief How a body reaches a member of the type it is declared in, where a lookup of the bare name
@@ -223,9 +227,6 @@ struct Classification final
 
     /// @brief Where the language declares a type's constants.
     ConstantsScope typeConstants{};
-
-    /// @brief Whether a type's constants and its fields are one namespace, so the two can collide.
-    bool constantsShareFieldNamespace{};
 
     /// @brief The identifiers the language reserves by their underscores.
     ReservedUnderscores reservedUnderscores{};

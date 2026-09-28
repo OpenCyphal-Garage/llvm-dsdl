@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -30,6 +31,7 @@
 
 #include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
@@ -87,6 +89,44 @@ std::string importOrder(const DefinitionRef& ref)
         fullName += component + ".";
     }
     return fullName + ref.shortName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
+}
+
+/// @brief Whether a section states @p fact, which the generator declares a member of its type for.
+/// @param[in] parts The section.
+/// @param[in] message Whether the section is a message's rather than a service's.
+/// @param[in] fixedPortId The message's fixed port-ID, where it has one.
+bool states(const GeneratedFact                fact,
+            const SectionParts&                parts,
+            const bool                         message,
+            const std::optional<std::uint32_t> fixedPortId)
+{
+    switch (fact)
+    {
+    case GeneratedFact::UnionOptionCount:
+        return parts.isUnion;
+    case GeneratedFact::HasFixedPortId:
+        return message;
+    case GeneratedFact::FixedPortId:
+        return fixedPortId.has_value();
+    case GeneratedFact::FullName:
+    case GeneratedFact::FullNameAndVersion:
+    case GeneratedFact::IsDeprecated:
+    case GeneratedFact::ExtentBytes:
+    case GeneratedFact::SerializationBufferSizeBytes:
+    case GeneratedFact::WireFlat:
+    case GeneratedFact::WireFlatReason:
+    case GeneratedFact::HostImage:
+    case GeneratedFact::HostImageReason:
+    case GeneratedFact::MemoryMode:
+    case GeneratedFact::InlineThresholdBytes:
+    case GeneratedFact::PoolClass:
+    case GeneratedFact::ArrayCapacity:
+    case GeneratedFact::ArrayIsVariableLength:
+    case GeneratedFact::UnionTag:
+    case GeneratedFact::Placeholder:
+        break;
+    }
+    return true;
 }
 
 /// @brief Builds one language's plan, a definition at a time.
@@ -190,6 +230,11 @@ public:
                                          NameOrigin::Generated,
                                          SurfaceEntity{names.key, "", "", ""});
         }
+        if (definition.service)
+        {
+            allocateServiceConstants(names, file);
+        }
+        allocateMembers(names, definition);
         allocateBodies(names, space, file, definition.bodies);
         allocateImports(definition, file);
         plan_.definitions.push_back(std::move(names));
@@ -236,13 +281,14 @@ private:
         return scope;
     }
 
-    std::size_t declare(const std::size_t       scope,
-                        std::string             name,
-                        const SurfaceDeclKind   kind,
-                        const NameClass         nameClass,
-                        const NameOrigin        origin,
-                        SurfaceEntity           of,
-                        const SurfaceVisibility visibility = SurfaceVisibility::Public)
+    std::size_t declare(const std::size_t                  scope,
+                        std::string                        name,
+                        const SurfaceDeclKind              kind,
+                        const NameClass                    nameClass,
+                        const NameOrigin                   origin,
+                        SurfaceEntity                      of,
+                        const SurfaceVisibility            visibility = SurfaceVisibility::Public,
+                        const std::optional<GeneratedFact> fact       = std::nullopt)
     {
         const std::size_t index = plan_.decls.size();
         plan_.decls.push_back(SurfaceDecl{.name       = std::move(name),
@@ -251,6 +297,7 @@ private:
                                           .visibility = visibility,
                                           .origin     = origin,
                                           .of         = std::move(of),
+                                          .fact       = fact,
                                           .scope      = scope,
                                           .binds      = std::nullopt});
         plan_.scopes[scope].items.push_back(SurfaceItem{.scope = false, .index = index});
@@ -276,19 +323,25 @@ private:
         section.typeScope =
             openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
 
-        const NamingScope fields = makeSectionFieldScope(language, parts);
-        for (const FieldParts& field : parts.fields)
+        // An accessors-only run declares the type's accessors and none of its data members.
+        if (!options_.accessorsOnly)
         {
-            if (!field.padding)
+            const NamingScope fields = makeSectionFieldScope(language, parts);
+            for (const FieldParts& field : parts.fields)
             {
-                section.fields[field.name] = declare(section.typeScope,
-                                                     fields.get(IdentifierRole::FieldName, field.name),
-                                                     SurfaceDeclKind::Field,
-                                                     NameClass::Value,
-                                                     NameOrigin::Definition,
-                                                     of(field.name));
+                if (!field.padding)
+                {
+                    section.fields[field.name] = declare(section.typeScope,
+                                                         fields.get(IdentifierRole::FieldName, field.name),
+                                                         SurfaceDeclKind::Field,
+                                                         NameClass::Field,
+                                                         NameOrigin::Definition,
+                                                         of(field.name));
+                }
             }
+            allocateDataMembers(section, parts, of);
         }
+        allocateTypeMembers(section, parts, of, sectionName.empty() ? names.fixedPortId : std::nullopt);
         if (row_.composition.constants == ConstantsScope::Package)
         {
             allocatePackageConstants(section, file, parts, of);
@@ -303,6 +356,188 @@ private:
                 declare(file, section.typeName, SurfaceDeclKind::Alias, NameClass::Type, NameOrigin::Generated, of(""));
         }
         names.sections.push_back(std::move(section));
+    }
+
+    /// @brief Declares the data members the generator adds to a section's type: a union's tag, and
+    ///        the member a structure with no fields holds.
+    template <typename Of>
+    void allocateDataMembers(const SectionNames& section, const SectionParts& parts, const Of& of)
+    {
+        const bool empty = llvm::all_of(parts.fields, [](const FieldParts& field) { return field.padding; });
+        for (const GeneratedName& member : generatedDataMembers(row_.language))
+        {
+            const bool stated = (member.fact == GeneratedFact::UnionTag) ? parts.isUnion : (!parts.isUnion && empty);
+            if (stated)
+            {
+                (void) declare(section.typeScope,
+                               member.name.str(),
+                               SurfaceDeclKind::Field,
+                               NameClass::Field,
+                               NameOrigin::Generated,
+                               of(""),
+                               SurfaceVisibility::Public,
+                               member.fact);
+            }
+        }
+    }
+
+    /// @brief Declares the members the generator adds to a section's type beside its constants,
+    ///        each where the section states its fact.
+    /// @param[in] fixedPortId The fixed port-ID, where the section is a message with one.
+    template <typename Of>
+    void allocateTypeMembers(const SectionNames&                section,
+                             const SectionParts&                parts,
+                             const Of&                          of,
+                             const std::optional<std::uint32_t> fixedPortId)
+    {
+        const Language  language  = row_.language;
+        const NameClass nameClass = row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value;
+        const bool      message   = section.section.empty();
+        for (const GeneratedName& member : generatedTypeMembers(language))
+        {
+            if (member.fact == GeneratedFact::PoolClass)
+            {
+                for (const auto& [field, name] : poolClassConstantNames(language, parts))
+                {
+                    (void) declare(section.typeScope,
+                                   name,
+                                   SurfaceDeclKind::Constant,
+                                   nameClass,
+                                   NameOrigin::Generated,
+                                   of(field),
+                                   SurfaceVisibility::Public,
+                                   member.fact);
+                }
+                continue;
+            }
+            if (states(member.fact, parts, message, fixedPortId))
+            {
+                (void) declare(section.typeScope,
+                               member.name.str(),
+                               SurfaceDeclKind::Constant,
+                               nameClass,
+                               NameOrigin::Generated,
+                               of(""),
+                               SurfaceVisibility::Public,
+                               member.fact);
+            }
+        }
+    }
+
+    /// @brief Declares a service's own constants beside its sections' types, each named after the
+    ///        service.
+    void allocateServiceConstants(const DefinitionNames& names, const std::size_t file)
+    {
+        const std::string prefix =
+            codegenProjectIdentifier(row_.language, IdentifierRole::ConstantName, names.typeName) + "_";
+        for (const GeneratedName& constant : generatedServiceConstants(row_.language))
+        {
+            if ((constant.fact != GeneratedFact::FixedPortId) || names.fixedPortId)
+            {
+                (void) declare(file,
+                               prefix + constant.name.str(),
+                               SurfaceDeclKind::Constant,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, "", "", ""},
+                               SurfaceVisibility::Public,
+                               constant.fact);
+            }
+        }
+    }
+
+    /// @brief Declares the members of each section's type its lowered functions are: the entry
+    ///        points, the functions that wrap them, and the accessors.
+    void allocateMembers(const DefinitionNames& names, const DefinitionParts& definition)
+    {
+        const Language                       language = row_.language;
+        const std::optional<AccessorVerbs>   verbs    = memberAccessorVerbs(language);
+        const llvm::ArrayRef<EntryPointName> entries  = entryPointNames(language);
+        const auto                           of       = [&](const BodyParts& body) {
+            return SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol};
+        };
+        for (const SectionNames& section : names.sections)
+        {
+            const SectionParts& parts     = (section.section == "response") ? *definition.response : definition.request;
+            const auto          inSection = [&](const BodyParts& body) { return body.plan.section == section.section; };
+            for (const EntryPointName& entry : entries)
+            {
+                for (const BodyParts& body : definition.bodies)
+                {
+                    if (inSection(body) && (body.plan.function == entry.function))
+                    {
+                        (void) declare(section.typeScope,
+                                       entry.name.str(),
+                                       SurfaceDeclKind::Entry,
+                                       NameClass::Value,
+                                       NameOrigin::Generated,
+                                       of(body));
+                    }
+                }
+            }
+            for (const EntryPointName& entry : entries)
+            {
+                for (const BodyParts& body : definition.bodies)
+                {
+                    if (!entry.wrapper.empty() && inSection(body) && (body.plan.function == entry.function))
+                    {
+                        (void) declare(section.typeScope,
+                                       entry.wrapper.str(),
+                                       SurfaceDeclKind::Wrapper,
+                                       NameClass::Value,
+                                       NameOrigin::Generated,
+                                       of(body));
+                    }
+                }
+            }
+            if (!verbs)
+            {
+                continue;
+            }
+            // The accessors are allocated in a pool of their own, the union's tag first, so a union
+            // whose options collide with nothing keeps its accessors' names and a colliding option is
+            // the side that moves. A pool is keyed on the name handed to it, so the verb's separator
+            // is unconditional: `_tag_` and a field `tag_` compose `get__tag_` and `get_tag_`, two
+            // keys the projection folds onto one name, which the pool tells apart.
+            const NamingScope fields = makeSectionFieldScope(language, parts);
+            NamingScope       pool(language);
+            const auto        key = [&](const llvm::StringRef verb, const llvm::StringRef member) {
+                const std::string name =
+                    (member == kPlanUnionTagMember) ? member.str() : fields.get(IdentifierRole::FieldName, member);
+                return verb.str() + "_" + name;
+            };
+            std::vector<llvm::StringRef> members;
+            if (parts.isUnion)
+            {
+                members.push_back(kPlanUnionTagMember);
+            }
+            for (const FieldParts& field : parts.fields)
+            {
+                if (!field.padding)
+                {
+                    members.emplace_back(field.name);
+                }
+            }
+            for (const llvm::StringRef member : members)
+            {
+                (void) pool.declare(IdentifierRole::FunctionName, key(verbs->getter, member));
+                (void) pool.declare(IdentifierRole::FunctionName, key(verbs->setter, member));
+            }
+            for (const BodyParts& body : definition.bodies)
+            {
+                const bool getter = body.plan.function == PlanFunction::Get;
+                if (inSection(body) && (getter || (body.plan.function == PlanFunction::Set)))
+                {
+                    (void) declare(section.typeScope,
+                                   pool.get(IdentifierRole::FunctionName,
+                                            key(getter ? verbs->getter : verbs->setter, body.plan.member)),
+                                   SurfaceDeclKind::Accessor,
+                                   NameClass::Value,
+                                   NameOrigin::Generated,
+                                   of(body));
+                }
+            }
+        }
     }
 
     /// @brief Declares a section's constants where the type's own scope, the scope around the type
@@ -337,7 +572,10 @@ private:
                                    SurfaceDeclKind::Constant,
                                    nameClass,
                                    NameOrigin::Generated,
-                                   of(field.name));
+                                   of(field.name),
+                                   SurfaceVisibility::Public,
+                                   (kind == ArrayMetadataKind::Capacity) ? GeneratedFact::ArrayCapacity
+                                                                         : GeneratedFact::ArrayIsVariableLength);
                 }
             }
         }
@@ -616,6 +854,8 @@ std::optional<NamePartition> namePartition(const NameClasses& classes, const Nam
         return classes.tags ? std::optional<NamePartition>(NamePartition::Tags) : std::nullopt;
     case NameClass::Macro:
         return classes.macros ? std::optional<NamePartition>(NamePartition::Macros) : std::nullopt;
+    case NameClass::Field:
+        return classes.fieldsApart ? NamePartition::Fields : NamePartition::Values;
     }
     return std::nullopt;
 }

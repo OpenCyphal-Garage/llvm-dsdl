@@ -29,7 +29,6 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include <cstddef>
 #include <cstdint>
@@ -42,8 +41,6 @@
 #include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
-#include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvm/Support/raw_ostream.h"
@@ -56,6 +53,8 @@
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
 #include "llvmdsdl/Transforms/SurfaceTree.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/Language.h"
@@ -121,10 +120,9 @@ void emitAttachedDocRust(SourceWriter& w, const AttachedDoc& doc)
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule& semantic, const SurfaceTree& tree, const TypeNameVersioning typeNameVersioning)
+    EmitterContext(const SemanticModule& semantic, const SurfaceTree& tree)
         : index_(semantic)
         , tree_(tree)
-        , typeNameVersioning_(typeNameVersioning)
     {
     }
 
@@ -144,18 +142,6 @@ public:
         return tree_;
     }
 
-    /// @brief The type name of the definition @p info describes, which a service's port-ID constants
-    ///        carry.
-    std::string rustTypeName(const DiscoveredDefinition& info) const
-    {
-        return renderDefinitionTypeName(Language::Rust,
-                                        info.namespaceComponents,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion,
-                                        typeNameVersioning_);
-    }
-
     /// @brief The path, from the crate's root, of the module the definition keyed @p key is declared in.
     std::string rustModulePath(const llvm::StringRef key) const
     {
@@ -171,7 +157,6 @@ public:
 private:
     DefinitionIndex    index_;
     const SurfaceTree& tree_;
-    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
 };
 
 /// @brief One section's names, as the surface declares them.
@@ -217,6 +202,50 @@ public:
     [[nodiscard]] const std::string& option(const llvm::StringRef member) const
     {
         return tree_.nameOf(scope_, SurfaceDeclKind::Option, SurfaceEntity{key_, section_, member.str(), {}});
+    }
+
+    /// @brief The name of the DSDL field @p member where the type declares it; empty in an
+    ///        accessors-only run, which declares no data member.
+    [[nodiscard]] std::string fieldNamed(const llvm::StringRef member) const
+    {
+        const SurfaceDecl* const decl =
+            tree_.find(scope_, SurfaceDeclKind::Field, SurfaceEntity{key_, section_, member.str(), {}});
+        return (decl != nullptr) ? decl->name : std::string{};
+    }
+
+    /// @brief The name of the data member the generator adds to state @p fact, where it adds one.
+    [[nodiscard]] std::string dataMemberNamed(const GeneratedFact fact) const
+    {
+        const SurfaceDecl* const decl =
+            tree_.find(scope_, SurfaceDeclKind::Field, SurfaceEntity{key_, section_, {}, {}}, fact);
+        return (decl != nullptr) ? decl->name : std::string{};
+    }
+
+    /// @brief The name of the constant the generator declares in the type to state @p fact.
+    [[nodiscard]] const std::string& generated(const GeneratedFact fact) const
+    {
+        return tree_.nameOf(scope_, SurfaceDeclKind::Constant, SurfaceEntity{key_, section_, {}, {}}, fact);
+    }
+
+    /// @brief The name of the pool-class constant of the variable-length array @p member.
+    [[nodiscard]] const std::string& poolClass(const llvm::StringRef member) const
+    {
+        return tree_.nameOf(scope_,
+                            SurfaceDeclKind::Constant,
+                            SurfaceEntity{key_, section_, member.str(), {}},
+                            GeneratedFact::PoolClass);
+    }
+
+    /// @brief The name of the function that wraps the entry point @p entry.
+    [[nodiscard]] const std::string& wrapperOf(mlir::func::FuncOp entry) const
+    {
+        return tree_.nameOf(entry.getSymName(), SurfaceDeclKind::Wrapper);
+    }
+
+    /// @brief The name of the entry point @p entry.
+    [[nodiscard]] const std::string& entryOf(mlir::func::FuncOp entry) const
+    {
+        return tree_.nameOf(entry.getSymName(), SurfaceDeclKind::Entry);
     }
 
 private:
@@ -464,28 +493,6 @@ std::string rustDeprecatedAttribute(const std::string&  fullName,
     return "#[deprecated(note = \"" + message + "\")]";
 }
 
-/// @brief The names of the pool-class constants of a section's variable-length arrays, by field.
-///
-/// The struct declares one constant per variable-length array, and a body's `set_array_length`
-/// hands it to the container; both take the names from here so that they cannot disagree.
-std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const std::vector<std::string>& fieldNames)
-{
-    std::vector<std::pair<std::string, std::string>> out;
-    std::set<std::string>                            used;
-    for (const auto& fieldName : fieldNames)
-    {
-        const std::string baseName  = "__LLVMDSDL_POOL_CLASS_" +
-                                      codegenProjectIdentifier(Language::Rust, IdentifierRole::ConstantName, fieldName);
-        std::string       constName = baseName;
-        for (std::uint32_t suffix = 1U; !used.insert(constName).second; ++suffix)
-        {
-            constName = baseName + "_" + std::to_string(suffix);
-        }
-        out.emplace_back(fieldName, constName);
-    }
-    return out;
-}
-
 /// @brief The Rust spelling of the plan-body vocabulary, for one schema.
 ///
 /// Members are named from the same scope the struct declaration names them in, built from the
@@ -504,13 +511,15 @@ public:
                  const SurfaceTree&           tree,
                  const std::set<std::string>& lifetimeSections)
         : symbols_(module)
+        , tree_(tree)
     {
-        // A helper is a private item of the module the definition is generated into, and the module
-        // is named after the definition, so the schema component of the lowered symbol names what
-        // the module already says. Stripping it leaves what distinguishes one helper of this
-        // definition from another -- the kind it answers, the section it belongs to, and for a
-        // scalar the field's index and direction.
-        helperNames_ = renderSchemaHelperNames(Language::Rust, module, schema, helperScope_);
+        for (const SurfaceItem& item : tree.scope(tree.definitionScope(schema.getSymName())).items)
+        {
+            if (!item.scope && (tree.plan().decls[item.index].kind == SurfaceDeclKind::Helper))
+            {
+                helpers_.emplace_back(tree.plan().decls[item.index].name);
+            }
+        }
         if (schema.getBody().empty())
         {
             return;
@@ -520,10 +529,17 @@ public:
             Plan                 entry;
             const std::string    section = plan.getSection().value_or(llvm::StringRef{}).str();
             const SectionSurface names(tree, schema.getSymName().str(), section);
-            entry.unionTagBits = plan.getUnionTagBits().value_or(0);
-            entry.lifetime     = lifetimeSections.contains(section);
-            std::vector<mlir::dsdl::IOOp> fields;
-            std::vector<std::string>      variableArrays;
+            entry.unionTagBits    = plan.getUnionTagBits().value_or(0);
+            entry.lifetime        = lifetimeSections.contains(section);
+            entry.memoryMode      = names.generated(GeneratedFact::MemoryMode);
+            entry.inlineThreshold = names.generated(GeneratedFact::InlineThresholdBytes);
+            // An accessors-only run declares no data member, and its accessors name none.
+            if (plan.getIsUnion())
+            {
+                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
+                entry.members[kPlanUnionTagMember] =
+                    Member{names.dataMemberNamed(GeneratedFact::UnionTag), tagSteps_.back().get()};
+            }
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
@@ -532,51 +548,12 @@ public:
                     {
                         continue;
                     }
-                    fields.push_back(io);
+                    entry.members[io.getName()] = Member{names.fieldNamed(io.getName()), io};
                     if (io.isVariableArray())
                     {
-                        variableArrays.push_back(io.getName().str());
+                        entry.poolClass[io.getName()] = names.poolClass(io.getName());
                     }
                 }
-            }
-            for (const auto& [fieldName, constName] : poolClassConstantNames(variableArrays))
-            {
-                entry.poolClass[fieldName] = constName;
-            }
-            // Accessors are allocated from a scope of their own, not from the one the fields are
-            // named in: a Rust field and a method occupy separate namespaces, so a section holding
-            // fields `get_foo` and `foo` keeps both the field `get_foo` and the method `get_foo`.
-            // Sharing one scope renamed the method for a clash the language does not have, and did
-            // it to the getter alone, since only the getter's name met the field's.
-            //
-            // A scope is keyed on the name handed to it, and the separator is therefore
-            // unconditional: `_tag_` and a field named `tag_` both compose `get_tag_` once a
-            // leading underscore absorbs the separator, and a scope cannot separate one key from
-            // itself. Keyed as `get__tag_` and `get_tag_` they are two names that the snake
-            // projection folds onto one identifier, which is the case a scope exists for. The tag
-            // is declared first, so a union whose options collide with nothing keeps the accessor
-            // names it has and the colliding option is the side that moves.
-            NamingScope accessorScope(Language::Rust);
-            const auto  accessorKey = [](const llvm::StringRef kind, const llvm::StringRef member) {
-                return kind.str() + "_" + member.str();
-            };
-            if (plan.getIsUnion())
-            {
-                tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] =
-                    Member{unionTagMemberName(Language::Rust).str(),
-                           tagSteps_.back().get(),
-                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", "_tag_")),
-                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", "_tag_"))};
-            }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                const std::string& field = names.field(io.getName());
-                entry.members[io.getName()] =
-                    Member{field,
-                           io,
-                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("get", field)),
-                           accessorScope.declare(IdentifierRole::FunctionName, accessorKey("set", field))};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -614,10 +591,11 @@ public:
         // argument a body ignores with a leading underscore.
         const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
 
+        const std::string& name = tree_.nameOf(fn.getSymName(), SurfaceDeclKind::Entry);
         w.open(serialize
-                   ? "pub fn serialize(&self, " + buffer + ": &mut [u8]) -> " + RustFileNames::core("result::Result") +
-                         "<usize, " + RustFileNames::runtime("Error") + "> {"
-                   : "pub fn deserialize(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") + "[u8]) -> " +
+                   ? "pub fn " + name + "(&self, " + buffer + ": &mut [u8]) -> " +
+                         RustFileNames::core("result::Result") + "<usize, " + RustFileNames::runtime("Error") + "> {"
+                   : "pub fn " + name + "(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") + "[u8]) -> " +
                          RustFileNames::core("result::Result") + "<usize, " + RustFileNames::runtime("Error") + "> {");
         return {"self", buffer};
     }
@@ -629,20 +607,21 @@ public:
     ///        index and a value are rebound at entry.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Member&     member    = accessorMember(fn);
-        const std::string storage   = scalarType(member.io);
-        const mlir::Type  answer    = fn.getResultTypes().front();
-        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
-        const std::string index     = indexed ? ", index: usize" : "";
-        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        const Member&      member    = accessorMember(fn);
+        const std::string& name      = tree_.nameOf(fn.getSymName(), SurfaceDeclKind::Accessor);
+        const std::string  storage   = scalarType(member.io);
+        const mlir::Type   answer    = fn.getResultTypes().front();
+        const bool         composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool         indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type   held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool         integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string  index     = indexed ? ", index: usize" : "";
+        accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
         if (composite)
         {
             // The nested type's buffer, as a slice, which carries its own length.
-            w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            w.open("pub fn " + name + "(buffer: &[u8]" + index + ") -> &[u8] {");
         }
         else if (getter)
         {
@@ -654,11 +633,11 @@ public:
             {
                 returnCast_ = " as " + storage;
             }
-            w.open("pub fn " + member.getterName + "(buffer: &[u8]" + index + ") -> " + storage + " {");
+            w.open("pub fn " + name + "(buffer: &[u8]" + index + ") -> " + storage + " {");
         }
         else
         {
-            w.open("pub fn " + member.setterName + "(buffer: &mut [u8]" + index + ", value: " + storage + ") -> " +
+            w.open("pub fn " + name + "(buffer: &mut [u8]" + index + ", value: " + storage + ") -> " +
                    RustFileNames::core("result::Result") + "<(), " + RustFileNames::runtime("Error") + "> {");
         }
         // The buffer's size as the plan speaks it, bound where the plan uses it at all. A composite
@@ -729,23 +708,14 @@ public:
     {
         // A body reaches the runtime and the standard library by path, and a `let` never captures
         // a type: Rust resolves `x as u64` in the type namespace and a binding lives in the value
-        // namespace. A synthesised helper it reaches by bare name, and that is a module-scope
-        // item in the value namespace, which a `let` would capture. None can be: the helper
-        // carries `mlir_llvmdsdl_`, and a role name is a role word, or a member and a role word
-        // joined, so it carries no prefix at all.
-        return {};
+        // namespace. A helper it reaches by bare name, as an item of the module's value namespace,
+        // which a `let` of the helper's name would capture.
+        return helpers_;
     }
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        const auto found = helperNames_.find(callee);
-        if (found == helperNames_.end())
-        {
-            llvm::report_fatal_error(llvm::Twine("Rust spelling: a call to a helper this module does "
-                                                 "not declare: ") +
-                                     callee);
-        }
-        return found->second;
+        return tree_.nameOf(callee, SurfaceDeclKind::Helper);
     }
 
     // Statements.
@@ -1167,15 +1137,16 @@ public:
         // The container takes the section's memory contract, is sized to the count the plan
         // validated, and holds default elements for the plan to store into. Storage the pool or
         // the allocator cannot provide ends the function with the allocation's code.
+        const Plan&       plan   = planOf(op.getObject());
         const std::string access = memberAccess(op.getObject(), op.getMember(), names);
         const std::string count  = fresh("count");
         w.line(access + ".set_memory_contract(" + RustFileNames::runtime("VarArrayMemoryContract::new") +
-               "(Self::__LLVMDSDL_MEMORY_MODE, "
-               "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, Self::" +
-               poolClassOf(op.getObject(), op.getMember()) + "));");
+               "(Self::" + plan.memoryMode + ", Self::" + plan.inlineThreshold +
+               ", Self::" + poolClassOf(op.getObject(), op.getMember()) + "));");
         w.line(access + ".clear();");
         w.line("let " + count + ": usize = " + asSize(names(op.getValue())) + ";");
-        w.open("if Self::__LLVMDSDL_MEMORY_MODE == " + RustFileNames::runtime("DsdlMemoryMode::InlineThenPool") + " {");
+        w.open("if Self::" + plan.memoryMode + " == " + RustFileNames::runtime("DsdlMemoryMode::InlineThenPool") +
+               " {");
         w.line("let mut _pool = " + RustFileNames::runtime("PassthroughPoolProvider::default") + "();");
         w.open("if let Err(_alloc_err) = " + access + ".reserve_with_pool(" + count + ", &mut _pool) {");
         w.line("return Err(" + RustFileNames::runtime("Error::from") + "(_alloc_err));");
@@ -1190,14 +1161,14 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return names(op.getObject()) + "." + unionTagMemberName(Language::Rust).str() + " as u64";
+        return memberAccess(op.getObject(), kPlanUnionTagMember, names) + " as u64";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         const Plan& plan = planOf(op.getObject());
-        w.line(names(op.getObject()) + "." + unionTagMemberName(Language::Rust).str() + " = " + names(op.getValue()) +
-               " as " + unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) + ";");
+        w.line(memberAccess(op.getObject(), kPlanUnionTagMember, names) + " = " + names(op.getValue()) + " as " +
+               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits)) + ";");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
@@ -1404,16 +1375,9 @@ public:
 private:
     struct Member final
     {
+        /// @brief The data member's name; empty in an accessors-only run, which declares none.
         std::string      rustName;
         mlir::dsdl::IOOp io;
-
-        /// @brief The names this member's accessors are declared under.
-        ///
-        /// Allocated from the section's own scope rather than composed at each use: a union's
-        /// synthetic tag reaches `accessorSource` as `_tag_` and an option named `tag_` reaches it
-        /// as `tag_`, and both compose `get_tag_`. Two accessors of one `impl` cannot share a name.
-        std::string getterName;
-        std::string setterName;
     };
 
     struct Plan final
@@ -1421,6 +1385,9 @@ private:
         std::int64_t                 unionTagBits{0};
         llvm::StringMap<Member>      members;
         llvm::StringMap<std::string> poolClass;
+        /// @brief The names of the constants stating the section's memory contract.
+        std::string memoryMode;
+        std::string inlineThreshold;
         /// @brief Whether the type holds a view and so carries a lifetime.
         bool lifetime{false};
     };
@@ -1622,14 +1589,11 @@ private:
     }
 
     mlir::SymbolTable     symbols_;
+    const SurfaceTree&    tree_;
     llvm::StringMap<Plan> plans_;
 
-    /// @brief The scope the module's helper names are declared into, which keeps two that project
-    ///        onto one name apart.
-    NamingScope helperScope_{Language::Rust};
-
-    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
-    llvm::StringMap<std::string> helperNames_;
+    /// @brief The names of the module's helpers, which a body reaches bare.
+    std::vector<llvm::StringRef> helpers_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
     mutable std::size_t                              counter_{0};
@@ -1725,22 +1689,18 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         init = std::move(*initRead);
     }
-    std::vector<std::string> variableArrayFields;
+    // Each variable-length array's allocation class, numbered from one in field order.
+    std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
     for (const auto& field : section.fields)
     {
         if (!field.isPadding && isVariableArray(field.resolvedType.arrayKind))
         {
-            variableArrayFields.push_back(field.name);
+            poolClassConstants.emplace_back(names.poolClass(field.name),
+                                            static_cast<std::uint32_t>(poolClassConstants.size() + 1U));
         }
     }
-    std::unordered_map<std::string, std::string>       poolClassConstExprByField;
-    std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
-    std::uint32_t                                      nextPoolClassId = 1U;
-    for (const auto& [fieldName, constName] : poolClassConstantNames(variableArrayFields))
-    {
-        poolClassConstExprByField.emplace(fieldName, "Self::" + constName);
-        poolClassConstants.emplace_back(constName, nextPoolClassId++);
-    }
+    const std::string unionTag    = names.dataMemberNamed(GeneratedFact::UnionTag);
+    const std::string placeholder = names.dataMemberNamed(GeneratedFact::Placeholder);
 
     const std::string& declaredName = names.declaredName();
     // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
@@ -1755,14 +1715,6 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                                                  definitionFullName,
                                                  metadata.majorVersion,
                                                  metadata.minorVersion));
-    std::size_t fieldCount = 0;
-    for (const auto& field : section.fields)
-    {
-        if (!field.isPadding)
-        {
-            ++fieldCount;
-        }
-    }
     if (options.accessorsOnly)
     {
         w.line("#[derive(Clone, Debug, PartialEq)]");
@@ -1792,17 +1744,16 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             w.line("pub " + names.field(field.name) + ": " + rustMemberType(field, file) + ",");
         }
 
-        if (section.isUnion)
+        if (!unionTag.empty())
         {
             // The tag storage must match the wire tag width (8 bits for <=256 options,
             // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-            w.line("pub " + unionTagMemberName(Language::Rust).str() + ": " + unsignedStorageType(unionTagBits(plan)) +
-                   ",");
+            w.line("pub " + unionTag + ": " + unsignedStorageType(unionTagBits(plan)) + ",");
         }
 
-        if (fieldCount == 0 && !section.isUnion)
+        if (!placeholder.empty())
         {
-            w.line("pub _dummy_: u8,");
+            w.line("pub " + placeholder + ": u8,");
         }
         w.close("}");
         w.blank();
@@ -1863,22 +1814,21 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             {
                 w.line(names.field(field.name) + ": " + RustFileNames::runtime("DsdlVec::with_contract") + "(" +
                        RustFileNames::runtime("VarArrayMemoryContract::new") +
-                       "("
-                       "Self::__LLVMDSDL_MEMORY_MODE, "
-                       "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
-                       poolClassConstExprByField.at(field.name) + ")),");
+                       "(Self::" + names.generated(GeneratedFact::MemoryMode) +
+                       ", Self::" + names.generated(GeneratedFact::InlineThresholdBytes) +
+                       ", Self::" + names.poolClass(field.name) + ")),");
                 continue;
             }
             w.line(names.field(field.name) + ": " + rustDefaultFromBody(field.resolvedType, *found->second, file) +
                    ",");
         }
-        if (section.isUnion)
+        if (!unionTag.empty())
         {
-            w.line(unionTagMemberName(Language::Rust).str() + ": " + std::to_string(init.unionTag) + ",");
+            w.line(unionTag + ": " + std::to_string(init.unionTag) + ",");
         }
-        if (fieldCount == 0 && !section.isUnion)
+        if (!placeholder.empty())
         {
-            w.line("_dummy_: 0,");
+            w.line(placeholder + ": 0,");
         }
         w.close("}");
         w.close("}");
@@ -1886,16 +1836,17 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.blank();
     }
     w.open(implHead + declaredName + generics + " {");
-    w.line("pub const FULL_NAME: &'static str = \"" + metadata.fullName + "\";");
-    w.line(std::string("pub const IS_DEPRECATED: bool = ") + (metadata.deprecated ? "true;" : "false;"));
-    w.line("pub const FULL_NAME_AND_VERSION: &'static str = \"" + metadata.fullName + "." +
+    const auto constant = [&](const GeneratedFact fact) { return "pub const " + names.generated(fact) + ": "; };
+    w.line(constant(GeneratedFact::FullName) + "&'static str = \"" + metadata.fullName + "\";");
+    w.line(constant(GeneratedFact::IsDeprecated) + "bool = " + (metadata.deprecated ? "true;" : "false;"));
+    w.line(constant(GeneratedFact::FullNameAndVersion) + "&'static str = \"" + metadata.fullName + "." +
            std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
-    w.line("pub const EXTENT_BYTES: usize = " + std::to_string(metadata.extentBytes) + ";");
-    w.line("pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
-           std::to_string(metadata.serializationBufferSizeBytes) + ";");
-    w.line(std::string("pub const WIRE_FLAT: bool = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
-    w.line("pub const WIRE_FLAT_REASON: &'static str = \"" + metadata.wireFlat.reason + "\";");
-    w.line(std::string("pub const HOST_IMAGE: bool = ") + (metadata.hostImage.holds ? "true;" : "false;"));
+    w.line(constant(GeneratedFact::ExtentBytes) + "usize = " + std::to_string(metadata.extentBytes) + ";");
+    w.line(constant(GeneratedFact::SerializationBufferSizeBytes) +
+           "usize = " + std::to_string(metadata.serializationBufferSizeBytes) + ";");
+    w.line(constant(GeneratedFact::WireFlat) + "bool = " + (metadata.wireFlat.holds ? "true;" : "false;"));
+    w.line(constant(GeneratedFact::WireFlatReason) + "&'static str = \"" + metadata.wireFlat.reason + "\";");
+    w.line(constant(GeneratedFact::HostImage) + "bool = " + (metadata.hostImage.holds ? "true;" : "false;"));
     // A folded body moves the object as the wire's bytes, which holds only where the host orders
     // them as the wire does. This source is compiled for a target the generator did not see.
     if (options.hostImageFolded && metadata.hostImage.holds && !options.accessorsOnly)
@@ -1905,10 +1856,10 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
                "host. Regenerate with --target-triple naming this target.\");");
     }
-    w.line("pub const HOST_IMAGE_REASON: &'static str = \"" + metadata.hostImage.reason + "\";");
-    w.line("pub const __LLVMDSDL_MEMORY_MODE: " + RustFileNames::runtime("DsdlMemoryMode") + " = " +
+    w.line(constant(GeneratedFact::HostImageReason) + "&'static str = \"" + metadata.hostImage.reason + "\";");
+    w.line(constant(GeneratedFact::MemoryMode) + RustFileNames::runtime("DsdlMemoryMode") + " = " +
            rustMemoryModeVariantPath(options) + ";");
-    w.line("pub const __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = " + std::to_string(options.inlineThresholdBytes) +
+    w.line(constant(GeneratedFact::InlineThresholdBytes) + "usize = " + std::to_string(options.inlineThresholdBytes) +
            "usize;");
     for (const auto& [constName, classId] : poolClassConstants)
     {
@@ -1917,15 +1868,16 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     }
     if (metadata.declaresPortId)
     {
-        w.line(std::string("pub const HAS_FIXED_PORT_ID: bool = ") + (metadata.fixedPortId ? "true;" : "false;"));
+        w.line(constant(GeneratedFact::HasFixedPortId) + "bool = " + (metadata.fixedPortId ? "true;" : "false;"));
         if (metadata.fixedPortId)
         {
-            w.line("pub const FIXED_PORT_ID: u16 = " + std::to_string(*metadata.fixedPortId) + ";");
+            w.line(constant(GeneratedFact::FixedPortId) + "u16 = " + std::to_string(*metadata.fixedPortId) + ";");
         }
     }
     if (metadata.isUnion)
     {
-        w.line("pub const UNION_OPTION_COUNT: usize = " + std::to_string(metadata.unionOptions.size()) + ";");
+        w.line(constant(GeneratedFact::UnionOptionCount) + "usize = " + std::to_string(metadata.unionOptions.size()) +
+               ";");
         for (const auto& option : metadata.unionOptions)
         {
             w.line("pub const " + names.option(option.name) + ": " + unsignedStorageType(metadata.unionTagBits) +
@@ -1953,21 +1905,22 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             return err;
         }
         w.blank();
-        w.open("pub fn to_bytes(&self) -> " + RustFileNames::core("result::Result") + "<" +
-               RustFileNames::runtime("DsdlVec") + "<u8>, " + RustFileNames::runtime("Error") + "> {");
-        w.line("let mut buffer = " + RustFileNames::runtime("DsdlVec") +
-               "::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
-        w.line("buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
-        w.line("let used = self.serialize(&mut buffer)?;");
+        const std::string& bufferSize = names.generated(GeneratedFact::SerializationBufferSizeBytes);
+        w.open("pub fn " + names.wrapperOf(bodies.serialize) + "(&self) -> " + RustFileNames::core("result::Result") +
+               "<" + RustFileNames::runtime("DsdlVec") + "<u8>, " + RustFileNames::runtime("Error") + "> {");
+        w.line("let mut buffer = " + RustFileNames::runtime("DsdlVec") + "::<u8>::with_capacity(Self::" + bufferSize +
+               ");");
+        w.line("buffer.resize(Self::" + bufferSize + ", 0u8);");
+        w.line("let used = self." + names.entryOf(bodies.serialize) + "(&mut buffer)?;");
         w.line("buffer.truncate(used);");
         w.line("Ok(buffer)");
         w.close("}");
         w.blank();
 
-        w.open("pub fn from_bytes(buffer: " + borrowed + ") -> " + RustFileNames::core("result::Result") +
-               "<(Self, usize), " + RustFileNames::runtime("Error") + "> {");
+        w.open("pub fn " + names.wrapperOf(bodies.deserialize) + "(buffer: " + borrowed + ") -> " +
+               RustFileNames::core("result::Result") + "<(Self, usize), " + RustFileNames::runtime("Error") + "> {");
         w.line("let mut out = Self::default();");
-        w.line("let used = out.deserialize(buffer)?;");
+        w.line("let used = out." + names.entryOf(bodies.deserialize) + "(buffer)?;");
         w.line("Ok((out, used))");
         w.close("}");
     }
@@ -2149,13 +2102,18 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
     // alias carries no associated constants, so the pair is declared beside it.
-    const auto baseConstPrefix =
-        codegenProjectIdentifier(Language::Rust, IdentifierRole::ConstantName, ctx.rustTypeName(def.info));
-    w.line("pub const " + baseConstPrefix +
-           "_HAS_FIXED_PORT_ID: bool = " + (def.info.fixedPortId ? "true;" : "false;"));
+    const auto serviceConstant = [&](const GeneratedFact fact) {
+        return "pub const " +
+               ctx.tree().nameOf(ctx.tree().definitionScope(key),
+                                 SurfaceDeclKind::Constant,
+                                 SurfaceEntity{key, {}, {}, {}},
+                                 fact) +
+               ": ";
+    };
+    w.line(serviceConstant(GeneratedFact::HasFixedPortId) + "bool = " + (def.info.fixedPortId ? "true;" : "false;"));
     if (def.info.fixedPortId)
     {
-        w.line("pub const " + baseConstPrefix + "_FIXED_PORT_ID: u16 = " + std::to_string(*def.info.fixedPortId) + ";");
+        w.line(serviceConstant(GeneratedFact::FixedPortId) + "u16 = " + std::to_string(*def.info.fixedPortId) + ";");
     }
 
     return assemble();
@@ -2292,7 +2250,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         }
     }
 
-    const EmitterContext ctx(semantic, *tree, options.typeNameVersioning);
+    const EmitterContext ctx(semantic, *tree);
     PlanBodyLookups      lookups(module);
 
     // The scopes the crate declares a module for: each written definition's, and each namespace

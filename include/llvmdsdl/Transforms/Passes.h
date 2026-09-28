@@ -183,6 +183,9 @@ struct SurfaceProjection final
 
     /// @brief Whether a type's name carries its version.
     TypeNameVersioning versioning{TypeNameVersioning::Unversioned};
+
+    /// @brief Whether the run writes each type's accessors and none of its data members.
+    bool accessorsOnly{};
 };
 
 /// @brief Writes the surface plan of @p projection's target into the module: the scopes its output

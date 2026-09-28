@@ -19,6 +19,7 @@
 #include <llvm/ADT/StringRef.h>
 
 #include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
@@ -41,6 +42,7 @@ SectionParts sectionParts(const SemanticSection& section)
             FieldParts{.name             = field.name,
                        .padding          = field.isPadding,
                        .array            = field.resolvedType.arrayKind != ArrayKind::None,
+                       .variableLength   = isVariableArray(field.resolvedType.arrayKind),
                        .unionOptionIndex = field.unionOptionIndex,
                        .composite        = composite ? std::optional(definitionRef(*composite)) : std::nullopt,
                        .view             = field.heldAsView});

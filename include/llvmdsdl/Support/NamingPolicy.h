@@ -17,6 +17,7 @@
 #ifndef LLVMDSDL_SUPPORT_NAMING_POLICY_H
 #define LLVMDSDL_SUPPORT_NAMING_POLICY_H
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,7 +26,9 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringRef.h"
 
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
 {
@@ -274,6 +277,74 @@ std::string codegenToUpperSnakeCaseIdentifier(Language language, llvm::StringRef
 /// @param[in] language Naming language.
 /// @return The member's name, valid for the process lifetime.
 [[nodiscard]] llvm::StringRef unionTagMemberName(Language language);
+
+/// @brief A name the generator declares, and the fact it states.
+struct GeneratedName final
+{
+    GeneratedFact fact{};
+
+    /// @brief The name; for a fact stated once for each variable-length array field, what the
+    ///        field's name follows.
+    llvm::StringRef name;
+};
+
+/// @brief The members the generator declares in a section's type beside those of its fields and
+///        constants, in the order the type declares them.
+///
+/// A language whose emitter names these itself has none here.
+/// @param[in] language Naming language.
+/// @return The members, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<GeneratedName> generatedTypeMembers(Language language);
+
+/// @brief The data members the generator declares in a section's type beside its fields.
+///
+/// A language whose emitter names these itself has none here.
+/// @param[in] language Naming language.
+/// @return The members, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<GeneratedName> generatedDataMembers(Language language);
+
+/// @brief The constants the generator declares for a service beside its sections' types, each
+///        named by the service's name as a constant, `_`, and the name here.
+///
+/// A language whose emitter names these itself has none here.
+/// @param[in] language Naming language.
+/// @return The constants, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<GeneratedName> generatedServiceConstants(Language language);
+
+/// @brief How an entry point of a section's type is named, and the function that wraps it.
+struct EntryPointName final
+{
+    /// @brief What the body does.
+    PlanFunction function{};
+
+    /// @brief The entry point's name.
+    llvm::StringRef name;
+
+    /// @brief The name of the function that wraps it; empty where none does.
+    llvm::StringRef wrapper;
+};
+
+/// @brief The entry points a language declares as members of a section's type.
+///
+/// A language whose emitter names these itself has none here.
+/// @param[in] language Naming language.
+/// @return The entry points, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<EntryPointName> entryPointNames(Language language);
+
+/// @brief The verbs a member accessor's name begins with, joined to the member's name by `_`.
+struct AccessorVerbs final
+{
+    llvm::StringRef getter;
+    llvm::StringRef setter;
+};
+
+/// @brief The verbs of @p language's member accessors, which are allocated apart from the type's
+///        fields.
+///
+/// None where the language's emitter names its accessors itself.
+/// @param[in] language Naming language.
+/// @return The verbs.
+[[nodiscard]] std::optional<AccessorVerbs> memberAccessorVerbs(Language language);
 
 /// @brief Projects @p name as Go names something it exports.
 /// @param[in] name The source name.

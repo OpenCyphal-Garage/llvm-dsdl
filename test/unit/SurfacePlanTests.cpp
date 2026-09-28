@@ -37,6 +37,7 @@ FieldParts field(const std::string& name, const bool array = false, const std::u
     return FieldParts{.name             = name,
                       .padding          = false,
                       .array            = array,
+                      .variableLength   = false,
                       .unionOptionIndex = option,
                       .composite        = std::nullopt,
                       .view             = false};
@@ -72,11 +73,22 @@ DefinitionParts message(const std::string& shortName, SectionParts section, cons
 
 SurfacePlan allocate(const Language                      language,
                      const std::vector<DefinitionParts>& definitions,
-                     const std::string&                  packageName = "pkg")
+                     const std::string&                  packageName   = "pkg",
+                     const bool                          accessorsOnly = false)
 {
     return llvmdsdl::allocateSurface(llvmdsdl::languageTraits(language),
                                      definitions,
-                                     llvmdsdl::SurfaceOptions{.packageName = packageName});
+                                     llvmdsdl::SurfaceOptions{.packageName = packageName,
+                                                              .versioning  = llvmdsdl::TypeNameVersioning::Unversioned,
+                                                              .accessorsOnly = accessorsOnly});
+}
+
+/// @brief A variable-length array field.
+FieldParts varying(const std::string& name)
+{
+    FieldParts out     = field(name, true);
+    out.variableLength = true;
+    return out;
 }
 
 const char* kindName(const llvmdsdl::SurfaceScopeKind kind)
@@ -113,34 +125,51 @@ const char* className(const llvmdsdl::NameClass nameClass)
         return "tag";
     case llvmdsdl::NameClass::Macro:
         return "macro";
+    case llvmdsdl::NameClass::Field:
+        return "field";
     }
     return "?";
 }
 
+/// @brief Whether @p decl is a member the generator adds to a type: a generated constant or data
+///        member, an entry point, a wrapper or an accessor.
+bool typeMember(const SurfacePlan& plan, const llvmdsdl::SurfaceDecl& decl)
+{
+    using llvmdsdl::SurfaceDeclKind;
+    const bool function = (decl.kind == SurfaceDeclKind::Entry) || (decl.kind == SurfaceDeclKind::Wrapper) ||
+                          (decl.kind == SurfaceDeclKind::Accessor);
+    return decl.fact.has_value() || (function && (plan.scopes[decl.scope].kind == llvmdsdl::SurfaceScopeKind::Type));
+}
+
 /// @brief The plan as an indented outline: a scope's kind and name, and each declaration's name and
-///        class.
-void outline(const SurfacePlan& plan, const std::size_t scope, const std::string& indent, std::string& out)
+///        class. The members the generator adds to a type are left out unless @p members is set.
+void outline(const SurfacePlan& plan,
+             const std::size_t  scope,
+             const std::string& indent,
+             std::string&       out,
+             const bool         members)
 {
     out += indent + kindName(plan.scopes[scope].kind) + " " + plan.scopes[scope].name + "\n";
     for (const llvmdsdl::SurfaceItem& item : plan.scopes[scope].items)
     {
         if (item.scope)
         {
-            outline(plan, item.index, indent + "  ", out);
+            outline(plan, item.index, indent + "  ", out, members);
+            continue;
         }
-        else
+        const llvmdsdl::SurfaceDecl& decl = plan.decls[item.index];
+        if (members || !typeMember(plan, decl))
         {
-            const llvmdsdl::SurfaceDecl& decl = plan.decls[item.index];
             out += indent + "  " + decl.name + " : " + className(decl.nameClass) +
                    ((decl.visibility == llvmdsdl::SurfaceVisibility::Private) ? " private" : "") + "\n";
         }
     }
 }
 
-std::string outline(const SurfacePlan& plan)
+std::string outline(const SurfacePlan& plan, const bool members = false)
 {
     std::string out;
-    outline(plan, 0, "", out);
+    outline(plan, 0, "", out, members);
     return out;
 }
 
@@ -225,7 +254,7 @@ bool runSurfacePlanTests()
                 "root pkg\n"
                 "  file Msg_1_0\n"
                 "    type ns__Msg\n"
-                "      value : value\n"
+                "      value : field\n"
                 "    ns__Msg_LIMIT : macro\n",
                 "C's plan") &&
          ok;
@@ -234,7 +263,7 @@ bool runSurfacePlanTests()
                 "  namespace ns\n"
                 "    file Msg_1_0\n"
                 "      type Msg\n"
-                "        value : value\n"
+                "        value : field\n"
                 "        LIMIT : value\n",
                 "C++'s plan") &&
          ok;
@@ -243,7 +272,7 @@ bool runSurfacePlanTests()
                 "  namespace ns\n"
                 "    module msg_1_0\n"
                 "      type Msg\n"
-                "        value : value\n"
+                "        value : field\n"
                 "        LIMIT : value\n",
                 "Rust's plan") &&
          ok;
@@ -252,7 +281,7 @@ bool runSurfacePlanTests()
                 "  package ns\n"
                 "    file msg_1_0\n"
                 "      type Msg\n"
-                "        Value : value\n"
+                "        Value : field\n"
                 "      MsgLimit : value\n",
                 "Go's plan") &&
          ok;
@@ -261,7 +290,7 @@ bool runSurfacePlanTests()
                 "  namespace ns\n"
                 "    module msg_1_0\n"
                 "      type Msg\n"
-                "        value : value\n"
+                "        value : field\n"
                 "      MSG_LIMIT : value\n",
                 "TypeScript's plan") &&
          ok;
@@ -291,9 +320,9 @@ bool runSurfacePlanTests()
                                          "  namespace ns\n"
                                          "    module list_1_0\n"
                                          "      type Request\n"
-                                         "        index : value\n"
+                                         "        index : field\n"
                                          "      type Response\n"
-                                         "        path : value\n"
+                                         "        path : field\n"
                                          "      List : type\n",
                                          "a service") &&
                                   ok;
@@ -321,7 +350,7 @@ bool runSurfacePlanTests()
                                      "  namespace ns\n"
                                      "    module msg_1_0\n"
                                      "      type Msg_\n"
-                                     "        value : value\n"
+                                     "        value : field\n"
                                      "      Msg : type\n",
                                      "a deprecated Rust type") &&
                               ok;
@@ -329,7 +358,7 @@ bool runSurfacePlanTests()
                                      "root pkg\n"
                                      "  file Msg_1_0\n"
                                      "    type ns__Msg\n"
-                                     "      value : value\n",
+                                     "      value : field\n",
                                      "a deprecated C type") &&
                               ok;
     }
@@ -557,6 +586,144 @@ bool runSurfacePlanTests()
         deprecated.back().deprecated = true;
         ok = expect(imports(allocate(Language::Rust, deprecated)), "Old_ ns.Old.1.0\n", "a deprecated import") && ok;
     }
+
+    // The members the generator adds to a Rust type: its data members, its facts as associated
+    // constants, its entry points with the functions that wrap them, and its accessors. A service's
+    // own facts are constants beside its types, named after it.
+    {
+        DefinitionParts pick = message("Pick",
+                                       SectionParts{.fields    = {field("small", false, 0), varying("items")},
+                                                    .constants = {},
+                                                    .isUnion   = true});
+        pick.fixedPortId     = 7;
+        pick.bodies          = {body("ns.Pick.1.0.serialize"),
+                                body("ns.Pick.1.0.deserialize"),
+                                body("ns.Pick.1.0.initialize"),
+                                body("ns.Pick.1.0.get._tag_"),
+                                body("ns.Pick.1.0.get.small")};
+        ok                   = expect(outline(allocate(Language::Rust, {pick}), true),
+                                      "root pkg\n"
+                                      "  namespace ns\n"
+                                      "    module pick_1_0\n"
+                                      "      type Pick\n"
+                                      "        small : field\n"
+                                      "        items : field\n"
+                                      "        _tag_ : field\n"
+                                      "        FULL_NAME : value\n"
+                                      "        IS_DEPRECATED : value\n"
+                                      "        FULL_NAME_AND_VERSION : value\n"
+                                      "        EXTENT_BYTES : value\n"
+                                      "        SERIALIZATION_BUFFER_SIZE_BYTES : value\n"
+                                      "        WIRE_FLAT : value\n"
+                                      "        WIRE_FLAT_REASON : value\n"
+                                      "        HOST_IMAGE : value\n"
+                                      "        HOST_IMAGE_REASON : value\n"
+                                      "        __LLVMDSDL_MEMORY_MODE : value\n"
+                                      "        __LLVMDSDL_INLINE_THRESHOLD_BYTES : value\n"
+                                      "        __LLVMDSDL_POOL_CLASS_ITEMS : value\n"
+                                      "        HAS_FIXED_PORT_ID : value\n"
+                                      "        FIXED_PORT_ID : value\n"
+                                      "        UNION_OPTION_COUNT : value\n"
+                                      "        SMALL_OPTION_TAG : value\n"
+                                      "        ITEMS_OPTION_TAG : value\n"
+                                      "        serialize : value\n"
+                                      "        deserialize : value\n"
+                                      "        to_bytes : value\n"
+                                      "        from_bytes : value\n"
+                                      "        get_tag_ : value\n"
+                                      "        get_small : value\n",
+                                      "Rust's type members") &&
+                               ok;
+
+        DefinitionParts empty = message("Empty", SectionParts{.fields = {}, .constants = {}});
+        ok = expect(outline(allocate(Language::Rust, {empty}), true).contains("_dummy_ : field") ? "held" : "missing",
+                    "held",
+                    "a Rust structure with no fields holds a placeholder") &&
+             ok;
+
+        DefinitionParts list   = message("List", SectionParts{.fields = {}, .constants = {}});
+        list.service           = true;
+        list.fixedPortId       = 408;
+        list.response          = SectionParts{.fields = {}, .constants = {}};
+        const SurfacePlan plan = allocate(Language::Rust, {list});
+        std::string       service;
+        for (const llvmdsdl::SurfaceItem& item : plan.scopes[plan.definitions.front().fileScope].items)
+        {
+            if (!item.scope && plan.decls[item.index].fact)
+            {
+                service += plan.decls[item.index].name + "\n";
+            }
+        }
+        ok = expect(service, "LIST_HAS_FIXED_PORT_ID\nLIST_FIXED_PORT_ID\n", "a Rust service's own constants") && ok;
+    }
+
+    // Rust's accessors are allocated in a pool of their own, apart from the fields: a field
+    // `get_foo` and the getter of a field `foo` are two classes of name. The union's tag is claimed
+    // first, so an option `tag_`, whose getter projects onto the tag's, is the side that moves.
+    {
+        DefinitionParts accessors =
+            message("Accessors", SectionParts{.fields = {field("get_foo"), field("foo")}, .constants = {}});
+        accessors.bodies       = {body("ns.Accessors.1.0.get.get_foo"), body("ns.Accessors.1.0.get.foo")};
+        ok                     = expect(outline(allocate(Language::Rust, {accessors})),
+                                        "root pkg\n"
+                                        "  namespace ns\n"
+                                        "    module accessors_1_0\n"
+                                        "      type Accessors\n"
+                                        "        get_foo : field\n"
+                                        "        foo : field\n",
+                                        "a Rust field named as an accessor") &&
+                                 ok;
+        DefinitionParts tagged = message("Tagged",
+                                         SectionParts{.fields    = {field("tag_", false, 0), field("x", false, 1)},
+                                                      .constants = {},
+                                                      .isUnion   = true});
+        tagged.bodies          = {body("ns.Tagged.1.0.get._tag_"), body("ns.Tagged.1.0.get.tag_")};
+        std::string accessorNames;
+        for (const llvm::StringRef name :
+             {llvm::StringRef("ns.Accessors.1.0.get.get_foo"), llvm::StringRef("ns.Accessors.1.0.get.foo")})
+        {
+            for (const llvmdsdl::SurfaceDecl& decl : allocate(Language::Rust, {accessors}).decls)
+            {
+                if ((decl.kind == llvmdsdl::SurfaceDeclKind::Accessor) && (decl.of->function == name))
+                {
+                    accessorNames += decl.name + "\n";
+                }
+            }
+        }
+        for (const llvmdsdl::SurfaceDecl& decl : allocate(Language::Rust, {tagged}).decls)
+        {
+            if (decl.kind == llvmdsdl::SurfaceDeclKind::Accessor)
+            {
+                accessorNames += decl.name + "\n";
+            }
+        }
+        ok = expect(accessorNames, "get_get_foo\nget_foo\nget_tag_\nget_tag_2\n", "Rust's accessors") && ok;
+
+        // An accessors-only run declares the accessors and no data member.
+        ok = expect(outline(allocate(Language::Rust, {tagged}, "pkg", true)),
+                    "root pkg\n"
+                    "  namespace ns\n"
+                    "    module tagged_1_0\n"
+                    "      type Tagged\n"
+                    "        TAG_OPTION_TAG : value\n"
+                    "        X_OPTION_TAG : value\n",
+                    "an accessors-only Rust type") &&
+             ok;
+    }
+
+    // Two variable-length arrays whose names reach one constant: the later pool class moves.
+    ok = expect(outline(allocate(Language::Rust,
+                                 {message("Arrays",
+                                          SectionParts{.fields    = {varying("fooBar"), varying("foo_bar")},
+                                                       .constants = {}})}),
+                        true)
+                        .contains("__LLVMDSDL_POOL_CLASS_FOO_BAR : value\n        __LLVMDSDL_POOL_CLASS_FOO_BAR_1 : "
+                                  "value")
+                    ? "apart"
+                    : "met",
+                "apart",
+                "two pool classes of one name") &&
+         ok;
 
     return ok;
 }

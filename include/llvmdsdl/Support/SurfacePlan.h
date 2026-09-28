@@ -31,6 +31,7 @@
 
 #include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/SectionScopes.h"
 
@@ -74,6 +75,7 @@ enum class NameClass : std::uint8_t
     Module,
     Tag,
     Macro,
+    Field,
 };
 
 /// @brief A class of names as one language keeps them apart, where several classes may be one.
@@ -84,6 +86,7 @@ enum class NamePartition : std::uint8_t
     Modules,
     Tags,
     Macros,
+    Fields,
 };
 
 /// @brief The partition @p nameClass falls in, as @p classes keep names apart.
@@ -172,6 +175,9 @@ struct SurfaceDecl final
 
     /// @brief The entity the name stands for.
     std::optional<SurfaceEntity> of;
+
+    /// @brief What a generated declaration states, where its kind and entity do not tell it apart.
+    std::optional<GeneratedFact> fact;
 
     /// @brief The scope the declaration is made in.
     std::size_t scope{};
@@ -284,6 +290,9 @@ struct SurfaceOptions final
 
     /// @brief Whether a type's name carries its version.
     TypeNameVersioning versioning{TypeNameVersioning::Unversioned};
+
+    /// @brief Whether the run writes each type's accessors and none of its data members.
+    bool accessorsOnly{};
 };
 
 /// @brief Allocates every name the definitions declare in one language.
