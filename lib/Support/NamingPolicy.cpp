@@ -904,7 +904,8 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
     static constexpr std::array<GeneratedName, 2> kMembers = {GeneratedName{GeneratedFact::UnionTag, "_tag_"},
                                                               GeneratedName{GeneratedFact::Placeholder, "_dummy_"}};
     // Go's struct with no fields holds the blank identifier, which declares no name.
-    static constexpr std::array<GeneratedName, 1> kGo = {GeneratedName{GeneratedFact::UnionTag, "Tag"}};
+    static constexpr std::array<GeneratedName, 1> kGo     = {GeneratedName{GeneratedFact::UnionTag, "Tag"}};
+    static constexpr std::array<GeneratedName, 1> kPython = {GeneratedName{GeneratedFact::UnionTag, "_tag"}};
     switch (language)
     {
     case Language::Rust:
@@ -912,9 +913,10 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
         return kMembers;
     case Language::Go:
         return kGo;
+    case Language::Python:
+        return kPython;
     case Language::Cpp:
     case Language::TypeScript:
-    case Language::Python:
         break;
     }
     return {};
@@ -963,16 +965,21 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
         {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .beside = false},
          EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .beside = false},
          EntryPointName{.function = PlanFunction::Initialize, .name = "New", .beside = true}};
+    // Python's bodies are the class's own methods, which the ones a consumer calls wrap.
+    static constexpr std::array<EntryPointName, 2> kPython =
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "_deserialize_from", .beside = false}};
     switch (language)
     {
     case Language::Rust:
         return kRust;
     case Language::Go:
         return kGo;
+    case Language::Python:
+        return kPython;
     case Language::C:
     case Language::Cpp:
     case Language::TypeScript:
-    case Language::Python:
         break;
     }
     return {};
@@ -990,19 +997,45 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
          WrapperName{.fact  = GeneratedFact::FromWireImage,
                      .wraps = PlanFunction::Deserialize,
                      .name  = "UnmarshalBinary"}};
+    static constexpr std::array<WrapperName, 2> kPython =
+        {WrapperName{.fact = GeneratedFact::WireImage, .wraps = PlanFunction::Serialize, .name = "serialize"},
+         WrapperName{.fact = GeneratedFact::FromWireImage, .wraps = PlanFunction::Deserialize, .name = "deserialize"}};
     switch (language)
     {
     case Language::Rust:
         return kRust;
     case Language::Go:
         return kGo;
+    case Language::Python:
+        return kPython;
     case Language::C:
     case Language::Cpp:
     case Language::TypeScript:
-    case Language::Python:
         break;
     }
     return {};
+}
+
+llvm::ArrayRef<ModuleConstantName> generatedModuleConstants(const Language language)
+{
+    // A service's layout verdicts are each section's, since aliasability is a property of a payload.
+    static constexpr std::array<ModuleConstantName, 13> kModule =
+        {ModuleConstantName{GeneratedFact::GeneratorVersion, "LLVMDSDL_GENERATOR_VERSION", std::nullopt},
+         ModuleConstantName{GeneratedFact::FullName, "DSDL_FULL_NAME", std::nullopt},
+         ModuleConstantName{GeneratedFact::IsDeprecated, "DSDL_IS_DEPRECATED", std::nullopt},
+         ModuleConstantName{GeneratedFact::VersionMajor, "DSDL_VERSION_MAJOR", std::nullopt},
+         ModuleConstantName{GeneratedFact::VersionMinor, "DSDL_VERSION_MINOR", std::nullopt},
+         ModuleConstantName{GeneratedFact::HasFixedPortId, "DSDL_HAS_FIXED_PORT_ID", std::nullopt},
+         ModuleConstantName{GeneratedFact::FixedPortId, "DSDL_FIXED_PORT_ID", std::nullopt},
+         ModuleConstantName{GeneratedFact::WireFlat, "DSDL_WIRE_FLAT", ""},
+         ModuleConstantName{GeneratedFact::WireFlatReason, "DSDL_WIRE_FLAT_REASON", ""},
+         ModuleConstantName{GeneratedFact::WireFlat, "DSDL_REQUEST_WIRE_FLAT", "request"},
+         ModuleConstantName{GeneratedFact::WireFlatReason, "DSDL_REQUEST_WIRE_FLAT_REASON", "request"},
+         ModuleConstantName{GeneratedFact::WireFlat, "DSDL_RESPONSE_WIRE_FLAT", "response"},
+         ModuleConstantName{GeneratedFact::WireFlatReason, "DSDL_RESPONSE_WIRE_FLAT_REASON", "response"}};
+    return (languageTraits(language).composition.constants == ConstantsScope::Module)
+               ? llvm::ArrayRef<ModuleConstantName>(kModule)
+               : llvm::ArrayRef<ModuleConstantName>{};
 }
 
 llvm::ArrayRef<GuardName> generatedFileGuards(const Language language)
@@ -1036,12 +1069,13 @@ std::optional<AccessorVerbs> memberAccessorVerbs(const Language language)
     switch (language)
     {
     case Language::Rust:
-        return AccessorVerbs{.getter = "get", .setter = "set"};
+        return AccessorVerbs{.getter = "get", .setter = "set", .tagFirst = true, .keyedByDeclaredName = true};
+    case Language::Python:
+        return AccessorVerbs{.getter = "get", .setter = "set", .tagFirst = false, .keyedByDeclaredName = false};
     case Language::C:
     case Language::Cpp:
     case Language::Go:
     case Language::TypeScript:
-    case Language::Python:
         break;
     }
     return std::nullopt;

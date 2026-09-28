@@ -14,7 +14,6 @@
 
 #include "llvmdsdl/Support/SectionScopes.h"
 
-#include <array>
 #include <cstdint>
 #include <set>
 #include <string>
@@ -115,24 +114,14 @@ void declareUnionOptionTags(NamingScope& scope, const SectionParts& section, con
 ///
 /// They sit in the module's scope, which is also where a section's constants are declared, so a
 /// type whose constant prefix is `DSDL` or `LLVMDSDL` can reach them.
-llvm::ArrayRef<llvm::StringRef> moduleMetadataNames(const Language language)
+std::vector<llvm::StringRef> moduleMetadataNames(const Language language)
 {
-    static constexpr std::array<llvm::StringRef, 13> kNames = {"LLVMDSDL_GENERATOR_VERSION",
-                                                               "DSDL_FULL_NAME",
-                                                               "DSDL_IS_DEPRECATED",
-                                                               "DSDL_VERSION_MAJOR",
-                                                               "DSDL_VERSION_MINOR",
-                                                               "DSDL_HAS_FIXED_PORT_ID",
-                                                               "DSDL_FIXED_PORT_ID",
-                                                               "DSDL_WIRE_FLAT",
-                                                               "DSDL_WIRE_FLAT_REASON",
-                                                               "DSDL_REQUEST_WIRE_FLAT",
-                                                               "DSDL_REQUEST_WIRE_FLAT_REASON",
-                                                               "DSDL_RESPONSE_WIRE_FLAT",
-                                                               "DSDL_RESPONSE_WIRE_FLAT_REASON"};
-    static constexpr std::array<llvm::StringRef, 0>  kNone  = {};
-    const bool moduleScoped = languageTraits(language).composition.constants == ConstantsScope::Module;
-    return moduleScoped ? llvm::ArrayRef<llvm::StringRef>(kNames) : llvm::ArrayRef<llvm::StringRef>(kNone);
+    std::vector<llvm::StringRef> names;
+    for (const ModuleConstantName& constant : generatedModuleConstants(language))
+    {
+        names.push_back(constant.name);
+    }
+    return names;
 }
 
 /// @brief The module names @p typeConstantPrefix puts a section constant in reach of.

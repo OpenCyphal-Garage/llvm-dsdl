@@ -77,7 +77,7 @@ std::string sourceDirectoryOf(const LanguageTraits& row, const llvm::StringRef p
         packageName.split(components, '.');
         for (const llvm::StringRef component : components)
         {
-            directory += component.str() + "/";
+            directory += codegenProjectIdentifier(row.language, IdentifierRole::NamespaceName, component) + "/";
         }
     }
     return directory;
@@ -138,6 +138,9 @@ bool states(const GeneratedFact                fact,
     case GeneratedFact::AppendWireImage:
     case GeneratedFact::WireImage:
     case GeneratedFact::FromWireImage:
+    case GeneratedFact::GeneratorVersion:
+    case GeneratedFact::VersionMajor:
+    case GeneratedFact::VersionMinor:
         break;
     }
     return true;
@@ -220,6 +223,7 @@ public:
         names.fileScope         = file;
         plan_.scopes[file].path = directory + names.fileStem + row_.composition.fileExtension.str();
         allocateFileGuards(names, definition.ref, file);
+        allocateModuleConstants(names, definition, file);
 
         if (definition.service)
         {
@@ -493,6 +497,41 @@ private:
         }
     }
 
+    /// @brief Declares the constants a language declares in a definition's module: those the
+    ///        definition states, and those each of its sections does.
+    void allocateModuleConstants(const DefinitionNames& names,
+                                 const DefinitionParts& definition,
+                                 const std::size_t      file)
+    {
+        for (const ModuleConstantName& constant : generatedModuleConstants(row_.language))
+        {
+            bool stated = false;
+            if (!constant.section)
+            {
+                stated = (constant.fact != GeneratedFact::FixedPortId) || names.fixedPortId.has_value();
+            }
+            else if (constant.section->empty())
+            {
+                stated = !definition.service;
+            }
+            else
+            {
+                stated = definition.service && ((*constant.section == "request") || definition.response.has_value());
+            }
+            if (stated)
+            {
+                (void) declare(file,
+                               constant.name.str(),
+                               SurfaceDeclKind::Constant,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, constant.section.value_or("").str(), "", ""},
+                               SurfaceVisibility::Public,
+                               constant.fact);
+            }
+        }
+    }
+
     /// @brief Declares a service's own constants beside its sections' types, each named after the
     ///        service.
     void allocateServiceConstants(const DefinitionNames& names, const std::size_t file)
@@ -581,20 +620,23 @@ private:
             {
                 continue;
             }
-            // The accessors are allocated in a pool of their own, the union's tag first, so a union
-            // whose options collide with nothing keeps its accessors' names and a colliding option is
-            // the side that moves. A pool is keyed on the name handed to it, so the verb's separator
-            // is unconditional: `_tag_` and a field `tag_` compose `get__tag_` and `get_tag_`, two
-            // keys the projection folds onto one name, which the pool tells apart.
+            // The accessors are allocated with the fields where the language keeps no class of names
+            // for fields, and in a pool of their own where it does. A pool is keyed on the name
+            // handed to it, so the verb's separator is unconditional: `_tag_` and a field `tag_`
+            // compose `get__tag_` and `get_tag_`, two keys the projection folds onto one name, which
+            // the pool tells apart. Where the union's tag is claimed first, a union whose options
+            // collide with nothing keeps its accessors' names and a colliding option is the side that
+            // moves.
             const NamingScope fields = makeSectionFieldScope(language, parts);
-            NamingScope       pool(language);
-            const auto        key = [&](const llvm::StringRef verb, const llvm::StringRef member) {
-                const std::string name =
-                    (member == kPlanUnionTagMember) ? member.str() : fields.get(IdentifierRole::FieldName, member);
+            NamingScope       pool   = row_.classification.nameClasses.fieldsApart ? NamingScope(language) : fields;
+            const auto        key    = [&](const llvm::StringRef verb, const llvm::StringRef member) {
+                const std::string name = ((member == kPlanUnionTagMember) || !verbs->keyedByDeclaredName)
+                                             ? member.str()
+                                             : fields.get(IdentifierRole::FieldName, member);
                 return verb.str() + "_" + name;
             };
             std::vector<llvm::StringRef> members;
-            if (parts.isUnion)
+            if (parts.isUnion && verbs->tagFirst)
             {
                 members.push_back(kPlanUnionTagMember);
             }
@@ -604,6 +646,10 @@ private:
                 {
                     members.emplace_back(field.name);
                 }
+            }
+            if (parts.isUnion && !verbs->tagFirst)
+            {
+                members.push_back(kPlanUnionTagMember);
             }
             for (const llvm::StringRef member : members)
             {

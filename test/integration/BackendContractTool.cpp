@@ -73,6 +73,9 @@ constexpr const char* kSequenceType = "contract.Sequence";
 constexpr const char* kChoiceType   = "contract.Choice";
 constexpr const char* kPrefixedType = "contract.Prefixed";
 
+/// The package the surface places a backend's files in, and the name its build files give it.
+constexpr const char* kPackageName = "llvmdsdl_generated";
+
 enum class Verdict : std::uint8_t
 {
     Pass,
@@ -220,19 +223,22 @@ llvm::Error emitWith(const std::string&              backend,
     if (backend == "rust")
     {
         llvmdsdl::emitter::rust::Options options;
-        options.outDir = outDir.string();
+        options.outDir    = outDir.string();
+        options.crateName = kPackageName;
         return llvmdsdl::emitter::rust::emit(semantic, module, options);
     }
     if (backend == "go")
     {
         llvmdsdl::emitter::go::Options options;
-        options.outDir = outDir.string();
+        options.outDir     = outDir.string();
+        options.moduleName = kPackageName;
         return llvmdsdl::emitter::go::emit(semantic, module, options, diagnostics);
     }
     if (backend == "ts")
     {
         llvmdsdl::emitter::ts::Options options;
-        options.outDir = outDir.string();
+        options.outDir     = outDir.string();
+        options.moduleName = kPackageName;
         return llvmdsdl::emitter::ts::emit(semantic, module, options);
     }
     if (backend == "python")
@@ -678,7 +684,7 @@ struct Session final
         }
         const llvmdsdl::SurfaceProjection surface{.target      = traits->name.str(),
                                                   .profiles    = {},
-                                                  .packageName = {},
+                                                  .packageName = kPackageName,
                                                   .versioning  = llvmdsdl::TypeNameVersioning::Unversioned};
         llvmdsdl::addLowerDSDLBodiesPipeline(pm, false, traits->body, false, &surface);
         return mlir::succeeded(pm.run(module));

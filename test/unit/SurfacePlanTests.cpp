@@ -785,6 +785,50 @@ bool runSurfacePlanTests()
                                 ok;
     }
 
+    // Python's generated names: the definition's facts at the top of its module, the bodies as
+    // the class's own methods and the ones a consumer calls over them, and the accessors among
+    // the fields, whose names they share a class with. A module imports each class its fields
+    // hold.
+    {
+        DefinitionParts pick = message("Pick",
+                                       SectionParts{.fields    = {field("get_small", false, 0),
+                                                                  field("small", false, 1),
+                                                                  holding("far", ref("other", "Far"))},
+                                                    .constants = {},
+                                                    .isUnion   = true});
+        pick.bodies = {body("ns.Pick.1.0.serialize"), body("ns.Pick.1.0.deserialize"), body("ns.Pick.1.0.get.small")};
+        const std::string all =
+            outline(allocate(Language::Python, {pick, message("Far", SectionParts{}, "other")}), true);
+        ok = expect(all.substr(0, all.find("  namespace other")),
+                    "root pkg\n"
+                    "  namespace ns\n"
+                    "    module pick_1_0\n"
+                    "      LLVMDSDL_GENERATOR_VERSION : value\n"
+                    "      DSDL_FULL_NAME : value\n"
+                    "      DSDL_IS_DEPRECATED : value\n"
+                    "      DSDL_VERSION_MAJOR : value\n"
+                    "      DSDL_VERSION_MINOR : value\n"
+                    "      DSDL_HAS_FIXED_PORT_ID : value\n"
+                    "      DSDL_WIRE_FLAT : value\n"
+                    "      DSDL_WIRE_FLAT_REASON : value\n"
+                    "      type Pick\n"
+                    "        get_small : field\n"
+                    "        small : field\n"
+                    "        far : field\n"
+                    "        _tag : field\n"
+                    "        _serialize_into : value\n"
+                    "        _deserialize_from : value\n"
+                    "        serialize : value\n"
+                    "        deserialize : value\n"
+                    "        get_small_2 : value\n"
+                    "      PICK_GET_SMALL_OPTION_TAG : value\n"
+                    "      PICK_SMALL_OPTION_TAG : value\n"
+                    "      PICK_FAR_OPTION_TAG : value\n"
+                    "      Far : type private\n",
+                    "Python's generated names") &&
+             ok;
+    }
+
     // Rust's accessors are allocated in a pool of their own, apart from the fields: a field
     // `get_foo` and the getter of a field `foo` are two classes of name. The union's tag is claimed
     // first, so an option `tag_`, whose getter projects onto the tag's, is the side that moves.
