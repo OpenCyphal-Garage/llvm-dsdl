@@ -4,9 +4,9 @@
 # share, and Rust, TypeScript and Python a module per definition. A service's own name is an alias
 # of its request, and a deprecated type is declared apart where the language does that. A scope the
 # output writes to a file of its own names the file, and in Rust and Python a definition's module
-# imports each definition its fields hold. A Rust type holds the members the generator adds, each
-# generated constant and data member naming the fact it states, and an accessors-only run declares
-# no data member.
+# imports each definition its fields hold. A Rust or Python type holds the members the generator
+# adds, each generated constant and data member naming the fact it states, and an accessors-only run
+# declares no data member. A TypeScript or Python module declares the definition's facts at its top.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
@@ -121,6 +121,8 @@
 # TS-NEXT:   dsdl.scope root "m" path = "index.ts" {
 # TS-NEXT:     dsdl.scope namespace "ns" {
 # TS-NEXT:       dsdl.scope module "ask_1_0" path = "ns/ask_1_0.ts" {
+# TS-NEXT:         dsdl.decl "LLVMDSDL_GENERATOR_VERSION" kind = constant origin = generated fact = generator_version of = @ns.Ask.1.0
+# TS:              dsdl.decl "DSDL_RESPONSE_WIRE_FLAT_REASON" kind = constant origin = generated fact = wire_flat_reason of = @ns.Ask.1.0 section = "response"
 # TS-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
 # TS:              dsdl.decl "ASK_REQUEST_SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # TS:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
@@ -131,6 +133,21 @@
 # PY-NEXT:   dsdl.scope root "dsdl_gen" path = "dsdl_gen/__init__.py" {
 # PY-NEXT:     dsdl.scope namespace "ns" path = "dsdl_gen/ns/__init__.py" {
 # PY-NEXT:       dsdl.scope module "ask_1_0" path = "dsdl_gen/ns/ask_1_0.py" {
+# PY-NEXT:         dsdl.decl "LLVMDSDL_GENERATOR_VERSION" kind = constant origin = generated fact = generator_version of = @ns.Ask.1.0
+# PY:              dsdl.decl "DSDL_REQUEST_WIRE_FLAT" kind = constant origin = generated fact = wire_flat of = @ns.Ask.1.0 section = "request"
+# PY:              dsdl.decl "DSDL_RESPONSE_WIRE_FLAT_REASON" kind = constant origin = generated fact = wire_flat_reason of = @ns.Ask.1.0 section = "response"
+# PY-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
+# PY-NEXT:           dsdl.decl "small" kind = field of = @ns.Ask.1.0 section = "request" member = "small"
+# PY-NEXT:           dsdl.decl "large" kind = field of = @ns.Ask.1.0 section = "request" member = "large"
+# PY-NEXT:           dsdl.decl "_tag" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
+# PY-NEXT:           dsdl.decl "_serialize_into" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
+# PY-NEXT:           dsdl.decl "_deserialize_from" kind = entry origin = generated of = @ns.Ask.1.0.request.deserialize
+# PY-NEXT:           dsdl.decl "serialize" kind = wrapper origin = generated fact = wire_image of = @ns.Ask.1.0.request.serialize
+# PY-NEXT:           dsdl.decl "deserialize" kind = wrapper origin = generated fact = from_wire_image of = @ns.Ask.1.0.request.deserialize
+# PY-NEXT:         }
+# PY-NEXT:         dsdl.decl "ASK_REQUEST_SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
+# PY:              dsdl.scope type "AskResponse" of = @ns.Ask.1.0 section = "response" {
+# PY:                dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
 # PY:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
 # PY-NEXT:         dsdl.decl "_capacity_check_request" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # PY:            dsdl.scope module "hold_1_0" path = "dsdl_gen/ns/hold_1_0.py" {

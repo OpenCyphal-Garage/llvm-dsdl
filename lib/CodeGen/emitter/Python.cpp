@@ -41,17 +41,12 @@
 #include <system_error>
 #include <utility>
 
-#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
-#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/Support/SectionScopes.h"
-#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
@@ -64,6 +59,11 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -95,26 +95,6 @@ std::string pyConstValue(const TypeExprAST& type, const Value& value)
     return renderConstantLiteral(Language::Python, value, makeConstantTypeInfo(type));
 }
 
-/// @brief Collision-free attribute names for one section's fields.
-///
-/// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
-/// dataclass would silently declare one attribute for two DSDL fields and the (de)serialiser would
-/// read/write the wrong one with no error. Built from `section.fields` order so every site agrees.
-NamingScope makePyFieldIdents(const SemanticSection& section)
-{
-    std::vector<std::string> names;
-    for (const auto& field : section.fields)
-    {
-        if (!field.isPadding)
-        {
-            names.push_back(field.name);
-        }
-    }
-    // The generated methods a field attribute must not shadow are claimed by the FieldName role's
-    // policy, so the scope only has to keep the fields apart from each other.
-    return makeSectionFieldScope(Language::Python, section);
-}
-
 SourceWriter makePyWriter(std::ostringstream& out)
 {
     return SourceWriter{out, IndentPolicy::spaces(4)};
@@ -133,60 +113,143 @@ void emitAttachedDocPy(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
-std::string joinDotted(const std::vector<std::string>& parts)
+/// @brief The key of the definition @p info describes, which its schema and the surface name it by.
+std::string keyOf(const DiscoveredDefinition& info)
 {
-    std::string out;
-    for (const auto& p : parts)
-    {
-        if (!out.empty())
-        {
-            out += ".";
-        }
-        out += p;
-    }
-    return out;
+    return renderDefinitionKey(definitionRef(info));
 }
 
-std::vector<std::string> splitPackageName(const std::string& packageName)
+/// @brief The key of the definition @p ref names.
+std::string keyOf(const SemanticTypeRef& ref)
 {
-    std::vector<std::string> out;
-    std::string              current;
-    for (char const c : packageName)
-    {
-        if (c == '.')
-        {
-            if (!current.empty())
-            {
-                out.push_back(codegenProjectIdentifier(Language::Python, IdentifierRole::NamespaceName, current));
-                current.clear();
-            }
-            continue;
-        }
-        current.push_back(c);
-    }
-    if (!current.empty())
-    {
-        out.push_back(codegenProjectIdentifier(Language::Python, IdentifierRole::NamespaceName, current));
-    }
-    if (out.empty())
-    {
-        out.emplace_back("dsdl_gen");
-    }
-    return out;
+    return renderDefinitionKey(definitionRef(ref));
 }
+
+/// @brief The module a file at @p path is, from the output directory: its directories and stem,
+///        dotted.
+std::string moduleOfPath(llvm::StringRef path)
+{
+    path.consume_back(languageTraits(Language::Python).composition.fileExtension);
+    std::string module = path.str();
+    std::ranges::replace(module, '/', '.');
+    return module;
+}
+
+/// @brief The package whose `__init__.py` is at @p path, from the output directory, dotted.
+std::string packageOfInit(const llvm::StringRef path)
+{
+    return moduleOfPath(path.rsplit('/').first.str() + ".py");
+}
+
+/// @brief The names Python's output declares and the files it writes, as the surface declares them.
+class PySurface final
+{
+public:
+    explicit PySurface(const SurfaceTree& tree)
+        : tree_(tree)
+    {
+    }
+
+    [[nodiscard]] const SurfaceTree& tree() const
+    {
+        return tree_;
+    }
+
+    /// @brief The module scope the definition keyed @p key is declared in.
+    [[nodiscard]] std::size_t file(const llvm::StringRef key) const
+    {
+        return tree_.definitionScope(key);
+    }
+
+    /// @brief The file the definition keyed @p key is written to, from the output directory.
+    [[nodiscard]] const std::string& path(const llvm::StringRef key) const
+    {
+        return tree_.scope(file(key)).path;
+    }
+
+    /// @brief The module the definition is declared in, dotted from the package's root.
+    [[nodiscard]] std::string module(const llvm::StringRef key) const
+    {
+        return moduleOfPath(path(key));
+    }
+
+    /// @brief The package's own `__init__.py`, from the output directory.
+    [[nodiscard]] const std::string& rootFile() const
+    {
+        return tree_.scope(0).path;
+    }
+
+    /// @brief The package, dotted.
+    [[nodiscard]] std::string package() const
+    {
+        return packageOfInit(rootFile());
+    }
+
+    /// @brief The name of @p section's type.
+    [[nodiscard]] const std::string& typeName(const llvm::StringRef key, const llvm::StringRef section) const
+    {
+        return tree_.scope(tree_.typeScope(key, section)).name;
+    }
+
+    /// @brief The name of the declaration of @p kind in the definition's module for @p member of
+    ///        @p section, stating @p fact.
+    [[nodiscard]] const std::string& declared(const llvm::StringRef              key,
+                                              const SurfaceDeclKind              kind,
+                                              const llvm::StringRef              section,
+                                              const llvm::StringRef              member = {},
+                                              const std::optional<GeneratedFact> fact   = std::nullopt) const
+    {
+        return tree_.nameOf(file(key), kind, SurfaceEntity{key.str(), section.str(), member.str(), {}}, fact);
+    }
+
+    /// @brief The name of the data member of @p section's type that @p member is, or that states
+    ///        @p fact; empty where the type declares none, as in an accessors-only run.
+    [[nodiscard]] std::string member(const llvm::StringRef              key,
+                                     const llvm::StringRef              section,
+                                     const llvm::StringRef              member,
+                                     const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        const SurfaceDecl* const decl = tree_.find(tree_.typeScope(key, section),
+                                                   SurfaceDeclKind::Field,
+                                                   SurfaceEntity{key.str(), section.str(), member.str(), {}},
+                                                   fact);
+        return (decl != nullptr) ? decl->name : std::string{};
+    }
+
+    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol,
+    ///        stating @p fact.
+    [[nodiscard]] const std::string& function(const llvm::StringRef              symbol,
+                                              const SurfaceDeclKind              kind,
+                                              const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        return tree_.nameOf(symbol, kind, fact);
+    }
+
+    /// @brief The local name the definition keyed @p key imports the one keyed @p imported under,
+    ///        where it imports it.
+    [[nodiscard]] const SurfaceDecl* import(const llvm::StringRef key, const llvm::StringRef imported) const
+    {
+        return tree_.find(file(key), SurfaceDeclKind::Import, SurfaceEntity{imported.str(), {}, {}, {}});
+    }
+
+private:
+    const SurfaceTree& tree_;
+};
 
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule&    semantic,
-                   std::vector<std::string> packageComponents,
-                   const TypeNameVersioning typeNameVersioning,
-                   const bool               accessorsOnly)
-        : packageComponents_(std::move(packageComponents))
+    EmitterContext(const SemanticModule& semantic, const PySurface& names, const bool accessorsOnly)
+        : names_(names)
         , index_(semantic)
-        , typeNameVersioning_(typeNameVersioning)
         , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief The names the output declares.
+    const PySurface& names() const
+    {
+        return names_;
     }
 
     /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
@@ -200,109 +263,10 @@ public:
         return index_.find(ref);
     }
 
-    static std::string namespacePath(const DiscoveredDefinition& info)
-    {
-        return renderNamespaceRelativePath(Language::Python, info.namespaceComponents).generic_string();
-    }
-
-    std::string typeName(const DiscoveredDefinition& info) const
-    {
-        return renderDefinitionTypeName(Language::Python,
-                                        info.namespaceComponents,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion,
-                                        typeNameVersioning_);
-    }
-
-    std::string typeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return typeName(def->info);
-        }
-
-        DiscoveredDefinition tmp;
-        tmp.shortName    = ref.shortName;
-        tmp.majorVersion = ref.majorVersion;
-        tmp.minorVersion = ref.minorVersion;
-        return typeName(tmp);
-    }
-
-    static std::string fileStem(const DiscoveredDefinition& info)
-    {
-        return renderVersionedFileStem(Language::Python, info.shortName, info.majorVersion, info.minorVersion);
-    }
-
-    static std::filesystem::path relativeFilePath(const DiscoveredDefinition& info)
-    {
-        return renderRelativeTypeFilePath(Language::Python, info, "py");
-    }
-
-    std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return relativeFilePath(def->info);
-        }
-
-        return renderRelativeTypeFilePath(Language::Python, ref, "py");
-    }
-
-    std::string packageName() const
-    {
-        return joinDotted(packageComponents_);
-    }
-
-    std::filesystem::path packageRootPath() const
-    {
-        std::filesystem::path out;
-        for (const auto& c : packageComponents_)
-        {
-            out /= c;
-        }
-        return out;
-    }
-
-    std::string modulePath(const DiscoveredDefinition& info) const
-    {
-        const auto rel = relativeFilePath(info);
-        return modulePathFromRelPath(rel);
-    }
-
-    std::string modulePath(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return modulePath(def->info);
-        }
-        return modulePathFromRelPath(relativeFilePath(ref));
-    }
-
 private:
-    std::string modulePathFromRelPath(const std::filesystem::path& relPath) const
-    {
-        std::vector<std::string> parts = packageComponents_;
-        for (const auto& comp : relPath)
-        {
-            auto part = comp.string();
-            if (part.empty() || part == ".")
-            {
-                continue;
-            }
-            if (part.ends_with(".py"))
-            {
-                part.resize(part.size() - 3);
-            }
-            parts.push_back(part);
-        }
-        return joinDotted(parts);
-    }
-
-    std::vector<std::string> packageComponents_;
-    DefinitionIndex          index_;
-    TypeNameVersioning       typeNameVersioning_{TypeNameVersioning::Unversioned};
-    bool                     accessorsOnly_{false};
+    const PySurface& names_;
+    DefinitionIndex  index_;
+    bool             accessorsOnly_{false};
 };
 
 /// @brief How one Python file names what it takes from outside itself, recording each import.
@@ -312,11 +276,10 @@ private:
 class PyFileNames final
 {
 public:
-    PyFileNames(const EmitterContext& ctx, ImportSet& imports, const ImportNameScope& names, std::string ownModule)
+    PyFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownKey)
         : ctx_(ctx)
         , imports_(imports)
-        , names_(names)
-        , ownModule_(std::move(ownModule))
+        , ownKey_(std::move(ownKey))
     {
     }
 
@@ -329,13 +292,18 @@ public:
     ///        claimed for it, unless the module is this file.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        std::string       name   = ctx_.typeName(ref);
-        const std::string module = ctx_.modulePath(ref);
-        if (module == ownModule_)
+        const PySurface&   names = ctx_.names();
+        const std::string  key   = keyOf(ref);
+        const std::string& name  = names.typeName(key, {});
+        if (key == ownKey_)
         {
             return name;
         }
-        return imports_.member(ImportOrigin::Definition, module, name, names_.localName(definitionRef(ref), name));
+        const SurfaceDecl* const local = names.import(ownKey_, key);
+        return imports_.member(ImportOrigin::Definition,
+                               names.module(key),
+                               name,
+                               (local != nullptr) ? local->name : name);
     }
 
     /// @brief The class of the type @p fullName names at @p major.@p minor.
@@ -388,13 +356,12 @@ public:
 private:
     [[nodiscard]] std::string runtimeLoader() const
     {
-        return ctx_.packageName() + "._runtime_loader";
+        return ctx_.names().package() + "._runtime_loader";
     }
 
-    const EmitterContext&  ctx_;
-    ImportSet&             imports_;
-    const ImportNameScope& names_;
-    std::string            ownModule_;
+    const EmitterContext& ctx_;
+    ImportSet&            imports_;
+    std::string           ownKey_;
 };
 
 /// @brief The import block of a Python file that names @p imports: the standard library's, then the
@@ -556,53 +523,107 @@ std::string pyElementDefaultExpr(const SemanticFieldType& type, const PyFileName
     return "None";
 }
 
+/// @brief One section's names, as the surface declares them.
+class PySection final
+{
+public:
+    PySection(const PySurface& names, std::string key, std::string section)
+        : names_(names)
+        , key_(std::move(key))
+        , section_(std::move(section))
+    {
+    }
+
+    /// @brief The name of the section's class.
+    [[nodiscard]] const std::string& typeName() const
+    {
+        return names_.typeName(key_, section_);
+    }
+
+    /// @brief The name of the attribute the DSDL field @p member is; empty where the class declares
+    ///        none.
+    [[nodiscard]] std::string field(const llvm::StringRef member) const
+    {
+        return names_.member(key_, section_, member);
+    }
+
+    /// @brief The name of the attribute the generator adds to state @p fact.
+    [[nodiscard]] std::string dataMember(const GeneratedFact fact) const
+    {
+        return names_.member(key_, section_, {}, fact);
+    }
+
+    /// @brief The name of the constant holding the tag value of the union option @p member.
+    [[nodiscard]] const std::string& option(const llvm::StringRef member) const
+    {
+        return names_.declared(key_, SurfaceDeclKind::Option, section_, member);
+    }
+
+    /// @brief The name of the constant the DSDL constant @p member is.
+    [[nodiscard]] const std::string& constant(const llvm::StringRef member) const
+    {
+        return names_.declared(key_, SurfaceDeclKind::Constant, section_, member);
+    }
+
+    [[nodiscard]] const PySurface& names() const
+    {
+        return names_;
+    }
+
+    [[nodiscard]] const std::string& section() const
+    {
+        return section_;
+    }
+
+private:
+    const PySurface& names_;
+    std::string      key_;
+    std::string      section_;
+};
+
 /// @brief Declares the tag value that selects each of a union's options.
-void emitUnionOptionTags(SourceWriter&          w,
-                         const std::string&     prefix,
-                         const SemanticSection& section,
-                         const SectionMetadata& metadata)
+void emitUnionOptionTags(SourceWriter& w, const PySection& names, const SectionMetadata& metadata)
 {
     if (!metadata.isUnion)
     {
         return;
     }
-    const auto        prefixupper = codegenProjectIdentifier(Language::Python, IdentifierRole::ConstantName, prefix);
-    const NamingScope tagScope    = makeSectionConstantScope(Language::Python, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
-        w.line(renderDeclaredConstantName(Language::Python,
-                                          prefix,
-                                          tagScope.get(IdentifierRole::MacroName,
-                                                       unionOptionTagName(Language::Python, option.name))) +
-               " = " + std::to_string(option.tag));
+        w.line(names.option(option.name) + " = " + std::to_string(option.tag));
     }
 }
 
-void emitSectionConstants(SourceWriter& w, const std::string& prefix, const SemanticSection& section)
+void emitSectionConstants(SourceWriter& w, const PySection& names, const SemanticSection& section)
 {
-    const auto        prefixupper = codegenProjectIdentifier(Language::Python, IdentifierRole::ConstantName, prefix);
-    NamingScope const constScope  = makeSectionConstantScope(Language::Python, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocPy(w, constant.doc);
-        const auto constName = renderDeclaredConstantName(Language::Python,
-                                                          prefix,
-                                                          constScope.get(IdentifierRole::ConstantName, constant.name));
-        w.line(constName + " = " + pyConstValue(constant.type, constant.value));
+        w.line(names.constant(constant.name) + " = " + pyConstValue(constant.type, constant.value));
     }
 }
 
-void emitClassMethods(SourceWriter&          w,
-                      const std::string&     typeName,
-                      const SemanticSection& section,
-                      const PyFileNames&     file)
+/// @brief The methods a consumer calls, each wrapping the body it names.
+struct SectionEntryNames final
+{
+    std::string serialize;
+    std::string serializeInto;
+    std::string deserialize;
+    std::string deserializeFrom;
+};
+
+void emitClassMethods(SourceWriter&            w,
+                      const std::string&       typeName,
+                      const SemanticSection&   section,
+                      const PyFileNames&       file,
+                      const SectionEntryNames& entries)
 {
     const std::string raise = "raise ValueError(" + file.errorMessage() + "(result))";
     // A value serialises into a buffer of the type's largest size; a deserialisation fills a
     // default-constructed object. Each raises on the code a body answers.
-    w.open("def serialize(self) -> bytes:");
+    w.open("def " + entries.serialize + "(self) -> bytes:");
     w.line("buffer = bytearray(" + std::to_string((section.serializationBufferSizeBits + 7) / 8) + ")");
-    w.line("result = self._serialize_into(memoryview(buffer))");
+    w.line("result = self." + entries.serializeInto + "(memoryview(buffer))");
     w.open("if result < 0:");
     w.line(raise);
     w.dedent();
@@ -611,9 +632,9 @@ void emitClassMethods(SourceWriter&          w,
     w.blank();
 
     w.line("@classmethod");
-    w.open("def deserialize(cls, data: bytes | bytearray | memoryview) -> \"" + typeName + "\":");
+    w.open("def " + entries.deserialize + "(cls, data: bytes | bytearray | memoryview) -> \"" + typeName + "\":");
     w.line("value = cls()");
-    w.line("result = value._deserialize_from(memoryview(data).cast(\"B\"))");
+    w.line("result = value." + entries.deserializeFrom + "(memoryview(data).cast(\"B\"))");
     w.open("if result < 0:");
     w.line(raise);
     w.dedent();
@@ -623,22 +644,23 @@ void emitClassMethods(SourceWriter&          w,
 
 const MemberDefault* memberDefault(const InitializerShape& init, const std::string& name);
 
-void emitStructSectionType(SourceWriter&           w,
-                           const InitializerShape& init,
-                           const std::string&      typeName,
-                           const SemanticSection&  section,
-                           const AttachedDoc&      typeDoc,
-                           const PyFileNames&      file,
-                           const std::string&      fullName,
-                           const std::uint32_t     majorVersion,
-                           const std::uint32_t     minorVersion)
+void emitStructSectionType(SourceWriter&            w,
+                           const InitializerShape&  init,
+                           const PySection&         names,
+                           const SectionEntryNames& entries,
+                           const SemanticSection&   section,
+                           const AttachedDoc&       typeDoc,
+                           const PyFileNames&       file,
+                           const std::string&       fullName,
+                           const std::uint32_t      majorVersion,
+                           const std::uint32_t      minorVersion)
 {
+    const std::string& typeName = names.typeName();
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
     w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
     w.open("class " + typeName + ":");
 
-    bool              emittedField = false;
-    const NamingScope fieldIdents  = makePyFieldIdents(section);
+    bool emittedField = false;
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -647,7 +669,7 @@ void emitStructSectionType(SourceWriter&           w,
         }
         emittedField = true;
         emitAttachedDocPy(w, field.doc);
-        const auto  fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
+        const auto  fieldName = names.field(field.name);
         const auto* entry     = memberDefault(init, field.name);
         if (entry == nullptr)
         {
@@ -664,7 +686,7 @@ void emitStructSectionType(SourceWriter&           w,
     {
         w.blank();
     }
-    emitClassMethods(w, typeName, section, file);
+    emitClassMethods(w, typeName, section, file, entries);
 }
 
 /// @brief The member named @p name in @p init, or null.
@@ -680,24 +702,25 @@ const MemberDefault* memberDefault(const InitializerShape& init, const std::stri
     return nullptr;
 }
 
-void emitUnionSectionType(SourceWriter&           w,
-                          const InitializerShape& init,
-                          const std::string&      typeName,
-                          const SemanticSection&  section,
-                          const AttachedDoc&      typeDoc,
-                          const PyFileNames&      file,
-                          const std::string&      fullName,
-                          const std::uint32_t     majorVersion,
-                          const std::uint32_t     minorVersion)
+void emitUnionSectionType(SourceWriter&            w,
+                          const InitializerShape&  init,
+                          const PySection&         names,
+                          const SectionEntryNames& entries,
+                          const SemanticSection&   section,
+                          const AttachedDoc&       typeDoc,
+                          const PyFileNames&       file,
+                          const std::string&       fullName,
+                          const std::uint32_t      majorVersion,
+                          const std::uint32_t      minorVersion)
 {
+    const std::string& typeName = names.typeName();
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
     w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
     w.open("class " + typeName + ":");
     // A Python union holds one arm: the tag the body stores, and that arm at the default the body
     // gives it. The other arms are absent, which is what `None` says.
-    w.line(unionTagMemberName(Language::Python).str() + ": int = " + std::to_string(init.unionTag));
+    w.line(names.dataMember(GeneratedFact::UnionTag) + ": int = " + std::to_string(init.unionTag));
 
-    const NamingScope fieldIdents = makePyFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -705,7 +728,7 @@ void emitUnionSectionType(SourceWriter&           w,
             continue;
         }
         emitAttachedDocPy(w, field.doc);
-        const auto  fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
+        const auto  fieldName = names.field(field.name);
         const auto* entry     = memberDefault(init, field.name);
         if (entry == nullptr)
         {
@@ -718,26 +741,27 @@ void emitUnionSectionType(SourceWriter&           w,
     }
 
     w.blank();
-    emitClassMethods(w, typeName, section, file);
+    emitClassMethods(w, typeName, section, file, entries);
 }
 
-void emitSectionType(SourceWriter&           w,
-                     const InitializerShape& init,
-                     const std::string&      typeName,
-                     const SemanticSection&  section,
-                     const AttachedDoc&      typeDoc,
-                     const PyFileNames&      file,
-                     const std::string&      fullName,
-                     const std::uint32_t     majorVersion,
-                     const std::uint32_t     minorVersion)
+void emitSectionType(SourceWriter&            w,
+                     const InitializerShape&  init,
+                     const PySection&         names,
+                     const SectionEntryNames& entries,
+                     const SemanticSection&   section,
+                     const AttachedDoc&       typeDoc,
+                     const PyFileNames&       file,
+                     const std::string&       fullName,
+                     const std::uint32_t      majorVersion,
+                     const std::uint32_t      minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, init, typeName, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, init, names, entries, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
     else
     {
-        emitStructSectionType(w, init, typeName, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitStructSectionType(w, init, names, entries, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
 }
 
@@ -754,65 +778,53 @@ void emitSectionType(SourceWriter&           w,
 class PythonSpelling final : public BodySpelling
 {
 public:
-    PythonSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const PyFileNames& file)
+    PythonSpelling(mlir::dsdl::SchemaOp schema, const PySurface& names, const PyFileNames& file)
         : file_(file)
+        , names_(names)
     {
-        // A helper is a module-level function of the definition's own module, so the schema
-        // component of the lowered symbol names what the module already says.
-        helperNames_ = renderSchemaHelperNames(Language::Python, module, schema, helperScope_);
+        // A nested call names the nested type's own method, found by the identity of its plan.
+        for (const SurfaceScope& scope : names.tree().plan().scopes)
+        {
+            if ((scope.kind != SurfaceScopeKind::Type) || !scope.of)
+            {
+                continue;
+            }
+            if (const std::optional<SchemaSymbol> symbol = parseSchemaSymbol(scope.of->schema))
+            {
+                types_[planIdentity(symbol->fullName, symbol->major, symbol->minor, scope.of->section)] =
+                    NestedType{.section = scope.of->section, .schema = *symbol};
+            }
+        }
         if (schema.getBody().empty())
         {
             return;
         }
+        const std::string key = schema.getSymName().str();
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            Plan                          entry;
-            NamingScope                   scope(Language::Python);
-            std::vector<mlir::dsdl::IOOp> fields;
+            const llvm::StringRef section = plan.getSection().value_or(llvm::StringRef{});
+            Plan                  entry;
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
                 {
                     if (!io.isPadding())
                     {
-                        (void) scope.declare(IdentifierRole::FieldName, io.getName());
-                        fields.push_back(io);
+                        entry.members[io.getName()] = Member{names.member(key, section, io.getName()), io};
+                        entry.order.push_back(io.getName().str());
                     }
                 }
-            }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                const std::string name      = io.getName().str();
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()),
-                                                     io,
-                                                     scope.declare(IdentifierRole::FunctionName, "get_" + name),
-                                                     scope.declare(IdentifierRole::FunctionName, "set_" + name)};
-                entry.order.push_back(name);
             }
             // The union's tag, reached by its accessors as a member is: the wire holds it ahead
             // of the option, and no field can be named `_tag_`.
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{unionTagMemberName(Language::Python).str(),
-                                                tagSteps_.back().get(),
-                                                scope.declare(IdentifierRole::FunctionName, "get__tag_"),
-                                                scope.declare(IdentifierRole::FunctionName, "set__tag_")};
+                entry.members[kPlanUnionTagMember] =
+                    Member{names.member(key, section, {}, GeneratedFact::UnionTag), tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
-    }
-
-    /// @brief The method that serialises the object into a buffer.
-    static std::string serializeInto()
-    {
-        return "_serialize_into";
-    }
-
-    /// @brief The method that deserialises the object from a buffer.
-    static std::string deserializeFrom()
-    {
-        return "_deserialize_from";
     }
 
     // Functions.
@@ -840,8 +852,7 @@ public:
             return openAccessor(w, fn, *direction == "get");
         }
         open(w,
-             "def " + (*direction == "serialize" ? serializeInto() : deserializeFrom()) +
-                 "(self, buffer: memoryview) -> int:");
+             "def " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(self, buffer: memoryview) -> int:");
         return {"self", "buffer"};
     }
 
@@ -919,14 +930,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        const auto found = helperNames_.find(callee);
-        if (found == helperNames_.end())
-        {
-            llvm::report_fatal_error(llvm::Twine("Python spelling: a call to a helper this module does "
-                                                 "not declare: ") +
-                                     callee);
-        }
-        return found->second;
+        return names_.function(callee, SurfaceDeclKind::Helper);
     }
 
     // Statements.
@@ -963,6 +967,7 @@ public:
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
         const Accessed        a        = accessed(fn);
+        const std::string&    name     = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
         mlir::dsdl::IOOp      io       = a.member->io;
         const llvm::StringRef category = io.getScalarCategory();
         std::string           storage  = "int";
@@ -983,16 +988,15 @@ public:
         if (composite)
         {
             // The nested type's buffer, as a slice, which carries its own length.
-            open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> memoryview:");
+            open(w, "def " + name + "(buffer: memoryview" + index + ") -> memoryview:");
         }
         else if (getter)
         {
-            open(w, "def " + a.member->getterName + "(buffer: memoryview" + index + ") -> " + storage + ":");
+            open(w, "def " + name + "(buffer: memoryview" + index + ") -> " + storage + ":");
         }
         else
         {
-            open(w,
-                 "def " + a.member->setterName + "(buffer: memoryview" + index + ", value: " + storage + ") -> int:");
+            open(w, "def " + name + "(buffer: memoryview" + index + ", value: " + storage + ") -> int:");
         }
         std::vector<std::string> parameters{"buffer", "len(buffer)"};
         if (indexed)
@@ -1507,8 +1511,7 @@ public:
         // where the space the plan offers does or the buffer does, and answers what it used or a
         // negative code. What it used means something only where the code is zero, so it holds
         // the answer as it came, and the code is read off it.
-        const std::string call = names(op.getObject()) + "." +
-                                 (op.getDirection() == "serialize" ? serializeInto() : deserializeFrom()) + "(" +
+        const std::string call = names(op.getObject()) + "." + nestedEntry(op.getObject(), op.getDirection()) + "(" +
                                  names(op.getBuffer()) + "[:" + names(op.getAvailable()) + "])";
         if (consumed.empty() && error.empty())
         {
@@ -1530,13 +1533,38 @@ public:
 private:
     struct Member final
     {
+        /// @brief The attribute's name; empty in an accessors-only run, which declares none.
         std::string      pyName;
         mlir::dsdl::IOOp io;
-        /// @brief The accessors' names, claimed in the class's scope after every field so that no
-        ///        field shares a name with one.
-        std::string getterName;
-        std::string setterName;
     };
+
+    /// @brief A type a body names, by the definition it is a section of.
+    struct NestedType final
+    {
+        std::string  section;
+        SchemaSymbol schema;
+    };
+
+    /// @brief The method of the type @p object points at that the body for @p direction is.
+    [[nodiscard]] const std::string& nestedEntry(const mlir::Value object, const llvm::StringRef direction) const
+    {
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        const auto identity =
+            pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
+        const auto found = identity ? types_.find(identity.getIdentity()) : types_.end();
+        if (found == types_.end())
+        {
+            llvm::report_fatal_error("Python spelling: an object of a type the surface does not declare");
+        }
+        const NestedType&  type     = found->second;
+        const PlanFunction function = (direction == "serialize") ? PlanFunction::Serialize : PlanFunction::Deserialize;
+        return names_.function(renderPlanSymbol(planFunction(type.schema.fullName,
+                                                             type.schema.major,
+                                                             type.schema.minor,
+                                                             type.section,
+                                                             function)),
+                               SurfaceDeclKind::Entry);
+    }
 
     struct Plan final
     {
@@ -1834,10 +1862,8 @@ private:
 
     /// @brief The scope the module's helper names are declared into, which keeps two that project
     ///        onto one name apart.
-    NamingScope helperScope_{Language::Python};
-
-    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
-    llvm::StringMap<std::string> helperNames_;
+    const PySurface&            names_;
+    llvm::StringMap<NestedType> types_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -1886,6 +1912,12 @@ private:
     mutable unsigned    fresh_{0};
 };
 
+/// @brief The symbol of @p function.
+llvm::StringRef symbolOf(mlir::func::FuncOp function)
+{
+    return function.getSymName();
+}
+
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
@@ -1899,7 +1931,7 @@ struct SectionBodies final
 /// @brief One section: its class with the two bodies and the methods that wrap them, then its
 /// constants.
 llvm::Error emitSection(SourceWriter&             w,
-                        const std::string&        typeName,
+                        const PySection&          names,
                         const SemanticSection&    section,
                         const SectionMetadata&    metadata,
                         const AttachedDoc&        typeDoc,
@@ -1918,7 +1950,7 @@ llvm::Error emitSection(SourceWriter&             w,
                                                    def.info.fullName,
                                                    def.info.majorVersion,
                                                    def.info.minorVersion));
-        w.open("class " + typeName + ":");
+        w.open("class " + names.typeName() + ":");
     }
     else
     {
@@ -1933,9 +1965,21 @@ llvm::Error emitSection(SourceWriter&             w,
         {
             return init.takeError();
         }
+        const PySurface&        surface = names.names();
+        const SectionEntryNames entries{.serialize = surface.function(symbolOf(bodies.serialize),
+                                                                      SurfaceDeclKind::Wrapper,
+                                                                      GeneratedFact::WireImage),
+                                        .serializeInto =
+                                            surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry),
+                                        .deserialize = surface.function(symbolOf(bodies.deserialize),
+                                                                        SurfaceDeclKind::Wrapper,
+                                                                        GeneratedFact::FromWireImage),
+                                        .deserializeFrom =
+                                            surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry)};
         emitSectionType(w,
                         *init,
-                        typeName,
+                        names,
+                        entries,
                         section,
                         typeDoc,
                         file,
@@ -1966,12 +2010,12 @@ llvm::Error emitSection(SourceWriter&             w,
     if (metadata.isUnion)
     {
         w.blank();
-        emitUnionOptionTags(w, typeName, section, metadata);
+        emitUnionOptionTags(w, names, metadata);
     }
     if (!section.constants.empty())
     {
         w.blank();
-        emitSectionConstants(w, typeName, section);
+        emitSectionConstants(w, names, section);
     }
     return llvm::Error::success();
 }
@@ -1997,59 +2041,51 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.line("from __future__ import annotations");
     head.blank();
 
-    // The file is rendered first and its imports written after, from what it named. Each definition
-    // the file may import claims its local name before, apart from the classes the file declares.
-    const auto      baseType = ctx.typeName(def.info);
-    ImportNameScope importNames(Language::Python);
-    importNames.reserve(baseType);
-    if (def.isService)
-    {
-        importNames.reserve(renderSectionTypeName(Language::Python, baseType, "request"));
-        importNames.reserve(renderSectionTypeName(Language::Python, baseType, "response"));
-    }
-    for (const SemanticTypeRef& ref : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-    {
-        (void) importNames.claim(definitionRef(ref), ctx.typeName(ref), /*deprecated=*/false);
-    }
+    // The file is rendered first and its imports written after, from what it named.
+    const PySurface&   names = ctx.names();
+    const std::string  key   = keyOf(def.info);
     ImportSet          imports;
-    const PyFileNames  file(ctx, imports, importNames, ctx.modulePath(def.info));
+    const PyFileNames  file(ctx, imports, key);
     std::ostringstream body;
     SourceWriter       w        = makePyWriter(body);
     const auto         assemble = [&]() -> std::string {
         out << renderPythonImports(imports) << body.str();
         return out.str();
     };
-    w.line("LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\"");
-    w.line("DSDL_FULL_NAME = \"" + def.info.fullName + "\"");
-    w.line("DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "True" : "False"));
-    w.line("DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion));
-    w.line("DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion));
-    w.line("DSDL_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "True" : "False"));
+    const auto constant = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
+        return names.declared(key, SurfaceDeclKind::Constant, section, {}, fact);
+    };
+    w.line(constant(GeneratedFact::GeneratorVersion) + " = \"" + std::string(llvmdsdl::kVersionString) + "\"");
+    w.line(constant(GeneratedFact::FullName) + " = \"" + def.info.fullName + "\"");
+    w.line(constant(GeneratedFact::IsDeprecated) + " = " + std::string(def.request.deprecated ? "True" : "False"));
+    w.line(constant(GeneratedFact::VersionMajor) + " = " + std::to_string(def.info.majorVersion));
+    w.line(constant(GeneratedFact::VersionMinor) + " = " + std::to_string(def.info.minorVersion));
+    w.line(constant(GeneratedFact::HasFixedPortId) + " = " + std::string(def.info.fixedPortId ? "True" : "False"));
     if (def.info.fixedPortId)
     {
-        w.line("DSDL_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId));
+        w.line(constant(GeneratedFact::FixedPortId) + " = " + std::to_string(*def.info.fixedPortId));
     }
     // Aliasability is a property of a payload, so a service answers for each of its two and a
     // message answers once, under the name of the thing the verdict is about.
-    const auto emitLayoutVerdicts = [&w, schema](const std::string& prefix, const llvm::StringRef section) {
+    const auto emitLayoutVerdicts = [&w, &constant, schema](const llvm::StringRef section) {
         const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
         const AliasVerdict                    flat = wireFlatVerdict(plan);
-        w.line(prefix + "WIRE_FLAT = " + std::string(flat.holds ? "True" : "False"));
-        w.line(prefix + "WIRE_FLAT_REASON = \"" + flat.reason + "\"");
+        w.line(constant(GeneratedFact::WireFlat, section) + " = " + std::string(flat.holds ? "True" : "False"));
+        w.line(constant(GeneratedFact::WireFlatReason, section) + " = \"" + flat.reason + "\"");
     };
     if (def.isService)
     {
-        emitLayoutVerdicts("DSDL_REQUEST_", "request");
-        emitLayoutVerdicts("DSDL_RESPONSE_", "response");
+        emitLayoutVerdicts("request");
+        emitLayoutVerdicts("response");
     }
     else
     {
-        emitLayoutVerdicts("DSDL_", "");
+        emitLayoutVerdicts("");
     }
     w.blank();
 
     // The spelling names a nested type and the runtime as this file does.
-    const PythonSpelling                 spelling(module, schema, file);
+    const PythonSpelling                 spelling(schema, names, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2100,7 +2136,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     if (!def.isService)
     {
         if (auto err = emitSection(w,
-                                   baseType,
+                                   PySection(names, key, ""),
                                    def.request,
                                    sectionMetadata(def.info, def.request, schema, ""),
                                    def.doc,
@@ -2115,10 +2151,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return assemble();
     }
 
-    const auto reqType  = renderSectionTypeName(Language::Python, baseType, "request");
-    const auto respType = renderSectionTypeName(Language::Python, baseType, "response");
+    const PySection request(names, key, "request");
     if (auto err = emitSection(w,
-                               reqType,
+                               request,
                                def.request,
                                sectionMetadata(def.info, def.request, schema, "request"),
                                def.doc,
@@ -2134,7 +2169,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     if (def.response)
     {
         if (auto err = emitSection(w,
-                                   respType,
+                                   PySection(names, key, "response"),
                                    *def.response,
                                    sectionMetadata(def.info, *def.response, schema, "response"),
                                    def.doc,
@@ -2148,7 +2183,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         w.blank();
     }
-    w.line(baseType + " = " + reqType);
+    if (const SurfaceDecl* const alias =
+            names.tree().find(names.file(key), SurfaceDeclKind::Alias, SurfaceEntity{key, "", "", ""}))
+    {
+        w.line(alias->name + " = " + request.typeName());
+    }
     return assemble();
 }
 
@@ -2249,21 +2288,21 @@ std::string renderInitFile(llvm::StringRef dottedName, const bool isPackageRoot)
     return out.str();
 }
 
-llvm::Error ensureInitFile(const std::filesystem::path&     dir,
-                           llvm::StringRef                  dottedName,
+llvm::Error ensureInitFile(const std::filesystem::path&     outRoot,
+                           const llvm::StringRef            path,
                            const bool                       isPackageRoot,
                            std::set<std::filesystem::path>& initializedPackages,
                            const EmitWritePolicy&           writePolicy)
 {
-    if (!initializedPackages.insert(dir).second)
+    const std::filesystem::path initPath = outRoot / path.str();
+    if (!initializedPackages.insert(initPath).second)
     {
         return llvm::Error::success();
     }
-    std::filesystem::path const initPath = dir / "__init__.py";
-    std::error_code             ec;
+    std::error_code ec;
     if (!std::filesystem::exists(initPath, ec))
     {
-        if (auto err = writeGeneratedFile(initPath, renderInitFile(dottedName, isPackageRoot), writePolicy))
+        if (auto err = writeGeneratedFile(initPath, renderInitFile(packageOfInit(path), isPackageRoot), writePolicy))
         {
             return err;
         }
@@ -2271,34 +2310,34 @@ llvm::Error ensureInitFile(const std::filesystem::path&     dir,
     return llvm::Error::success();
 }
 
-llvm::Error ensurePackageInitChain(const std::filesystem::path&     packageRoot,
-                                   llvm::StringRef                  packageName,
-                                   const std::filesystem::path&     relDir,
+/// @brief Writes the `__init__.py` of the package and of each namespace down to the module scope
+///        @p file, where none exists.
+llvm::Error ensurePackageInitChain(const std::filesystem::path&     outRoot,
+                                   const PySurface&                 names,
+                                   const std::optional<std::size_t> file,
                                    std::set<std::filesystem::path>& initializedPackages,
                                    const EmitWritePolicy&           writePolicy)
 {
-    std::filesystem::path current = packageRoot;
-    std::string           dotted  = packageName.str();
-    if (auto err = ensureInitFile(current, dotted, true, initializedPackages, writePolicy))
+    if (auto err = ensureInitFile(outRoot, names.rootFile(), true, initializedPackages, writePolicy))
     {
         return err;
     }
-
-    for (const auto& part : relDir)
+    if (!file)
     {
-        const auto piece = part.string();
-        if (piece.empty() || piece == ".")
+        return llvm::Error::success();
+    }
+    for (const std::size_t scope : names.tree().pathTo(*file))
+    {
+        const SurfaceScope& namespaceScope = names.tree().scope(scope);
+        if (namespaceScope.kind != SurfaceScopeKind::Namespace)
         {
             continue;
         }
-        current /= piece;
-        dotted += "." + piece;
-        if (auto err = ensureInitFile(current, dotted, false, initializedPackages, writePolicy))
+        if (auto err = ensureInitFile(outRoot, namespaceScope.path, false, initializedPackages, writePolicy))
         {
             return err;
         }
     }
-
     return llvm::Error::success();
 }
 
@@ -2311,8 +2350,13 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
-    const auto           packageComponents = splitPackageName(options.packageName);
-    const EmitterContext ctx(semantic, packageComponents, options.typeNameVersioning, options.accessorsOnly);
+    auto tree = SurfaceTree::read(module, languageTraits(Language::Python));
+    if (!tree)
+    {
+        return tree.takeError();
+    }
+    const PySurface      names(*tree);
+    const EmitterContext ctx(semantic, names, options.accessorsOnly);
 
     std::filesystem::path const outRoot(options.outDir);
     const auto                  selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
@@ -2331,7 +2375,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     }
     const bool emitSupport = shouldEmitSupport(options.supportGeneration, anyTypeEmitted);
 
-    const std::filesystem::path packageRoot = outRoot / ctx.packageRootPath();
+    const std::filesystem::path packageRoot = outRoot / llvm::StringRef(names.rootFile()).rsplit('/').first.str();
 
     // Shared with the per-definition emission below, which creates any package chain a type needs.
     // Generated modules stay importable under `never` even though the scaffolding is skipped here.
@@ -2339,11 +2383,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
 
     if (emitSupport)
     {
-        if (auto err = ensurePackageInitChain(packageRoot,
-                                              ctx.packageName(),
-                                              std::filesystem::path{},
-                                              initializedPackages,
-                                              options.writePolicy))
+        if (auto err = ensurePackageInitChain(outRoot, names, std::nullopt, initializedPackages, options.writePolicy))
         {
             return err;
         }
@@ -2380,7 +2420,8 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         }
 
         if (auto err = writeGeneratedFile(outRoot / "pyproject.toml",
-                                          renderPyProjectToml(ctx.packageName(), packageComponents.front()),
+                                          renderPyProjectToml(names.package(),
+                                                              llvm::StringRef(names.package()).split('.').first),
                                           options.writePolicy))
         {
             return err;
@@ -2418,14 +2459,9 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath  = EmitterContext::relativeFilePath(def->info);
-        const auto                     fullPath = packageRoot / relPath;
-
-        if (auto err = ensurePackageInitChain(packageRoot,
-                                              ctx.packageName(),
-                                              relPath.parent_path(),
-                                              initializedPackages,
-                                              options.writePolicy))
+        const std::string              key = keyOf(def->info);
+        if (auto err =
+                ensurePackageInitChain(outRoot, names, names.file(key), initializedPackages, options.writePolicy))
         {
             return err;
         }
@@ -2436,7 +2472,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
             return rendered.takeError();
         }
 
-        if (auto err = writeGeneratedFile(fullPath, *rendered, options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(outRoot / names.path(key), *rendered, options.writePolicy, requiredTypeKeys))
         {
             return err;
         }

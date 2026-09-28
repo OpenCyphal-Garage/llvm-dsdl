@@ -8,10 +8,12 @@
 
 // TS:      dsdl.scope namespace "ns" {
 // TS-NEXT:   dsdl.scope module "file_1_0" path = "ns/file_1_0.ts" {
-// TS-NEXT:     dsdl.scope type "File" of = @ns.File.1.0 {
+// TS-NOT:      dsdl.scope
+// TS:          dsdl.scope type "File" of = @ns.File.1.0 {
 // TS:        dsdl.scope namespace "file_1_0" {
 // TS-NEXT:     dsdl.scope module "x_1_0" path = "ns/file_1_0/x_1_0.ts" {
-// TS-NEXT:       dsdl.scope type "X" of = @ns.file_1_0.X.1.0 {
+// TS-NOT:        dsdl.scope
+// TS:            dsdl.scope type "X" of = @ns.file_1_0.X.1.0 {
 
 // RUST: error: 'dsdl.scope' op declares 'file_1_0' as a module in scope 'ns', which already declares it as a module
 

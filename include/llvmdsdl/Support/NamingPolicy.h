@@ -312,6 +312,24 @@ struct GeneratedName final
 /// @return The constants, valid for the process lifetime.
 [[nodiscard]] llvm::ArrayRef<GeneratedName> generatedServiceConstants(Language language);
 
+/// @brief A constant the generator declares in a definition's module, and the fact it states.
+struct ModuleConstantName final
+{
+    GeneratedFact fact{};
+
+    llvm::StringRef name;
+
+    /// @brief The section whose fact the constant states: empty for a message's, and none for one
+    ///        the definition states whatever its sections.
+    std::optional<llvm::StringRef> section;
+};
+
+/// @brief The constants the generator declares in each definition's module, where a language
+///        declares a type's constants in the module.
+/// @param[in] language Naming language.
+/// @return The constants, valid for the process lifetime.
+[[nodiscard]] llvm::ArrayRef<ModuleConstantName> generatedModuleConstants(Language language);
+
 /// @brief A macro the generator guards a file with, and the fact it states.
 struct GuardName final
 {
@@ -378,10 +396,17 @@ struct AccessorVerbs final
 {
     llvm::StringRef getter;
     llvm::StringRef setter;
+
+    /// @brief Whether a union's tag is claimed ahead of the fields' accessors rather than after them.
+    bool tagFirst{};
+
+    /// @brief Whether an accessor is keyed on its field's name as the type declares it, rather than
+    ///        as DSDL writes it.
+    bool keyedByDeclaredName{};
 };
 
-/// @brief The verbs of @p language's member accessors, which are allocated apart from the type's
-///        fields.
+/// @brief The verbs of @p language's member accessors. They are allocated with the type's fields
+///        where the language keeps no class of names for fields, and apart from them where it does.
 ///
 /// None where the language's emitter names its accessors itself.
 /// @param[in] language Naming language.
