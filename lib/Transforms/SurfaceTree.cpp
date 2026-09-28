@@ -548,7 +548,8 @@ SurfaceTree::SurfaceTree(SurfacePlan plan)
 {
     for (const auto [index, decl] : llvm::enumerate(plan_.decls))
     {
-        if (decl.of && !decl.of->function.empty())
+        // An import of another file's function is found in the file that makes it.
+        if (decl.of && !decl.of->function.empty() && (decl.kind != SurfaceDeclKind::Import))
         {
             functions_.try_emplace({decl.of->function, decl.kind, decl.fact}, index);
         }

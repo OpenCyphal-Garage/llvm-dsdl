@@ -590,7 +590,8 @@ private:
                     if (inSection(body) && (body.plan.function == entry.function))
                     {
                         (void) declare(entry.beside ? names.fileScope : section.typeScope,
-                                       entry.beside ? entry.name.str() + section.typeName : entry.name.str(),
+                                       entry.beside ? entry.name.str() + section.typeName + entry.suffix.str()
+                                                    : entry.name.str(),
                                        SurfaceDeclKind::Entry,
                                        NameClass::Value,
                                        NameOrigin::Generated,
@@ -604,8 +605,8 @@ private:
                 {
                     if (inSection(body) && (body.plan.function == wrapper.wraps))
                     {
-                        (void) declare(section.typeScope,
-                                       wrapper.name.str(),
+                        (void) declare(wrapper.beside ? names.fileScope : section.typeScope,
+                                       wrapper.beside ? wrapper.name.str() + section.typeName : wrapper.name.str(),
                                        SurfaceDeclKind::Wrapper,
                                        NameClass::Value,
                                        NameOrigin::Generated,
@@ -1051,9 +1052,10 @@ private:
         case ImportNaming::Package:
             allocatePackageImports(definition, file, composites);
             return;
-        case ImportNaming::None:
         case ImportNaming::TypeAndFunctions:
-            // TypeScript's imports, which bring a type's functions with it, are named by its emitter.
+            allocateTypeAndFunctionImports(definition, file, composites);
+            return;
+        case ImportNaming::None:
             return;
         }
     }
@@ -1100,6 +1102,71 @@ private:
                            NameOrigin::Definition,
                            SurfaceEntity{key, "", "", ""},
                            SurfaceVisibility::Private);
+        }
+    }
+
+    /// @brief Declares the local names the file imports each definition's type, and the entry points
+    ///        beside it, under. An import of a type brings the entry points named after it, so a
+    ///        clash is judged on them all, against what the file declares, which is reserved first.
+    void allocateTypeAndFunctionImports(const DefinitionParts&                      definition,
+                                        const std::size_t                           file,
+                                        const std::map<std::string, DefinitionRef>& composites)
+    {
+        const llvm::ArrayRef<EntryPointName> entries = entryPointNames(row_.language);
+        const auto                           beside  = [](const std::string& type, const EntryPointName& entry) {
+            return entry.name.str() + type + entry.suffix.str();
+        };
+        ImportNameScope scope(row_.language, [&](const std::string& type) {
+            std::vector<std::string> brought{type};
+            for (const EntryPointName& entry : entries)
+            {
+                brought.push_back(beside(type, entry));
+            }
+            return brought;
+        });
+        for (const SurfaceItem& item : plan_.scopes[file].items)
+        {
+            scope.reserve(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
+        }
+        const std::string own = renderDefinitionKey(definition.ref);
+        for (const auto& [order, ref] : composites)
+        {
+            const std::string key = renderDefinitionKey(ref);
+            // The tree names a definition the module holds, and a definition does not import itself.
+            if ((key == own) || !deprecated_.contains(key))
+            {
+                continue;
+            }
+            const std::string local = scope.claim(ref,
+                                                  renderDefinitionTypeName(row_.language,
+                                                                           ref.namespaceComponents,
+                                                                           ref.shortName,
+                                                                           ref.majorVersion,
+                                                                           ref.minorVersion,
+                                                                           options_.versioning),
+                                                  false);
+            (void) declare(file,
+                           local,
+                           SurfaceDeclKind::Import,
+                           NameClass::Type,
+                           NameOrigin::Definition,
+                           SurfaceEntity{key, "", "", ""},
+                           SurfaceVisibility::Private);
+            PlanSymbol function;
+            function.schema = SchemaSymbol{.fullName = llvm::join(ref.namespaceComponents, ".") + "." + ref.shortName,
+                                           .major    = ref.majorVersion,
+                                           .minor    = ref.minorVersion};
+            for (const EntryPointName& entry : entries)
+            {
+                function.function = entry.function;
+                (void) declare(file,
+                               beside(local, entry),
+                               SurfaceDeclKind::Import,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{key, "", "", renderPlanSymbol(function)},
+                               SurfaceVisibility::Private);
+            }
         }
     }
 

@@ -179,6 +179,8 @@ std::string render(const AccessorNaming value)
         return "joined";
     case AccessorNaming::Concatenated:
         return "concatenated";
+    case AccessorNaming::VerbFirst:
+        return "verb-first";
     }
     return "?";
 }
@@ -412,7 +414,7 @@ bool runLanguageTraitsTests()
          "helpers=module qualification=shortest "
          "file-directory-module=0 namespace-type-scope=0 constants=module constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
-         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
+         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=verb-first free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "

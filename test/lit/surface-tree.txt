@@ -4,9 +4,10 @@
 # share, and Rust, TypeScript and Python a module per definition. A service's own name is an alias
 # of its request, and a deprecated type is declared apart where the language does that. A scope the
 # output writes to a file of its own names the file, and in Rust and Python a definition's module
-# imports each definition its fields hold. A Rust or Python type holds the members the generator
-# adds, each generated constant and data member naming the fact it states, and an accessors-only run
-# declares no data member. A TypeScript or Python module declares the definition's facts at its top.
+# imports each definition its fields hold, and in TypeScript the functions named after it. A Rust or
+# Python type holds the members the generator adds, each generated constant and data member naming
+# the fact it states, and an accessors-only run declares no data member. A TypeScript or Python
+# module declares the definition's facts at its top, and TypeScript's functions are the module's.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
@@ -124,8 +125,17 @@
 # TS-NEXT:         dsdl.decl "LLVMDSDL_GENERATOR_VERSION" kind = constant origin = generated fact = generator_version of = @ns.Ask.1.0
 # TS:              dsdl.decl "DSDL_RESPONSE_WIRE_FLAT_REASON" kind = constant origin = generated fact = wire_flat_reason of = @ns.Ask.1.0 section = "response"
 # TS-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
+# TS:                dsdl.decl "_tag" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
 # TS:              dsdl.decl "ASK_REQUEST_SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # TS:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
+# TS-NEXT:         dsdl.decl "serializeAskRequestInto" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
+# TS-NEXT:         dsdl.decl "deserializeAskRequestFrom" kind = entry origin = generated of = @ns.Ask.1.0.request.deserialize
+# TS-NEXT:         dsdl.decl "makeAskRequest" kind = entry origin = generated of = @ns.Ask.1.0.request.initialize
+# TS-NEXT:         dsdl.decl "serializeAskRequest" kind = wrapper origin = generated fact = wire_image of = @ns.Ask.1.0.request.serialize
+# TS:              dsdl.decl "getAskResponseOk" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
+# TS:            dsdl.scope module "hold_1_0" path = "ns/hold_1_0.ts" {
+# TS:              dsdl.decl "Msg" kind = import class = type visibility = private of = @ns.Msg.1.0
+# TS-NEXT:         dsdl.decl "serializeMsgInto" kind = import class = value visibility = private origin = generated of = @ns.Msg.1.0.serialize
 # TS:            dsdl.scope module "msg_1_0" path = "ns/msg_1_0.ts" {
 # TS:              dsdl.decl "MSG_LIMIT" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
 #

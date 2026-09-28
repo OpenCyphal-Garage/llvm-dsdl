@@ -40,16 +40,11 @@
 #include <utility>
 
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
-#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
-#include "llvmdsdl/Support/ImportNameScope.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
-#include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/Support/SectionScopes.h"
-#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
@@ -62,6 +57,11 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -74,7 +74,6 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -112,16 +111,118 @@ void emitAttachedDocTs(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
+/// @brief The key of the definition @p info describes, which its schema and the surface name it by.
+std::string keyOf(const DiscoveredDefinition& info)
+{
+    return renderDefinitionKey(definitionRef(info));
+}
+
+/// @brief The key of the definition @p ref names.
+std::string keyOf(const SemanticTypeRef& ref)
+{
+    return renderDefinitionKey(definitionRef(ref));
+}
+
+/// @brief The symbol of the message @p ref's body that does @p function.
+std::string bodyOf(const SemanticTypeRef& ref, const PlanFunction function)
+{
+    return renderPlanSymbol(planFunction(ref.fullName, ref.majorVersion, ref.minorVersion, {}, function));
+}
+
+/// @brief The names TypeScript's output declares and the files it writes, as the surface declares
+///        them.
+class TsSurface final
+{
+public:
+    explicit TsSurface(const SurfaceTree& tree)
+        : tree_(tree)
+    {
+    }
+
+    [[nodiscard]] const SurfaceTree& tree() const
+    {
+        return tree_;
+    }
+
+    /// @brief The module scope the definition keyed @p key is declared in.
+    [[nodiscard]] std::size_t file(const llvm::StringRef key) const
+    {
+        return tree_.definitionScope(key);
+    }
+
+    /// @brief The file the definition keyed @p key is written to, from the output directory.
+    [[nodiscard]] const std::string& path(const llvm::StringRef key) const
+    {
+        return tree_.scope(file(key)).path;
+    }
+
+    /// @brief The name of @p section's type.
+    [[nodiscard]] const std::string& typeName(const llvm::StringRef key, const llvm::StringRef section) const
+    {
+        return tree_.scope(tree_.typeScope(key, section)).name;
+    }
+
+    /// @brief The name of the declaration of @p kind in the definition's module for @p member of
+    ///        @p section, stating @p fact.
+    [[nodiscard]] const std::string& declared(const llvm::StringRef              key,
+                                              const SurfaceDeclKind              kind,
+                                              const llvm::StringRef              section,
+                                              const llvm::StringRef              member = {},
+                                              const std::optional<GeneratedFact> fact   = std::nullopt) const
+    {
+        return tree_.nameOf(file(key), kind, SurfaceEntity{key.str(), section.str(), member.str(), {}}, fact);
+    }
+
+    /// @brief The name of the property of @p section's type that @p member is, or that states
+    ///        @p fact; empty where the type declares none, as in an accessors-only run.
+    [[nodiscard]] std::string member(const llvm::StringRef              key,
+                                     const llvm::StringRef              section,
+                                     const llvm::StringRef              member,
+                                     const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        const SurfaceDecl* const decl = tree_.find(tree_.typeScope(key, section),
+                                                   SurfaceDeclKind::Field,
+                                                   SurfaceEntity{key.str(), section.str(), member.str(), {}},
+                                                   fact);
+        return (decl != nullptr) ? decl->name : std::string{};
+    }
+
+    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol,
+    ///        stating @p fact.
+    [[nodiscard]] const std::string& function(const llvm::StringRef              symbol,
+                                              const SurfaceDeclKind              kind,
+                                              const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        return tree_.nameOf(symbol, kind, fact);
+    }
+
+    /// @brief The local name the definition keyed @p key imports the type of the one keyed
+    ///        @p imported under, or its body @p function; null where it imports none.
+    [[nodiscard]] const SurfaceDecl* import(const llvm::StringRef key,
+                                            const llvm::StringRef imported,
+                                            const llvm::StringRef function = {}) const
+    {
+        return tree_.find(file(key), SurfaceDeclKind::Import, SurfaceEntity{imported.str(), {}, {}, function.str()});
+    }
+
+private:
+    const SurfaceTree& tree_;
+};
+
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule&    semantic,
-                   const TypeNameVersioning typeNameVersioning,
-                   const bool               accessorsOnly)
-        : index_(semantic)
-        , typeNameVersioning_(typeNameVersioning)
+    EmitterContext(const SemanticModule& semantic, const TsSurface& names, const bool accessorsOnly)
+        : names_(names)
+        , index_(semantic)
         , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief The names the output declares.
+    const TsSurface& names() const
+    {
+        return names_;
     }
 
     /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
@@ -130,121 +231,16 @@ public:
         return accessorsOnly_;
     }
 
-    /// @brief Whether generated type names carry the definition's version.
-    TypeNameVersioning typeNameVersioning() const
-    {
-        return typeNameVersioning_;
-    }
-
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
         return index_.find(ref);
     }
 
-    static std::string namespacePath(const DiscoveredDefinition& info)
-    {
-        return renderNamespaceRelativePath(Language::TypeScript, info.namespaceComponents).generic_string();
-    }
-
-    std::string typeName(const DiscoveredDefinition& info) const
-    {
-        return renderDefinitionTypeName(Language::TypeScript,
-                                        info.namespaceComponents,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion,
-                                        typeNameVersioning_);
-    }
-
-    /// @brief Local name for a *referenced* type in the file currently being emitted.
-    ///
-    /// @details
-    /// Usually the plain versioned name the import brings in. It differs when one
-    /// file references two types that share a short name from different namespaces --
-    /// `uavcan.si.unit.angular_velocity.Vector3.1.0` and `uavcan.si.unit.velocity.Vector3.1.0` are
-    /// both `Vector3_1_0`, and importing both under that name is a duplicate-identifier error that
-    /// stops `tsc` outright. Such types are imported under a namespace-qualified alias instead, and
-    /// this is where every reference site picks that alias up: the type annotations, the serialise
-    /// and deserialise call names, and the import list all resolve through here, so they cannot
-    /// disagree.
-    std::string typeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            if (const auto alias = importAliases_.find(importAliasKey(def->info)); alias != importAliases_.end())
-            {
-                return alias->second;
-            }
-            return typeName(def->info);
-        }
-
-        DiscoveredDefinition tmp;
-        tmp.shortName    = ref.shortName;
-        tmp.majorVersion = ref.majorVersion;
-        tmp.minorVersion = ref.minorVersion;
-        return typeName(tmp);
-    }
-
-    /// @brief Identity of a definition for alias bookkeeping: unique across namespaces and versions.
-    static std::string importAliasKey(const DiscoveredDefinition& info)
-    {
-        return info.fullName + ":" + std::to_string(info.majorVersion) + "." + std::to_string(info.minorVersion);
-    }
-
-    /// @brief Installs the alias table for the file about to be emitted, replacing any previous one.
-    void setImportAliases(std::map<std::string, std::string> aliases) const
-    {
-        importAliases_ = std::move(aliases);
-    }
-
-    static std::string fileStem(const DiscoveredDefinition& info)
-    {
-        return renderVersionedFileStem(Language::TypeScript, info.shortName, info.majorVersion, info.minorVersion);
-    }
-
-    static std::filesystem::path relativeFilePath(const DiscoveredDefinition& info)
-    {
-        return renderRelativeTypeFilePath(Language::TypeScript, info, "ts");
-    }
-
-    std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return relativeFilePath(def->info);
-        }
-
-        return renderRelativeTypeFilePath(Language::TypeScript, ref, "ts");
-    }
-
 private:
-    /// @brief Per-file alias table; see typeName(const SemanticTypeRef&). Mutable because the free
-    /// render functions are handed a `const EmitterContext&`.
-    mutable std::map<std::string, std::string> importAliases_;
-
-    DefinitionIndex    index_;
-    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    bool               accessorsOnly_{false};
+    const TsSurface& names_;
+    DefinitionIndex  index_;
+    bool             accessorsOnly_{false};
 };
-
-/// @brief The factory that makes a type at its defaults: `make` and the type's own name, as the
-///        serialise and deserialise entry points are verb and name.
-std::string tsMakeFn(const std::string& typeName)
-{
-    return "make" + typeName;
-}
-
-/// @brief The body function that serialises a value of @p typeName into a buffer.
-std::string tsSerializeIntoFn(const std::string& typeName)
-{
-    return "serialize" + typeName + "Into";
-}
-
-/// @brief The body function that deserialises a value of @p typeName from a buffer.
-std::string tsDeserializeFromFn(const std::string& typeName)
-{
-    return "deserialize" + typeName + "From";
-}
 
 std::string relativeImportPath(const std::filesystem::path& fromFile, const std::filesystem::path& toFile);
 
@@ -256,10 +252,10 @@ std::string relativeImportPath(const std::filesystem::path& fromFile, const std:
 class TsFileNames final
 {
 public:
-    TsFileNames(const EmitterContext& ctx, ImportSet& imports, std::filesystem::path ownerPath)
+    TsFileNames(const EmitterContext& ctx, ImportSet& imports, std::string ownKey)
         : ctx_(ctx)
         , imports_(imports)
-        , ownerPath_(std::move(ownerPath))
+        , ownKey_(std::move(ownKey))
     {
     }
 
@@ -272,61 +268,62 @@ public:
     [[nodiscard]] std::string runtime() const
     {
         return imports_.module(ImportOrigin::Runtime,
-                               relativeImportPath(ownerPath_, std::filesystem::path("dsdl_runtime.ts")),
+                               relativeImportPath(ownPath(), std::filesystem::path("dsdl_runtime.ts")),
                                "dsdlRuntime");
     }
 
-    /// @brief The interface of the definition @p ref.
+    /// @brief The interface of the definition @p ref, imported from its module under the local name
+    ///        the file gives it, unless the module is this file.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        return exported(ref, [](const std::string& name) { return name; }, ImportUse::Type);
+        const TsSurface&   names = ctx_.names();
+        const std::string  key   = keyOf(ref);
+        const std::string& name  = names.typeName(key, {});
+        if (key == ownKey_)
+        {
+            return name;
+        }
+        const SurfaceDecl* const local = names.import(ownKey_, key);
+        return imports_.member(ImportOrigin::Definition,
+                               relativeImportPath(ownPath(), names.path(key)),
+                               name,
+                               (local != nullptr) ? local->name : name,
+                               ImportUse::Type);
+    }
+
+    /// @brief The function the body @p symbol of the definition keyed @p key is, imported as
+    ///        @ref type imports its interface.
+    [[nodiscard]] std::string function(const llvm::StringRef key, const llvm::StringRef symbol) const
+    {
+        const TsSurface&   names = ctx_.names();
+        const std::string& name  = names.function(symbol, SurfaceDeclKind::Entry);
+        if (key == ownKey_)
+        {
+            return name;
+        }
+        const SurfaceDecl* const local = names.import(ownKey_, key, symbol);
+        return imports_.member(ImportOrigin::Definition,
+                               relativeImportPath(ownPath(), names.path(key)),
+                               name,
+                               (local != nullptr) ? local->name : name,
+                               ImportUse::Value);
     }
 
     /// @brief The factory of the definition @p ref.
     [[nodiscard]] std::string make(const SemanticTypeRef& ref) const
     {
-        return exported(ref, tsMakeFn, ImportUse::Value);
-    }
-
-    /// @brief The body function that serialises the definition @p ref.
-    [[nodiscard]] std::string serializeInto(const SemanticTypeRef& ref) const
-    {
-        return exported(ref, tsSerializeIntoFn, ImportUse::Value);
-    }
-
-    /// @brief The body function that deserialises the definition @p ref.
-    [[nodiscard]] std::string deserializeFrom(const SemanticTypeRef& ref) const
-    {
-        return exported(ref, tsDeserializeFromFn, ImportUse::Value);
+        return function(keyOf(ref), bodyOf(ref, PlanFunction::Initialize));
     }
 
 private:
-    /// @brief What the definition @p ref exports as @p compose makes of its name, imported from its
-    ///        module under the name this file gives it, unless the module is this file.
-    template <typename Compose>
-    std::string exported(const SemanticTypeRef& ref, Compose compose, const ImportUse use) const
+    [[nodiscard]] std::filesystem::path ownPath() const
     {
-        std::string local = compose(ctx_.typeName(ref));
-        const auto* def   = ctx_.find(ref);
-        if (def == nullptr)
-        {
-            return local;
-        }
-        const std::filesystem::path path = EmitterContext::relativeFilePath(def->info);
-        if (path == ownerPath_)
-        {
-            return local;
-        }
-        return imports_.member(ImportOrigin::Definition,
-                               relativeImportPath(ownerPath_, path),
-                               compose(ctx_.typeName(def->info)),
-                               local,
-                               use);
+        return ctx_.names().path(ownKey_);
     }
 
     const EmitterContext& ctx_;
     ImportSet&            imports_;
-    std::filesystem::path ownerPath_;
+    std::string           ownKey_;
 };
 
 /// @brief The imports of a TypeScript file that names @p imports: the runtime as a namespace, then a
@@ -437,59 +434,80 @@ std::string moduleAliasFromPath(const std::string& modulePath)
     return codegenSanitizeIdentifier(Language::TypeScript, alias.empty() ? "module" : alias);
 }
 
+/// @brief One section's names, as the surface declares them.
+class TsSection final
+{
+public:
+    TsSection(const TsSurface& names, std::string key, std::string section)
+        : names_(names)
+        , key_(std::move(key))
+        , section_(std::move(section))
+    {
+    }
+
+    /// @brief The name of the section's type.
+    [[nodiscard]] const std::string& typeName() const
+    {
+        return names_.typeName(key_, section_);
+    }
+
+    /// @brief The name of the property the DSDL field @p member is; empty where the type declares
+    ///        none.
+    [[nodiscard]] std::string field(const llvm::StringRef member) const
+    {
+        return names_.member(key_, section_, member);
+    }
+
+    /// @brief The name of the property the generator adds to state @p fact.
+    [[nodiscard]] std::string dataMember(const GeneratedFact fact) const
+    {
+        return names_.member(key_, section_, {}, fact);
+    }
+
+    /// @brief The name of the constant holding the tag value of the union option @p member.
+    [[nodiscard]] const std::string& option(const llvm::StringRef member) const
+    {
+        return names_.declared(key_, SurfaceDeclKind::Option, section_, member);
+    }
+
+    /// @brief The name of the constant the DSDL constant @p member is.
+    [[nodiscard]] const std::string& constant(const llvm::StringRef member) const
+    {
+        return names_.declared(key_, SurfaceDeclKind::Constant, section_, member);
+    }
+
+    [[nodiscard]] const TsSurface& names() const
+    {
+        return names_;
+    }
+
+private:
+    const TsSurface& names_;
+    std::string      key_;
+    std::string      section_;
+};
+
 /// @brief Declares the tag value that selects each of a union's options.
-void emitUnionOptionTags(SourceWriter&          w,
-                         const std::string&     prefix,
-                         const SemanticSection& section,
-                         const SectionMetadata& metadata)
+void emitUnionOptionTags(SourceWriter& w, const TsSection& names, const SectionMetadata& metadata)
 {
     if (!metadata.isUnion)
     {
         return;
     }
-    const auto prefixupper     = codegenProjectIdentifier(Language::TypeScript, IdentifierRole::ConstantName, prefix);
-    const NamingScope tagScope = makeSectionConstantScope(Language::TypeScript, section, prefixupper);
     for (const auto& option : metadata.unionOptions)
     {
-        w.line("export const " +
-               renderDeclaredConstantName(Language::TypeScript,
-                                          prefix,
-                                          tagScope.get(IdentifierRole::MacroName,
-                                                       unionOptionTagName(Language::TypeScript, option.name))) +
-               " = " + std::to_string(option.tag) + ";");
+        w.line("export const " + names.option(option.name) + " = " + std::to_string(option.tag) + ";");
     }
 }
 
-void emitSectionConstants(SourceWriter& w, const std::string& prefix, const SemanticSection& section)
+void emitSectionConstants(SourceWriter& w, const TsSection& names, const SemanticSection& section)
 {
-    const auto prefixupper       = codegenProjectIdentifier(Language::TypeScript, IdentifierRole::ConstantName, prefix);
-    NamingScope const constScope = makeSectionConstantScope(Language::TypeScript, section, prefixupper);
     for (const auto& constant : section.constants)
     {
         emitAttachedDocTs(w, constant.doc);
-        const auto constName = renderDeclaredConstantName(Language::TypeScript,
-                                                          prefix,
-                                                          constScope.get(IdentifierRole::ConstantName, constant.name));
-        w.line("export const " + constName + " = " + tsConstValue(constant.type, constant.value) + ";");
+        w.line("export const " + names.constant(constant.name) + " = " + tsConstValue(constant.type, constant.value) +
+               ";");
     }
-}
-
-/// @brief Collision-free property names for one section's fields.
-///
-/// snake_casing is many-to-one, so `fooBar` and `foo_bar` both fold to `foo_bar`; without this the
-/// object type would declare the same property twice and the (de)serialiser would read/write the
-/// wrong one. Built from `section.fields` (declaration order) so every emission site agrees.
-NamingScope makeTsFieldIdents(const SemanticSection& section)
-{
-    std::vector<std::string> names;
-    for (const auto& field : section.fields)
-    {
-        if (!field.isPadding)
-        {
-            names.push_back(field.name);
-        }
-    }
-    return makeSectionFieldScope(Language::TypeScript, section);
 }
 
 void emitDeprecationJsDocTs(SourceWriter&       w,
@@ -521,7 +539,7 @@ void emitDeprecationJsDocTs(SourceWriter&       w,
 }
 
 void emitStructSectionType(SourceWriter&          w,
-                           const std::string&     typeName,
+                           const TsSection&       names,
                            const SemanticSection& section,
                            const AttachedDoc&     typeDoc,
                            const TsFileNames&     file,
@@ -536,7 +554,8 @@ void emitStructSectionType(SourceWriter&          w,
     // A definition with no field is an object with no property, and `interface X {}` does not say
     // that: TypeScript reads an empty interface as a constraint nothing fails, so a number or a
     // string satisfies it. `Record<string, never>` is the type of an object that has no property.
-    const bool anyField = llvm::any_of(section.fields, [](const auto& field) { return !field.isPadding; });
+    const std::string& typeName = names.typeName();
+    const bool         anyField = llvm::any_of(section.fields, [](const auto& field) { return !field.isPadding; });
     if (!anyField)
     {
         w.line("export type " + typeName + " = Record<string, never>;");
@@ -544,7 +563,6 @@ void emitStructSectionType(SourceWriter&          w,
     }
 
     w.open("export interface " + typeName + " {");
-    const NamingScope fieldIdents = makeTsFieldIdents(section);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -552,8 +570,7 @@ void emitStructSectionType(SourceWriter&          w,
             continue;
         }
         emitAttachedDocTs(w, field.doc);
-        const auto fieldName = fieldIdents.get(IdentifierRole::FieldName, field.name);
-        w.line(fieldName + ": " +
+        w.line(names.field(field.name) + ": " +
                (field.heldAsView
                     ? std::string{(field.resolvedType.arrayKind == ArrayKind::None) ? "Uint8Array" : "Uint8Array[]"}
                     : tsFieldType(field.resolvedType, file)) +
@@ -563,7 +580,7 @@ void emitStructSectionType(SourceWriter&          w,
 }
 
 void emitUnionSectionType(SourceWriter&          w,
-                          const std::string&     typeName,
+                          const TsSection&       names,
                           const SemanticSection& section,
                           const AttachedDoc&     typeDoc,
                           const TsFileNames&     file,
@@ -580,33 +597,33 @@ void emitUnionSectionType(SourceWriter&          w,
         }
     }
 
+    const std::string& typeName = names.typeName();
+    const std::string  tag      = names.dataMember(GeneratedFact::UnionTag);
     if (options.empty())
     {
         emitAttachedDocTs(w, typeDoc);
         emitDeprecationJsDocTs(w, section.deprecated, fullName, majorVersion, minorVersion);
-        w.line("export type " + typeName + " = { " + unionTagMemberName(Language::TypeScript).str() + ": number };");
+        w.line("export type " + typeName + " = { " + tag + ": number };");
         return;
     }
 
     emitAttachedDocTs(w, typeDoc);
     emitDeprecationJsDocTs(w, section.deprecated, fullName, majorVersion, minorVersion);
     w.line("export type " + typeName + " =");
-    const NamingScope fieldIdents = makeTsFieldIdents(section);
     for (std::size_t i = 0; i < options.size(); ++i)
     {
         const auto* field = options[i];
         emitAttachedDocTs(w, field->doc);
-        const auto         fieldName = fieldIdents.get(IdentifierRole::FieldName, field->name);
         std::ostringstream variant;
-        variant << "{ " << unionTagMemberName(Language::TypeScript).str() << ": " << field->unionOptionIndex << "; "
-                << fieldName << ": " << tsFieldType(field->resolvedType, file) << "; }";
+        variant << "{ " << tag << ": " << field->unionOptionIndex << "; " << names.field(field->name) << ": "
+                << tsFieldType(field->resolvedType, file) << "; }";
         const auto* const prefix = "  | ";
         w.line(prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
     }
 }
 
 void emitSectionType(SourceWriter&          w,
-                     const std::string&     typeName,
+                     const TsSection&       names,
                      const SemanticSection& section,
                      const AttachedDoc&     typeDoc,
                      const TsFileNames&     file,
@@ -616,12 +633,12 @@ void emitSectionType(SourceWriter&          w,
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, typeName, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, names, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
     else
     {
         emitStructSectionType(w,
-                              typeName,
+                              names,
                               section,
                               typeDoc,
                               file,
@@ -630,16 +647,6 @@ void emitSectionType(SourceWriter&          w,
                               minorVersion,
                               section.deprecated);
     }
-}
-
-std::string tsRuntimeSerializeFn(const std::string& typeName)
-{
-    return "serialize" + typeName;
-}
-
-std::string tsRuntimeDeserializeFn(const std::string& typeName)
-{
-    return "deserialize" + typeName;
 }
 
 /// @brief The TypeScript spelling of the plan-body vocabulary, for one schema.
@@ -655,69 +662,41 @@ std::string tsRuntimeDeserializeFn(const std::string& typeName)
 class TsSpelling final : public BodySpelling
 {
 public:
-    TsSpelling(mlir::ModuleOp module, mlir::dsdl::SchemaOp schema, const TsFileNames& file)
-        : symbols_(module)
-        , file_(file)
+    TsSpelling(mlir::dsdl::SchemaOp schema, const TsSurface& names, const TsFileNames& file)
+        : file_(file)
+        , names_(names)
     {
-        // A helper is a function of the definition's own module, which is not exported, so the
-        // schema component of the lowered symbol names what the module already says.
-        helperNames_ = renderSchemaHelperNames(Language::TypeScript, module, schema, helperScope_);
         if (schema.getBody().empty())
         {
             return;
         }
+        const std::string key = schema.getSymName().str();
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            Plan entry;
-            entry.isUnion = plan.getIsUnion();
-            NamingScope                   scope(Language::TypeScript);
-            std::vector<mlir::dsdl::IOOp> fields;
+            const llvm::StringRef section = plan.getSection().value_or(llvm::StringRef{});
+            Plan                  entry;
+            entry.typeName = names.typeName(key, section);
+            entry.isUnion  = plan.getIsUnion();
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
                 {
                     if (!io.isPadding())
                     {
-                        (void) scope.declare(IdentifierRole::FieldName, io.getName());
-                        fields.push_back(io);
+                        entry.members[io.getName()] = Member{names.member(key, section, io.getName()), io};
                     }
                 }
-            }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
             }
             // The union's tag, reached by its accessors as a member is: the wire holds it ahead
             // of the option, and no field can be named `_tag_`.
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{unionTagMemberName(Language::TypeScript).str(), tagSteps_.back().get()};
+                entry.members[kPlanUnionTagMember] =
+                    Member{names.member(key, section, {}, GeneratedFact::UnionTag), tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
-    }
-
-    /// @brief Names the TypeScript type each plan's bodies are functions of.
-    void setTypeName(const llvm::StringRef identity, const std::string& typeName)
-    {
-        const auto found = plans_.find(identity);
-        if (found != plans_.end())
-        {
-            found->second.typeName = typeName;
-        }
-    }
-
-    /// @brief The body function that serialises a value of @p typeName into a buffer.
-    static std::string serializeInto(const std::string& typeName)
-    {
-        return tsSerializeIntoFn(typeName);
-    }
-
-    /// @brief The body function that deserialises a value of @p typeName from a buffer.
-    static std::string deserializeFrom(const std::string& typeName)
-    {
-        return tsDeserializeFromFn(typeName);
     }
 
     // Functions.
@@ -745,7 +724,7 @@ public:
             return parameters;
         }
         const Plan& plan = planOf(fn.getArgument(0));
-        w.open("export function " + (deserialize_ ? deserializeFrom(plan.typeName) : serializeInto(plan.typeName)) +
+        w.open("export function " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) +
                "(obj: " + plan.typeName + ", buffer: Uint8Array): number {");
         // A body of a definition with no fields reads nothing of its buffer, and the entry point's
         // signature is every body's.
@@ -805,14 +784,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        const auto found = helperNames_.find(callee);
-        if (found == helperNames_.end())
-        {
-            llvm::report_fatal_error(llvm::Twine("TypeScript spelling: a call to a helper this module does "
-                                                 "not declare: ") +
-                                     callee);
-        }
-        return found->second;
+        return names_.function(callee, SurfaceDeclKind::Helper);
     }
 
     // Statements.
@@ -850,16 +822,14 @@ public:
     ///        entry and a getter's answer is converted at the return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed a            = accessed(fn);
-        const Storage  storage      = storageOf(*a.member);
-        std::string    member       = a.member->tsName;
-        member[0]                   = static_cast<char>(std::toupper(static_cast<unsigned char>(member[0])));
-        const std::string name      = std::string(getter ? "get" : "set") + a.plan->typeName + member;
-        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
-        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const std::string index     = indexed ? ", elementIndex: number" : "";
-        const bool        rebind    = (storage == Storage::Number) || (storage == Storage::Boolean);
-        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        const Accessed     a         = accessed(fn);
+        const Storage      storage   = storageOf(*a.member);
+        const std::string& name      = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
+        const bool         composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
+        const bool         indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string  index     = indexed ? ", elementIndex: number" : "";
+        const bool         rebind    = (storage == Storage::Number) || (storage == Storage::Boolean);
+        accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
         if (composite)
         {
@@ -1252,12 +1222,12 @@ public:
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
         return file_.runtime() + ".toBigIntValue(" + names(op.getObject()) + "." +
-               unionTagMemberName(Language::TypeScript).str() + ")";
+               memberOf(op.getObject(), kPlanUnionTagMember).tsName + ")";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
-        const std::string tag = unionTagMemberName(Language::TypeScript).str();
+        const std::string tag = memberOf(op.getObject(), kPlanUnionTagMember).tsName;
         w.line("(" + names(op.getObject()) + " as { " + tag + ": number })." + tag + " = " +
                asNumber(op.getValue(), names) + ";");
     }
@@ -1470,15 +1440,12 @@ private:
     /// @brief The body function of the nested type a call names.
     std::string nestedFunction(mlir::dsdl::CallSerdesSizedOp op) const
     {
-        auto       body   = symbols_.lookup<mlir::func::FuncOp>(op.getCallee());
-        const auto owner  = body ? body->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym") : mlir::StringAttr{};
-        auto       schema = owner ? symbols_.lookup<mlir::dsdl::SchemaOp>(owner.getValue()) : mlir::dsdl::SchemaOp{};
-        if (!schema)
+        const std::optional<PlanSymbol> callee = parsePlanSymbol(op.getCallee());
+        if (!callee)
         {
-            llvm::report_fatal_error("TypeScript spelling: a nested call to a body of no schema in the module");
+            llvm::report_fatal_error("TypeScript spelling: a nested call to a function that is no body");
         }
-        const SemanticTypeRef nested = typeRefOf(schema);
-        return op.getDirection() == "serialize" ? file_.serializeInto(nested) : file_.deserializeFrom(nested);
+        return file_.function(renderSchemaSymbol(callee->schema), op.getCallee());
     }
 
     /// @brief The member as the object declares it; an option through the object cast to its shape.
@@ -1762,15 +1729,8 @@ private:
         return "_" + std::string(stem) + std::to_string(fresh_++) + "_";
     }
 
-    /// @brief The scope the module's helper names are declared into, which keeps two that project
-    ///        onto one name apart.
-    NamingScope helperScope_{Language::TypeScript};
-
-    /// @brief Each helper of this schema, by lowered symbol, under the name the module declares it as.
-    llvm::StringMap<std::string> helperNames_;
-
-    mlir::SymbolTable     symbols_;
     const TsFileNames&    file_;
+    const TsSurface&      names_;
     llvm::StringMap<Plan> plans_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
@@ -1820,6 +1780,12 @@ private:
     mutable unsigned    fresh_{0};
 };
 
+/// @brief The symbol of @p function.
+llvm::StringRef symbolOf(mlir::func::FuncOp function)
+{
+    return function.getSymName();
+}
+
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
@@ -1833,25 +1799,33 @@ struct SectionBodies final
 /// @brief The entry points a consumer calls, which wrap the translated bodies: a value serialises
 /// into a buffer of the type's largest size, and a deserialisation fills an empty object.
 void emitEntryPoints(SourceWriter&          w,
-                     const std::string&     typeName,
+                     const TsSection&       names,
                      const SemanticSection& section,
-                     const TsFileNames&     file)
+                     const TsFileNames&     file,
+                     const SectionBodies&   bodies)
 {
-    const std::string raise       = "throw new Error(" + file.runtime() + ".errorMessage(result));";
-    const auto        bufferBytes = (section.serializationBufferSizeBits + 7) / 8;
-    w.open("export function " + tsRuntimeSerializeFn(typeName) + "(value: " + typeName + "): Uint8Array {");
+    const TsSurface&   surface     = names.names();
+    const std::string& typeName    = names.typeName();
+    const std::string  raise       = "throw new Error(" + file.runtime() + ".errorMessage(result));";
+    const auto         bufferBytes = (section.serializationBufferSizeBits + 7) / 8;
+    w.open("export function " +
+           surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Wrapper, GeneratedFact::WireImage) +
+           "(value: " + typeName + "): Uint8Array {");
     w.line("const buffer = new Uint8Array(" + std::to_string(bufferBytes) + ");");
-    w.line("const result = " + TsSpelling::serializeInto(typeName) + "(value, buffer);");
+    w.line("const result = " + surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry) +
+           "(value, buffer);");
     w.open("if (result < 0) {");
     w.line(raise);
     w.close("}");
     w.line("return buffer.subarray(0, result);");
     w.close("}");
     w.blank();
-    w.open("export function " + tsRuntimeDeserializeFn(typeName) + "(bytes: Uint8Array): { value: " + typeName +
-           "; consumed: number } {");
-    w.line("const value = " + tsMakeFn(typeName) + "();");
-    w.line("const result = " + TsSpelling::deserializeFrom(typeName) + "(value, bytes);");
+    w.open("export function " +
+           surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Wrapper, GeneratedFact::FromWireImage) +
+           "(bytes: Uint8Array): { value: " + typeName + "; consumed: number } {");
+    w.line("const value = " + surface.function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry) + "();");
+    w.line("const result = " + surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry) +
+           "(value, bytes);");
     w.open("if (result < 0) {");
     w.line(raise);
     w.close("}");
@@ -1921,13 +1895,14 @@ std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& e
 /// A union is one arm, so the literal is the arm the body's tag selects at the default the body
 /// gives it; the other arms have no place in the value.
 void emitMakeFunction(SourceWriter&           w,
-                      const std::string&      typeName,
+                      const TsSection&        names,
+                      const std::string&      make,
                       const SemanticSection&  section,
                       const InitializerShape& init,
                       const TsFileNames&      file)
 {
-    const NamingScope fieldIdents = makeTsFieldIdents(section);
-    const auto        entryOf     = [&](const SemanticField& field) -> const MemberDefault& {
+    const std::string& typeName = names.typeName();
+    const auto         entryOf  = [&](const SemanticField& field) -> const MemberDefault& {
         for (const auto& entry : init.members)
         {
             if (entry.member == field.name)
@@ -1938,7 +1913,7 @@ void emitMakeFunction(SourceWriter&           w,
         llvm::report_fatal_error(llvm::Twine("TypeScript: the initialise body of ") + typeName + " does not set '" +
                                  field.name + "'");
     };
-    w.open("export function " + tsMakeFn(typeName) + "(): " + typeName + " {");
+    w.open("export function " + make + "(): " + typeName + " {");
     if (section.isUnion)
     {
         std::string arm;
@@ -1946,12 +1921,11 @@ void emitMakeFunction(SourceWriter&           w,
         {
             if (!field.isPadding && std::cmp_equal(field.unionOptionIndex, init.unionTag))
             {
-                arm = ", " + fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " +
-                      tsDefaultFromBody(field, entryOf(field), file);
+                arm = ", " + names.field(field.name) + ": " + tsDefaultFromBody(field, entryOf(field), file);
             }
         }
-        w.line("return { " + unionTagMemberName(Language::TypeScript).str() + ": " + std::to_string(init.unionTag) +
-               arm + " };");
+        w.line("return { " + names.dataMember(GeneratedFact::UnionTag) + ": " + std::to_string(init.unionTag) + arm +
+               " };");
     }
     else
     {
@@ -1962,8 +1936,7 @@ void emitMakeFunction(SourceWriter&           w,
             {
                 continue;
             }
-            w.line(fieldIdents.get(IdentifierRole::FieldName, field.name) + ": " +
-                   tsDefaultFromBody(field, entryOf(field), file) + ",");
+            w.line(names.field(field.name) + ": " + tsDefaultFromBody(field, entryOf(field), file) + ",");
         }
         w.close("};");
     }
@@ -1972,7 +1945,7 @@ void emitMakeFunction(SourceWriter&           w,
 
 /// @brief One section: its type, its constants, its three bodies and the entry points that wrap them.
 llvm::Error emitSection(SourceWriter&             w,
-                        const std::string&        typeName,
+                        const TsSection&          names,
                         const SemanticSection&    section,
                         const SectionMetadata&    metadata,
                         const AttachedDoc&        typeDoc,
@@ -1997,7 +1970,7 @@ llvm::Error emitSection(SourceWriter&             w,
             return init.takeError();
         }
         emitSectionType(w,
-                        typeName,
+                        names,
                         section,
                         typeDoc,
                         file,
@@ -2005,11 +1978,16 @@ llvm::Error emitSection(SourceWriter&             w,
                         def.info.majorVersion,
                         def.info.minorVersion);
         w.blank();
-        emitMakeFunction(w, typeName, section, *init, file);
+        emitMakeFunction(w,
+                         names,
+                         names.names().function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry),
+                         section,
+                         *init,
+                         file);
         w.blank();
     }
-    emitUnionOptionTags(w, typeName, section, metadata);
-    emitSectionConstants(w, typeName, section);
+    emitUnionOptionTags(w, names, metadata);
+    emitSectionConstants(w, names, section);
     w.blank();
     if (!file.context().accessorsOnly())
     {
@@ -2035,7 +2013,7 @@ llvm::Error emitSection(SourceWriter&             w,
     if (!file.context().accessorsOnly())
     {
         w.blank();
-        emitEntryPoints(w, typeName, section, file);
+        emitEntryPoints(w, names, section, file, bodies);
     }
     return llvm::Error::success();
 }
@@ -2053,57 +2031,13 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        def.info.fullName.c_str());
     }
 
-    const auto ownerPath = EmitterContext::relativeFilePath(def.info);
-
-    // Each definition the file may import claims its local name before anything is rendered, and the
-    // table installed on the context is what keeps the imports, the type annotations and the
-    // serialise and deserialise calls in agreement: they all resolve through ctx.typeName(). An
-    // import of a type brings its factory and its two body functions beside it, so a clash is
-    // judged on all four, against one another and against what the file declares: each section
-    // type with the functions named after it, and a service's alias.
-    const auto baseType = ctx.typeName(def.info);
-    const auto reqType  = renderSectionTypeName(Language::TypeScript, baseType, "request");
-    const auto respType = renderSectionTypeName(Language::TypeScript, baseType, "response");
-    {
-        ImportNameScope importNames(Language::TypeScript, [](const std::string& type) {
-            return std::vector<std::string>{type, tsMakeFn(type), tsSerializeIntoFn(type), tsDeserializeFromFn(type)};
-        });
-        for (const std::string& type :
-             def.isService ? std::vector<std::string>{reqType, respType} : std::vector<std::string>{baseType})
-        {
-            for (const std::string& name : {type,
-                                            tsMakeFn(type),
-                                            tsSerializeIntoFn(type),
-                                            tsDeserializeFromFn(type),
-                                            tsRuntimeSerializeFn(type),
-                                            tsRuntimeDeserializeFn(type)})
-            {
-                importNames.reserve(name);
-            }
-        }
-        importNames.reserve(baseType);
-
-        std::map<std::string, std::string> aliases;
-        for (const SemanticTypeRef& ref : collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true))
-        {
-            if (const auto* referenced = ctx.find(ref))
-            {
-                const std::string exported = ctx.typeName(referenced->info);
-                const std::string local    = importNames.claim(definitionRef(ref), exported, /*deprecated=*/false);
-                if (local != exported)
-                {
-                    aliases.emplace(EmitterContext::importAliasKey(referenced->info), local);
-                }
-            }
-        }
-        ctx.setImportAliases(std::move(aliases));
-    }
-
     // The declarations and bodies first, naming what they take from other modules as they write it;
     // the imports are written after, from what was named.
+    const TsSurface&                     names = ctx.names();
+    const std::string                    key   = keyOf(def.info);
     ImportSet                            imports;
-    const TsFileNames                    file(ctx, imports, ownerPath);
-    TsSpelling                           spelling(module, schema, file);
+    const TsFileNames                    file(ctx, imports, key);
+    const TsSpelling                     spelling(schema, names, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2143,12 +2077,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
     }
 
-    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
-    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
-                         reqType);
-    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "response"),
-                         respType);
-
     std::ostringstream head;
     {
         SourceWriter hw = makeTsWriter(head);
@@ -2160,32 +2088,35 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     SourceWriter       w        = makeTsWriter(out);
     const auto         assemble = [&]() { return head.str() + renderTsImports(imports) + out.str(); };
 
-    w.line("export const LLVMDSDL_GENERATOR_VERSION = \"" + std::string(llvmdsdl::kVersionString) + "\";");
-    w.line("export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
-    w.line("export const DSDL_IS_DEPRECATED = " + std::string(def.request.deprecated ? "true" : "false") + ";");
-    w.line("export const DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion) + ";");
-    w.line("export const DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion) + ";");
-    w.line("export const DSDL_HAS_FIXED_PORT_ID = " + std::string(def.info.fixedPortId ? "true" : "false") + ";");
+    const auto constant = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
+        return "export const " + names.declared(key, SurfaceDeclKind::Constant, section, {}, fact) + " = ";
+    };
+    w.line(constant(GeneratedFact::GeneratorVersion) + "\"" + std::string(llvmdsdl::kVersionString) + "\";");
+    w.line(constant(GeneratedFact::FullName) + "\"" + def.info.fullName + "\";");
+    w.line(constant(GeneratedFact::IsDeprecated) + std::string(def.request.deprecated ? "true" : "false") + ";");
+    w.line(constant(GeneratedFact::VersionMajor) + std::to_string(def.info.majorVersion) + ";");
+    w.line(constant(GeneratedFact::VersionMinor) + std::to_string(def.info.minorVersion) + ";");
+    w.line(constant(GeneratedFact::HasFixedPortId) + std::string(def.info.fixedPortId ? "true" : "false") + ";");
     if (def.info.fixedPortId)
     {
-        w.line("export const DSDL_FIXED_PORT_ID = " + std::to_string(*def.info.fixedPortId) + ";");
+        w.line(constant(GeneratedFact::FixedPortId) + std::to_string(*def.info.fixedPortId) + ";");
     }
     // Aliasability is a property of a payload, so a service answers for each of its two and a
     // message answers once, under the name of the thing the verdict is about.
-    const auto emitLayoutVerdicts = [&w, schema](const std::string& prefix, const llvm::StringRef section) {
+    const auto emitLayoutVerdicts = [&w, &constant, schema](const llvm::StringRef section) {
         const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
         const AliasVerdict                    flat = wireFlatVerdict(plan);
-        w.line("export const " + prefix + "WIRE_FLAT = " + std::string(flat.holds ? "true" : "false") + ";");
-        w.line("export const " + prefix + "WIRE_FLAT_REASON = \"" + flat.reason + "\";");
+        w.line(constant(GeneratedFact::WireFlat, section) + std::string(flat.holds ? "true" : "false") + ";");
+        w.line(constant(GeneratedFact::WireFlatReason, section) + "\"" + flat.reason + "\";");
     };
     if (def.isService)
     {
-        emitLayoutVerdicts("DSDL_REQUEST_", "request");
-        emitLayoutVerdicts("DSDL_RESPONSE_", "response");
+        emitLayoutVerdicts("request");
+        emitLayoutVerdicts("response");
     }
     else
     {
-        emitLayoutVerdicts("DSDL_", "");
+        emitLayoutVerdicts("");
     }
     w.blank();
 
@@ -2201,7 +2132,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     if (!def.isService)
     {
         if (auto err = emitSection(w,
-                                   baseType,
+                                   TsSection(names, key, ""),
                                    def.request,
                                    sectionMetadata(def.info, def.request, schema, ""),
                                    def.doc,
@@ -2216,8 +2147,9 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         return assemble();
     }
 
+    const TsSection request(names, key, "request");
     if (auto err = emitSection(w,
-                               reqType,
+                               request,
                                def.request,
                                sectionMetadata(def.info, def.request, schema, "request"),
                                def.doc,
@@ -2234,7 +2166,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     if (def.response)
     {
         if (auto err = emitSection(w,
-                                   respType,
+                                   TsSection(names, key, "response"),
                                    *def.response,
                                    sectionMetadata(def.info, *def.response, schema, "response"),
                                    def.doc,
@@ -2250,9 +2182,11 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     // The alias names the request's object type, which an accessors-only run does not emit.
-    if (!ctx.accessorsOnly())
+    const SurfaceDecl* const alias =
+        names.tree().find(names.file(key), SurfaceDeclKind::Alias, SurfaceEntity{key, "", "", ""});
+    if (!ctx.accessorsOnly() && (alias != nullptr))
     {
-        w.line("export type " + baseType + " = " + reqType + ";");
+        w.line("export type " + alias->name + " = " + request.typeName() + ";");
     }
     return assemble();
 }
@@ -2671,7 +2605,13 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         }
     }
 
-    const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
+    auto tree = SurfaceTree::read(module, languageTraits(Language::TypeScript));
+    if (!tree)
+    {
+        return tree.takeError();
+    }
+    const TsSurface      names(*tree);
+    const EmitterContext ctx(semantic, names, options.accessorsOnly);
 
     std::vector<const SemanticDefinition*> ordered;
     ordered.reserve(semantic.definitions.size());
@@ -2695,14 +2635,14 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
         return lhs->info.minorVersion < rhs->info.minorVersion;
     });
 
-    std::vector<std::filesystem::path> generatedRelativePaths;
+    std::vector<std::string> generatedRelativePaths;
     generatedRelativePaths.reserve(ordered.size());
     PlanBodyLookups lookups(module);
 
     for (const auto* def : ordered)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const auto                     relPath = EmitterContext::relativeFilePath(def->info);
+        const std::string&             relPath = names.path(keyOf(def->info));
         generatedRelativePaths.push_back(relPath);
 
         const auto fullPath = outRoot / relPath;
@@ -2724,7 +2664,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     std::map<std::string, unsigned> aliasUseCount;
     for (const auto& relPath : generatedRelativePaths)
     {
-        std::string modulePath = relPath.generic_string();
+        std::string modulePath = relPath;
         if (modulePath.size() >= 3 && modulePath.ends_with(".ts"))
         {
             modulePath.resize(modulePath.size() - 3);

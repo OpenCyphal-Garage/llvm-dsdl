@@ -904,8 +904,8 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
     static constexpr std::array<GeneratedName, 2> kMembers = {GeneratedName{GeneratedFact::UnionTag, "_tag_"},
                                                               GeneratedName{GeneratedFact::Placeholder, "_dummy_"}};
     // Go's struct with no fields holds the blank identifier, which declares no name.
-    static constexpr std::array<GeneratedName, 1> kGo     = {GeneratedName{GeneratedFact::UnionTag, "Tag"}};
-    static constexpr std::array<GeneratedName, 1> kPython = {GeneratedName{GeneratedFact::UnionTag, "_tag"}};
+    static constexpr std::array<GeneratedName, 1> kGo  = {GeneratedName{GeneratedFact::UnionTag, "Tag"}};
+    static constexpr std::array<GeneratedName, 1> kTag = {GeneratedName{GeneratedFact::UnionTag, "_tag"}};
     switch (language)
     {
     case Language::Rust:
@@ -913,10 +913,10 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
         return kMembers;
     case Language::Go:
         return kGo;
-    case Language::Python:
-        return kPython;
-    case Language::Cpp:
     case Language::TypeScript:
+    case Language::Python:
+        return kTag;
+    case Language::Cpp:
         break;
     }
     return {};
@@ -958,17 +958,25 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 {
     // Rust initialises through `Default`, a trait's method, which the type's own items do not hold.
     static constexpr std::array<EntryPointName, 2> kRust =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .beside = false}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false}};
     // Go's zero value is its type's; a type whose initialiser stores anything else has a constructor.
     static constexpr std::array<EntryPointName, 3> kGo =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .beside = false},
-         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .beside = true}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .suffix = "", .beside = true}};
     // Python's bodies are the class's own methods, which the ones a consumer calls wrap.
     static constexpr std::array<EntryPointName, 2> kPython =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "_deserialize_from", .beside = false}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize,
+                        .name     = "_deserialize_from",
+                        .suffix   = "",
+                        .beside   = false}};
+    // TypeScript's bodies, and the factory its initialiser is read into, are functions of the module.
+    static constexpr std::array<EntryPointName, 3> kTypeScript =
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "Into", .beside = true},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "From", .beside = true},
+         EntryPointName{.function = PlanFunction::Initialize, .name = "make", .suffix = "", .beside = true}};
     switch (language)
     {
     case Language::Rust:
@@ -977,9 +985,10 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
         return kGo;
     case Language::Python:
         return kPython;
+    case Language::TypeScript:
+        return kTypeScript;
     case Language::C:
     case Language::Cpp:
-    case Language::TypeScript:
         break;
     }
     return {};
@@ -987,19 +996,43 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 
 llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
 {
-    static constexpr std::array<WrapperName, 2> kRust =
-        {WrapperName{.fact = GeneratedFact::WireImage, .wraps = PlanFunction::Serialize, .name = "to_bytes"},
-         WrapperName{.fact = GeneratedFact::FromWireImage, .wraps = PlanFunction::Deserialize, .name = "from_bytes"}};
+    static constexpr std::array<WrapperName, 2> kRust = {WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                     .wraps  = PlanFunction::Serialize,
+                                                                     .name   = "to_bytes",
+                                                                     .beside = false},
+                                                         WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                     .wraps  = PlanFunction::Deserialize,
+                                                                     .name   = "from_bytes",
+                                                                     .beside = false}};
     // The encoding package's interfaces: BinaryAppender, BinaryMarshaler and BinaryUnmarshaler.
-    static constexpr std::array<WrapperName, 3> kGo =
-        {WrapperName{.fact = GeneratedFact::AppendWireImage, .wraps = PlanFunction::Serialize, .name = "AppendBinary"},
-         WrapperName{.fact = GeneratedFact::WireImage, .wraps = PlanFunction::Serialize, .name = "MarshalBinary"},
-         WrapperName{.fact  = GeneratedFact::FromWireImage,
-                     .wraps = PlanFunction::Deserialize,
-                     .name  = "UnmarshalBinary"}};
-    static constexpr std::array<WrapperName, 2> kPython =
-        {WrapperName{.fact = GeneratedFact::WireImage, .wraps = PlanFunction::Serialize, .name = "serialize"},
-         WrapperName{.fact = GeneratedFact::FromWireImage, .wraps = PlanFunction::Deserialize, .name = "deserialize"}};
+    static constexpr std::array<WrapperName, 3> kGo         = {WrapperName{.fact   = GeneratedFact::AppendWireImage,
+                                                                           .wraps  = PlanFunction::Serialize,
+                                                                           .name   = "AppendBinary",
+                                                                           .beside = false},
+                                                               WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                           .wraps  = PlanFunction::Serialize,
+                                                                           .name   = "MarshalBinary",
+                                                                           .beside = false},
+                                                               WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                           .wraps  = PlanFunction::Deserialize,
+                                                                           .name   = "UnmarshalBinary",
+                                                                           .beside = false}};
+    static constexpr std::array<WrapperName, 2> kPython     = {WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                           .wraps  = PlanFunction::Serialize,
+                                                                           .name   = "serialize",
+                                                                           .beside = false},
+                                                               WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                           .wraps  = PlanFunction::Deserialize,
+                                                                           .name   = "deserialize",
+                                                                           .beside = false}};
+    static constexpr std::array<WrapperName, 2> kTypeScript = {WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                           .wraps  = PlanFunction::Serialize,
+                                                                           .name   = "serialize",
+                                                                           .beside = true},
+                                                               WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                           .wraps  = PlanFunction::Deserialize,
+                                                                           .name   = "deserialize",
+                                                                           .beside = true}};
     switch (language)
     {
     case Language::Rust:
@@ -1008,9 +1041,10 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
         return kGo;
     case Language::Python:
         return kPython;
+    case Language::TypeScript:
+        return kTypeScript;
     case Language::C:
     case Language::Cpp:
-    case Language::TypeScript:
         break;
     }
     return {};

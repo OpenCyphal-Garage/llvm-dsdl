@@ -349,7 +349,11 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = false,
                 .deprecatedTypeDeclaredApart    = false,
-                .freeFunctions                  = {},
+                .freeFunctions                  = {.entryPointJoin       = "",
+                                                   .initializer          = false,
+                                                   .accessors            = AccessorNaming::VerbFirst,
+                                                   .unionOptionFunctions = false,
+                                                   .loweredBodySuffix    = ""},
             },
     },
     {
