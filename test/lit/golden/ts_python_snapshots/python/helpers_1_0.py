@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
+from typing import ClassVar
 
-from fixtures_snapshot_py._runtime_loader import error_message, runtime as dsdl_runtime
+from fixtures_snapshot_py._runtime_loader import (
+    CompositeObject,
+    error_message,
+    runtime as dsdl_runtime,
+)
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.Helpers"
@@ -69,25 +74,11 @@ def _array_length_prefix_2_deser(p0: int) -> int:
     return v0
 
 @dataclass(slots=True)
-class Helpers:
+class Helpers(CompositeObject):
+    SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 10
     a: int = 0
     b: float = 0.0
     c: list[int] = field(default_factory=list)
-
-    def serialize(self) -> bytes:
-        buffer = bytearray(10)
-        result = self._serialize_into(memoryview(buffer))
-        if result < 0:
-            raise ValueError(error_message(result))
-        return bytes(buffer[:result])
-
-    @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "Helpers":
-        value = cls()
-        result = value._deserialize_from(memoryview(data).cast("B"))
-        if result < 0:
-            raise ValueError(error_message(result))
-        return value
 
     def _serialize_into(self, buffer: memoryview) -> int:
         size = len(buffer)
@@ -158,9 +149,9 @@ class Helpers:
             v13 = offset_3 // 8
             err = err_14
             v0 = v13
-        if err == 0:
-            return v0
-        return err
+        if err != 0:
+            raise ValueError(error_message(err))
+        return v0
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         size = len(buffer)
@@ -200,6 +191,6 @@ class Helpers:
             v13 = v12 // 8
             err = err_2
             v0 = v13
-        if err == 0:
-            return v0
-        return err
+        if err != 0:
+            raise ValueError(error_message(err))
+        return v0

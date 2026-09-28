@@ -624,8 +624,9 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::Python:
-        // A dataclass attribute shadows the method of the same name, so `self.serialize()` would call
-        // an int. Constants are safe: the generated ones take a different prefix.
+        // A dataclass attribute shadows the method of the same name, the ones a class inherits from the
+        // runtime's `CompositeObject` among them, so `self.serialize()` would call an int. Constants are
+        // safe: the generated ones take a different prefix.
         return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kPyMethods)
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::TypeScript:
@@ -884,6 +885,9 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT"}};
+    // Python's runtime base class sizes the buffer `serialize` writes into from the class.
+    static constexpr std::array<GeneratedName, 1> kPython = {
+        GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES", true}};
     switch (language)
     {
     case Language::Rust:
@@ -893,8 +897,9 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
     case Language::Go:
     case Language::Cpp:
         return kFacts;
-    case Language::TypeScript:
     case Language::Python:
+        return kPython;
+    case Language::TypeScript:
         break;
     }
     return {};
@@ -1015,26 +1020,18 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
                                                                      .name   = "from_bytes",
                                                                      .beside = false}};
     // The encoding package's interfaces: BinaryAppender, BinaryMarshaler and BinaryUnmarshaler.
-    static constexpr std::array<WrapperName, 3> kGo     = {WrapperName{.fact   = GeneratedFact::AppendWireImage,
-                                                                       .wraps  = PlanFunction::Serialize,
-                                                                       .name   = "AppendBinary",
-                                                                       .beside = false},
-                                                           WrapperName{.fact   = GeneratedFact::WireImage,
-                                                                       .wraps  = PlanFunction::Serialize,
-                                                                       .name   = "MarshalBinary",
-                                                                       .beside = false},
-                                                           WrapperName{.fact   = GeneratedFact::FromWireImage,
-                                                                       .wraps  = PlanFunction::Deserialize,
-                                                                       .name   = "UnmarshalBinary",
-                                                                       .beside = false}};
-    static constexpr std::array<WrapperName, 2> kPython = {WrapperName{.fact   = GeneratedFact::WireImage,
-                                                                       .wraps  = PlanFunction::Serialize,
-                                                                       .name   = "serialize",
-                                                                       .beside = false},
-                                                           WrapperName{.fact   = GeneratedFact::FromWireImage,
-                                                                       .wraps  = PlanFunction::Deserialize,
-                                                                       .name   = "deserialize",
-                                                                       .beside = false}};
+    static constexpr std::array<WrapperName, 3> kGo = {WrapperName{.fact   = GeneratedFact::AppendWireImage,
+                                                                   .wraps  = PlanFunction::Serialize,
+                                                                   .name   = "AppendBinary",
+                                                                   .beside = false},
+                                                       WrapperName{.fact   = GeneratedFact::WireImage,
+                                                                   .wraps  = PlanFunction::Serialize,
+                                                                   .name   = "MarshalBinary",
+                                                                   .beside = false},
+                                                       WrapperName{.fact   = GeneratedFact::FromWireImage,
+                                                                   .wraps  = PlanFunction::Deserialize,
+                                                                   .name   = "UnmarshalBinary",
+                                                                   .beside = false}};
     // C++'s methods call the free functions the bodies are.
     static constexpr std::array<WrapperName, 2> kCpp        = {WrapperName{.fact   = GeneratedFact::Serialize,
                                                                            .wraps  = PlanFunction::Serialize,
@@ -1058,12 +1055,11 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
         return kRust;
     case Language::Go:
         return kGo;
-    case Language::Python:
-        return kPython;
     case Language::TypeScript:
         return kTypeScript;
     case Language::Cpp:
         return kCpp;
+    case Language::Python:
     case Language::C:
         break;
     }

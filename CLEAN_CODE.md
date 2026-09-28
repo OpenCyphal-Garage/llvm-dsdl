@@ -676,9 +676,9 @@ inside a PascalCase name is what `ST1003` and `N801` report and what `naming-con
 |----------|-------|-----------------:|----:|
 | Rust | clippy | 867 | 641 |
 | Go | staticcheck | 3,241 | 318 |
-| Python | ruff | 4,188 | 1,355 |
+| Python | ruff | 4,188 | 1,160 |
 | TypeScript | eslint | 1,810 | 75 |
-| | | **10,106** | **2,389** |
+| | | **10,106** | **2,194** |
 
 The C and C++ judge was installed after the sweep, and read 4,808 findings over the generated C and
 5,437 over the C++ at C++14. The C comes to 4,806 with a getter reading a null buffer as an empty
@@ -697,13 +697,12 @@ What is left is per-language.
 | 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
 | 1,808 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan__file__List_0_2__Request__serialize_ir_`), 658 helpers and 334 `LLVMDSDL_SELECTED_*_` guards |
 | 1,163 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, and the section types and facts that nesting places inside the type |
-| 996 | Python | `E501` | long lines |
+| 982 | Python | `E501` | long lines |
 | 732 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
-| 181 | Python | `UP037` | quoted annotations |
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
 | 168 | C++ | `modernize-concat-nested-namespaces` | `namespace uavcan { namespace node {`, where C++17 writes `namespace uavcan::node {` |
@@ -1032,6 +1031,13 @@ parts of its header and of its source file, and of a section; each generated con
 signature is spelt once, for its prototype, its definition and the forward that publishes it. C's
 declaration count falls from 152 to 52.
 
+Python's output change makes its bodies raise. A body and a setter raise `ValueError` with the text
+of an error code, and each class derives from the runtime's `CompositeObject`, whose `serialize` and
+`deserialize` compose the bodies once for every type; the class states the size `serialize` writes
+into as `SERIALIZATION_BUFFER_SIZE_BYTES`, the first of the type's facts on the class. A `from` import
+too long for a line is wrapped as `ruff format` writes it. Ruff's findings fall from 1,355 to 1,160:
+the quoted annotations were the wrappers' return types.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.
@@ -1239,6 +1245,11 @@ the parameters and writes the body's opening lines, such as C++'s memory-resourc
 smallest, so its renderer change is mostly the renderer itself, and C's shape tests the interface
 hardest short of nesting: two files per definition, prototypes, guards, macros, and a tag beside its
 typedef. Python is the simplest class-member shape, and C++ comes last with its nesting.
+
+**Python's classes derive from `CompositeObject`.** The name is the one PyCyphal gives the base of
+every class generated from DSDL. The size `serialize` writes into is a public class attribute,
+`SERIALIZATION_BUFFER_SIZE_BYTES`, where Python's target puts every fact of the type, rather than a
+private one held apart until Python's phase names them.
 
 **The count measures exactly what the renderer replaces.** It scans every file of a language's
 declaration half and counts each line built as a string, since C's header text in

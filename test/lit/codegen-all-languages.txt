@@ -206,8 +206,8 @@
 # PY_HELPERS: def _capacity_check(
 # PY_HELPERS: def _scalar_unsigned_2_ser(
 # PY_HELPERS: @dataclass(slots=True)
-# PY_HELPERS: def serialize(self) -> bytes:
-# PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)
+# PY_HELPERS: class Helpers(CompositeObject):
+# PY_HELPERS-NEXT: SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 10
 # PY_HELPERS: _capacity_check(
 # PY_TYPE: DSDL_WIRE_FLAT = True
 # PY_TYPE-NOT: HOST_IMAGE

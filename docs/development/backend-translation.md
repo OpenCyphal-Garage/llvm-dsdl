@@ -278,10 +278,11 @@ smoke lanes, the type-check lanes and the generation lane accept it.
 [`lib/CodeGen/emitter/Python.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Python.cpp),
 spells every integer of the plan as a Python `int`, which holds the value it stands for, so a
 constant is that value and the bitwise operators read a negative one as its two's complement. A
-body is a method of the dataclass that answers the size it used or the error code, and the
-`serialize` and `deserialize` methods wrap it: the one with a buffer of the type's largest size,
-the other with a default-constructed object, and each raises `ValueError` with the code's text. A
-buffer is a `memoryview`, and a pointer into it is a slice of the view, which the three runtimes
+body is a method of the dataclass that answers the size it used and raises `ValueError` with the
+text of an error code, and a setter raises the same way. The dataclass derives from the runtime's
+`CompositeObject`, whose `serialize` and `deserialize` compose the two bodies once for every type:
+the one with a buffer of the size the class's `SERIALIZATION_BUFFER_SIZE_BYTES` states, the other
+with a default-constructed object. A buffer is a `memoryview`, and a pointer into it is a slice of the view, which the three runtimes
 read and write in place. A fixed-length array holds its elements from construction, so a
 deserialised object has the storage the plan addresses; a union's option is created when the
 plan sets the tag. Python has no empty block, so a block that spelled no statement closes with

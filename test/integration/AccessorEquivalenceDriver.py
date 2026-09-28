@@ -32,6 +32,15 @@ def load(module, name):
     return getattr(importlib.import_module(f"{PACKAGE}.{module}"), name)
 
 
+def refused(call):
+    """Whether a setter raises rather than write."""
+    try:
+        call()
+    except ValueError:
+        return True
+    return False
+
+
 def check_field(cls, size, field, exact):
     get = getattr(cls, f"get_{field}")
     set_ = getattr(cls, f"set_{field}")
@@ -41,11 +50,11 @@ def check_field(cls, size, field, exact):
     ok = ok and bits(get(half)) == bits(getattr(cls.deserialize(bytes(half)), field))
     out = bytearray(size)
     v = get(memoryview(wire))
-    ok = ok and set_(memoryview(out), v) == 0
+    set_(memoryview(out), v)
     back = cls.deserialize(bytes(out))
     ok = ok and bits(get(memoryview(out))) == bits(getattr(back, field))
     ok = ok and (not exact or bits(v) == bits(getattr(back, field)))
-    ok = ok and set_(memoryview(out)[:0], v) != 0
+    ok = ok and refused(lambda: set_(memoryview(out)[:0], v))
     return ok
 
 
@@ -61,9 +70,9 @@ def check_element(cls, size, field, capacity):
         ok = ok and get(memoryview(wire), capacity) == 0
         out = bytearray(size)
         v = get(memoryview(wire), i)
-        ok = ok and set_(memoryview(out), i, v) == 0
+        set_(memoryview(out), i, v)
         ok = ok and bits(get(memoryview(out), i)) == bits(getattr(cls.deserialize(bytes(out)), field)[i])
-        ok = ok and set_(memoryview(out), capacity, v) != 0
+        ok = ok and refused(lambda: set_(memoryview(out), capacity, v))
     return ok
 
 

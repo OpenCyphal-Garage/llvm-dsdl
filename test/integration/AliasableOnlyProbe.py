@@ -23,15 +23,15 @@ def main() -> int:
     buffer = memoryview(bytearray(struct.pack("<6f", 1.5, -2.25, 3.0, 4.0, 5.5, 6.75)))
     orientation = pose.get_orientation(buffer)
     y = vec3.get_y(orientation)
-    set_result = vec3.set_z(buffer[:12], 9.5)
+    vec3.set_z(buffer[:12], 9.5)
     z = vec3.get_z(buffer)
     short_read = vec3.get_z(buffer[:4])
     x = vec3.get_x(pose.get_position(buffer))
 
-    ok = len(orientation) == 12 and y == 5.5 and set_result == 0 and z == 9.5 and short_read == 0 and x == 1.5
+    ok = len(orientation) == 12 and y == 5.5 and z == 9.5 and short_read == 0 and x == 1.5
     print(
         f"aliasable-only Python: {'ok' if ok else 'FAILED'} (orientation {len(orientation)} bytes, y {y}, "
-        f"set {set_result}, z {z}, short {short_read}, x {x})"
+        f"z {z}, short {short_read}, x {x})"
     )
     return 0 if ok else 1
 

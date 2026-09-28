@@ -83,11 +83,11 @@
 # PY:      @staticmethod
 # PY-NEXT: def get_a(buffer: memoryview) -> int:
 # PY:      @staticmethod
-# PY-NEXT: def set_a(buffer: memoryview, value: int) -> int:
+# PY-NEXT: def set_a(buffer: memoryview, value: int) -> None:
 # PY:      @staticmethod
 # PY-NEXT: def get_b(buffer: memoryview) -> int:
 # PY:      @staticmethod
-# PY-NEXT: def set_b(buffer: memoryview, value: int) -> int:
+# PY-NEXT: def set_b(buffer: memoryview, value: int) -> None:
 # PY-NEXT: value = int(value)
 
 # An element of a fixed array takes an index after the buffer.
@@ -102,4 +102,4 @@
 # TS_ELEMENT:   export function getArrHead(buffer: Uint8Array, elementIndex: number): number {
 # TS_ELEMENT:   export function setArrHead(buffer: Uint8Array, elementIndex: number, memberValue: number): number {
 # PY_ELEMENT:   def get_head(buffer: memoryview, index: int) -> int:
-# PY_ELEMENT:   def set_head(buffer: memoryview, index: int, value: int) -> int:
+# PY_ELEMENT:   def set_head(buffer: memoryview, index: int, value: int) -> None:

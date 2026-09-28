@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
-from fixtures_snapshot_py._runtime_loader import error_message, runtime as dsdl_runtime
+from fixtures_snapshot_py._runtime_loader import (
+    CompositeObject,
+    error_message,
+    runtime as dsdl_runtime,
+)
 from fixtures_snapshot_py.fixtures.vendor.delimited_1_0 import Delimited
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
@@ -29,23 +34,9 @@ def _validate_delimiter_header_1(p0: int, p1: int) -> int:
     return v3
 
 @dataclass(slots=True)
-class UsesDelimited:
+class UsesDelimited(CompositeObject):
+    SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 12
     nested: Delimited = field(default_factory=lambda: Delimited())
-
-    def serialize(self) -> bytes:
-        buffer = bytearray(12)
-        result = self._serialize_into(memoryview(buffer))
-        if result < 0:
-            raise ValueError(error_message(result))
-        return bytes(buffer[:result])
-
-    @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UsesDelimited":
-        value = cls()
-        result = value._deserialize_from(memoryview(data).cast("B"))
-        if result < 0:
-            raise ValueError(error_message(result))
-        return value
 
     def _serialize_into(self, buffer: memoryview) -> int:
         size = len(buffer)
@@ -79,9 +70,9 @@ class UsesDelimited:
             else:
                 err_3 = err_2
             err = err_3
-        if err == 0:
-            return 5
-        return err
+        if err != 0:
+            raise ValueError(error_message(err))
+        return 5
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         size = len(buffer)
@@ -119,6 +110,6 @@ class UsesDelimited:
             v15 = v14 // 8
             err = err_3
             v0 = v15
-        if err == 0:
-            return v0
-        return err
+        if err != 0:
+            raise ValueError(error_message(err))
+        return v0

@@ -23,7 +23,7 @@ import os
 import sys
 from typing import Callable
 
-# The code a body answers with for an array length outside the declared capacity.
+# The code a body raises for an array length outside the declared capacity.
 BAD_ARRAY_LENGTH = -10
 
 passed = 0
@@ -52,15 +52,22 @@ def with_prefix(prefix: int, prefix_bytes: int, payload_bytes: int) -> bytearray
     return bytearray(prefix.to_bytes(prefix_bytes, "little")) + bytearray(payload_bytes)
 
 
-def expect_rejected(name: str, prefix: int, decode: Callable[[], int], length_after: Callable[[], int]) -> None:
-    """A decode that has to fail with a bad array length and leave the array empty."""
+def expect_rejected(
+    name: str, prefix: int, decode: Callable[[], int], length_after: Callable[[], int], refusal: str
+) -> None:
+    """A decode that has to raise @p refusal, the bad array length's message, and leave the array
+    empty."""
     try:
         rc = decode()
-    except Exception as error:  # noqa: BLE001 - any exception is the failure being reported.
+    except ValueError as error:
+        if str(error) != refusal:
+            outcome("FAIL", name, prefix, f"raised {error!r}, want {refusal!r}")
+            return
+    except Exception as error:  # noqa: BLE001 - any other exception is the failure being reported.
         outcome("FAIL", name, prefix, f"raised {error!r}")
         return
-    if rc != BAD_ARRAY_LENGTH:
-        outcome("FAIL", name, prefix, f"rc = {rc}, want {BAD_ARRAY_LENGTH}")
+    else:
+        outcome("FAIL", name, prefix, f"rc = {rc}, want {refusal!r} raised")
         return
     if length_after() != 0:
         outcome("FAIL", name, prefix, f"array holds {length_after()} elements after rejection")
@@ -80,6 +87,7 @@ def main(argv: list[str]) -> int:
         print(f"FAIL runtime backend is {loader.BACKEND}, want {mode}")
         return 1
     print(f"BACKEND {loader.BACKEND}")
+    refusal = loader.error_message(BAD_ARRAY_LENGTH)
     prefix32 = importlib.import_module(f"{package}.prefixguard.prefix32_1_0").Prefix32@V1_0@
     prefix64 = importlib.import_module(f"{package}.prefixguard.prefix64_1_0").Prefix64@V1_0@
 
@@ -91,6 +99,7 @@ def main(argv: list[str]) -> int:
             prefix,
             lambda: obj._deserialize_from(memoryview(buffer)),
             lambda: len(obj.payload),
+            refusal,
         )
 
     capacity = 65536
@@ -116,6 +125,7 @@ def main(argv: list[str]) -> int:
             prefix,
             lambda: obj._deserialize_from(memoryview(buffer)),
             lambda: len(obj.flags),
+            refusal,
         )
 
     for prefix in (1 << 32, (1 << 32) + 3, 1 << 33):
@@ -129,6 +139,7 @@ def main(argv: list[str]) -> int:
             prefix,
             lambda: obj._deserialize_from(memoryview(buffer)),
             lambda: len(obj.flags),
+            refusal,
         )
 
     obj = prefix64()

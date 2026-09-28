@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
-from fixtures_snapshot_py._runtime_loader import error_message, runtime as dsdl_runtime
+from fixtures_snapshot_py._runtime_loader import (
+    CompositeObject,
+    error_message,
+    runtime as dsdl_runtime,
+)
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.UnionTag"
@@ -54,25 +59,11 @@ def _union_tag_deser(p0: int) -> int:
     return v0
 
 @dataclass(slots=True)
-class UnionTag:
+class UnionTag(CompositeObject):
+    SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 3
     _tag: int = 0
     first: int | None = 0
     second: int | None = None
-
-    def serialize(self) -> bytes:
-        buffer = bytearray(3)
-        result = self._serialize_into(memoryview(buffer))
-        if result < 0:
-            raise ValueError(error_message(result))
-        return bytes(buffer[:result])
-
-    @classmethod
-    def deserialize(cls, data: bytes | bytearray | memoryview) -> "UnionTag":
-        value = cls()
-        result = value._deserialize_from(memoryview(data).cast("B"))
-        if result < 0:
-            raise ValueError(error_message(result))
-        return value
 
     def _serialize_into(self, buffer: memoryview) -> int:
         size = len(buffer)
@@ -124,9 +115,9 @@ class UnionTag:
             v11 = v9 // 8
             err = err_9
             v0 = v11
-        if err == 0:
-            return v0
-        return err
+        if err != 0:
+            raise ValueError(error_message(err))
+        return v0
 
     def _deserialize_from(self, buffer: memoryview) -> int:
         size = len(buffer)
@@ -165,9 +156,9 @@ class UnionTag:
             v12 = v11 // 8
             err = err_2
             v0 = v12
-        if err == 0:
-            return v0
-        return err
+        if err != 0:
+            raise ValueError(error_message(err))
+        return v0
 
 UNION_TAG_FIRST_OPTION_TAG = 0
 UNION_TAG_SECOND_OPTION_TAG = 1
