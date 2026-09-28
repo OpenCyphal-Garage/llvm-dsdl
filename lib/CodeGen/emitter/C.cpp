@@ -1342,7 +1342,6 @@ public:
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
     {
         w.close("}");
-        w.blank();
     }
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
@@ -2456,6 +2455,11 @@ llvm::Error emit(const SemanticModule& semantic,
             const std::vector<mlir::func::FuncOp> functions = schemaFunctions(perDefModule, schema.getSymName());
             for (const mlir::func::FuncOp fn : functions)
             {
+                // One blank line between definitions, and none after the last.
+                if (fn != functions.front())
+                {
+                    bodies.blank();
+                }
                 if (auto err = translateFunction(fn, spelling, bodies, lookups))
                 {
                     diagnostics.error({"<mlir>", 1, 1}, llvm::toString(std::move(err)));
