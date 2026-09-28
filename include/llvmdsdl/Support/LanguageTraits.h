@@ -371,6 +371,13 @@ struct Composition final
     /// @brief How a DSDL namespace is opened.
     NamespaceForm namespaces{};
 
+    /// @brief What ends the name of the file a definition's declarations are written to.
+    llvm::StringRef fileExtension;
+
+    /// @brief Whether that file's directories are the namespace's components as the language names
+    ///        a namespace, rather than as DSDL writes them.
+    bool directoriesProjected{};
+
     /// @brief How a lowered helper is named.
     HelperNaming helpers{};
 

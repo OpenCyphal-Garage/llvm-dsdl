@@ -15,8 +15,11 @@
 #define LLVMDSDL_TRANSFORMS_PASSES_H
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "llvmdsdl/Support/BodyInterface.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 
 namespace mlir
 {
@@ -166,6 +169,33 @@ std::unique_ptr<mlir::Pass> createMarkDSDLInfallibleBodiesPass();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createMarkDSDLUnreadArgumentsPass();
 
+/// @brief What `project-dsdl-surface` writes a surface for.
+struct SurfaceProjection final
+{
+    /// @brief The `--target-language` spelling of the language.
+    std::string target;
+
+    /// @brief The profiles, a surface each; none writes one surface without a profile.
+    std::vector<std::string> profiles;
+
+    /// @brief The generated package's name; empty where the language has none.
+    std::string packageName;
+
+    /// @brief Whether a type's name carries its version.
+    TypeNameVersioning versioning{TypeNameVersioning::Unversioned};
+};
+
+/// @brief Writes the surface plan of @p projection's target into the module: the scopes its output
+///        opens and every name declared in them, as `allocateSurface` allocates them from the
+///        module's schemas and the lowered functions each owns. Registered with `dsdl-opt` as
+///        `project-dsdl-surface`.
+/// @param[in] projection The target.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createProjectDSDLSurfacePass(const SurfaceProjection& projection);
+
+/// @brief Registers `project-dsdl-surface` with the pass registry.
+void registerProjectDSDLSurfacePass();
+
 /// @brief Adds the target-independent lowering: `lower-dsdl-exec`, `dsdl-verify-alias-layout`
 ///        and `build-dsdl-plan-bodies`, after which every serialisation plan is a serialise and a
 ///        deserialise function of dialect operations. A backend is a translation of that output
@@ -177,10 +207,13 @@ std::unique_ptr<mlir::Pass> createMarkDSDLUnreadArgumentsPass();
 ///            default assumes nothing, and keeps every body as `mlir` prints it.
 /// @param[in] accessorsOnly Whether to drop the bodies once they are built and keep the field
 ///                          accessors alone, which is what `--aliasable-only` emits.
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
-                                bool                 optimizeLoweredSerDes,
-                                const BodyInterface& target        = {},
-                                bool                 accessorsOnly = false);
+/// @param[in] surface The target whose surface `project-dsdl-surface` writes last, once the bodies
+///                    are final; none writes no surface.
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager&     pm,
+                                bool                     optimizeLoweredSerDes,
+                                const BodyInterface&     target        = {},
+                                bool                     accessorsOnly = false,
+                                const SurfaceProjection* surface       = nullptr);
 
 /// @brief Adds the canonicaliser and common-subexpression elimination, nested on every function.
 /// @param[in,out] pm Pass manager receiving the optimisation pipeline.

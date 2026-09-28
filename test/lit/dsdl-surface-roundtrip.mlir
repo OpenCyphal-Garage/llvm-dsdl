@@ -4,7 +4,9 @@
 // A surface tree for each language prints and parses back, in the custom form and in the generic
 // one. Each tree declares one name in two classes its language keeps apart: a C structure's tag
 // and its typedef, a TypeScript interface and a constant, a Rust module and a function, and a Go
-// package's two files importing one package under one name.
+// package's two files importing one package under one name. Two versions of one C definition
+// declare one type name, as the unversioned scheme generates them, and a TypeScript namespace's
+// directory and a definition's module of one name are two paths.
 
 module {
   dsdl.schema @uavcan.file.Path.2.0 attributes {full_name = "uavcan.file.Path", major = 2 : i32, minor = 0 : i32, sealed} {
@@ -19,6 +21,18 @@ module {
       dsdl.align {bits = 8 : i32}
     }
     dsdl.serialization_plan attributes {max_bits = 8 : i64, min_bits = 8 : i64, section = "response"} {
+      dsdl.align {bits = 8 : i32}
+    }
+  }
+  dsdl.schema @ns.Multi.1.0 attributes {full_name = "ns.Multi", major = 1 : i32, minor = 0 : i32, sealed} {
+    dsdl.field {name = "value", type_name = "saturated uint8"}
+    dsdl.serialization_plan attributes {max_bits = 8 : i64, min_bits = 8 : i64} {
+      dsdl.align {bits = 8 : i32}
+    }
+  }
+  dsdl.schema @ns.Multi.2.0 attributes {full_name = "ns.Multi", major = 2 : i32, minor = 0 : i32, sealed} {
+    dsdl.field {name = "value", type_name = "saturated uint16"}
+    dsdl.serialization_plan attributes {max_bits = 16 : i64, min_bits = 16 : i64} {
       dsdl.align {bits = 8 : i32}
     }
   }
@@ -76,6 +90,14 @@ module {
           dsdl.decl "path" kind = field of = @uavcan.file.Path.2.0 member = "path"
         }
         dsdl.decl "uavcan_file_Path_2_0_FULL_NAME_" kind = constant class = macro origin = generated
+      }
+      dsdl.scope file "Multi_1_0" path = "ns/Multi_1_0.h" {
+        dsdl.scope type "ns__Multi" of = @ns.Multi.1.0 {
+        }
+      }
+      dsdl.scope file "Multi_2_0" path = "ns/Multi_2_0.h" {
+        dsdl.scope type "ns__Multi" of = @ns.Multi.2.0 {
+        }
       }
       dsdl.scope file "List_0_2" path = "uavcan/file/List_0_2.h" {
         dsdl.decl "UAVCAN_FILE_LIST_0_2_INCLUDED_" kind = guard origin = generated
@@ -154,6 +176,8 @@ module {
       dsdl.decl "dsdl_runtime" kind = module origin = generated
       dsdl.scope module "uavcan" {
         dsdl.scope module "file" {
+          dsdl.scope namespace "path_2_0" {
+          }
           dsdl.scope module "path_2_0" path = "uavcan/file/path_2_0.ts" {
             dsdl.decl "dsdlRuntime" kind = import class = value
             dsdl.scope type "Path" of = @uavcan.file.Path.2.0 {

@@ -117,6 +117,9 @@ struct SurfaceEntity final
 
     /// @brief The field or constant, where the declaration names one.
     std::string member;
+
+    /// @brief The lowered function, where the declaration names one.
+    std::string function;
 };
 
 /// @brief One entry of a scope: a scope nested in it, or a declaration made in it.
@@ -136,6 +139,10 @@ struct SurfaceScope final
 
     /// @brief The scope's name, as its language declares it.
     std::string name;
+
+    /// @brief The file the scope is written to, relative to the output root; empty where none is
+    ///        its own.
+    std::string path;
 
     /// @brief The scope's parent; none for the root.
     std::optional<std::size_t> parent;

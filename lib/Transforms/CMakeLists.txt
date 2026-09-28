@@ -11,6 +11,7 @@ add_library(llvmdsdlTransforms
   LoweredSerDesContractValidation.cpp
   Passes.cpp
   PlanSteps.cpp
+  ProjectDSDLSurface.cpp
   BuildDSDLPlanBodies.cpp
   ConvertDSDLToLLVM.cpp
   EmitDSDLRuntime.cpp
@@ -20,6 +21,7 @@ target_link_libraries(llvmdsdlTransforms
   PUBLIC
   llvmdsdlIR
   llvmdsdlSerDes
+  llvmdsdlSupport
   MLIRIR
   MLIRPass
   MLIRTransforms

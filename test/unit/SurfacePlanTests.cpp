@@ -186,7 +186,7 @@ bool runSurfacePlanTests()
          ok;
     ok = expect(outline(allocate(Language::Rust, {message("Msg", limited)})),
                 "root pkg\n"
-                "  module ns\n"
+                "  namespace ns\n"
                 "    module msg_1_0\n"
                 "      type Msg\n"
                 "        value : value\n"
@@ -204,7 +204,7 @@ bool runSurfacePlanTests()
          ok;
     ok = expect(outline(allocate(Language::TypeScript, {message("Msg", limited)})),
                 "root pkg\n"
-                "  module ns\n"
+                "  namespace ns\n"
                 "    module msg_1_0\n"
                 "      type Msg\n"
                 "        value : value\n"
@@ -217,7 +217,7 @@ bool runSurfacePlanTests()
         const SurfacePlan plan = allocate(Language::Rust, {message("A", SectionParts{}), message("B", SectionParts{})});
         ok                     = expect(outline(plan),
                                         "root pkg\n"
-                                        "  module ns\n"
+                                        "  namespace ns\n"
                                         "    module a_1_0\n"
                                         "      type A\n"
                                         "    module b_1_0\n"
@@ -234,7 +234,7 @@ bool runSurfacePlanTests()
         const SurfacePlan plan  = allocate(Language::Rust, {service});
         ok                      = expect(outline(plan),
                                          "root pkg\n"
-                                         "  module ns\n"
+                                         "  namespace ns\n"
                                          "    module list_1_0\n"
                                          "      type Request\n"
                                          "        index : value\n"
@@ -264,7 +264,7 @@ bool runSurfacePlanTests()
         old.deprecated      = true;
         ok                  = expect(outline(allocate(Language::Rust, {old})),
                                      "root pkg\n"
-                                     "  module ns\n"
+                                     "  namespace ns\n"
                                      "    module msg_1_0\n"
                                      "      type Msg_\n"
                                      "        value : value\n"
@@ -312,7 +312,7 @@ bool runSurfacePlanTests()
                                 ok;
         ok                    = expect(outline(allocate(Language::Rust, {owner})),
                                        "root pkg\n"
-                                       "  module ns\n"
+                                       "  namespace ns\n"
                                        "    module msg_1_0\n"
                                        "      type Msg\n"
                                        "      capacity_check : value private\n"
@@ -330,7 +330,7 @@ bool runSurfacePlanTests()
                                 ok;
         ok                    = expect(outline(allocate(Language::TypeScript, {owner})),
                                        "root pkg\n"
-                                       "  module ns\n"
+                                       "  namespace ns\n"
                                        "    module msg_1_0\n"
                                        "      type Msg\n"
                                        "      capacityCheck : value private\n"
@@ -339,7 +339,7 @@ bool runSurfacePlanTests()
                                 ok;
         ok                    = expect(outline(allocate(Language::Python, {owner})),
                                        "root pkg\n"
-                                       "  module ns\n"
+                                       "  namespace ns\n"
                                        "    module msg_1_0\n"
                                        "      type Msg\n"
                                        "      _capacity_check : value private\n"
@@ -356,7 +356,7 @@ bool runSurfacePlanTests()
         twins.bodies                     = {first, second};
         ok                               = expect(outline(allocate(Language::Rust, {twins})),
                                                   "root pkg\n"
-                                                  "  module ns\n"
+                                                  "  namespace ns\n"
                                                   "    module msg_1_0\n"
                                                   "      type Msg\n"
                                                   "      capacity_check : value private\n"
@@ -372,7 +372,7 @@ bool runSurfacePlanTests()
         named.response        = SectionParts{.fields = {}, .constants = {}};
         ok                    = expect(outline(allocate(Language::Rust, {named})),
                                        "root pkg\n"
-                                       "  module ns\n"
+                                       "  namespace ns\n"
                                        "    module request_1_0\n"
                                        "      type Request\n"
                                        "      type Response\n",

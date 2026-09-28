@@ -148,8 +148,8 @@ The tree is built from three ops in `DSDLOps.td`, with typed attributes:
 dsdl.surface target = "rust" {
  dsdl.scope root "llvmdsdl_generated" path = "src/lib.rs" {
   dsdl.decl "dsdl_runtime" kind = module origin = generated
-  dsdl.scope module "uavcan" path = "src/uavcan/mod.rs" {
-   dsdl.scope module "file" path = "src/uavcan/file/mod.rs" {
+  dsdl.scope namespace "uavcan" path = "src/uavcan/mod.rs" {
+   dsdl.scope namespace "file" path = "src/uavcan/file/mod.rs" {
     dsdl.scope module "list_0_2" path = "src/uavcan/file/list_0_2.rs" {
       dsdl.decl "Path" kind = import class = type of = @uavcan.file.Path.2.0
       dsdl.decl "capacity_check_request" kind = helper visibility = private
@@ -870,6 +870,17 @@ states it, and `SurfaceLookupTests` holds each lookup model to the cases above. 
 composition column is `rooted` for C++ and `shortest` elsewhere. `namePartition`, in
 `llvmdsdl/Support/SurfacePlan.h`, states how a language's classes of name fall into the partitions a
 scope keeps apart, and the verifier and the resolver both read it.
+
+Step 4.4 has landed. `project-dsdl-surface` runs last in `lower-dsdl-bodies` for a target, in every
+codegen run, and writes the target's surface: one per C++ profile, rooted at the package the run
+names, with a file's path where the language writes a definition to a file of a namespace
+(`fileExtension` and `directoriesProjected` are the columns it reads). A DSDL namespace is a
+`namespace` scope in every language and a `module` a definition's own, so a definition beside a
+namespace of its name is two scopes; the verifier lets the two share the name where the row keeps a
+file and a directory apart, as TypeScript does. Two versions of one definition may declare one
+name, as the unversioned scheme generates them. Every codegen run's surface verifies, which the
+oracle's runs prove over every corpus; `surface-tree.txt` holds a tree per language, and
+`surface-tree-manifest.txt` the tree's names to the manifest's in every language.
 
 Step 4.3 has landed. Discovery's checks -- the file stems and type names before parsing, a file
 meeting a namespace's directory, and the type names a shared scope holds after parsing -- read every

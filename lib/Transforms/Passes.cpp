@@ -19,6 +19,8 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Support/BodyInterface.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -64,6 +66,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Pass/PassOptions.h>
 #include <mlir/Pass/PassRegistry.h>
 #include <mlir/Transforms/Passes.h>
 
@@ -2910,10 +2913,11 @@ void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
     funcPM.addPass(mlir::createCSEPass());
 }
 
-void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
-                                const bool           optimizeLoweredSerDes,
-                                const BodyInterface& target,
-                                const bool           accessorsOnly)
+void addLowerDSDLBodiesPipeline(mlir::OpPassManager&           pm,
+                                const bool                     optimizeLoweredSerDes,
+                                const BodyInterface&           target,
+                                const bool                     accessorsOnly,
+                                const SurfaceProjection* const surface)
 {
     pm.addPass(createLowerDSDLExecPass());
     pm.addPass(createDSDLVerifyAliasLayoutPass());
@@ -2962,7 +2966,49 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager& pm,
     // take away the only error a body had, or the only read of a parameter.
     pm.addPass(createMarkDSDLInfallibleBodiesPass());
     pm.addPass(createMarkDSDLUnreadArgumentsPass());
+    // After everything, since it names the bodies the passes above leave.
+    if (surface != nullptr)
+    {
+        pm.addPass(createProjectDSDLSurfacePass(*surface));
+    }
 }
+
+namespace
+{
+
+/// @brief `lower-dsdl-bodies`'s options in `dsdl-opt`: the target, whose row decides what the
+///        lowering assumes of a body and whose surface is written last.
+struct LowerDSDLBodiesOptions final : public mlir::PassPipelineOptions<LowerDSDLBodiesOptions>
+{
+    Option<std::string>     target{*this,
+                                   "target",
+                                   llvm::cl::desc(
+                                       "The --target-language spelling of the target; none lowers for no target")};
+    ListOption<std::string> profiles{*this, "profiles", llvm::cl::desc("The target's profiles, a surface each")};
+    Option<std::string>     package{*this, "package", llvm::cl::desc("The generated package's name")};
+    Option<bool>            versioned{*this,
+                                      "versioned-type-names",
+                                      llvm::cl::desc("Whether a type's name carries its version"),
+                                      llvm::cl::init(false)};
+};
+
+void addLowerDSDLBodiesPipelineFor(mlir::OpPassManager& pm, const LowerDSDLBodiesOptions& options)
+{
+    const LanguageTraits* const row = options.target.empty() ? nullptr : languageTraitsNamed(options.target);
+    if (options.target.empty())
+    {
+        addLowerDSDLBodiesPipeline(pm, false);
+        return;
+    }
+    const SurfaceProjection projection{.target      = options.target.getValue(),
+                                       .profiles    = {options.profiles.begin(), options.profiles.end()},
+                                       .packageName = options.package.getValue(),
+                                       .versioning  = options.versioned ? TypeNameVersioning::Versioned
+                                                                        : TypeNameVersioning::Unversioned};
+    addLowerDSDLBodiesPipeline(pm, false, (row != nullptr) ? row->body : BodyInterface{}, false, &projection);
+}
+
+}  // namespace
 
 void registerDSDLPasses()
 {
@@ -2987,10 +3033,11 @@ void registerDSDLPasses()
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",
                                       [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
-    static mlir::PassPipelineRegistration<> const
+    static mlir::PassPipelineRegistration<LowerDSDLBodiesOptions> const
         lowerBodiesPipeline("lower-dsdl-bodies",
                             "Lower serialisation plans to serialise and deserialise functions of dialect operations",
-                            [](mlir::OpPassManager& pm) { addLowerDSDLBodiesPipeline(pm, false); });
+                            addLowerDSDLBodiesPipelineFor);
+    registerProjectDSDLSurfacePass();
     registerBuildDSDLPlanBodiesPass();
     registerEmitDSDLRuntimePass();
     registerDSDLToLLVMPasses();

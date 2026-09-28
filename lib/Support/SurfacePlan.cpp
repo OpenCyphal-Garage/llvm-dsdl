@@ -40,6 +40,10 @@ namespace
 {
 
 /// @brief The kind of scope a DSDL namespace component opens, or none where it opens no scope.
+///
+/// A module is a definition's own, so a namespace that the language opens as a module is a
+/// namespace scope in the plan: the two are told apart where a namespace and a definition's module
+/// of one name are both declared.
 std::optional<SurfaceScopeKind> namespaceScopeKind(const NamespaceForm form)
 {
     switch (form)
@@ -47,9 +51,8 @@ std::optional<SurfaceScopeKind> namespaceScopeKind(const NamespaceForm form)
     case NamespaceForm::Joined:
         return std::nullopt;
     case NamespaceForm::Namespace:
-        return SurfaceScopeKind::Namespace;
     case NamespaceForm::Module:
-        return SurfaceScopeKind::Module;
+        return SurfaceScopeKind::Namespace;
     case NamespaceForm::Package:
         return SurfaceScopeKind::Package;
     }
@@ -66,6 +69,7 @@ public:
     {
         plan_.scopes.push_back(SurfaceScope{.kind   = SurfaceScopeKind::Root,
                                             .name   = options.packageName,
+                                            .path   = {},
                                             .parent = std::nullopt,
                                             .of     = std::nullopt,
                                             .items  = {}});
@@ -107,6 +111,17 @@ public:
             row_.composition.definitionsShareNamespaceScope ? SurfaceScopeKind::File : SurfaceScopeKind::Module;
         const std::size_t file = openScope(space, fileKind, names.fileStem, std::nullopt);
         names.fileScope        = file;
+        // A file is written to its namespace's directory; a module's path is its language's own.
+        if (fileKind == SurfaceScopeKind::File)
+        {
+            std::string path;
+            for (const std::string& component :
+                 row_.composition.directoriesProjected ? names.namespaceNames : definition.ref.namespaceComponents)
+            {
+                path += component + "/";
+            }
+            plan_.scopes[file].path = path + names.fileStem + row_.composition.fileExtension.str();
+        }
 
         if (definition.service)
         {
@@ -130,7 +145,7 @@ public:
                                          SurfaceDeclKind::Alias,
                                          NameClass::Type,
                                          NameOrigin::Generated,
-                                         SurfaceEntity{names.key, "", ""});
+                                         SurfaceEntity{names.key, "", "", ""});
         }
         allocateBodies(names, space, file, definition.bodies);
         plan_.definitions.push_back(std::move(names));
@@ -149,7 +164,7 @@ private:
     {
         const std::size_t index = plan_.scopes.size();
         plan_.scopes.push_back(
-            SurfaceScope{.kind = kind, .name = std::move(name), .parent = parent, .of = of, .items = {}});
+            SurfaceScope{.kind = kind, .name = std::move(name), .path = {}, .parent = parent, .of = of, .items = {}});
         plan_.scopes[parent].items.push_back(SurfaceItem{.scope = true, .index = index});
         return index;
     }
@@ -203,7 +218,7 @@ private:
         section.typeName =
             sectionName.empty() ? names.typeName : renderSectionTypeName(language, names.typeName, sectionName);
         section.isUnion = parts.isUnion;
-        const auto of   = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member}; };
+        const auto of   = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member, ""}; };
         const bool declaredApart = deprecated && row_.composition.deprecatedTypeDeclaredApart;
         section.typeScope =
             openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
@@ -373,7 +388,7 @@ private:
     {
         const Language language = row_.language;
         const auto     of       = [&](const BodyParts& body) {
-            return SurfaceEntity{names.key, body.plan.section, body.plan.member};
+            return SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol};
         };
         switch (row_.composition.helpers)
         {
@@ -436,7 +451,7 @@ private:
                                SurfaceDeclKind::Helper,
                                NameClass::Value,
                                NameOrigin::Generated,
-                               SurfaceEntity{names.key, body.plan.section, body.plan.member},
+                               SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol},
                                SurfaceVisibility::Private);
             }
         }
