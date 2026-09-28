@@ -78,7 +78,7 @@
 # RUST:              dsdl.decl "UNION_OPTION_COUNT" kind = constant origin = generated fact = union_option_count of = @ns.Ask.1.0 section = "request"
 # RUST-NEXT:           dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # RUST:              dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
-# RUST:              dsdl.decl "to_bytes" kind = wrapper origin = generated of = @ns.Ask.1.0.request.serialize
+# RUST:              dsdl.decl "to_bytes" kind = wrapper origin = generated fact = wire_image of = @ns.Ask.1.0.request.serialize
 # RUST:            dsdl.scope type "Response" of = @ns.Ask.1.0 section = "response" {
 # RUST:              dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
 # RUST:            dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
@@ -106,9 +106,14 @@
 # GO-NEXT:       dsdl.scope file "ask_1_0" path = "ns/ask_1_0.go" {
 # GO-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
 # GO-NEXT:           dsdl.decl "Small" kind = field of = @ns.Ask.1.0 section = "request" member = "small"
+# GO:                dsdl.decl "Tag" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
+# GO-NEXT:           dsdl.decl "Serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
+# GO:                dsdl.decl "AppendBinary" kind = wrapper origin = generated fact = append_wire_image of = @ns.Ask.1.0.request.serialize
 # GO:              dsdl.decl "AskRequestSmallOptionTag" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # GO:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
-# GO-NEXT:         dsdl.decl "askCapacityCheckRequest" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
+# GO-NEXT:         dsdl.decl "AskHasFixedPortID" kind = constant origin = generated fact = has_fixed_port_id of = @ns.Ask.1.0
+# GO-NEXT:         dsdl.decl "NewAskRequest" kind = entry origin = generated of = @ns.Ask.1.0.request.initialize
+# GO:              dsdl.decl "askCapacityCheckRequest" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # GO:            dsdl.scope file "msg_1_0" path = "ns/msg_1_0.go" {
 # GO:              dsdl.decl "MsgLimit" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
 #

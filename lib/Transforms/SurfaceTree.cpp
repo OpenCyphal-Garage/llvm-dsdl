@@ -177,9 +177,15 @@ mlir::dsdl::GeneratedFact irGeneratedFact(const GeneratedFact fact)
     case GeneratedFact::Deserialize:
         return mlir::dsdl::GeneratedFact::Deserialize;
     case GeneratedFact::Initialize:
+        return mlir::dsdl::GeneratedFact::Initialize;
+    case GeneratedFact::AppendWireImage:
+        return mlir::dsdl::GeneratedFact::AppendWireImage;
+    case GeneratedFact::WireImage:
+        return mlir::dsdl::GeneratedFact::WireImage;
+    case GeneratedFact::FromWireImage:
         break;
     }
-    return mlir::dsdl::GeneratedFact::Initialize;
+    return mlir::dsdl::GeneratedFact::FromWireImage;
 }
 
 GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
@@ -239,9 +245,15 @@ GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
     case mlir::dsdl::GeneratedFact::Deserialize:
         return GeneratedFact::Deserialize;
     case mlir::dsdl::GeneratedFact::Initialize:
+        return GeneratedFact::Initialize;
+    case mlir::dsdl::GeneratedFact::AppendWireImage:
+        return GeneratedFact::AppendWireImage;
+    case mlir::dsdl::GeneratedFact::WireImage:
+        return GeneratedFact::WireImage;
+    case mlir::dsdl::GeneratedFact::FromWireImage:
         break;
     }
-    return GeneratedFact::Initialize;
+    return GeneratedFact::FromWireImage;
 }
 
 SurfaceScopeKind scopeKindOf(const mlir::dsdl::ScopeKind kind)
@@ -491,8 +503,9 @@ private:
                                        of,
                                        section,
                                        member);
-        // The class is written only where the kind does not imply it.
-        if (op.declaredClass() != irNameClass(decl.nameClass))
+        // The class is written only where the kind does not imply it, which it never does for an
+        // import.
+        if ((decl.kind == SurfaceDeclKind::Import) || (op.declaredClass() != irNameClass(decl.nameClass)))
         {
             op.setNameClassAttr(mlir::dsdl::NameClassAttr::get(context, irNameClass(decl.nameClass)));
         }
@@ -525,7 +538,7 @@ SurfaceTree::SurfaceTree(SurfacePlan plan)
     {
         if (decl.of && !decl.of->function.empty())
         {
-            functions_.try_emplace({decl.of->function, decl.kind}, index);
+            functions_.try_emplace({decl.of->function, decl.kind, decl.fact}, index);
         }
     }
 }
@@ -619,9 +632,11 @@ const std::string& SurfaceTree::nameOf(const std::size_t                  scope,
                              "name for " + of.schema + " " + of.section + " " + of.member + of.function);
 }
 
-const std::string& SurfaceTree::nameOf(const llvm::StringRef symbol, const SurfaceDeclKind kind) const
+const std::string& SurfaceTree::nameOf(const llvm::StringRef              symbol,
+                                       const SurfaceDeclKind              kind,
+                                       const std::optional<GeneratedFact> fact) const
 {
-    const auto found = functions_.find({symbol.str(), kind});
+    const auto found = functions_.find({symbol.str(), kind, fact});
     if (found == functions_.end())
     {
         llvm::report_fatal_error(llvm::Twine("the surface declares no name for ") + symbol);

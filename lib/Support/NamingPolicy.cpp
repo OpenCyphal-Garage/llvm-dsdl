@@ -869,14 +869,29 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT_"}};
+    // Go's are constants of the package, each named by the type's name and the fact's token.
+    static constexpr std::array<GeneratedName, 12> kGo =
+        {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
+         GeneratedName{GeneratedFact::IsDeprecated, "IS_DEPRECATED"},
+         GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION"},
+         GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES"},
+         GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES"},
+         GeneratedName{GeneratedFact::WireFlat, "WIRE_FLAT"},
+         GeneratedName{GeneratedFact::WireFlatReason, "WIRE_FLAT_REASON"},
+         GeneratedName{GeneratedFact::HostImage, "HOST_IMAGE"},
+         GeneratedName{GeneratedFact::HostImageReason, "HOST_IMAGE_REASON"},
+         GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
+         GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"},
+         GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT"}};
     switch (language)
     {
     case Language::Rust:
         return kRust;
     case Language::C:
         return kC;
-    case Language::Cpp:
     case Language::Go:
+        return kGo;
+    case Language::Cpp:
     case Language::TypeScript:
     case Language::Python:
         break;
@@ -888,13 +903,16 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
 {
     static constexpr std::array<GeneratedName, 2> kMembers = {GeneratedName{GeneratedFact::UnionTag, "_tag_"},
                                                               GeneratedName{GeneratedFact::Placeholder, "_dummy_"}};
+    // Go's struct with no fields holds the blank identifier, which declares no name.
+    static constexpr std::array<GeneratedName, 1> kGo = {GeneratedName{GeneratedFact::UnionTag, "Tag"}};
     switch (language)
     {
     case Language::Rust:
     case Language::C:
         return kMembers;
-    case Language::Cpp:
     case Language::Go:
+        return kGo;
+    case Language::Cpp:
     case Language::TypeScript:
     case Language::Python:
         break;
@@ -904,11 +922,12 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
 
 llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
 {
-    // A Rust type alias carries no associated constants, and the service is named by an alias of
-    // its request, so the service's own facts are constants beside it.
-    static constexpr std::array<GeneratedName, 2> kRust = {GeneratedName{GeneratedFact::HasFixedPortId,
-                                                                         "HAS_FIXED_PORT_ID"},
-                                                           GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"}};
+    // A service is named by an alias of its request, and a Rust or Go alias carries none of the
+    // service's own facts, so they are constants beside it.
+    static constexpr std::array<GeneratedName, 2> kAliased = {GeneratedName{GeneratedFact::HasFixedPortId,
+                                                                            "HAS_FIXED_PORT_ID"},
+                                                              GeneratedName{GeneratedFact::FixedPortId,
+                                                                            "FIXED_PORT_ID"}};
     // C names a service by a typedef of its request, and the service's facts are macros beside it:
     // its own identity, and the request's sizes under the service's name.
     static constexpr std::array<GeneratedName, 6> kC =
@@ -921,11 +940,11 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
     switch (language)
     {
     case Language::Rust:
-        return kRust;
+    case Language::Go:
+        return kAliased;
     case Language::C:
         return kC;
     case Language::Cpp:
-    case Language::Go:
     case Language::TypeScript:
     case Language::Python:
         break;
@@ -937,15 +956,48 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 {
     // Rust initialises through `Default`, a trait's method, which the type's own items do not hold.
     static constexpr std::array<EntryPointName, 2> kRust =
-        {EntryPointName{PlanFunction::Serialize, "serialize", "to_bytes"},
-         EntryPointName{PlanFunction::Deserialize, "deserialize", "from_bytes"}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .beside = false}};
+    // Go's zero value is its type's; a type whose initialiser stores anything else has a constructor.
+    static constexpr std::array<EntryPointName, 3> kGo =
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .beside = true}};
     switch (language)
     {
     case Language::Rust:
         return kRust;
+    case Language::Go:
+        return kGo;
     case Language::C:
     case Language::Cpp:
+    case Language::TypeScript:
+    case Language::Python:
+        break;
+    }
+    return {};
+}
+
+llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
+{
+    static constexpr std::array<WrapperName, 2> kRust =
+        {WrapperName{.fact = GeneratedFact::WireImage, .wraps = PlanFunction::Serialize, .name = "to_bytes"},
+         WrapperName{.fact = GeneratedFact::FromWireImage, .wraps = PlanFunction::Deserialize, .name = "from_bytes"}};
+    // The encoding package's interfaces: BinaryAppender, BinaryMarshaler and BinaryUnmarshaler.
+    static constexpr std::array<WrapperName, 3> kGo =
+        {WrapperName{.fact = GeneratedFact::AppendWireImage, .wraps = PlanFunction::Serialize, .name = "AppendBinary"},
+         WrapperName{.fact = GeneratedFact::WireImage, .wraps = PlanFunction::Serialize, .name = "MarshalBinary"},
+         WrapperName{.fact  = GeneratedFact::FromWireImage,
+                     .wraps = PlanFunction::Deserialize,
+                     .name  = "UnmarshalBinary"}};
+    switch (language)
+    {
+    case Language::Rust:
+        return kRust;
     case Language::Go:
+        return kGo;
+    case Language::C:
+    case Language::Cpp:
     case Language::TypeScript:
     case Language::Python:
         break;

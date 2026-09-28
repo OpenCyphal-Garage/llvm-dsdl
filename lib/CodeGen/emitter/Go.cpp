@@ -33,7 +33,6 @@
 #include <filesystem>
 #include <map>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -42,7 +41,6 @@
 #include <utility>
 
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
-#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
@@ -50,8 +48,6 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
-#include "llvmdsdl/Support/SectionScopes.h"
-#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvm/ADT/StringExtras.h"
@@ -66,6 +62,11 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -90,57 +91,6 @@ namespace llvmdsdl::emitter::go
 
 namespace
 {
-
-/// @brief Builds the collision-free exported field-name allocation for one section.
-///
-/// Two distinct DSDL field names (e.g. `fooBar` and `foo_bar`) both export to `FooBar`; without this
-/// the struct would declare the same field twice (a compile error) and the (de)serialiser would read
-/// or write the wrong field. Padding fields carry no exported name and are excluded.
-NamingScope makeExportedFieldIdents(const SemanticSection& section)
-{
-    std::vector<std::string> names;
-    for (const auto& field : section.fields)
-    {
-        if (!field.isPadding)
-        {
-            names.push_back(field.name);
-        }
-    }
-    // The generated methods a field must not collide with are claimed by the FieldName role's policy
-    // (Go forbids a field and a method sharing a name), so the scope only has to keep the fields
-    // apart from each other.
-    return makeSectionFieldScope(Language::Go, section);
-}
-
-std::string packagePathFromComponents(const std::vector<std::string>& components)
-{
-    std::string out;
-    for (const auto& c : components)
-    {
-        if (!out.empty())
-        {
-            out += "/";
-        }
-        out += codegenProjectIdentifier(Language::Go, IdentifierRole::NamespaceName, c);
-    }
-    return out;
-}
-
-std::string packageNameFromPath(const std::string& path)
-{
-    if (path.empty())
-    {
-        return "rootdsdl";
-    }
-    const auto split = path.find_last_of('/');
-    const auto leaf  = split == std::string::npos ? path : path.substr(split + 1);
-    auto       out   = codegenProjectIdentifier(Language::Go, IdentifierRole::NamespaceName, leaf);
-    if (out.empty())
-    {
-        out = "rootdsdl";
-    }
-    return out;
-}
 
 /// @brief The receiver of @p typeName's methods: the initial of its head noun, the name's last word,
 ///        as Go names a receiver for what its type is. `ListRequest` is `r` and `NodeID` is `i`.
@@ -407,28 +357,155 @@ void emitAlignedStructMembers(SourceWriter& w, const std::vector<GoStructMember>
     }
 }
 
+/// @brief The key of the definition @p info describes, which its schema and the surface name it by.
+std::string keyOf(const DiscoveredDefinition& info)
+{
+    return renderDefinitionKey(definitionRef(info));
+}
+
+/// @brief The key of the definition @p ref names.
+std::string keyOf(const SemanticTypeRef& ref)
+{
+    return renderDefinitionKey(definitionRef(ref));
+}
+
+/// @brief The names Go's output declares and the files it writes, as the surface declares them.
+class GoSurface final
+{
+public:
+    explicit GoSurface(const SurfaceTree& tree)
+        : tree_(tree)
+    {
+    }
+
+    [[nodiscard]] const SurfaceTree& tree() const
+    {
+        return tree_;
+    }
+
+    /// @brief The file scope the definition keyed @p key is declared in.
+    [[nodiscard]] std::size_t file(const llvm::StringRef key) const
+    {
+        return tree_.definitionScope(key);
+    }
+
+    /// @brief The file the definition keyed @p key is written to, from the module's root.
+    [[nodiscard]] const std::string& path(const llvm::StringRef key) const
+    {
+        return tree_.scope(file(key)).path;
+    }
+
+    /// @brief The directory of the definition's package, from the module's root; empty for the
+    ///        root's own.
+    [[nodiscard]] std::string packageDirectory(const llvm::StringRef key) const
+    {
+        const std::string& written = path(key);
+        const std::size_t  slash   = written.rfind('/');
+        return (slash == std::string::npos) ? std::string{} : written.substr(0, slash);
+    }
+
+    /// @brief The file beside the definition's own whose name ends in @p suffix instead.
+    [[nodiscard]] std::string besideFile(const llvm::StringRef key, const llvm::StringRef suffix) const
+    {
+        const std::string& written = path(key);
+        return written.substr(0, written.size() - languageTraits(Language::Go).composition.fileExtension.size()) +
+               suffix.str();
+    }
+
+    /// @brief The name of the package the definition is declared in.
+    [[nodiscard]] const std::string& packageName(const llvm::StringRef key) const
+    {
+        return tree_.scope(*tree_.scope(file(key)).parent).name;
+    }
+
+    /// @brief The name of @p section's type.
+    [[nodiscard]] const std::string& typeName(const llvm::StringRef key, const llvm::StringRef section) const
+    {
+        return tree_.scope(tree_.typeScope(key, section)).name;
+    }
+
+    /// @brief The name the definition is reached by: its type's, or a service's alias of its request.
+    [[nodiscard]] const std::string& definitionTypeName(const llvm::StringRef key) const
+    {
+        const SurfaceDecl* const alias =
+            tree_.find(file(key), SurfaceDeclKind::Alias, SurfaceEntity{key.str(), {}, {}, {}});
+        return (alias != nullptr) ? alias->name : typeName(key, {});
+    }
+
+    /// @brief The name of the declaration of @p kind in the definition's file for @p member of
+    ///        @p section, stating @p fact.
+    [[nodiscard]] const std::string& declared(const llvm::StringRef              key,
+                                              const SurfaceDeclKind              kind,
+                                              const llvm::StringRef              section,
+                                              const llvm::StringRef              member = {},
+                                              const std::optional<GeneratedFact> fact   = std::nullopt) const
+    {
+        return tree_.nameOf(file(key), kind, SurfaceEntity{key.str(), section.str(), member.str(), {}}, fact);
+    }
+
+    /// @brief The name of the data member of @p section's type that @p member is, or that states
+    ///        @p fact; empty where the type declares none, as in an accessors-only run.
+    [[nodiscard]] std::string member(const llvm::StringRef              key,
+                                     const llvm::StringRef              section,
+                                     const llvm::StringRef              member,
+                                     const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        const SurfaceDecl* const decl = tree_.find(tree_.typeScope(key, section),
+                                                   SurfaceDeclKind::Field,
+                                                   SurfaceEntity{key.str(), section.str(), member.str(), {}},
+                                                   fact);
+        return (decl != nullptr) ? decl->name : std::string{};
+    }
+
+    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol,
+    ///        stating @p fact.
+    [[nodiscard]] const std::string& function(const llvm::StringRef              symbol,
+                                              const SurfaceDeclKind              kind,
+                                              const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        return tree_.nameOf(symbol, kind, fact);
+    }
+
+    /// @brief The local name the definition's file imports each other package under, by the
+    ///        package's directory.
+    [[nodiscard]] std::map<std::string, std::string> imports(const llvm::StringRef key) const
+    {
+        std::map<std::string, std::string> out;
+        for (const SurfaceItem& item : tree_.scope(file(key)).items)
+        {
+            const SurfaceDecl* const decl = item.scope ? nullptr : &tree_.plan().decls[item.index];
+            if ((decl != nullptr) && (decl->kind == SurfaceDeclKind::Import) && decl->of)
+            {
+                out.emplace(packageDirectory(decl->of->schema), decl->name);
+            }
+        }
+        return out;
+    }
+
+private:
+    const SurfaceTree& tree_;
+};
+
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule&    semantic,
-                   const TypeNameVersioning typeNameVersioning,
-                   const bool               accessorsOnly)
+    EmitterContext(const SemanticModule& semantic, const GoSurface& names, const bool accessorsOnly)
         : index_(semantic)
-        , typeNameVersioning_(typeNameVersioning)
+        , names_(names)
         , accessorsOnly_(accessorsOnly)
     {
+    }
+
+    /// @brief The names the output declares.
+    const GoSurface& names() const
+    {
+        return names_;
     }
 
     /// @brief Whether the run emits the field accessors and neither the object type nor the serdes.
     bool accessorsOnly() const
     {
         return accessorsOnly_;
-    }
-
-    /// @brief Whether generated type names carry the definition's version.
-    TypeNameVersioning typeNameVersioning() const
-    {
-        return typeNameVersioning_;
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
@@ -441,110 +518,11 @@ public:
         return index_.holdsView(section);
     }
 
-    static std::string packagePath(const DiscoveredDefinition& info)
-    {
-        return packagePathFromComponents(info.namespaceComponents);
-    }
-
-    std::string packagePath(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return packagePath(def->info);
-        }
-        return packagePathFromComponents(ref.namespaceComponents);
-    }
-
-    std::string goTypeName(const DiscoveredDefinition& info) const
-    {
-        return renderDefinitionTypeName(Language::Go,
-                                        info.namespaceComponents,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion,
-                                        typeNameVersioning_);
-    }
-
-    std::string goTypeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return goTypeName(def->info);
-        }
-        DiscoveredDefinition tmp;
-        tmp.shortName    = ref.shortName;
-        tmp.majorVersion = ref.majorVersion;
-        tmp.minorVersion = ref.minorVersion;
-        return goTypeName(tmp);
-    }
-
-    static std::string goFileName(const DiscoveredDefinition& info)
-    {
-        return renderDefinitionFileStem(Language::Go, info.shortName, info.majorVersion, info.minorVersion) + ".go";
-    }
-
-    /// @brief The file beside a folded type's own that refuses a big-endian architecture.
-    static std::string goHostImageGuardFileName(const DiscoveredDefinition& info)
-    {
-        return renderDefinitionFileStem(Language::Go, info.shortName, info.majorVersion, info.minorVersion) +
-               "_host_image.go";
-    }
-
 private:
-    DefinitionIndex    index_;
-    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    bool               accessorsOnly_{false};
+    DefinitionIndex  index_;
+    const GoSurface& names_;
+    bool             accessorsOnly_{false};
 };
-
-std::map<std::string, std::string> computeImportAliases(const SemanticDefinition& def, const EmitterContext& ctx)
-{
-    // An accessors-only file names no nested type: there is no object type to hold one and a
-    // composite getter answers the field's bytes, so nothing here reaches that type's package. Go
-    // refuses an import nothing uses, so the file would not build.
-    if (ctx.accessorsOnly())
-    {
-        return {};
-    }
-    // A view holds a field's bytes and names no type, so its package is not imported for it.
-    const auto deps = collectDefinitionCompositeDependencies(def, /*referencedOnly=*/true);
-
-    const std::string                  currentPath = EmitterContext::packagePath(def.info);
-    std::map<std::string, std::string> out;
-    std::set<std::string>              usedAliases;
-
-    for (const auto& depRef : deps)
-    {
-        SemanticTypeRef ref = depRef;
-        if (const auto* resolved = ctx.find(depRef))
-        {
-            ref.namespaceComponents = resolved->info.namespaceComponents;
-            ref.shortName           = resolved->info.shortName;
-        }
-
-        const auto depPath = ctx.packagePath(ref);
-        if (depPath.empty() || depPath == currentPath)
-        {
-            continue;
-        }
-        auto alias = "pkg_" + codegenProjectIdentifier(Language::Go,
-                                                       IdentifierRole::NamespaceName,
-                                                       llvm::join(ref.namespaceComponents, "_"));
-        if (alias == "pkg_")
-        {
-            alias = "pkg_dep";
-        }
-        std::size_t suffix    = 1;
-        const auto  baseAlias = alias;
-        while (usedAliases.contains(alias))
-        {
-            alias = baseAlias + "_" + std::to_string(suffix++);
-        }
-        usedAliases.insert(alias);
-        out.emplace(depPath, alias);
-    }
-
-    return out;
-}
 
 /// @brief How one Go file names what it takes from other packages, recording each import.
 ///
@@ -571,8 +549,9 @@ public:
     ///        is another.
     [[nodiscard]] std::string type(const SemanticTypeRef& ref) const
     {
-        const std::string path = ctx_.packagePath(ref);
-        std::string       name = ctx_.goTypeName(ref);
+        const std::string  key  = keyOf(ref);
+        const std::string  path = ctx_.names().packageDirectory(key);
+        const std::string& name = ctx_.names().typeName(key, {});
         if (path.empty() || (path == ownPackage_))
         {
             return name;
@@ -715,40 +694,38 @@ std::string goFieldType(const SemanticFieldType& type, const GoFileNames& file)
 class GoSpelling final : public BodySpelling
 {
 public:
-    GoSpelling(mlir::dsdl::SchemaOp schema, const GoFileNames& file)
-        : file_(file)
+    GoSpelling(mlir::dsdl::SchemaOp schema, const GoSurface& names, const GoFileNames& file)
+        : names_(names)
+        , file_(file)
     {
         if (schema.getBody().empty())
         {
             return;
         }
+        const std::string key = schema.getSymName().str();
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            Plan entry;
+            const llvm::StringRef section = plan.getSection().value_or(llvm::StringRef{});
+            Plan                  entry;
             entry.unionTagBits = plan.getUnionTagBits().value_or(0);
-            NamingScope                   scope(Language::Go);
-            std::vector<mlir::dsdl::IOOp> fields;
+            entry.typeName     = names.typeName(key, section);
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
                 {
                     if (!io.isPadding())
                     {
-                        (void) scope.declare(IdentifierRole::FieldName, io.getName());
-                        fields.push_back(io);
+                        entry.members[io.getName()] = Member{names.member(key, section, io.getName()), io};
                     }
                 }
-            }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                entry.members[io.getName()] = Member{scope.get(IdentifierRole::FieldName, io.getName()), io};
             }
             // The union's tag, reached by its accessors as a member is: the wire holds it ahead
             // of the option, and no field can be named `_tag_`.
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] = Member{unionTagMemberName(Language::Go).str(), tagSteps_.back().get()};
+                entry.members[kPlanUnionTagMember] =
+                    Member{names.member(key, section, {}, GeneratedFact::UnionTag), tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -781,7 +758,7 @@ public:
         const Plan&       plan     = planOf(fn.getArgument(0));
         const std::string receiver = goReceiverName(plan.typeName);
         w.open("func (" + receiver + " *" + plan.typeName + ") " +
-               (*direction == "serialize" ? "Serialize" : "Deserialize") + "(buffer []byte) (int, error) {");
+               names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(buffer []byte) (int, error) {");
         return {receiver, "buffer"};
     }
 
@@ -854,35 +831,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        const auto found = helperNames_.find(callee);
-        if (found == helperNames_.end())
-        {
-            llvm::report_fatal_error(llvm::Twine("Go spelling: a call to a helper this package does "
-                                                 "not declare: ") +
-                                     callee);
-        }
-        return found->second;
-    }
-
-    /// @brief Takes the names this definition's helpers were declared under.
-    ///
-    /// A Go package holds a whole DSDL namespace, so the scope that allocated them is the package's
-    /// and outlives this spelling. The type name is not known when the spelling is built, so the
-    /// names arrive here rather than in the constructor.
-    /// @param[in] names Each helper's lowered symbol, under its declared name.
-    void setHelperNames(llvm::StringMap<std::string> names)
-    {
-        helperNames_ = std::move(names);
-    }
-
-    /// @brief Names the Go type each plan's bodies are methods of.
-    void setTypeName(const llvm::StringRef identity, const std::string& typeName)
-    {
-        const auto found = plans_.find(identity);
-        if (found != plans_.end())
-        {
-            found->second.typeName = typeName;
-        }
+        return names_.function(callee, SurfaceDeclKind::Helper);
     }
 
     // Statements.
@@ -922,10 +871,7 @@ public:
     {
         const Accessed    a         = accessed(fn);
         const std::string storage   = scalarType(a.member->io);
-        const std::string name      = renderAccessorName(Language::Go,
-                                                         a.plan->typeName,
-                                                         getter ? AccessorVerb::Get : AccessorVerb::Set,
-                                                         a.member->goName);
+        const std::string name      = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
         const mlir::Type  answer    = fn.getResultTypes().front();
         const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
         const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
@@ -1797,10 +1743,8 @@ private:
         return "_" + stem + std::to_string(counter_++) + "_";
     }
 
+    const GoSurface&      names_;
     llvm::StringMap<Plan> plans_;
-
-    /// @brief Each helper of this schema, by lowered symbol, under the name the package declares it as.
-    llvm::StringMap<std::string> helperNames_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
 
@@ -1904,15 +1848,18 @@ std::string goAssignment(const std::string& lhs, const char* const op, const std
     return line;
 }
 
-/// @brief The call that constructs a value of the type spelt @p goType: `pkg.T` becomes `pkg.NewT()`.
-std::string goConstructorOf(const std::string& goType)
+/// @brief The call that constructs a value of the definition @p ref names, through the package the
+///        file imports it from.
+std::string goConstructorOf(const SemanticTypeRef& ref, const GoFileNames& file, const GoSurface& names)
 {
-    const auto dot = goType.rfind('.');
-    if (dot == std::string::npos)
-    {
-        return "New" + goType + "()";
-    }
-    return goType.substr(0, dot + 1) + "New" + goType.substr(dot + 1) + "()";
+    const std::string  qualified = file.type(ref);
+    const auto         dot       = qualified.rfind('.');
+    const std::string& made =
+        names
+            .function(renderPlanSymbol(
+                          planFunction(ref.fullName, ref.majorVersion, ref.minorVersion, {}, PlanFunction::Initialize)),
+                      SurfaceDeclKind::Entry);
+    return ((dot == std::string::npos) ? std::string{} : qualified.substr(0, dot + 1)) + made + "()";
 }
 
 /// @brief Whether an initialise body, and every nested body it calls, stores only zeros.
@@ -1968,7 +1915,8 @@ llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::Mo
 
 llvm::Error emitSectionType(SourceWriter&                         w,
                             const EmitterContext&                 ctx,
-                            const std::string&                    typeName,
+                            const std::string&                    key,
+                            const std::string&                    sectionName,
                             const SectionMetadata&                metadata,
                             const SemanticSection&                section,
                             const AttachedDoc&                    typeDoc,
@@ -1980,39 +1928,39 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                             mlir::ModuleOp                        module,
                             PlanBodyLookups&                      lookups)
 {
-    const NamingScope constScope = makeGoConstantScope(section, typeName);
-    const auto        named      = [&constScope](const std::vector<llvm::StringRef>& parts) {
-        return constScope.get(IdentifierRole::ConstantName, goConstantKey(parts));
+    const GoSurface&   names    = ctx.names();
+    const std::string& typeName = names.typeName(key, sectionName);
+    const auto         meta     = [&](const GeneratedFact fact) {
+        return names.declared(key, SurfaceDeclKind::Constant, sectionName, {}, fact);
     };
-    const auto meta = [&constScope, &typeName](const llvm::StringRef token) {
-        return constScope.get(IdentifierRole::ConstantName, goGeneratedConstantKey(typeName, token));
-    };
-    w.line("const " + meta("FULL_NAME") + " = \"" + metadata.fullName + "\"");
-    w.line("const " + meta("IS_DEPRECATED") + " = " + std::string(metadata.deprecated ? "true" : "false"));
-    w.line("const " + meta("FULL_NAME_AND_VERSION") + " = \"" + metadata.fullName + "." +
+    w.line("const " + meta(GeneratedFact::FullName) + " = \"" + metadata.fullName + "\"");
+    w.line("const " + meta(GeneratedFact::IsDeprecated) + " = " + std::string(metadata.deprecated ? "true" : "false"));
+    w.line("const " + meta(GeneratedFact::FullNameAndVersion) + " = \"" + metadata.fullName + "." +
            std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"");
-    w.line("const " + meta("EXTENT_BYTES") + " = " + std::to_string(metadata.extentBytes));
-    w.line("const " + meta("SERIALIZATION_BUFFER_SIZE_BYTES") + " = " +
+    w.line("const " + meta(GeneratedFact::ExtentBytes) + " = " + std::to_string(metadata.extentBytes));
+    w.line("const " + meta(GeneratedFact::SerializationBufferSizeBytes) + " = " +
            std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + meta("WIRE_FLAT") + " = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
-    w.line("const " + meta("WIRE_FLAT_REASON") + " = \"" + metadata.wireFlat.reason + "\"");
-    w.line("const " + meta("HOST_IMAGE") + " = " + std::string(metadata.hostImage.holds ? "true" : "false"));
-    w.line("const " + meta("HOST_IMAGE_REASON") + " = \"" + metadata.hostImage.reason + "\"");
+    w.line("const " + meta(GeneratedFact::WireFlat) + " = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
+    w.line("const " + meta(GeneratedFact::WireFlatReason) + " = \"" + metadata.wireFlat.reason + "\"");
+    w.line("const " + meta(GeneratedFact::HostImage) + " = " +
+           std::string(metadata.hostImage.holds ? "true" : "false"));
+    w.line("const " + meta(GeneratedFact::HostImageReason) + " = \"" + metadata.hostImage.reason + "\"");
 
     if (metadata.declaresPortId)
     {
-        w.line("const " + meta("HAS_FIXED_PORT_ID") + " = " + std::string(metadata.fixedPortId ? "true" : "false"));
+        w.line("const " + meta(GeneratedFact::HasFixedPortId) + " = " +
+               std::string(metadata.fixedPortId ? "true" : "false"));
         if (metadata.fixedPortId)
         {
-            w.line("const " + meta("FIXED_PORT_ID") + " = " + std::to_string(*metadata.fixedPortId));
+            w.line("const " + meta(GeneratedFact::FixedPortId) + " = " + std::to_string(*metadata.fixedPortId));
         }
     }
     if (metadata.isUnion)
     {
-        w.line("const " + meta("UNION_OPTION_COUNT") + " = " + std::to_string(metadata.unionOptions.size()));
+        w.line("const " + meta(GeneratedFact::UnionOptionCount) + " = " + std::to_string(metadata.unionOptions.size()));
         for (const auto& option : metadata.unionOptions)
         {
-            w.line("const " + named({typeName, option.name, "OPTION_TAG"}) + " " +
+            w.line("const " + names.declared(key, SurfaceDeclKind::Option, sectionName, option.name) + " " +
                    unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
         }
     }
@@ -2026,11 +1974,14 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             w.blank();
         }
         emitAttachedDocGo(w, c.doc);
-        w.line("const " + named({typeName, c.name}) + " = " + goConstValue(c.type, c.value));
+        w.line("const " + names.declared(key, SurfaceDeclKind::Constant, sectionName, c.name) + " = " +
+               goConstValue(c.type, c.value));
     }
     w.blank();
 
-    const NamingScope fieldIdents = makeExportedFieldIdents(section);
+    const auto dataMember = [&](const llvm::StringRef member) { return names.member(key, sectionName, member); };
+    // A function's symbol, which an op handle held const does not answer.
+    const auto symbolOf = [](mlir::func::FuncOp fn) { return fn.getSymName(); };
     // The object type, which an accessors-only run leaves out.
     if (!ctx.accessorsOnly())
     {
@@ -2052,7 +2003,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             {
                 continue;
             }
-            members.push_back(GoStructMember{fieldIdents.get(IdentifierRole::FieldName, field.name),
+            members.push_back(GoStructMember{names.member(key, sectionName, field.name),
                                              field.heldAsView ? goViewType(field.resolvedType)
                                                               : goFieldType(field.resolvedType, file),
                                              field.doc});
@@ -2061,8 +2012,9 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         {
             // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
             // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            members.push_back(
-                GoStructMember{unionTagMemberName(Language::Go).str(), unsignedStorageType(unionTagBits(plan)), {}});
+            members.push_back(GoStructMember{names.member(key, sectionName, {}, GeneratedFact::UnionTag),
+                                             unsignedStorageType(unionTagBits(plan)),
+                                             {}});
         }
         if (section.fields.empty())
         {
@@ -2083,8 +2035,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         for (const auto& member : metadata.hostImageMembers)
         {
             w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Offsetof(" + typeName + "{}." +
-                   fieldIdents.get(IdentifierRole::FieldName, member.fieldName) + ")-" +
-                   std::to_string(member.offsetBytes) + "]");
+                   dataMember(member.fieldName) + ")-" + std::to_string(member.offsetBytes) + "]");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
         w.blank();
@@ -2133,7 +2084,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         if (!*allZero)
         {
-            w.open("func New" + typeName + "() " + typeName + " {");
+            w.open("func " + names.function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry) + "() " + typeName +
+                   " {");
             w.line("var obj " + typeName);
             for (const auto& field : section.fields)
             {
@@ -2147,7 +2099,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                     {
                         continue;
                     }
-                    const auto member = "obj." + fieldIdents.get(IdentifierRole::FieldName, field.name);
+                    const auto member = "obj." + dataMember(field.name);
                     const auto stored = goStoredLiteral(entry.value, field.resolvedType);
                     switch (entry.kind)
                     {
@@ -2176,7 +2128,7 @@ llvm::Error emitSectionType(SourceWriter&                         w,
                         {
                             break;
                         }
-                        const auto made = goConstructorOf(goBaseFieldType(field.resolvedType, file));
+                        const auto made = goConstructorOf(*field.resolvedType.compositeType, file, names);
                         if (entry.kind == MemberDefault::Kind::Composite)
                         {
                             w.line(goAssignment(member, " = ", made));
@@ -2198,7 +2150,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
             }
             if (init->isUnion && init->unionTag != 0)
             {
-                w.line("obj.Tag = " + std::to_string(init->unionTag));
+                w.line("obj." + names.member(key, sectionName, {}, GeneratedFact::UnionTag) + " = " +
+                       std::to_string(init->unionTag));
             }
             w.line("return obj");
             w.close("}");
@@ -2218,31 +2171,39 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         // object reads a copy.
         const bool        keepsBuffer = ctx.holdsView(section);
         const std::string receiver    = goReceiverName(typeName);
-        const std::string largest     = meta("SERIALIZATION_BUFFER_SIZE_BYTES");
+        const std::string largest     = meta(GeneratedFact::SerializationBufferSizeBytes);
+        const auto        wrapper     = [&](const mlir::func::FuncOp body, const GeneratedFact fact) {
+            return names.function(symbolOf(body), SurfaceDeclKind::Wrapper, fact);
+        };
+        const std::string& serialize   = names.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry);
+        const std::string& deserialize = names.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry);
+        const std::string& append      = wrapper(bodies.serialize, GeneratedFact::AppendWireImage);
+        const std::string& marshal     = wrapper(bodies.serialize, GeneratedFact::WireImage);
+        const std::string& unmarshal   = wrapper(bodies.deserialize, GeneratedFact::FromWireImage);
         w.blank();
-        w.line("// AppendBinary appends the wire image of " + receiver +
+        w.line("// " + append + " appends the wire image of " + receiver +
                " to buffer, as encoding.BinaryAppender asks.");
-        w.open("func (" + receiver + " *" + typeName + ") AppendBinary(buffer []byte) ([]byte, error) {");
+        w.open("func (" + receiver + " *" + typeName + ") " + append + "(buffer []byte) ([]byte, error) {");
         w.line("start := len(buffer)");
         w.line("grown := " + file.standard("slices") + ".Grow(buffer, " + largest + ")");
-        w.line("used, err := " + receiver + ".Serialize(grown[start : start+" + largest + "])");
+        w.line("used, err := " + receiver + "." + serialize + "(grown[start : start+" + largest + "])");
         w.open("if err != nil {");
         w.line("return buffer, err");
         w.close("}");
         w.line("return grown[:start+used], nil");
         w.close("}");
         w.blank();
-        w.line("// MarshalBinary answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks.");
-        w.open("func (" + receiver + " *" + typeName + ") MarshalBinary() ([]byte, error) {");
-        w.line("return " + receiver + ".AppendBinary(nil)");
+        w.line("// " + marshal + " answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks.");
+        w.open("func (" + receiver + " *" + typeName + ") " + marshal + "() ([]byte, error) {");
+        w.line("return " + receiver + "." + append + "(nil)");
         w.close("}");
         w.blank();
-        w.line(keepsBuffer ? "// UnmarshalBinary reads " + receiver + " from a copy of its wire image, which " +
+        w.line(keepsBuffer ? "// " + unmarshal + " reads " + receiver + " from a copy of its wire image, which " +
                                  receiver + "'s views would keep."
-                           : "// UnmarshalBinary reads " + receiver +
+                           : "// " + unmarshal + " reads " + receiver +
                                  " from its wire image, as encoding.BinaryUnmarshaler asks.");
-        w.open("func (" + receiver + " *" + typeName + ") UnmarshalBinary(data []byte) error {");
-        w.line("_, err := " + receiver + ".Deserialize(" +
+        w.open("func (" + receiver + " *" + typeName + ") " + unmarshal + "(data []byte) error {");
+        w.line("_, err := " + receiver + "." + deserialize + "(" +
                (keepsBuffer ? file.standard("bytes") + ".Clone(data)" : "data") + ")");
         w.line("return err");
         w.close("}");
@@ -2263,8 +2224,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const std::string&        moduleName,
                                                  mlir::ModuleOp            module,
-                                                 PlanBodyLookups&          lookups,
-                                                 NamingScope&              packageScope)
+                                                 PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -2275,14 +2235,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // The declarations and bodies first, naming what they take from other packages as they write
     // it; the import declaration is written after, from what was named.
-    ImportSet                            imports;
-    const GoFileNames                    file(ctx,
-                                              imports,
-                                              moduleName,
-                                              EmitterContext::packagePath(def.info),
-                                              computeImportAliases(def, ctx));
-    GoSpelling                           spelling(schema, file);
-    std::vector<mlir::func::FuncOp>      helpers;
+    const GoSurface&                names = ctx.names();
+    const std::string               key   = keyOf(def.info);
+    ImportSet                       imports;
+    const GoFileNames               file(ctx, imports, moduleName, names.packageDirectory(key), names.imports(key));
+    const GoSpelling                spelling(schema, names, file);
+    std::vector<mlir::func::FuncOp> helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
@@ -2321,21 +2279,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
     }
 
-    const auto currentPackagePath = EmitterContext::packagePath(def.info);
-    const auto packageName        = packageNameFromPath(currentPackagePath);
-    const auto baseType           = ctx.goTypeName(def.info);
-    const auto reqType            = renderSectionTypeName(Language::Go, baseType, "request");
-    const auto respType           = renderSectionTypeName(Language::Go, baseType, "response");
-    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, {}), baseType);
-    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "request"),
-                         reqType);
-    spelling.setTypeName(planIdentity(def.info.fullName, def.info.majorVersion, def.info.minorVersion, "response"),
-                         respType);
-
-    // A helper is private to the package, which holds a whole DSDL namespace, so its name carries
-    // the definition's type: the package's scope is what proves two of them cannot meet.
-    spelling.setHelperNames(renderSchemaHelperNames(Language::Go, module, schema, packageScope, baseType));
-
     std::ostringstream body;
     SourceWriter       w = makeGoWriter(body);
     for (const mlir::func::FuncOp helper : helpers)
@@ -2350,7 +2293,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         if (auto err = emitSectionType(w,
                                        ctx,
-                                       baseType,
+                                       key,
+                                       {},
                                        sectionMetadata(def.info, def.request, schema, ""),
                                        def.request,
                                        def.doc,
@@ -2369,7 +2313,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         if (auto err = emitSectionType(w,
                                        ctx,
-                                       reqType,
+                                       key,
+                                       "request",
                                        sectionMetadata(def.info, def.request, schema, "request"),
                                        def.request,
                                        def.doc,
@@ -2388,7 +2333,8 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             if (auto err = emitSectionType(w,
                                            ctx,
-                                           respType,
+                                           key,
+                                           "response",
                                            sectionMetadata(def.info, *def.response, schema, "response"),
                                            *def.response,
                                            def.doc,
@@ -2406,18 +2352,20 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         if (!ctx.accessorsOnly())
         {
-            w.line("type " + baseType + " = " + reqType);
+            w.line("type " + names.definitionTypeName(key) + " = " + names.typeName(key, "request"));
         }
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
         w.blank();
         // The service-ID belongs to the service, and this alias is how the service is named.
-        w.line("const " + goConstantName({baseType, "HAS_FIXED_PORT_ID"}) + " = " +
+        const auto service = [&](const GeneratedFact fact) {
+            return names.declared(key, SurfaceDeclKind::Constant, {}, {}, fact);
+        };
+        w.line("const " + service(GeneratedFact::HasFixedPortId) + " = " +
                std::string(def.info.fixedPortId ? "true" : "false"));
         if (def.info.fixedPortId)
         {
-            w.line("const " + goConstantName({baseType, "FIXED_PORT_ID"}) + " = " +
-                   std::to_string(*def.info.fixedPortId));
+            w.line("const " + service(GeneratedFact::FixedPortId) + " = " + std::to_string(*def.info.fixedPortId));
         }
     }
 
@@ -2427,7 +2375,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     head.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
               std::to_string(def.info.minorVersion));
     head.blank();
-    head.line("package " + packageName);
+    head.line("package " + names.packageName(key));
     head.blank();
     writeGoImports(head, imports);
     out << body.str();
@@ -2467,10 +2415,11 @@ namespace
 
 std::string renderHostImageGuard(const SemanticDefinition& def, const EmitterContext& ctx)
 {
+    const std::string key = keyOf(def.info);
     const std::string version =
         def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion);
     const std::string ident =
-        codegenProjectIdentifier(Language::Go, IdentifierRole::ConstantName, ctx.goTypeName(def.info));
+        codegenProjectIdentifier(Language::Go, IdentifierRole::ConstantName, ctx.names().definitionTypeName(key));
     std::ostringstream out;
     SourceWriter       w = makeGoWriter(out);
     w.line(generatedCommentLine("Go backend"));
@@ -2478,7 +2427,7 @@ std::string renderHostImageGuard(const SemanticDefinition& def, const EmitterCon
     w.line("//go:build !(386 || amd64 || amd64p32 || alpha || arm || arm64 || loong64 || mipsle || mips64le || "
            "mips64p32le || nios2 || ppc64le || riscv || riscv64 || sh || wasm)");
     w.blank();
-    w.line("package " + packageNameFromPath(EmitterContext::packagePath(def.info)));
+    w.line("package " + ctx.names().packageName(key));
     w.blank();
     w.line("// " + version + ": its serialisation moves the object as the wire's bytes, which holds only on a");
     w.line("// little-endian target. Regenerate with --target-triple naming this target.");
@@ -2585,13 +2534,14 @@ llvm::Error emit(const SemanticModule& semantic,
         }
     }
 
-    const EmitterContext ctx(semantic, options.typeNameVersioning, options.accessorsOnly);
-
-    PlanBodyLookups lookups(module);
-
-    // One scope per package, since that is the scope a Go helper is declared into: two definitions
-    // of one DSDL namespace are two files of one package.
-    std::map<std::string, NamingScope> packageScopes;
+    auto tree = SurfaceTree::read(module, languageTraits(Language::Go));
+    if (!tree)
+    {
+        return tree.takeError();
+    }
+    const GoSurface      names(*tree);
+    const EmitterContext ctx(semantic, names, options.accessorsOnly);
+    PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
@@ -2600,26 +2550,13 @@ llvm::Error emit(const SemanticModule& semantic,
         }
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
 
-        const auto            dirRel = EmitterContext::packagePath(def.info);
-        std::filesystem::path dir    = outRoot;
-        if (!dirRel.empty())
-        {
-            dir /= dirRel;
-        }
-        auto file = renderDefinitionFile(def,
-                                         ctx,
-                                         options.moduleName,
-                                         module,
-                                         lookups,
-                                         packageScopes.try_emplace(dirRel, Language::Go).first->second);
+        const std::string key  = keyOf(def.info);
+        auto              file = renderDefinitionFile(def, ctx, options.moduleName, module, lookups);
         if (!file)
         {
             return file.takeError();
         }
-        if (auto err = writeGeneratedFile(dir / EmitterContext::goFileName(def.info),
-                                          *file,
-                                          options.writePolicy,
-                                          requiredTypeKeys))
+        if (auto err = writeGeneratedFile(outRoot / names.path(key), *file, options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
@@ -2627,7 +2564,7 @@ llvm::Error emit(const SemanticModule& semantic,
                             (def.request.hostImage.holds || (def.response && def.response->hostImage.holds));
         if (folded)
         {
-            if (auto err = writeGeneratedFile(dir / EmitterContext::goHostImageGuardFileName(def.info),
+            if (auto err = writeGeneratedFile(outRoot / names.besideFile(key, "_host_image.go"),
                                               renderHostImageGuard(def, ctx),
                                               options.writePolicy,
                                               requiredTypeKeys))

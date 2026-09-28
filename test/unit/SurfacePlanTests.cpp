@@ -412,6 +412,7 @@ bool runSurfacePlanTests()
                                        "  package ns\n"
                                        "    file msg_1_0\n"
                                        "      type Msg\n"
+                                       "      MsgGetSpeed : value\n"
                                        "      msgCapacityCheck : value private\n"
                                        "      msgScalarUnsigned0Ser : value private\n",
                                        "Go's helpers") &&
@@ -735,6 +736,53 @@ bool runSurfacePlanTests()
                     "ns__List__deserialize_\n",
                     "a C service's own names") &&
              ok;
+    }
+
+    // Go's generated names: the type's facts as constants of the package, its methods and the
+    // encoding package's over them, a constructor beside it, and its accessors, free functions
+    // named after it. A file imports each other package it takes a definition from under `pkg_`.
+    {
+        DefinitionParts pick =
+            message("Pick",
+                    SectionParts{.fields    = {field("small", false, 0), holding("far", ref("other", "Far"))},
+                                 .constants = {},
+                                 .isUnion   = true});
+        pick.bodies           = {body("ns.Pick.1.0.serialize"),
+                                 body("ns.Pick.1.0.deserialize"),
+                                 body("ns.Pick.1.0.initialize"),
+                                 body("ns.Pick.1.0.get._tag_")};
+        const std::string all = outline(allocate(Language::Go, {pick, message("Far", SectionParts{}, "other")}), true);
+        ok                    = expect(all.substr(0, all.find("  package other")),
+                                       "root pkg\n"
+                                       "  package ns\n"
+                                       "    file pick_1_0\n"
+                                       "      type Pick\n"
+                                       "        Small : field\n"
+                                       "        Far : field\n"
+                                       "        Tag : field\n"
+                                       "        Serialize : value\n"
+                                       "        Deserialize : value\n"
+                                       "        AppendBinary : value\n"
+                                       "        MarshalBinary : value\n"
+                                       "        UnmarshalBinary : value\n"
+                                       "      PickFullName : value\n"
+                                       "      PickIsDeprecated : value\n"
+                                       "      PickFullNameAndVersion : value\n"
+                                       "      PickExtentBytes : value\n"
+                                       "      PickSerializationBufferSizeBytes : value\n"
+                                       "      PickWireFlat : value\n"
+                                       "      PickWireFlatReason : value\n"
+                                       "      PickHostImage : value\n"
+                                       "      PickHostImageReason : value\n"
+                                       "      PickHasFixedPortID : value\n"
+                                       "      PickUnionOptionCount : value\n"
+                                       "      PickSmallOptionTag : value\n"
+                                       "      PickFarOptionTag : value\n"
+                                       "      NewPick : value\n"
+                                       "      PickGetTag : value\n"
+                                       "      pkg_other : value private\n",
+                                       "Go's generated names") &&
+                                ok;
     }
 
     // Rust's accessors are allocated in a pool of their own, apart from the fields: a field
