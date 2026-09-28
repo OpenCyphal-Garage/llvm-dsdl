@@ -82,9 +82,13 @@ add_library(llvmdsdlCodeGen
   emitter/CIncludes.cpp
   emitter/Cpp.cpp
   emitter/Go.cpp
+  emitter/GoPackaging.cpp
   emitter/Python.cpp
+  emitter/PythonPackaging.cpp
   emitter/Rust.cpp
+  emitter/RustPackaging.cpp
   emitter/Ts.cpp
+  emitter/TsPackaging.cpp
 )
 
 target_link_libraries(llvmdsdlCodeGen

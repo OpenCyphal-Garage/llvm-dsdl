@@ -25,6 +25,7 @@
 #include "llvmdsdl/CodeGen/SourceWriter.h"
 #include "llvmdsdl/CodeGen/EmbeddedSources.h"
 #include "llvmdsdl/CodeGen/emitter/Ts.h"
+#include "llvmdsdl/CodeGen/emitter/TsPackaging.h"
 
 #include <algorithm>
 #include <cassert>
@@ -2189,23 +2190,6 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         w.line("export type " + alias->name + " = " + request.typeName() + ";");
     }
     return assemble();
-}
-
-std::string renderPackageJson(const Options& options)
-{
-    const auto* const runtimeSpecialization =
-        options.runtimeSpecialization == RuntimeSpecialization::Fast ? "fast" : "portable";
-    std::ostringstream out;
-    out << "{\n";
-    out << R"(  "name": ")" << options.moduleName << "\",\n";
-    out << R"(  "version": ")" << llvmdsdl::kVersionString << "\",\n";
-    out << "  \"type\": \"module\",\n";
-    out << "  \"llvmdsdl\": {\n";
-    out << R"(    "generatorVersion": ")" << llvmdsdl::kVersionString << "\",\n";
-    out << R"(    "tsRuntimeSpecialization": ")" << runtimeSpecialization << "\"\n";
-    out << "  }\n";
-    out << "}\n";
-    return out.str();
 }
 
 /// @brief The runtime the generated modules call, for @p runtimeSpecialization, from the source
