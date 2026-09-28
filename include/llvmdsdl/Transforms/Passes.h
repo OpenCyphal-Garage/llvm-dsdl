@@ -122,6 +122,16 @@ std::unique_ptr<mlir::Pass> createFoldDSDLNullGuardsPass(TargetNullability nulla
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createFoldDSDLUnobservedAccessorSizesPass();
 
+/// @brief Gives each field accessor the member's storage type for the value it carries, and `index`
+///        for its buffer's size and an element's index, for a target whose accessors declare them.
+///
+/// The plan holds a value, a size and an index in an `i64`. The accessor converts at its boundary,
+/// and each conversion is an operation of the body, so the source a target writes and the object it
+/// assembles take the same signature. A value narrower than 32 bits carries the extension the C ABI
+/// gives it at a call. Registered with `dsdl-opt` as `dsdl-type-accessors`.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createTypeDSDLAccessorsPass();
+
 /// @brief Folds each nested call to `dsdl.call_serdes_sized`, for a target whose nested entry point
 ///        is handed the space as its buffer's length and answers what it used.
 ///

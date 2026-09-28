@@ -137,7 +137,7 @@ std::vector<std::string> renderServiceAliasWrapperLines(const NameOfEntryPoint& 
         "  return " + request(EntryPoint::Serialize) + "(obj, buffer, inout_buffer_size_bytes);",
         "}",
         "static inline " + status + " " + service(EntryPoint::Deserialize) + "(" + requestTag +
-            "* const out_obj, const " + byte + "* buffer, " + size + "* const inout_buffer_size_bytes)",
+            "* const out_obj, const " + byte + "* const buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + request(EntryPoint::Deserialize) + "(out_obj, buffer, inout_buffer_size_bytes);",
         "}",

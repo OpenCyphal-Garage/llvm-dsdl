@@ -39,8 +39,8 @@ Beyond the helpers, each language carries its own:
 
 **C** is the closest to right, having been rebuilt through the body translator in #40.
 `uavcan__file__List__Request` uses `__` as the separator a language without scopes needs, and the
-out-of-line `_ir_` entry points with inline wrappers are a deliberate shape. The helpers need
-internal linkage.
+out-of-line `_ir_` entry points, each published under the section's name by an inline forward, are
+a deliberate shape. The helpers need internal linkage.
 
 **C++** flattens `List.Request` to `List_Request` where the language has both nested classes and
 namespaces. The free `List_Request_serialize_` duplicates the `serialize` member, so one operation
@@ -687,22 +687,22 @@ the headers that declare what it names, the C comes to 4,804 and the C++ to 4,46
 4,803 once the runtime header includes only what it uses. An implementation file that declares only
 its helpers, and leaves its bodies to its header, takes the C to 3,990. Naming the IR by DSDL
 identity leaves the C at 3,990 and takes the C++ to 4,294: its headers lose their version sentinels
-and guard with `#pragma once`.
+and guard with `#pragma once`. Giving C's accessors the member's types takes the C to 3,337: the
+locals an accessor rebound its size and value into go, and so do the casts its wrappers made.
 
 What is left is per-language.
 
 | count | language | lint | cause |
 |------:|----------|------|-------|
-| 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan__file__List_0_2__Request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
 | 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
+| 1,808 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan__file__List_0_2__Request__serialize_ir_`), 658 helpers and 334 `LLVMDSDL_SELECTED_*_` guards |
 | 1,163 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, and the section types and facts that nesting places inside the type |
 | 996 | Python | `E501` | long lines |
-| 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
+| 732 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
 | 454 | C++ | `readability-redundant-casting` | `static_cast<std::int8_t>` around operands that already are |
 | 381 | Rust | `needless_late_init` | an `scf.if` with statements in an arm; only Rust has a block expression to take it |
 | 290 | Go | `ST1000`/`ST1021`/`ST1022` | a package comment, and doc comments that open with the identifier |
-| 185 | C | `modernize-avoid-c-style-cast` | a cast to the type its operand already has |
 | 181 | Python | `UP037` | quoted annotations |
 | 176 | Python | `SIM300` | `2112 > p0` rather than `p0 < 2112` |
 | 175 | C++ | `cppcoreguidelines-pro-type-reinterpret-cast` | `reinterpret_cast<const std::uint8_t*>("")` standing in for a null buffer in a deserialise |
@@ -1012,12 +1012,19 @@ language in two changes:
 
 1. Its output changes. The defects a renderer would otherwise encode are fixed -- the doubled blank
    lines in C, C++ and TypeScript and in the accessors-only output of Go, Rust and TypeScript, and
-   the service wrappers' `deserialize` buffer that C and C++ leave without `const` -- and its bodies
-   take the shape its language publishes, which removes its wrappers. Gate: the language's judge,
-   the round-trip and parity lanes, and the oracle retaken.
+   the `deserialize` buffer that C and C++ forward without `* const` -- and its bodies take the
+   shape its language publishes, which removes its wrappers. Gate: the language's judge, the
+   round-trip and parity lanes, and the oracle retaken.
 2. Its declaration half moves onto the renderer, byte-identical against that output. C's change
    carries the renderer, the `DeclarationSpelling` interface and the facts view. Gate: the oracle
    byte-identical, and the language's declaration count, which must fall.
+
+C's output change gives its accessors the member's types. `dsdl-type-accessors`, selected by the
+row's `accessorsTakeMemberTypes`, types each accessor's value as the member is stored and its size
+and index as an `index`, with the conversions in the body, so the C the backend writes and the
+object the `obj` target assembles take one signature; the object target lowers an `index` to the
+target's `size_t`. A composite getter writes its size only where the caller hands it a pointer. The
+header publishes each accessor under the section's name by a forward that converts nothing.
 
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
@@ -1205,9 +1212,8 @@ have kept those names in each language's reserved-name table only, and given the
 without a DSDL source.
 
 **No declaration wraps a body.** A wrapper is a function the generator writes around one lowered
-function: C's accessor that casts an `int64_t` to the member's type, TypeScript's and Python's
-functions that raise on the status code their body returns, C++'s member that forwards to a free
-function. Each adapts a shape the generator chose, so the generator writes the shape instead. The
+function to adapt its shape: TypeScript's and Python's functions that raise on the status code their
+body returns, C++'s member that forwards to a free function. Each adapts a shape the generator chose, so the generator writes the shape instead. The
 interface that allocates and returns bytes composes the primitive the same way for every type, so it
 lives once in each runtime rather than in every type. C's unversioned public name over each versioned
 link name stays, so that two versions of a type link into one program.

@@ -1,0 +1,7 @@
+# One member of each kind a field accessor carries: a signed and an unsigned integer narrower than
+# the plan's 64 bits, a signed 64-bit one, and a bool, as the element of a fixed array.
+int8 small
+uint16 wide
+int64 large
+bool[8] flags
+@sealed

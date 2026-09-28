@@ -29,6 +29,7 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <memory>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -1496,6 +1497,149 @@ struct FoldDSDLUnobservedAccessorSizesPass
     }
 };
 
+/// @brief Gives each field accessor the types its target's accessor declares: the member's own
+///        storage type for the value it carries, and `index` for its buffer's size and an element's
+///        index.
+struct TypeDSDLAccessorsPass : public mlir::PassWrapper<TypeDSDLAccessorsPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-type-accessors";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Give field accessors the member's storage type for their value, and index for their size and "
+               "element index";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::LLVM::LLVMDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        // The plan works in `i64`: a value is read into one, a size and an index are counted in
+        // one. An accessor that declares the member's type converts at its boundary, and the
+        // conversions are stated here, where every translation of the body reads them.
+        getOperation().walk([&](mlir::func::FuncOp fn) {
+            const auto body = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
+            if (!body || ((body.getValue() != "get") && (body.getValue() != "set")))
+            {
+                return;
+            }
+            mlir::Block&    entry = fn.getBody().front();
+            mlir::OpBuilder builder(&entry, entry.begin());
+            const auto      loc     = fn.getLoc();
+            const bool      getter  = body.getValue() == "get";
+            const bool      pointer = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
+
+            // The buffer's size and, where the field is an array, an element's index.
+            const unsigned counted = (getter && !pointer) ? fn.getNumArguments() : fn.getNumArguments() - 1;
+            for (unsigned index = 1; index < counted; ++index)
+            {
+                retypeArgument(entry.getArgument(index), builder.getIndexType(), [&](mlir::Value held) {
+                    return mlir::arith::IndexCastUIOp::create(builder, loc, builder.getI64Type(), held).getResult();
+                });
+            }
+
+            // The value, where the member is stored narrower than the plan holds it. A 64-bit member
+            // is stored in the plan's own width.
+            const std::optional<MemberType>  member = pointer ? std::nullopt : memberType(fn);
+            mlir::SmallVector<mlir::Type, 1> results(fn.getResultTypes());
+            if (member && getter)
+            {
+                fn.walk([&](mlir::func::ReturnOp ret) {
+                    mlir::OpBuilder at(ret);
+                    ret->setOperand(0, mlir::arith::TruncIOp::create(at, loc, member->type, ret.getOperand(0)));
+                });
+                results.front() = member->type;
+            }
+            else if (member)
+            {
+                retypeArgument(entry.getArgument(fn.getNumArguments() - 1),
+                               member->type,
+                               [&](mlir::Value held) -> mlir::Value {
+                                   if (member->isSigned)
+                                   {
+                                       return mlir::arith::ExtSIOp::create(builder, loc, builder.getI64Type(), held);
+                                   }
+                                   return mlir::arith::ExtUIOp::create(builder, loc, builder.getI64Type(), held);
+                               });
+            }
+            fn.setType(builder.getFunctionType(entry.getArgumentTypes(), results));
+            if (member && !member->extension().empty())
+            {
+                if (getter)
+                {
+                    fn.setResultAttr(0, member->extension(), builder.getUnitAttr());
+                }
+                else
+                {
+                    fn.setArgAttr(fn.getNumArguments() - 1, member->extension(), builder.getUnitAttr());
+                }
+            }
+        });
+    }
+
+private:
+    /// @brief The storage type of an integer member, and how the C ABI extends it.
+    struct MemberType final
+    {
+        mlir::IntegerType type;
+        bool              isSigned{false};
+
+        /// @brief The attribute that states the extension a narrow value takes at a call, which the
+        ///        C ABI gives a type narrower than 32 bits; none for a wider one.
+        [[nodiscard]] mlir::StringRef extension() const
+        {
+            if (type.getWidth() >= 32U)
+            {
+                return {};
+            }
+            return isSigned ? mlir::LLVM::LLVMDialect::getSExtAttrName() : mlir::LLVM::LLVMDialect::getZExtAttrName();
+        }
+    };
+
+    /// @brief The storage type of the integer member @p fn reaches, where it is narrower than the
+    ///        plan's `i64`; none for a float, which the plan holds in its own type, or for a member
+    ///        stored in 64 bits.
+    [[nodiscard]] static std::optional<MemberType> memberType(mlir::func::FuncOp fn)
+    {
+        const auto category = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.scalar_category");
+        const auto bits     = fn->getAttrOfType<mlir::IntegerAttr>("llvmdsdl.bit_length");
+        if (!category || !bits || (category.getValue() == "float"))
+        {
+            return std::nullopt;
+        }
+        auto* const ctx = fn.getContext();
+        if (category.getValue() == "bool")
+        {
+            return MemberType{mlir::IntegerType::get(ctx, 1), false};
+        }
+        const std::uint32_t storage = scalarStorageBits(static_cast<std::uint32_t>(bits.getInt()));
+        if (storage >= 64U)
+        {
+            return std::nullopt;
+        }
+        return MemberType{mlir::IntegerType::get(ctx, storage), category.getValue() == "signed"};
+    }
+
+    /// @brief Gives @p argument the type @p type, and hands every use the `i64` @p convert makes of it
+    ///        at the top of the body.
+    template <typename Convert>
+    static void retypeArgument(mlir::BlockArgument argument, mlir::Type type, Convert convert)
+    {
+        if (argument.getType() == type)
+        {
+            return;
+        }
+        argument.setType(type);
+        const mlir::Value held = convert(argument);
+        argument.replaceAllUsesExcept(held, held.getDefiningOp());
+    }
+};
+
 /// @brief Folds each nested call to the form a target takes when its buffer carries its own length.
 ///
 /// The plan hands a nested type the space available through a local and reads back what it used
@@ -2881,6 +3025,11 @@ std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(const BoolArrayStorage 
     return std::make_unique<ExpandDSDLBoolRunsPass>(storage);
 }
 
+std::unique_ptr<mlir::Pass> createTypeDSDLAccessorsPass()
+{
+    return std::make_unique<TypeDSDLAccessorsPass>();
+}
+
 std::unique_ptr<mlir::Pass> createFoldDSDLNestedCallSizesPass()
 {
     return std::make_unique<FoldDSDLNestedCallSizesPass>();
@@ -2934,6 +3083,12 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager&           pm,
     if (target.accessorsReturnViews)
     {
         pm.addPass(createFoldDSDLUnobservedAccessorSizesPass());
+    }
+    // Its own stage, under the target's capability: which types an accessor declares is a question
+    // about its signature, which the folds above settle the rest of.
+    if (target.accessorsTakeMemberTypes)
+    {
+        pm.addPass(createTypeDSDLAccessorsPass());
     }
     // Its own stage, under the target's capability. Folding inside the optimise stage would make
     // the fast path turn on a flag about simplification, which is a different question.
@@ -3037,6 +3192,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<MarkDSDLInfallibleBodiesPass> const        regInfallible;
     static mlir::PassRegistration<MarkDSDLUnreadArgumentsPass> const         regUnread;
     static mlir::PassRegistration<FoldDSDLUnobservedAccessorSizesPass> const regUnobserved;
+    static mlir::PassRegistration<TypeDSDLAccessorsPass> const               regTypeAccessors;
     static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const         regNestedSizes;
     static mlir::PassRegistration<FoldDSDLBodySizesPass> const               regBodySizes;
     static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const              regBoolRuns;

@@ -917,7 +917,8 @@ private:
             .Case<mlir::arith::ExtUIOp>([&](auto) -> void { conversion(op, Conversion::ZeroExtend); })
             .Case<mlir::arith::ExtSIOp>([&](auto) -> void { conversion(op, Conversion::SignExtend); })
             .Case<mlir::arith::TruncIOp>([&](auto) -> void { conversion(op, Conversion::Truncate); })
-            .Case<mlir::arith::IndexCastOp>([&](auto) -> void { conversion(op, Conversion::IndexCast); })
+            .Case<mlir::arith::IndexCastOp, mlir::arith::IndexCastUIOp>(
+                [&](auto) -> void { conversion(op, Conversion::IndexCast); })
             // Calls and returns.
             .Case<mlir::func::CallOp>([&](mlir::func::CallOp call) -> void {
                 if (call.getNumResults() != 1)
@@ -975,6 +976,18 @@ private:
             })
             // The dialect: reads.
             .Case<mlir::dsdl::IsNullOp>([&](mlir::dsdl::IsNullOp read) -> void {
+                // A test read only as the condition of an `if` whose first arm is empty is asked for
+                // its opposite there (`negated`), which reads the pointer rather than the test.
+                const auto negatedOnly = [&](mlir::Operation* user) {
+                    auto branch = mlir::dyn_cast<mlir::scf::IfOp>(user);
+                    return branch && (branch.getCondition() == read.getResult()) && (branch.getNumResults() == 0) &&
+                           spellsNothing(branch.getThenRegion());
+                };
+                if (!read.getResult().use_empty() && llvm::all_of(read.getResult().getUsers(), negatedOnly))
+                {
+                    names_[read.getResult()] = spelling_.isNull(read, *this);
+                    return;
+                }
                 define(read.getResult(), spelling_.isNull(read, *this), true);
             })
             .Case<mlir::dsdl::IndexHoldsOp>([&](mlir::dsdl::IndexHoldsOp test) -> void {

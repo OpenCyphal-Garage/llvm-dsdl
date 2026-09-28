@@ -2245,7 +2245,8 @@ PlanStep unionTagAsStep(mlir::dsdl::SerializationPlanOp plan)
 }
 
 /// @brief Stamps what a translator needs to find an accessor and place it: the schema, the
-///        section, which of the two it is, and the member it reaches.
+///        section, which of the two it is, the member it reaches, and the member's scalar
+///        category and bit length, from which a target types the value the accessor carries.
 void tagAccessor(mlir::func::FuncOp    fn,
                  mlir::dsdl::SchemaOp  schema,
                  const llvm::StringRef section,
@@ -2257,6 +2258,8 @@ void tagAccessor(mlir::func::FuncOp    fn,
     fn->setAttr("llvmdsdl.schema_sym", schema.getSymNameAttr());
     fn->setAttr("llvmdsdl.plan_body", b.getStringAttr(kind));
     fn->setAttr("llvmdsdl.member", b.getStringAttr(step.name));
+    fn->setAttr("llvmdsdl.scalar_category", b.getStringAttr(step.scalarCategory));
+    fn->setAttr("llvmdsdl.bit_length", b.getI64IntegerAttr(step.bitLength));
     if (!section.empty())
     {
         fn->setAttr("llvmdsdl.section", b.getStringAttr(section));
@@ -2454,6 +2457,21 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
     return mlir::success();
 }
 
+/// @brief Writes @p size through @p outSize where the caller handed a pointer.
+///
+/// A composite getter's caller may pass no pointer when it has no use for the size.
+void storeSizeIfWanted(mlir::OpBuilder&     builder,
+                       const mlir::Location loc,
+                       const mlir::Value    outSize,
+                       const mlir::Value    size)
+{
+    const mlir::Value null  = mlir::dsdl::IsNullOp::create(builder, loc, builder.getI1Type(), outSize);
+    auto              guard = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{}, null, true);
+    mlir::OpBuilder::InsertionGuard const g(builder);
+    builder.setInsertionPointToStart(guard.elseBlock());
+    mlir::dsdl::StoreScalarOp::create(builder, loc, outSize, size);
+}
+
 /// @brief Builds the getter of one nested composite field of a wire-flat section, or of one
 ///        element of a fixed array of them.
 ///
@@ -2464,8 +2482,9 @@ mlir::LogicalResult buildFieldAccessors(mlir::OpBuilder&                        
 /// added to the buffer, so a null one needs no stand-in, and the nested getters read a null buffer
 /// as empty. Elsewhere the offset is clamped to the size, so a short buffer yields an empty one and
 /// every nested read zero-extends, as `deserialize_` does; an element at or past the capacity
-/// yields the same, and so does a null buffer (`readableBuffer`). There is no setter: a nested
-/// field is set through its own fields' setters on the buffer the getter answers.
+/// yields the same, and so does a null buffer (`readableBuffer`). The size is written only where
+/// the caller handed a pointer for it (`storeSizeIfWanted`). There is no setter: a nested field is
+/// set through its own fields' setters on the buffer the getter answers.
 mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                           builder,
                                            mlir::ModuleOp                             module,
                                            mlir::Location                             loc,
@@ -2507,10 +2526,7 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
     const std::int64_t byteOffset = bitOffset / 8;
     if (!indexed && (byteOffset == 0))
     {
-        mlir::dsdl::StoreScalarOp::create(builder,
-                                          loc,
-                                          outSize,
-                                          readableSize(builder, loc, buffer, entry->getArgument(1)));
+        storeSizeIfWanted(builder, loc, outSize, readableSize(builder, loc, buffer, entry->getArgument(1)));
         mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{buffer});
         built.push_back(fn);
         return mlir::success();
@@ -2549,7 +2565,7 @@ mlir::LogicalResult buildCompositeAccessor(mlir::OpBuilder&                     
     }
     const mlir::Value at        = mlir::arith::SelectOp::create(builder, loc, within, offset, size);
     const mlir::Value remaining = mlir::arith::SubIOp::create(builder, loc, size, at);
-    mlir::dsdl::StoreScalarOp::create(builder, loc, outSize, remaining);
+    storeSizeIfWanted(builder, loc, outSize, remaining);
     const mlir::Value sub = mlir::dsdl::BufferAtOp::create(builder, loc, readTy, readable, at);
     mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{sub});
     built.push_back(fn);

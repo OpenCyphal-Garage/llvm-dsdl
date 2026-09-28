@@ -508,6 +508,7 @@ void emitUnionOptionTagMacros(SourceWriter& w, const CSection& names, const Sect
 
 void emitArrayMacros(SourceWriter& w, const CSection& names, const SemanticSection& section, const CFileNames& file)
 {
+    bool written = false;
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -518,8 +519,9 @@ void emitArrayMacros(SourceWriter& w, const CSection& names, const SemanticSecti
                std::to_string(field.resolvedType.arrayCapacity) + "U");
         w.line("#define " + names.constant(field.name, GeneratedFact::ArrayIsVariableLength) + " " +
                (isVariableArray(field.resolvedType.arrayKind) ? file.standard("true") : file.standard("false")));
+        written = true;
     }
-    if (!section.fields.empty())
+    if (written)
     {
         w.blank();
     }
@@ -800,7 +802,7 @@ void emitSection(SourceWriter&              w,
         w.blank();
 
         w.line("static inline " + file.standard("int8_t") + " " + ctx.names().wrapper(deserialize) + "(" + objectType +
-               "* const out_obj, const " + file.standard("uint8_t") + "* buffer, " + file.standard("size_t") +
+               "* const out_obj, const " + file.standard("uint8_t") + "* const buffer, " + file.standard("size_t") +
                "* const "
                "inout_buffer_size_bytes)");
         w.open("{");
@@ -817,8 +819,9 @@ void emitSection(SourceWriter&              w,
     }
     // A wire-flat section's scalar fields, and the elements of its fixed arrays of scalars, have a
     // getter and a setter beside the bodies: one read or one write at the field's offset, through
-    // the helpers the bodies normalise with. The lowered entry points take the size, and an index,
-    // as an int64_t and hold an integer in one; the wrappers speak the member's own type.
+    // the helpers the bodies normalise with. Each takes the buffer's size, and an index, as a
+    // `size_t` and carries the member's own type, and is published under the section's name over
+    // the versioned name it is compiled under.
     // A union whose options are all flat and of one length has them too, at the offset after its
     // tag, and the tag as a member named `_tag_`; the pass that builds the bodies decides which
     // unions those are, and the tag's getter is the sign that it did.
@@ -857,73 +860,48 @@ void emitSection(SourceWriter&              w,
             {
                 continue;
             }
-            const bool        indexed   = kind == ArrayKind::Fixed;
-            const std::string irIndex   = indexed ? ", " + file.standard("int64_t") + " index" : "";
-            const std::string cIndex    = indexed ? ", const " + file.standard("size_t") + " index" : "";
-            const std::string passIndex = indexed ? ", (" + file.standard("int64_t") + ") index" : "";
-            const std::string size      = "(" + file.standard("int64_t") + ") buffer_size_bytes";
+            const bool        indexed = kind == ArrayKind::Fixed;
+            const std::string sizeT   = file.standard("size_t");
+            const std::string byte    = file.standard("uint8_t");
+            const std::string index   = indexed ? ", " + sizeT + " index" : "";
+            const std::string cIndex  = indexed ? ", const " + sizeT + " index" : "";
+            const std::string passed  = std::string("buffer, buffer_size_bytes") + (indexed ? ", index" : "");
+            // NOLINTBEGIN(performance-inefficient-string-concatenation)
             if (type.scalarCategory == SemanticScalarCategory::Composite)
             {
                 // A nested composite's getter answers the buffer from the field's offset and, through
-                // the pointer, what remains of this one, for the nested type's own accessors.
-                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                // the pointer where one is handed, what remains of this one, for the nested type's own
+                // accessors.
                 const std::string& irGet = ctx.names().linkName(getter);
-                w.line("const " + file.standard("uint8_t") + "* " + irGet + "(const " + file.standard("uint8_t") +
-                       "* buffer, " + file.standard("int64_t") + " buffer_size_bytes" + irIndex + ", " +
-                       file.standard("size_t") + "* out_size);");
+                w.line("const " + byte + "* " + irGet + "(const " + byte + "* buffer, " + sizeT + " buffer_size_bytes" +
+                       index + ", " + sizeT + "* out_size);");
                 w.blank();
-                w.line("static inline const " + file.standard("uint8_t") + "* " + ctx.names().wrapper(getter) +
-                       "(const " + file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
-                       " buffer_size_bytes" + cIndex + ", " + file.standard("size_t") + "* const out_size)");
+                w.line("static inline const " + byte + "* " + ctx.names().wrapper(getter) + "(const " + byte +
+                       "* const buffer, const " + sizeT + " buffer_size_bytes" + cIndex + ", " + sizeT +
+                       "* const out_size)");
                 w.open("{");
-                w.line(file.standard("size_t") + "               sub_size = 0;");
-                w.line("const " + file.standard("uint8_t") + "* const sub      = " + irGet + "(buffer, " + size +
-                       passIndex + ", &sub_size);");
-                w.line("if (out_size != " + file.standard("NULL") + ")");
-                w.open("{");
-                w.line("*out_size = sub_size;");
-                w.close("}");
-                w.line("return sub;");
+                w.line("return " + irGet + "(" + passed + ", out_size);");
                 w.close("}");
                 w.blank();
-                // NOLINTEND(performance-inefficient-string-concatenation)
                 continue;
             }
-            const bool  isFloat = type.scalarCategory == SemanticScalarCategory::Float;
-            const bool  isBool  = type.scalarCategory == SemanticScalarCategory::Bool;
-            std::string irType  = file.standard("int64_t");
-            if (isFloat)
-            {
-                irType = (type.bitLength <= 32) ? "float" : "double";
-            }
-            const std::string cType = cTypeFromFieldType(type, ctx, file);
-            // NOLINTBEGIN(performance-inefficient-string-concatenation)
+            const std::string  cType = cTypeFromFieldType(type, ctx, file);
             const std::string& irGet = ctx.names().linkName(getter);
             const std::string& irSet = ctx.names().linkName(setter);
-            w.line(irType + " " + irGet + "(const " + file.standard("uint8_t") + "* buffer, " +
-                   file.standard("int64_t") + " buffer_size_bytes" + irIndex + ");");
-            w.line(file.standard("int8_t") + " " + irSet + "(" + file.standard("uint8_t") + "* buffer, " +
-                   file.standard("int64_t") + " buffer_size_bytes" + irIndex + ", " + irType + " value);");
+            w.line(cType + " " + irGet + "(const " + byte + "* buffer, " + sizeT + " buffer_size_bytes" + index + ");");
+            w.line(file.standard("int8_t") + " " + irSet + "(" + byte + "* buffer, " + sizeT + " buffer_size_bytes" +
+                   index + ", " + cType + " value);");
             w.blank();
-            w.line("static inline " + cType + " " + ctx.names().wrapper(getter) + "(const " + file.standard("uint8_t") +
-                   "* const buffer, const " + file.standard("size_t") + " buffer_size_bytes" + cIndex + ")");
+            w.line("static inline " + cType + " " + ctx.names().wrapper(getter) + "(const " + byte +
+                   "* const buffer, const " + sizeT + " buffer_size_bytes" + cIndex + ")");
             w.open("{");
-            if (isBool)
-            {
-                w.line("return " + irGet + "(buffer, " + size + passIndex + ") != 0;");
-            }
-            else
-            {
-                w.line("return (" + cType + ") " + irGet + "(buffer, " + size + passIndex + ");");
-            }
+            w.line("return " + irGet + "(" + passed + ");");
             w.close("}");
             w.blank();
-            w.line("static inline " + file.standard("int8_t") + " " + ctx.names().wrapper(setter) + "(" +
-                   file.standard("uint8_t") + "* const buffer, const " + file.standard("size_t") +
-                   " buffer_size_bytes" + cIndex + ", const " + cType + " value)");
+            w.line("static inline " + file.standard("int8_t") + " " + ctx.names().wrapper(setter) + "(" + byte +
+                   "* const buffer, const " + sizeT + " buffer_size_bytes" + cIndex + ", const " + cType + " value)");
             w.open("{");
-            w.line("return " + irSet + "(buffer, (" + file.standard("int64_t") + ") buffer_size_bytes" + passIndex +
-                   ", (" + irType + ") " + (isBool ? std::string("(value ? 1 : 0)") : std::string("value")) + ");");
+            w.line("return " + irSet + "(" + passed + ", value);");
             w.close("}");
             w.blank();
             // NOLINTEND(performance-inefficient-string-concatenation)
@@ -1092,7 +1070,8 @@ void cloneFunctionsOf(mlir::dsdl::SchemaOp schema, mlir::ModuleOp source, mlir::
 /// A caller compiled from the header takes an `int8_t` or a `bool` its callee answers as already
 /// extended to 32 bits, and hands its own narrow arguments extended the same way. An object that
 /// answers `-2` in the low byte alone reads as 254. The header spells a one-bit integer `bool`,
-/// which the ABI zero-extends, and a wider one `intN_t`, which it sign-extends.
+/// which the ABI zero-extends, and a wider one `intN_t`, which it sign-extends, unless the
+/// function states the extension itself.
 void markNarrowIntegerExtensions(mlir::ModuleOp module)
 {
     const auto extension = [](const mlir::Type type) -> std::optional<llvm::StringRef> {
@@ -1104,21 +1083,28 @@ void markNarrowIntegerExtensions(mlir::ModuleOp module)
         return (integer.getWidth() == 1) ? mlir::LLVM::LLVMDialect::getZExtAttrName()
                                          : mlir::LLVM::LLVMDialect::getSExtAttrName();
     };
+    // An accessor's value states its own, from the member's signedness (`dsdl-type-accessors`).
+    const auto stated = [](const mlir::DictionaryAttr attributes) {
+        return attributes && (attributes.contains(mlir::LLVM::LLVMDialect::getZExtAttrName()) ||
+                              attributes.contains(mlir::LLVM::LLVMDialect::getSExtAttrName()));
+    };
     const mlir::UnitAttr marked = mlir::UnitAttr::get(module.getContext());
     for (mlir::func::FuncOp fn : module.getBodyRegion().front().getOps<mlir::func::FuncOp>())
     {
         for (const auto& [index, type] : llvm::enumerate(fn.getArgumentTypes()))
         {
-            if (const auto name = extension(type))
+            const auto position = static_cast<unsigned>(index);
+            if (const auto name = extension(type); name && !stated(fn.getArgAttrDict(position)))
             {
-                fn.setArgAttr(static_cast<unsigned>(index), *name, marked);
+                fn.setArgAttr(position, *name, marked);
             }
         }
         for (const auto& [index, type] : llvm::enumerate(fn.getResultTypes()))
         {
-            if (const auto name = extension(type))
+            const auto position = static_cast<unsigned>(index);
+            if (const auto name = extension(type); name && !stated(fn.getResultAttrDict(position)))
             {
-                fn.setResultAttr(static_cast<unsigned>(index), *name, marked);
+                fn.setResultAttr(position, *name, marked);
             }
         }
     }
@@ -1131,16 +1117,20 @@ void markNarrowIntegerExtensions(mlir::ModuleOp module)
 /// assembler. No C is written and no compiler is invoked.
 /// @param[in] module The per-definition module, already converted out of the DSDL dialect.
 /// @param[in] triple The target to assemble for; the host's own when empty.
+/// @param[in] sizeBits The width of the target's `size_t`, which an `index` lowers to.
 /// @param[out] object Receives the object file's bytes.
 /// @return Success or a description of what failed.
-llvm::Error assembleModule(mlir::ModuleOp module, const std::string& triple, std::string& object)
+llvm::Error assembleModule(mlir::ModuleOp     module,
+                           const std::string& triple,
+                           const unsigned     sizeBits,
+                           std::string&       object)
 {
     markNarrowIntegerExtensions(module);
     mlir::PassManager pm(module.getContext());
     pm.addPass(mlir::createSCFToControlFlowPass());
-    pm.addPass(mlir::createArithToLLVMConversionPass());
-    pm.addPass(mlir::createConvertControlFlowToLLVMPass());
-    pm.addPass(mlir::createConvertFuncToLLVMPass());
+    pm.addPass(mlir::createArithToLLVMConversionPass({.indexBitwidth = sizeBits}));
+    pm.addPass(mlir::createConvertControlFlowToLLVMPass({.indexBitwidth = sizeBits}));
+    pm.addPass(mlir::createConvertFuncToLLVMPass({.useBarePtrCallConv = false, .indexBitwidth = sizeBits}));
     pm.addPass(mlir::createReconcileUnrealizedCastsPass());
     if (mlir::failed(pm.run(module)))
     {
@@ -1307,6 +1297,8 @@ public:
 
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
+        unsignedWidth_.reset();
+        returnCast_.clear();
         const auto direction = planBodyDirection(fn);
         if (!direction)
         {
@@ -1315,38 +1307,7 @@ public:
         const std::string& name = names_.linkName(fn.getSymName());
         if ((*direction == "get") || (*direction == "set"))
         {
-            // An accessor reads or writes the wire at the field's offset. A scalar one carries
-            // the buffer and its size; a composite `get` answers the field's bytes and reports
-            // their count through a third parameter, and a `set` takes the value as one.
-            const std::vector<std::string> parameters = accessorParameters(fn, *direction == "get");
-            std::string                    rendered;
-            for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
-            {
-                rendered += (rendered.empty() ? "" : ", ") + accessorTypeName(argument.getType()) + " " + parameter;
-            }
-            w.line(accessorTypeName(fn.getFunctionType().getResult(0)) + " " + name + "(" + rendered + ")");
-            w.open("{");
-            markUnused(w, fn, parameters);
-            // The header declares the offsets signed. The plan counts in unsigned, so each is
-            // taken once into the type the body operates in rather than converted at every use.
-            std::vector<std::string> names;
-            for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
-            {
-                const std::string spelt = typeName(argument.getType());
-                if (spelt == accessorTypeName(argument.getType()))
-                {
-                    names.push_back(parameter);
-                    continue;
-                }
-                names.push_back(parameter + "_");
-                std::string conversion = "const " + spelt;
-                conversion += " " + names.back();
-                conversion += " = (" + spelt;
-                conversion += ") " + parameter;
-                conversion += ";";
-                w.line(conversion);
-            }
-            return names;
+            return openAccessor(w, fn, name, *direction == "get");
         }
         const std::string object = (*direction == "serialize") ? "obj" : "out_obj";
         if (*direction == "initialize")
@@ -1445,7 +1406,7 @@ public:
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
-        w.line("return " + expr.str() + ";");
+        w.line("return " + returnCast_ + expr.str() + ";");
     }
 
     void returnWithSize(SourceWriter& /*w*/,
@@ -1885,15 +1846,73 @@ public:
     }
 
 private:
-    /// @brief An accessor's signature as the header declares it.
+    /// @brief Opens a getter or a setter, in the types `dsdl-type-accessors` gave it: the buffer's
+    ///        size and an element's index as a `size_t`, and the value in the member's own type.
     ///
-    /// The header renders the declaration from the field rather than from the plan, and spells
-    /// the offsets and the value it carries signed. A definition that disagreed with it would
-    /// not compile beside it.
-    [[nodiscard]] std::string accessorTypeName(const mlir::Type type) const
+    /// A scalar accessor carries the buffer and its size; a composite `get` answers the field's
+    /// bytes and reports their count through a further parameter, and a `set` takes the value as
+    /// one. A value narrower than the plan's `i64` is converted by the body. A 64-bit one is held in
+    /// the plan's own width, which C spells unsigned, so a signed member's value is taken into that
+    /// type at entry and answered in its own at the return.
+    std::vector<std::string> openAccessor(SourceWriter&      w,
+                                          mlir::func::FuncOp fn,
+                                          const std::string& name,
+                                          const bool         getter) const
+    {
+        const std::vector<std::string> parameters = accessorParameters(fn, getter);
+        const bool                     isSigned   = fn->hasAttr("llvmdsdl.is_signed");
+        const mlir::Type               result     = fn.getFunctionType().getResult(0);
+        const bool                     valued     = !mlir::isa<mlir::dsdl::PtrType>(result);
+        std::string                    rendered;
+        for (const auto& [argument, parameter] : llvm::zip(fn.getArguments(), parameters))
+        {
+            const bool value = !getter && (argument.getArgNumber() + 1 == fn.getNumArguments());
+            rendered += (rendered.empty() ? "" : ", ") +
+                        (value ? memberTypeName(argument.getType(), isSigned) : typeName(argument.getType())) + " " +
+                        parameter;
+        }
+        const std::string answer = (getter && valued) ? memberTypeName(result, isSigned) : typeName(result);
+        w.line(answer + " " + name + "(" + rendered + ")");
+        w.open("{");
+        markUnused(w, fn, parameters);
+        std::vector<std::string> names(parameters.begin(), parameters.end());
+        if (getter && valued)
+        {
+            // A getter holds no error code, so an integer of the member's width is the member.
+            const auto integer = mlir::dyn_cast<mlir::IntegerType>(result);
+            if (integer && !isSigned && (integer.getWidth() > 1U) && (integer.getWidth() < 64U))
+            {
+                unsignedWidth_ = integer.getWidth();
+            }
+            if (answer != typeName(result))
+            {
+                returnCast_ = "(" + answer + ") ";
+            }
+        }
+        else if (!getter)
+        {
+            const mlir::BlockArgument value   = fn.getArguments().back();
+            const std::string         held    = typeName(value.getType());
+            const auto                integer = mlir::dyn_cast<mlir::IntegerType>(value.getType());
+            if (integer && (integer.getWidth() == 64U) && (memberTypeName(value.getType(), isSigned) != held))
+            {
+                names.back() = parameters.back() + "_";
+                w.line("const " + held + " " + names.back() + " = (" + held + ") " + parameters.back() + ";");
+            }
+        }
+        return names;
+    }
+
+    /// @brief The C spelling of the member's type an accessor carries its value in: the IR's
+    ///        integer, signed where the member is.
+    [[nodiscard]] std::string memberTypeName(const mlir::Type type, const bool isSigned) const
     {
         const auto integer = mlir::dyn_cast<mlir::IntegerType>(type);
-        return (integer && (integer.getWidth() == 64)) ? file_.standard("int64_t") : typeName(type);
+        if (!integer || (integer.getWidth() == 1U))
+        {
+            return typeName(type);
+        }
+        return file_.standard((isSigned ? "int" : "uint") + std::to_string(integer.getWidth()) + "_t");
     }
 
     /// @brief What an accessor's parameters are called, by what the field needs of them.
@@ -2214,6 +2233,10 @@ private:
         {
             return file_.standard("bool");
         }
+        if (unsignedWidth_ == width)
+        {
+            return file_.standard("uint" + std::to_string(width) + "_t");
+        }
         // The plan's i64 is the wire arithmetic and the runtime's argument, both unsigned; a
         // signed comparison casts for the comparison alone.
         return file_.standard((width == 64) ? std::string(file_.standard("uint64_t"))
@@ -2269,6 +2292,11 @@ private:
     llvm::StringMap<std::string> headers_;
     /// @brief How the implementation file names what it takes from other headers.
     const CFileNames& file_;
+    /// @brief The width of the unsigned member the getter being spelt answers, whose integers of
+    ///        that width C spells unsigned.
+    mutable std::optional<unsigned> unsignedWidth_;
+    /// @brief The cast the function being spelt answers its value through.
+    mutable std::string returnCast_;
 };
 
 }  // namespace
@@ -2381,7 +2409,7 @@ llvm::Error emit(const SemanticModule& semantic,
                 return llvm::createStringError(llvm::inconvertibleErrorCode(), "LLVM conversion failed");
             }
             std::string object;
-            if (auto err = assembleModule(perDefModule, options.targetTriple, object))
+            if (auto err = assembleModule(perDefModule, options.targetTriple, objectSizeBits, object))
             {
                 return err;
             }
