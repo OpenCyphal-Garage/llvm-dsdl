@@ -25,7 +25,6 @@ class HardCutIntegrityRegressionTest(unittest.TestCase):
         "tools/convergence/validate_hard_cut_integrity.py",
         "test/integration/CMakeLists.txt",
         "lib/CodeGen/BodyTranslator.cpp",
-        "lib/CodeGen/CodegenDiagnosticText.cpp",
         "include/llvmdsdl/Transforms/LoweredSerDesContractValidation.h",
         "lib/Transforms/LoweredSerDesContractValidation.cpp",
     ]
@@ -83,13 +82,13 @@ class HardCutIntegrityRegressionTest(unittest.TestCase):
     def test_forbidden_shim_phrase_is_detected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="llvmdsdl-hard-cut-test-") as tmp_dir:
             snapshot_root = self._create_snapshot(Path(tmp_dir) / "snapshot")
-            target = snapshot_root / "lib/CodeGen/CodegenDiagnosticText.cpp"
+            target = snapshot_root / "lib/CodeGen/BodyTranslator.cpp"
             text = target.read_text(encoding="utf-8")
             target.write_text(text + "\n// temporary compatibility shim layer for migration\n", encoding="utf-8")
             result = self._run_validator(snapshot_root)
         self.assertNotEqual(result.returncode, 0, msg="expected forbidden-phrase regression failure")
         self.assertIn("forbidden hard-cut phrase detected", result.stderr)
-        self.assertIn("CodegenDiagnosticText.cpp", result.stderr)
+        self.assertIn("BodyTranslator.cpp", result.stderr)
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:

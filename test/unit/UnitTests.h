@@ -98,10 +98,6 @@ bool runRuntimeTests();
 /// @return True when every case in the suite passed.
 bool runCHeaderRenderTests();
 
-/// @brief Runs the CodegenDiagnosticTextTests suite.
-/// @return True when every case in the suite passed.
-bool runCodegenDiagnosticTextTests();
-
 /// @brief Runs the ConstantLiteralRenderTests suite.
 /// @return True when every case in the suite passed.
 bool runConstantLiteralRenderTests();

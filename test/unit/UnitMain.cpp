@@ -33,7 +33,6 @@ int main()
     ok      = runAliasLayoutTests() && ok;
     ok      = runRuntimeTests() && ok;
     ok      = runCHeaderRenderTests() && ok;
-    ok      = runCodegenDiagnosticTextTests() && ok;
     ok      = runConstantLiteralRenderTests() && ok;
     ok      = runDefinitionDependenciesTests() && ok;
     ok      = runDefinitionIndexTests() && ok;
