@@ -164,8 +164,12 @@ std::string imports(const SurfacePlan& plan)
     std::string out;
     for (const llvmdsdl::SurfaceItem& item : plan.scopes[plan.definitions.front().fileScope].items)
     {
+        if (item.scope)
+        {
+            continue;
+        }
         const llvmdsdl::SurfaceDecl& decl = plan.decls[item.index];
-        if (!item.scope && (decl.kind == llvmdsdl::SurfaceDeclKind::Import))
+        if (decl.kind == llvmdsdl::SurfaceDeclKind::Import)
         {
             out += decl.name + " " + decl.of->schema + "\n";
         }
