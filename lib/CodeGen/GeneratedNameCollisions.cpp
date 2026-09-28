@@ -251,11 +251,16 @@ void checkGeneratedNameCollisions(const SemanticModule&                module,
     {
         plans.emplace_back(allocateSurface(language,
                                            parts,
-                                           SurfaceOptions{.packageName = {}, .versioning = versioning}),
+                                           SurfaceOptions{.packageName   = {},
+                                                          .versioning    = versioning,
+                                                          .accessorsOnly = false,
+                                                          .profile       = {}}),
                            allocateSurface(language,
                                            parts,
-                                           SurfaceOptions{.packageName = {},
-                                                          .versioning  = TypeNameVersioning::Versioned}));
+                                           SurfaceOptions{.packageName   = {},
+                                                          .versioning    = TypeNameVersioning::Versioned,
+                                                          .accessorsOnly = false,
+                                                          .profile       = {}}));
     }
 
     for (std::size_t index = 0; index < module.definitions.size(); ++index)

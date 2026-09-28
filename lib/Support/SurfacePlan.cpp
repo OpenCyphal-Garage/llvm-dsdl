@@ -141,9 +141,28 @@ bool states(const GeneratedFact                fact,
     case GeneratedFact::GeneratorVersion:
     case GeneratedFact::VersionMajor:
     case GeneratedFact::VersionMinor:
+    case GeneratedFact::MemoryResource:
         break;
     }
     return true;
+}
+
+/// @brief The free entry point that is a body doing @p function.
+EntryPoint entryPointOf(const PlanFunction function)
+{
+    switch (function)
+    {
+    case PlanFunction::Deserialize:
+        return EntryPoint::Deserialize;
+    case PlanFunction::Initialize:
+        return EntryPoint::Initialize;
+    case PlanFunction::Serialize:
+    case PlanFunction::Get:
+    case PlanFunction::Set:
+    case PlanFunction::Helper:
+        break;
+    }
+    return EntryPoint::Serialize;
 }
 
 /// @brief Builds one language's plan, a definition at a time.
@@ -370,7 +389,7 @@ private:
                                                          of(field.name));
                 }
             }
-            allocateDataMembers(section, parts, of);
+            allocateDataMembers(section, parts, of, allocateProfileMembers(section, parts, of));
         }
         allocateTypeMembers(section, parts, of, sectionName.empty() ? names.fixedPortId : std::nullopt);
         if (row_.composition.constants == ConstantsScope::Package)
@@ -389,15 +408,45 @@ private:
         names.sections.push_back(std::move(section));
     }
 
-    /// @brief Declares the data members the generator adds to a section's type: a union's tag, and
-    ///        the member a structure with no fields holds.
+    /// @brief Declares the data members the run's profile adds to a section's type. A host image
+    ///        holds none: each would widen the structure past the image.
+    /// @return Whether the type holds a data member of the profile's.
     template <typename Of>
-    void allocateDataMembers(const SectionNames& section, const SectionParts& parts, const Of& of)
+    bool allocateProfileMembers(const SectionNames& section, const SectionParts& parts, const Of& of)
+    {
+        const llvm::ArrayRef<GeneratedName> members = generatedProfileDataMembers(row_.language, options_.profile);
+        if (parts.hostImage)
+        {
+            return false;
+        }
+        for (const GeneratedName& member : members)
+        {
+            (void) declare(section.typeScope,
+                           member.name.str(),
+                           SurfaceDeclKind::Field,
+                           NameClass::Field,
+                           NameOrigin::Generated,
+                           of(""),
+                           SurfaceVisibility::Public,
+                           member.fact);
+        }
+        return !members.empty();
+    }
+
+    /// @brief Declares the data members the generator adds to a section's type: a union's tag, and
+    ///        the member a structure that holds no other holds.
+    /// @param[in] profileData Whether the type holds a data member of the run's profile.
+    template <typename Of>
+    void allocateDataMembers(const SectionNames& section,
+                             const SectionParts& parts,
+                             const Of&           of,
+                             const bool          profileData)
     {
         const bool empty = llvm::all_of(parts.fields, [](const FieldParts& field) { return field.padding; });
         for (const GeneratedName& member : generatedDataMembers(row_.language))
         {
-            const bool stated = (member.fact == GeneratedFact::UnionTag) ? parts.isUnion : (!parts.isUnion && empty);
+            const bool stated =
+                (member.fact == GeneratedFact::UnionTag) ? parts.isUnion : (!parts.isUnion && empty && !profileData);
             if (stated)
             {
                 (void) declare(section.typeScope,
@@ -540,18 +589,20 @@ private:
         // Beside the type rather than in it: a language that declares a type's constants in the
         // type names these as a module declares a type's constants.
         const auto named = [&](const llvm::StringRef token) {
-            switch (row_.composition.constants)
+            switch (row_.composition.serviceConstants)
             {
-            case ConstantsScope::Type:
-                return codegenProjectIdentifier(language, IdentifierRole::ConstantName, names.typeName) + "_" +
-                       token.str();
+            case ConstantsScope::Module:
+                return renderEnclosedConstantName(codegenProjectIdentifier(language,
+                                                                           IdentifierRole::ConstantName,
+                                                                           names.typeName),
+                                                  token);
             case ConstantsScope::Package:
                 return goConstantName({names.typeName, token});
             case ConstantsScope::Enclosing:
-            case ConstantsScope::Module:
+            case ConstantsScope::Type:
                 break;
             }
-            return renderDeclaredConstantName(language, names.typeName, token);
+            return renderEnclosedConstantName(names.typeName, token);
         };
         for (const GeneratedName& constant : generatedServiceConstants(language))
         {
@@ -623,18 +674,28 @@ private:
             }
             // The accessors are allocated with the fields where the language keeps no class of names
             // for fields, and in a pool of their own where it does. A pool is keyed on the name
-            // handed to it, so the verb's separator is unconditional: `_tag_` and a field `tag_`
-            // compose `get__tag_` and `get_tag_`, two keys the projection folds onto one name, which
-            // the pool tells apart. Where the union's tag is claimed first, a union whose options
-            // collide with nothing keeps its accessors' names and a colliding option is the side that
-            // moves.
+            // handed to it, so the key's separator is unconditional: `_tag_` and a field `tag_`
+            // compose `get__tag_` and `get_tag_`, two keys that reach one name, which the pool tells
+            // apart. Where the union's tag is claimed first, a union whose options collide with
+            // nothing keeps its accessors' names and a colliding option is the side that moves.
             const NamingScope fields = makeSectionFieldScope(language, parts);
             NamingScope       pool   = row_.classification.nameClasses.fieldsApart ? NamingScope(language) : fields;
-            const auto        key    = [&](const llvm::StringRef verb, const llvm::StringRef member) {
-                const std::string name = ((member == kPlanUnionTagMember) || !verbs->keyedByDeclaredName)
-                                             ? member.str()
-                                             : fields.get(IdentifierRole::FieldName, member);
-                return verb.str() + "_" + name;
+            const auto        name   = [&](const llvm::StringRef member) {
+                return ((member == kPlanUnionTagMember) || !verbs->keyedByDeclaredName)
+                           ? member.str()
+                           : fields.get(IdentifierRole::FieldName, member);
+            };
+            const auto key = [&](const llvm::StringRef verb, const llvm::StringRef member) {
+                return verb.str() + "_" + name(member);
+            };
+            const auto claim = [&](const llvm::StringRef verb, const llvm::StringRef member) {
+                const std::string joined = name(member);
+                const bool        apart  = verbs->joinedBeforeUnderscore || !llvm::StringRef(joined).starts_with("_");
+                (void) pool.declare(IdentifierRole::FunctionName,
+                                    key(verb, member),
+                                    codegenProjectIdentifier(language,
+                                                             IdentifierRole::FunctionName,
+                                                             verb.str() + (apart ? "_" : "") + joined));
             };
             std::vector<llvm::StringRef> members;
             if (parts.isUnion && verbs->tagFirst)
@@ -654,8 +715,8 @@ private:
             }
             for (const llvm::StringRef member : members)
             {
-                (void) pool.declare(IdentifierRole::FunctionName, key(verbs->getter, member));
-                (void) pool.declare(IdentifierRole::FunctionName, key(verbs->setter, member));
+                claim(verbs->getter, member);
+                claim(verbs->setter, member);
             }
             for (const BodyParts& body : definition.bodies)
             {
@@ -690,10 +751,25 @@ private:
             return (name == kPlanUnionTagMember) ? unionTagMemberName(language).str()
                                                  : fields.get(IdentifierRole::FieldName, name);
         };
-        // Where the bodies are not compiled apart and the accessors are free functions, each
-        // accessor is its body.
+        // Where the bodies are not compiled apart, each free entry point and accessor is its body.
         if (free.loweredBodySuffix.empty())
         {
+            for (const BodyParts& body : bodies)
+            {
+                const bool entry = (body.plan.function == PlanFunction::Serialize) ||
+                                   (body.plan.function == PlanFunction::Deserialize) ||
+                                   ((body.plan.function == PlanFunction::Initialize) && free.initializer);
+                if (free.entryPointJoin.empty() || (body.plan.section != section.section) || !entry)
+                {
+                    continue;
+                }
+                (void) declare(file,
+                               renderEntryPointName(language, section.typeName, entryPointOf(body.plan.function)),
+                               SurfaceDeclKind::Entry,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol});
+            }
             if (free.accessors == AccessorNaming::None)
             {
                 return;
@@ -791,7 +867,7 @@ private:
     void allocateServiceEntryPoints(const DefinitionNames& names, const DefinitionParts& definition)
     {
         const FreeFunctionNames& free = row_.composition.freeFunctions;
-        if (!definition.service || free.loweredBodySuffix.empty())
+        if (!definition.service || free.entryPointJoin.empty())
         {
             return;
         }

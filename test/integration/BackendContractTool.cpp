@@ -682,8 +682,11 @@ struct Session final
             llvmdsdl::addLowerDSDLBodiesPipeline(pm, false);
             return mlir::succeeded(pm.run(module));
         }
+        // The C++ emitter writes its `std` and `pmr` profiles, each from a surface of its own.
         const llvmdsdl::SurfaceProjection surface{.target      = traits->name.str(),
-                                                  .profiles    = {},
+                                                  .profiles    = (args.backend == "cpp")
+                                                                     ? std::vector<std::string>{"std", "pmr"}
+                                                                     : std::vector<std::string>{},
                                                   .packageName = kPackageName,
                                                   .versioning  = llvmdsdl::TypeNameVersioning::Unversioned};
         llvmdsdl::addLowerDSDLBodiesPipeline(pm, false, traits->body, false, &surface);

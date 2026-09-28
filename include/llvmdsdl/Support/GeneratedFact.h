@@ -100,13 +100,14 @@ enum class GeneratedFact : std::uint8_t
     /// @brief Makes a union hold one option.
     OptionSelect,
 
-    /// @brief A service's serialisation, which is its request's.
+    /// @brief Serialises an object into a buffer the caller owns; a service's serialisation is its
+    ///        request's.
     Serialize,
 
-    /// @brief A service's deserialisation, which is its request's.
+    /// @brief Deserialises an object from a buffer; a service's deserialisation is its request's.
     Deserialize,
 
-    /// @brief A service's initialisation, which is its request's.
+    /// @brief Initialises an object; a service's initialisation is its request's.
     Initialize,
 
     /// @brief Appends an object's wire image to a buffer the caller owns.
@@ -126,6 +127,9 @@ enum class GeneratedFact : std::uint8_t
 
     /// @brief The definition's minor version.
     VersionMinor,
+
+    /// @brief The memory resource an object's storage is allocated from.
+    MemoryResource,
 };
 
 }  // namespace llvmdsdl

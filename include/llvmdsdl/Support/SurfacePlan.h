@@ -299,6 +299,10 @@ struct SurfaceOptions final
 
     /// @brief Whether the run writes each type's accessors and none of its data members.
     bool accessorsOnly{};
+
+    /// @brief The profile the plan is of, where a language's profiles declare different names;
+    ///        empty for none.
+    std::string profile;
 };
 
 /// @brief Allocates every name the definitions declare in one language.

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/PlanSymbol.h"
@@ -80,7 +81,8 @@ SurfacePlan allocate(const Language                      language,
                                      definitions,
                                      llvmdsdl::SurfaceOptions{.packageName = packageName,
                                                               .versioning  = llvmdsdl::TypeNameVersioning::Unversioned,
-                                                              .accessorsOnly = accessorsOnly});
+                                                              .accessorsOnly = accessorsOnly,
+                                                              .profile       = {}});
 }
 
 /// @brief A variable-length array field.
@@ -394,6 +396,7 @@ bool runSurfacePlanTests()
                                        "  namespace ns\n"
                                        "    file Msg_1_0\n"
                                        "      type Msg\n"
+                                       "      Msg_serialize_ : value\n"
                                        "      mlir_llvmdsdl_plan_capacity_check_ns_Msg_1_0 : value\n"
                                        "      mlir_llvmdsdl_plan_scalar_unsigned_ns_Msg_1_0_0_ser : value\n",
                                        "C++'s helpers") &&
@@ -845,6 +848,72 @@ bool runSurfacePlanTests()
                     "      Far : type private\n",
                     "Python's generated names") &&
              ok;
+    }
+
+    // C++'s generated names: the structure's statics and the methods that call its bodies, which
+    // are free functions beside it named after it, and its accessors among its fields. A `get_`
+    // before a member that begins with `_` joins it with no further `_`. The `pmr` profile's
+    // structure holds its memory resource, unless it is its wire image.
+    {
+        DefinitionParts pick = message("Pick",
+                                       SectionParts{.fields    = {field("small", false, 0), field("tag_", false, 1)},
+                                                    .constants = {},
+                                                    .isUnion   = true});
+        pick.bodies          = {body("ns.Pick.1.0.serialize"),
+                                body("ns.Pick.1.0.deserialize"),
+                                body("ns.Pick.1.0.get.small"),
+                                body("ns.Pick.1.0.get.tag_"),
+                                body("ns.Pick.1.0.get._tag_")};
+        ok                   = expect(outline(allocate(Language::Cpp, {pick}), true),
+                                      "root pkg\n"
+                                      "  namespace ns\n"
+                                      "    file Pick_1_0\n"
+                                      "      type Pick\n"
+                                      "        small : field\n"
+                                      "        tag_ : field\n"
+                                      "        _tag_ : field\n"
+                                      "        FULL_NAME : value\n"
+                                      "        IS_DEPRECATED : value\n"
+                                      "        FULL_NAME_AND_VERSION : value\n"
+                                      "        EXTENT_BYTES : value\n"
+                                      "        SERIALIZATION_BUFFER_SIZE_BYTES : value\n"
+                                      "        WIRE_FLAT : value\n"
+                                      "        WIRE_FLAT_REASON : value\n"
+                                      "        HOST_IMAGE : value\n"
+                                      "        HOST_IMAGE_REASON : value\n"
+                                      "        HAS_FIXED_PORT_ID : value\n"
+                                      "        UNION_OPTION_COUNT : value\n"
+                                      "        SMALL_OPTION_TAG : value\n"
+                                      "        TAGzX005FzX005FOPTION_TAG : value\n"
+                                      "        serialize : value\n"
+                                      "        deserialize : value\n"
+                                      "        get_small : value\n"
+                                      "        get_tag_ : value\n"
+                                      "        get_tag_2 : value\n"
+                                      "      Pick_serialize_ : value\n"
+                                      "      Pick_deserialize_ : value\n",
+                                      "C++'s generated names") &&
+                               ok;
+        std::string pmr;
+        for (const bool image : {false, true})
+        {
+            DefinitionParts held   = message("Held", SectionParts{.fields = {field("a")}, .constants = {}});
+            held.request.hostImage = image;
+            const SurfacePlan plan = llvmdsdl::allocateSurface(llvmdsdl::languageTraits(Language::Cpp),
+                                                               {held},
+                                                               llvmdsdl::SurfaceOptions{.packageName   = "pkg",
+                                                                                        .versioning    = {},
+                                                                                        .accessorsOnly = false,
+                                                                                        .profile       = "pmr"});
+            for (const llvmdsdl::SurfaceDecl& decl : plan.decls)
+            {
+                if (decl.fact == llvmdsdl::GeneratedFact::MemoryResource)
+                {
+                    pmr += decl.name + (image ? " image\n" : "\n");
+                }
+            }
+        }
+        ok = expect(pmr, "_memory_resource\n", "the pmr profile's memory resource") && ok;
     }
 
     // TypeScript's generated names: the bodies, the factory and the functions a consumer calls over

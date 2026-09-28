@@ -81,7 +81,7 @@ SectionParts sectionParts(mlir::dsdl::SchemaOp schema, mlir::dsdl::Serialization
             steps.try_emplace(step.getName(), step);
         }
     }
-    SectionParts parts{.fields = {}, .constants = {}, .isUnion = plan.getIsUnion()};
+    SectionParts parts{.fields = {}, .constants = {}, .isUnion = plan.getIsUnion(), .hostImage = plan.getHostImage()};
     for (mlir::dsdl::FieldOp field : schema.getBody().getOps<mlir::dsdl::FieldOp>())
     {
         if (field.getSection().value_or("") == section)
@@ -214,25 +214,28 @@ struct ProjectDSDLSurfacePass final
         {
             parts.push_back(schemaParts(module, schema));
         }
-        const SurfacePlan plan =
-            allocateSurface(*row,
-                            parts,
-                            SurfaceOptions{.packageName   = package_.getValue(),
-                                           .versioning    = versioned_ ? TypeNameVersioning::Versioned
-                                                                       : TypeNameVersioning::Unversioned,
-                                           .accessorsOnly = accessorsOnly_});
+        const auto planOf = [&](const std::string& profile) {
+            return allocateSurface(*row,
+                                   parts,
+                                   SurfaceOptions{.packageName   = package_.getValue(),
+                                                  .versioning    = versioned_ ? TypeNameVersioning::Versioned
+                                                                              : TypeNameVersioning::Unversioned,
+                                                  .accessorsOnly = accessorsOnly_,
+                                                  .profile       = profile});
+        };
         mlir::OpBuilder builder = mlir::OpBuilder::atBlockEnd(&module.getBodyRegion().front());
         if (profiles_.empty())
         {
-            writeSurface(builder, module.getLoc(), plan, row->name, {}, {});
+            writeSurface(builder, module.getLoc(), planOf({}), row->name, {}, {});
             return;
         }
-        // A run of several profiles writes each to a directory the profile names.
+        // Each profile declares its own names, and a run of several writes each to a directory the
+        // profile names.
         for (const std::string& profile : profiles_)
         {
             writeSurface(builder,
                          module.getLoc(),
-                         plan,
+                         planOf(profile),
                          row->name,
                          profile,
                          (profiles_.size() > 1) ? profile + "/" : std::string{});

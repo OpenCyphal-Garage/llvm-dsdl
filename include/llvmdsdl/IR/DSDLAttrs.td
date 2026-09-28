@@ -114,7 +114,8 @@ def DSDL_GeneratedFact
            I32EnumCase<"FromWireImage", 29, "from_wire_image">,
            I32EnumCase<"GeneratorVersion", 30, "generator_version">,
            I32EnumCase<"VersionMajor", 31, "version_major">,
-           I32EnumCase<"VersionMinor", 32, "version_minor">]> {
+           I32EnumCase<"VersionMinor", 32, "version_minor">,
+           I32EnumCase<"MemoryResource", 33, "memory_resource">]> {
   let cppNamespace = "::mlir::dsdl";
 }
 

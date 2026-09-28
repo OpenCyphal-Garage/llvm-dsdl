@@ -50,7 +50,6 @@
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
-#include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/SectionScopes.h"
@@ -66,6 +65,10 @@
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/IR/DSDLTypes.h"
 #include "llvmdsdl/Transforms/PlanSteps.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -78,7 +81,6 @@
 #include <mlir/IR/BuiltinAttributeInterfaces.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -94,11 +96,6 @@ namespace llvmdsdl::emitter::cpp
 
 namespace
 {
-
-std::string headerFileName(const DiscoveredDefinition& info)
-{
-    return renderDefinitionFileStem(Language::Cpp, info.shortName, info.majorVersion, info.minorVersion) + ".hpp";
-}
 
 std::string valueToCppExpr(const TypeExprAST& type, const Value& value)
 {
@@ -118,66 +115,265 @@ void emitAttachedDocCpp(SourceWriter& w, const AttachedDoc& doc)
     }
 }
 
-std::string cppNamespacePath(const std::vector<std::string>& components)
+/// @brief The key of the definition @p info describes, which its schema and the surface name it by.
+std::string keyOf(const DiscoveredDefinition& info)
 {
-    std::string out;
-    for (const auto& component : components)
+    return renderDefinitionKey(definitionRef(info));
+}
+
+/// @brief The key of the definition @p ref names.
+std::string keyOf(const SemanticTypeRef& ref)
+{
+    return renderDefinitionKey(definitionRef(ref));
+}
+
+/// @brief The names C++'s output declares for one profile and the headers it writes, as the
+///        surface declares them.
+class CppSurface final
+{
+public:
+    /// @param[in] tree The profile's surface.
+    /// @param[in] root The directory, ending in `/`, the tree places the profile's headers under;
+    ///            empty for the output directory.
+    CppSurface(const SurfaceTree& tree, std::string root)
+        : tree_(tree)
+        , root_(std::move(root))
     {
-        if (!out.empty())
+    }
+
+    [[nodiscard]] const SurfaceTree& tree() const
+    {
+        return tree_;
+    }
+
+    /// @brief The file scope the definition keyed @p key is declared in.
+    [[nodiscard]] std::size_t file(const llvm::StringRef key) const
+    {
+        return tree_.definitionScope(key);
+    }
+
+    /// @brief The header the definition keyed @p key is written to, from the profile's directory,
+    ///        which is how another header includes it.
+    [[nodiscard]] std::string header(const llvm::StringRef key) const
+    {
+        llvm::StringRef path = tree_.scope(file(key)).path;
+        if (!path.consume_front(root_))
         {
-            out += "::";
+            llvm::report_fatal_error(llvm::Twine("C++ backend: a header outside its profile's directory: ") + path);
         }
-        out += codegenProjectIdentifier(Language::Cpp, IdentifierRole::NamespaceName, component);
+        return path.str();
     }
-    return out;
-}
 
-void emitNamespaceOpen(SourceWriter& w, const std::vector<std::string>& components)
+    /// @brief The namespaces that enclose the definition keyed @p key, outermost first.
+    [[nodiscard]] std::vector<std::string> namespaces(const llvm::StringRef key) const
+    {
+        std::vector<std::string> out;
+        for (const std::size_t scope : tree_.pathTo(file(key)))
+        {
+            if (tree_.scope(scope).kind == SurfaceScopeKind::Namespace)
+            {
+                out.push_back(tree_.scope(scope).name);
+            }
+        }
+        return out;
+    }
+
+    /// @brief What qualifies a name the definition keyed @p key declares from the global namespace:
+    ///        `::` and each enclosing namespace, each followed by `::`.
+    [[nodiscard]] std::string qualifier(const llvm::StringRef key) const
+    {
+        std::string out = "::";
+        for (const std::string& name : namespaces(key))
+        {
+            out += name + "::";
+        }
+        return out;
+    }
+
+    /// @brief The name @p section's structure is declared under.
+    [[nodiscard]] const std::string& declaredName(const llvm::StringRef key, const llvm::StringRef section) const
+    {
+        return tree_.scope(tree_.typeScope(key, section)).name;
+    }
+
+    /// @brief The name @p section's type is reached by: the alias of a structure declared apart, and
+    ///        the structure's own name otherwise.
+    [[nodiscard]] const std::string& publicName(const llvm::StringRef key, const llvm::StringRef section) const
+    {
+        const SurfaceDecl* const alias =
+            tree_.find(file(key), SurfaceDeclKind::Alias, SurfaceEntity{key.str(), section.str(), {}, {}});
+        return (alias != nullptr) ? alias->name : declaredName(key, section);
+    }
+
+    /// @brief The declaration of @p kind beside the definition's types for @p section, stating
+    ///        @p fact; null where the file makes none.
+    [[nodiscard]] const SurfaceDecl* beside(const llvm::StringRef              key,
+                                            const SurfaceDeclKind              kind,
+                                            const llvm::StringRef              section,
+                                            const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        return tree_.find(file(key), kind, SurfaceEntity{key.str(), section.str(), {}, {}}, fact);
+    }
+
+    /// @brief The name of the declaration of @p kind in @p section's structure for @p member,
+    ///        stating @p fact.
+    [[nodiscard]] const std::string& member(const llvm::StringRef              key,
+                                            const llvm::StringRef              section,
+                                            const SurfaceDeclKind              kind,
+                                            const llvm::StringRef              member,
+                                            const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        return tree_.nameOf(tree_.typeScope(key, section),
+                            kind,
+                            SurfaceEntity{key.str(), section.str(), member.str(), {}},
+                            fact);
+    }
+
+    /// @brief The name of the data member of @p section's structure that @p member is, or that
+    ///        states @p fact; empty where the structure declares none, as in an accessors-only run.
+    [[nodiscard]] std::string field(const llvm::StringRef              key,
+                                    const llvm::StringRef              section,
+                                    const llvm::StringRef              member,
+                                    const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        const SurfaceDecl* const decl = tree_.find(tree_.typeScope(key, section),
+                                                   SurfaceDeclKind::Field,
+                                                   SurfaceEntity{key.str(), section.str(), member.str(), {}},
+                                                   fact);
+        return (decl != nullptr) ? decl->name : std::string{};
+    }
+
+    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol,
+    ///        stating @p fact.
+    [[nodiscard]] const std::string& function(const llvm::StringRef              symbol,
+                                              const SurfaceDeclKind              kind,
+                                              const std::optional<GeneratedFact> fact = std::nullopt) const
+    {
+        return tree_.nameOf(symbol, kind, fact);
+    }
+
+private:
+    const SurfaceTree& tree_;
+    std::string        root_;
+};
+
+/// @brief One section's names, as the surface declares them.
+class CppSection final
 {
-    if (components.empty())
+public:
+    CppSection(const CppSurface& names, std::string key, std::string section)
+        : names_(names)
+        , key_(std::move(key))
+        , section_(std::move(section))
+    {
+    }
+
+    [[nodiscard]] const CppSurface& names() const
+    {
+        return names_;
+    }
+
+    /// @brief The name the section's structure is declared under.
+    [[nodiscard]] const std::string& declaredName() const
+    {
+        return names_.declaredName(key_, section_);
+    }
+
+    /// @brief The name the section's type is reached by.
+    [[nodiscard]] const std::string& publicName() const
+    {
+        return names_.publicName(key_, section_);
+    }
+
+    /// @brief The name of the data member the DSDL field @p member is.
+    [[nodiscard]] std::string field(const llvm::StringRef member) const
+    {
+        return names_.field(key_, section_, member);
+    }
+
+    /// @brief The name of the data member the generator adds to state @p fact.
+    [[nodiscard]] std::string dataMember(const GeneratedFact fact) const
+    {
+        return names_.field(key_, section_, {}, fact);
+    }
+
+    /// @brief The name of the static member stating @p fact, of @p member where the fact is one of a
+    ///        field's.
+    [[nodiscard]] const std::string& constant(const GeneratedFact fact, const llvm::StringRef member = {}) const
+    {
+        return names_.member(key_, section_, SurfaceDeclKind::Constant, member, fact);
+    }
+
+    /// @brief The name of the static member the DSDL constant @p member is.
+    [[nodiscard]] const std::string& dsdlConstant(const llvm::StringRef member) const
+    {
+        return names_.member(key_, section_, SurfaceDeclKind::Constant, member);
+    }
+
+    /// @brief The name of the static member holding the tag value of the union option @p member.
+    [[nodiscard]] const std::string& option(const llvm::StringRef member) const
+    {
+        return names_.member(key_, section_, SurfaceDeclKind::Option, member);
+    }
+
+    /// @brief The alias a structure declared apart is reached by; null where there is none.
+    [[nodiscard]] const SurfaceDecl* alias() const
+    {
+        return names_.beside(key_, SurfaceDeclKind::Alias, section_);
+    }
+
+private:
+    const CppSurface& names_;
+    std::string       key_;
+    std::string       section_;
+};
+
+void emitNamespaceOpen(SourceWriter& w, const std::vector<std::string>& namespaces)
+{
+    if (namespaces.empty())
     {
         return;
     }
-    for (const auto& component : components)
+    for (const auto& name : namespaces)
     {
-        w.line("namespace " + codegenProjectIdentifier(Language::Cpp, IdentifierRole::NamespaceName, component) + " {");
+        w.line("namespace " + name + " {");
     }
     w.blank();
 }
 
-void emitNamespaceClose(SourceWriter& w, const std::vector<std::string>& components)
+void emitNamespaceClose(SourceWriter& w, const std::vector<std::string>& namespaces)
 {
-    if (components.empty())
+    if (namespaces.empty())
     {
         return;
     }
     w.blank();
-    for (const auto& component : std::views::reverse(components))
+    for (const auto& name : std::views::reverse(namespaces))
     {
-        w.line("} // namespace " + codegenProjectIdentifier(Language::Cpp, IdentifierRole::NamespaceName, component));
+        w.line("} // namespace " + name);
     }
 }
 
 class EmitterContext final
 {
 public:
-    EmitterContext(const SemanticModule&    semantic,
-                   const bool               emitDeprecationAttributes,
-                   const bool               hostImageFolded,
-                   const bool               accessorsOnly,
-                   const TypeNameVersioning typeNameVersioning)
-        : index_(semantic)
-        , typeNameVersioning_(typeNameVersioning)
+    EmitterContext(const SemanticModule& semantic,
+                   const CppSurface&     names,
+                   const bool            emitDeprecationAttributes,
+                   const bool            hostImageFolded,
+                   const bool            accessorsOnly)
+        : names_(names)
+        , index_(semantic)
         , emitDeprecationAttributes_(emitDeprecationAttributes)
         , hostImageFolded_(hostImageFolded)
         , accessorsOnly_(accessorsOnly)
     {
     }
 
-    /// @brief Whether generated type names carry the definition's version.
-    TypeNameVersioning typeNameVersioning() const
+    /// @brief The names the output declares.
+    const CppSurface& names() const
     {
-        return typeNameVersioning_;
+        return names_;
     }
 
     /// @brief True when `@deprecated` definitions should carry a language-native attribute.
@@ -203,101 +399,12 @@ public:
         return index_.find(ref);
     }
 
-    std::string cppTypeName(const DiscoveredDefinition& info) const
-    {
-        return renderDefinitionTypeName(Language::Cpp,
-                                        info.namespaceComponents,
-                                        info.shortName,
-                                        info.majorVersion,
-                                        info.minorVersion,
-                                        typeNameVersioning_);
-    }
-
-    std::string cppTypeName(const SemanticDefinition& def) const
-    {
-        return cppTypeName(def.info);
-    }
-
-    std::string cppTypeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return cppTypeName(*def);
-        }
-
-        // Nothing to count versions against, so assume the name is ambiguous and spell the version.
-        // Guessing the other way would name a type that does not exist if there are two.
-        return renderDefinitionTypeName(Language::Cpp,
-                                        ref.namespaceComponents,
-                                        ref.shortName,
-                                        ref.majorVersion,
-                                        ref.minorVersion,
-                                        typeNameVersioning_);
-    }
-
-    /// @brief The name @p def's struct is declared under; see renderDeclaredTypeName.
-    std::string cppDeclaredTypeName(const SemanticDefinition& def) const
-    {
-        return renderDeclaredTypeName(cppTypeName(def), def.request.deprecated);
-    }
-
-    std::string cppQualifiedTypeName(const SemanticDefinition& def) const
-    {
-        return qualify(def.info.namespaceComponents, cppTypeName(def));
-    }
-
-    std::string cppQualifiedTypeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return cppQualifiedTypeName(*def);
-        }
-        return qualify(ref.namespaceComponents, cppTypeName(ref));
-    }
-
-    /// @brief The qualified declared name of the definition @p ref names, for spelling its type.
-    ///
-    /// The public name composes function names; the declared name is what a field or a pointer is
-    /// spelled with. A reference that resolves to nothing is spelled with its public name: nothing
-    /// says it is deprecated.
-    std::string cppQualifiedDeclaredTypeName(const SemanticTypeRef& ref) const
-    {
-        if (const auto* def = find(ref))
-        {
-            return qualify(def->info.namespaceComponents, cppDeclaredTypeName(*def));
-        }
-        return qualify(ref.namespaceComponents, cppTypeName(ref));
-    }
-
-    static std::string relativeHeaderPath(const SemanticDefinition& def)
-    {
-        std::filesystem::path p;
-        for (const auto& ns : def.info.namespaceComponents)
-        {
-            p /= ns;
-        }
-        p /= headerFileName(def.info);
-        return p.generic_string();
-    }
-
 private:
-    static std::string qualify(const std::vector<std::string>& namespaceComponents, const std::string& name)
-    {
-        std::string out = "::";
-        const auto  ns  = cppNamespacePath(namespaceComponents);
-        if (!ns.empty())
-        {
-            out += ns + "::";
-        }
-        out += name;
-        return out;
-    }
-
-    DefinitionIndex    index_;
-    TypeNameVersioning typeNameVersioning_{TypeNameVersioning::Unversioned};
-    bool               emitDeprecationAttributes_{false};
-    bool               hostImageFolded_{false};
-    bool               accessorsOnly_{false};
+    const CppSurface& names_;
+    DefinitionIndex   index_;
+    bool              emitDeprecationAttributes_{false};
+    bool              hostImageFolded_{false};
+    bool              accessorsOnly_{false};
 };
 
 SourceWriter makeCppWriter(std::ostringstream& out)
@@ -399,21 +506,24 @@ public:
         return bound(role, vocabulary_.operation(role, operation, placeholders));
     }
 
-    /// @brief @p name, which the header of the definition @p ref declares; that header is included
-    ///        unless it is this one.
-    [[nodiscard]] std::string declaredIn(const SemanticTypeRef& ref, std::string name) const
+    /// @brief @p name, which the header of the definition keyed @p key declares; that header is
+    ///        included unless it is this one.
+    [[nodiscard]] std::string declaredIn(const llvm::StringRef key, std::string name) const
     {
-        const auto* def = ctx_.find(ref);
-        if (def == nullptr)
-        {
-            return name;
-        }
-        const std::string header = EmitterContext::relativeHeaderPath(*def);
+        const std::string header = ctx_.names().header(key);
         if (header == ownHeader_)
         {
             return name;
         }
         return includes_.member(ImportOrigin::Definition, "\"" + header + "\"", name);
+    }
+
+    /// @brief The declared name of the definition @p ref's structure, qualified from the global
+    ///        namespace, for spelling a field or a pointer of its type.
+    [[nodiscard]] std::string declaredType(const SemanticTypeRef& ref) const
+    {
+        const std::string key = keyOf(ref);
+        return declaredIn(key, ctx_.names().qualifier(key) + ctx_.names().declaredName(key, {}));
     }
 
 private:
@@ -489,88 +599,40 @@ std::string signedStorageType(const std::uint32_t bitLength, const CppFileNames&
 class CppSpelling final : public BodySpelling
 {
 public:
-    CppSpelling(mlir::ModuleOp           module,
-                mlir::dsdl::SchemaOp     schema,
-                const CppFlavor          flavor,
-                const TypeNameVersioning versioning,
-                const CppFileNames&      file)
-        : symbols_(module)
-        , flavor_(flavor)
-        , versioning_(versioning)
+    CppSpelling(mlir::dsdl::SchemaOp schema, const CppFlavor flavor, const CppSurface& names, const CppFileNames& file)
+        : flavor_(flavor)
+        , names_(names)
         , file_(file)
     {
-        const SemanticTypeRef self         = typeRefOf(schema);
-        const std::string     baseTypeName = renderDefinitionTypeName(Language::Cpp,
-                                                                      self.namespaceComponents,
-                                                                      self.shortName,
-                                                                      self.majorVersion,
-                                                                      self.minorVersion,
-                                                                      versioning);
         if (schema.getBody().empty())
         {
             return;
         }
+        const std::string key = schema.getSymName().str();
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
-            Plan              entry;
-            const std::string section = plan.getSection().value_or(llvm::StringRef{}).str();
-            entry.typeName            = renderSectionTypeName(Language::Cpp, baseTypeName, section);
-            entry.declaredName        = renderDeclaredTypeName(entry.typeName, schema.getDeprecated());
-            entry.unionTagBits        = plan.getUnionTagBits().value_or(0);
-            entry.hostImage           = plan.getHostImage();
-
-            // The struct declares its fields, then the array metadata, then the constants, into
-            // one scope; the same declarations in the same order name the same identifiers.
-            NamingScope                   scope(Language::Cpp);
-            std::vector<mlir::dsdl::IOOp> fields;
+            const llvm::StringRef section = plan.getSection().value_or(llvm::StringRef{});
+            Plan                  entry;
+            entry.declaredName = names.declaredName(key, section);
+            entry.unionTagBits = plan.getUnionTagBits().value_or(0);
+            entry.hostImage    = plan.getHostImage();
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
                 {
                     if (!io.isPadding())
                     {
-                        (void) scope.declare(IdentifierRole::FieldName, io.getName());
-                        fields.push_back(io);
+                        entry.members[io.getName()] = Member{names.field(key, section, io.getName()), io};
                     }
                 }
-            }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                if (io.getArrayKind() != "none")
-                {
-                    for (const auto kind : {ArrayMetadataKind::Capacity, ArrayMetadataKind::IsVariableLength})
-                    {
-                        (void) scope.declare(IdentifierRole::MacroName,
-                                             arrayMetadataName(Language::Cpp, io.getName(), kind));
-                    }
-                }
-            }
-            for (mlir::dsdl::ConstantOp constant : schema.getBody().front().getOps<mlir::dsdl::ConstantOp>())
-            {
-                if (constant.getSection().value_or(llvm::StringRef{}) == section)
-                {
-                    (void) scope.declare(IdentifierRole::ConstantName, constant.getName());
-                }
-            }
-            for (mlir::dsdl::IOOp io : fields)
-            {
-                const std::string name = io.getName().str();
-                entry.members[io.getName()] =
-                    Member{scope.get(IdentifierRole::FieldName, io.getName()),
-                           io,
-                           scope.declare(IdentifierRole::FunctionName, accessorSource("get", name)),
-                           scope.declare(IdentifierRole::FunctionName, accessorSource("set", name))};
             }
             // The union's tag, reached by its accessors as a member is: the wire holds it ahead
             // of the option, and no field can be named `_tag_`.
             if (plan.getIsUnion())
             {
                 tagSteps_.push_back(unionTagStep(schema->getContext(), plan.getUnionTagBits().value_or(0)));
-                entry.members["_tag_"] =
-                    Member{unionTagMemberName(Language::Cpp).str(),
-                           tagSteps_.back().get(),
-                           scope.declare(IdentifierRole::FunctionName, accessorSource("get", "_tag_")),
-                           scope.declare(IdentifierRole::FunctionName, accessorSource("set", "_tag_"))};
+                entry.members[kPlanUnionTagMember] =
+                    Member{names.field(key, section, {}, GeneratedFact::UnionTag), tagSteps_.back().get()};
             }
             plans_[planIdentity(schema, plan)] = std::move(entry);
         }
@@ -603,12 +665,10 @@ public:
                                                                 "* const memory_resource"
                                                           : "";
         w.line("inline " + file_.standard("std::int8_t") + " " +
-               renderEntryPointName(Language::Cpp,
-                                    plan.typeName,
-                                    serialize ? EntryPoint::Serialize : EntryPoint::Deserialize) +
-               (serialize ? "(const " : "(") + plan.declaredName + "* const " + object + ", " +
-               (serialize ? "" : "const ") + file_.standard("std::uint8_t") + "* const buffer, " +
-               file_.standard("std::size_t") + "* const inout_buffer_size_bytes" + resource + ")");
+               names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + (serialize ? "(const " : "(") +
+               plan.declaredName + "* const " + object + ", " + (serialize ? "" : "const ") +
+               file_.standard("std::uint8_t") + "* const buffer, " + file_.standard("std::size_t") +
+               "* const inout_buffer_size_bytes" + resource + ")");
         w.open("{");
         if (isPmrFlavor(flavor_) && plan.hostImage)
         {
@@ -665,12 +725,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        const auto helper = parsePlanSymbol(callee);
-        if (!helper || (helper->function != PlanFunction::Helper))
-        {
-            llvm::report_fatal_error(llvm::Twine("C++ spelling: a call to a function that is no helper: ") + callee);
-        }
-        return renderHelperBindingIdentifier(Language::Cpp, *helper);
+        return names_.function(callee, SurfaceDeclKind::Helper);
     }
 
     // Statements.
@@ -728,15 +783,15 @@ public:
     ///        return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed    a         = accessed(fn);
-        const std::string name      = getter ? a.member->getterName : a.member->setterName;
-        const mlir::Type  answer    = fn.getResultTypes().front();
-        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
-        const std::string index     = indexed ? ", const " + file_.standard("std::size_t") + " element_index" : "";
-        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
+        const Accessed     a         = accessed(fn);
+        const std::string& name      = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
+        const mlir::Type   answer    = fn.getResultTypes().front();
+        const bool         composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool         indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type   held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool         integer   = mlir::isa<mlir::IntegerType>(held);
+        const std::string  index     = indexed ? ", const " + file_.standard("std::size_t") + " element_index" : "";
+        accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
         returnCast_.clear();
         // The member's type is named where it is written: a composite getter answers bytes.
         if (composite)
@@ -1137,15 +1192,15 @@ public:
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
         return "static_cast<" + file_.standard("std::uint64_t") + ">(" + names(op.getObject()) + "->" +
-               unionTagMemberName(Language::Cpp).str() + ")";
+               memberOf(op.getObject(), kPlanUnionTagMember).cppName + ")";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         const Plan& plan = planOf(op.getObject());
-        w.line(names(op.getObject()) + "->" + unionTagMemberName(Language::Cpp).str() + " = static_cast<" +
-               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits), file_) + ">(" + names(op.getValue()) +
-               ");");
+        w.line(names(op.getObject()) + "->" + memberOf(op.getObject(), kPlanUnionTagMember).cppName +
+               " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits), file_) + ">(" +
+               names(op.getValue()) + ");");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
@@ -1301,36 +1356,28 @@ public:
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
-        // The callee is the nested type's own body, and the type is the schema that body belongs to.
-        auto       body   = symbols_.lookup<mlir::func::FuncOp>(op.getCallee());
-        const auto owner  = body ? body->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym") : mlir::StringAttr{};
-        auto       schema = owner ? symbols_.lookup<mlir::dsdl::SchemaOp>(owner.getValue()) : mlir::dsdl::SchemaOp{};
-        if (!schema)
+        // The callee is the nested type's own body, a function of the namespace its header opens.
+        const std::optional<PlanSymbol> callee = parsePlanSymbol(op.getCallee());
+        if (!callee)
         {
-            llvm::report_fatal_error("C++ spelling: a nested call to a body of no schema in the module");
+            llvm::report_fatal_error("C++ spelling: a nested call to a function that is no body");
         }
-        const std::string nested = qualifiedTypeName(typeRefOf(schema));
-        const EntryPoint  entryPoint =
-            (op.getDirection() == "serialize") ? EntryPoint::Serialize : EntryPoint::Deserialize;
-        return renderEntryPointName(Language::Cpp, nested, entryPoint) + "(" + names(op.getObject()) + ", " +
-               names(op.getBuffer()) + ", " + names(op.getSize()) +
+        const std::string key = renderSchemaSymbol(callee->schema);
+        return file_.declaredIn(key, names_.qualifier(key) + names_.function(op.getCallee(), SurfaceDeclKind::Entry)) +
+               "(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", " + names(op.getSize()) +
                (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ")";
     }
 
 private:
     struct Member final
     {
+        /// @brief The data member's name; empty in an accessors-only run, which declares none.
         std::string      cppName;
         mlir::dsdl::IOOp io;
-        /// @brief The accessors' names, claimed in the struct's scope after every field so that no
-        ///        field shares a name with one.
-        std::string getterName;
-        std::string setterName;
     };
 
     struct Plan final
     {
-        std::string  typeName;
         std::string  declaredName;
         std::int64_t unionTagBits{0};
         /// @brief Whether the structure is the byte image of its wire form; under the PMR profile
@@ -1431,19 +1478,8 @@ private:
     /// @brief The qualified public name of the definition @p ref, from the header that declares it.
     std::string qualifiedTypeName(const SemanticTypeRef& ref) const
     {
-        std::string qualified = "::";
-        const auto  ns        = cppNamespacePath(ref.namespaceComponents);
-        if (!ns.empty())
-        {
-            qualified += ns + "::";
-        }
-        return file_.declaredIn(ref,
-                                qualified + renderDefinitionTypeName(Language::Cpp,
-                                                                     ref.namespaceComponents,
-                                                                     ref.shortName,
-                                                                     ref.majorVersion,
-                                                                     ref.minorVersion,
-                                                                     versioning_));
+        const std::string key = keyOf(ref);
+        return file_.declaredIn(key, names_.qualifier(key) + names_.publicName(key, {}));
     }
 
     /// @brief @p access read as a value of @p type. A bool is read as a bool.
@@ -1650,9 +1686,8 @@ private:
         return "_" + stem + std::to_string(counter_++) + "_";
     }
 
-    mlir::SymbolTable  symbols_;
-    CppFlavor          flavor_;
-    TypeNameVersioning versioning_;
+    CppFlavor         flavor_;
+    const CppSurface& names_;
     /// @brief How the header names what it takes from other headers.
     const CppFileNames&   file_;
     llvm::StringMap<Plan> plans_;
@@ -1726,17 +1761,18 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const CppFileNam
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return file.declaredIn(*type.compositeType,
-                                   file.context().cppQualifiedDeclaredTypeName(*type.compositeType));
+            return file.declaredType(*type.compositeType);
         }
         return file.standard("std::uint8_t");
     }
     return file.standard("std::uint8_t");
 }
 
-void emitArrayMetadata(SourceWriter& w, const SemanticSection& section, const CppFileNames& file)
+void emitArrayMetadata(SourceWriter&          w,
+                       const CppSection&      names,
+                       const SemanticSection& section,
+                       const CppFileNames&    file)
 {
-    const NamingScope constScope = makeSectionConstantScope(Language::Cpp, section, {});
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
@@ -1744,7 +1780,9 @@ void emitArrayMetadata(SourceWriter& w, const SemanticSection& section, const Cp
             continue;
         }
         const auto named = [&](const ArrayMetadataKind kind) {
-            return constScope.get(IdentifierRole::MacroName, arrayMetadataName(Language::Cpp, field.name, kind));
+            return names.constant((kind == ArrayMetadataKind::Capacity) ? GeneratedFact::ArrayCapacity
+                                                                        : GeneratedFact::ArrayIsVariableLength,
+                                  field.name);
         };
         // A declared capacity is a fact of the schema, not of the target: on a 32-bit target a
         // capacity past 2^32 does not fit std::size_t.
@@ -1755,22 +1793,40 @@ void emitArrayMetadata(SourceWriter& w, const SemanticSection& section, const Cp
     }
 }
 
-void emitFunctionPrototypes(SourceWriter&       w,
-                            const std::string&  typeName,
-                            const std::string&  declaredName,
-                            const CppFlavor     flavor,
-                            const CppFileNames& file)
+/// @brief The symbol of @p function.
+llvm::StringRef symbolOf(mlir::func::FuncOp function)
 {
+    return function.getSymName();
+}
+
+/// @brief The three bodies `lower-dsdl-bodies` built for one section.
+struct SectionBodies final
+{
+    mlir::func::FuncOp serialize;
+    mlir::func::FuncOp deserialize;
+    mlir::func::FuncOp initialize;
+    /// @brief The section's field accessors, getters and setters, in the module's order.
+    std::vector<mlir::func::FuncOp> accessors;
+};
+
+void emitFunctionPrototypes(SourceWriter&        w,
+                            const CppSection&    names,
+                            const SectionBodies& bodies,
+                            const CppFlavor      flavor,
+                            const CppFileNames&  file)
+{
+    const CppSurface&  surface      = names.names();
+    const std::string& declaredName = names.declaredName();
     w.line("struct " + declaredName + ";");
     w.line(
         "inline " + file.standard("std::int8_t") + " " +
-        renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) + "(const " + declaredName + "* obj, " +
+        surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry) + "(const " + declaredName + "* obj, " +
         file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") + "* inout_buffer_size_bytes" +
         (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
         ");");
     w.line(
         "inline " + file.standard("std::int8_t") + " " +
-        renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) + "(" + declaredName +
+        surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry) + "(" + declaredName +
         "* out_obj, const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
         "* inout_buffer_size_bytes" +
         (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
@@ -1840,8 +1896,7 @@ std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefa
 }
 
 llvm::Error emitSectionStruct(SourceWriter&                         w,
-                              const std::string&                    typeName,
-                              const std::string&                    declaredName,
+                              const CppSection&                     names,
                               const SectionMetadata&                metadata,
                               const InitializerShape&               init,
                               const SemanticSection&                section,
@@ -1850,12 +1905,14 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                               const AttachedDoc&                    typeDoc,
                               const mlir::dsdl::SerializationPlanOp plan,
                               const CppSpelling&                    spelling,
-                              llvm::ArrayRef<mlir::func::FuncOp>    accessors,
+                              const SectionBodies&                  bodies,
                               PlanBodyLookups&                      lookups,
                               const bool                            accessorsOnly)
 {
-    const EmitterContext& ctx        = file.context();
-    const NamingScope     fieldScope = makeSectionFieldScope(Language::Cpp, section);
+    const EmitterContext& ctx          = file.context();
+    const CppSurface&     surface      = names.names();
+    const std::string&    typeName     = names.publicName();
+    const std::string&    declaredName = names.declaredName();
     // Every member's default is what the initialise body stores for it. A field the body does not
     // set has no default this backend may invent.
     llvm::StringMap<const MemberDefault*> defaults;
@@ -1890,7 +1947,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                 continue;
             }
 
-            const auto member = fieldScope.get(IdentifierRole::FieldName, field.name);
+            const auto member = names.field(field.name);
             // A view is a span over the field's bytes in the buffer the object was deserialised
             // from; it allocates nothing and takes no memory resource.
             const auto baseType =
@@ -1967,8 +2024,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         {
             // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
             // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            w.line(unsignedStorageType(unionTagBits(plan), file) + " " + unionTagMemberName(Language::Cpp).str() + "{" +
-                   std::to_string(init.unionTag) + "U};");
+            w.line(unsignedStorageType(unionTagBits(plan), file) + " " + names.dataMember(GeneratedFact::UnionTag) +
+                   "{" + std::to_string(init.unionTag) + "U};");
             ++emitted;
         }
 
@@ -1983,23 +2040,28 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         }
         else if (isPmrFlavor(flavor))
         {
-            w.line(file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* _memory_resource{" +
+            const std::string resource = names.dataMember(GeneratedFact::MemoryResource);
+            // The surface does not declare the setter: an accessor of a field `_memory_resource`
+            // overloads it.
+            const std::string setter = "set_memory_resource";
+            w.line(file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* " + resource + "{" +
                    file.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "()};");
             w.line(declaredName + "() = default;");
             w.line("explicit " + declaredName + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
-                   "* memory_resource) { set_memory_resource(memory_resource); }");
-            w.open("void set_memory_resource(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
+                   "* memory_resource) { " + setter + "(memory_resource); }");
+            w.open("void " + setter + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
                    "* memory_resource) {");
-            w.line("_memory_resource = (memory_resource != nullptr) ? memory_resource : " +
+            w.line(resource + " = (memory_resource != nullptr) ? memory_resource : " +
                    file.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "();");
             for (const auto& member : variableArrayMembers)
             {
                 // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-                w.line(member + " = decltype(" + member + ")(_memory_resource);");
+                w.line(member + " = decltype(" + member + ")(" + resource + ");");
             }
             for (const auto& member : compositeScalarMembers)
             {
-                w.line(member + ".set_memory_resource(_memory_resource);");
+                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+                w.line(member + "." + setter + "(" + resource + ");");
             }
             for (const auto& member : compositeFixedArrayMembers)
             {
@@ -2007,7 +2069,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 w.open("for (" + file.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
                        ".size(); ++" + i + ") {");
-                w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
+                w.line(member + "[" + i + "]." + setter + "(" + resource + ");");
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 w.close("}");
             }
@@ -2017,7 +2079,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 w.open("for (" + file.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
                        ".size(); ++" + i + ") {");
-                w.line(member + "[" + i + "].set_memory_resource(_memory_resource);");
+                w.line(member + "[" + i + "]." + setter + "(" + resource + ");");
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 w.close("}");
             }
@@ -2027,22 +2089,26 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
         if (emitted == 0)
         {
-            w.line(file.standard("std::uint8_t") + " _dummy_{0U};");
+            w.line(file.standard("std::uint8_t") + " " + names.dataMember(GeneratedFact::Placeholder) + "{0U};");
         }
     }
 
-    w.line("static constexpr const char* FULL_NAME = \"" + metadata.fullName + "\";");
-    w.line("static constexpr bool IS_DEPRECATED = " + std::string(metadata.deprecated ? "true" : "false") + ";");
-    w.line("static constexpr const char* FULL_NAME_AND_VERSION = \"" + metadata.fullName + "." +
+    const auto fact = [&names](const GeneratedFact stated) { return " " + names.constant(stated) + " = "; };
+    w.line("static constexpr const char*" + fact(GeneratedFact::FullName) + "\"" + metadata.fullName + "\";");
+    w.line("static constexpr bool" + fact(GeneratedFact::IsDeprecated) + (metadata.deprecated ? "true" : "false") +
+           ";");
+    w.line("static constexpr const char*" + fact(GeneratedFact::FullNameAndVersion) + "\"" + metadata.fullName + "." +
            std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
-    w.line("static constexpr " + file.standard("std::size_t") +
-           " EXTENT_BYTES = " + std::to_string(metadata.extentBytes) + "U;");
-    w.line("static constexpr " + file.standard("std::size_t") +
-           " SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string(metadata.serializationBufferSizeBytes) + "U;");
-    w.line(std::string("static constexpr bool WIRE_FLAT = ") + (metadata.wireFlat.holds ? "true;" : "false;"));
-    w.line("static constexpr const char* WIRE_FLAT_REASON = \"" + metadata.wireFlat.reason + "\";");
-    w.line(std::string("static constexpr bool HOST_IMAGE = ") + (metadata.hostImage.holds ? "true;" : "false;"));
-    w.line("static constexpr const char* HOST_IMAGE_REASON = \"" + metadata.hostImage.reason + "\";");
+    w.line("static constexpr " + file.standard("std::size_t") + fact(GeneratedFact::ExtentBytes) +
+           std::to_string(metadata.extentBytes) + "U;");
+    w.line("static constexpr " + file.standard("std::size_t") + fact(GeneratedFact::SerializationBufferSizeBytes) +
+           std::to_string(metadata.serializationBufferSizeBytes) + "U;");
+    w.line("static constexpr bool" + fact(GeneratedFact::WireFlat) + (metadata.wireFlat.holds ? "true;" : "false;"));
+    w.line("static constexpr const char*" + fact(GeneratedFact::WireFlatReason) + "\"" + metadata.wireFlat.reason +
+           "\";");
+    w.line("static constexpr bool" + fact(GeneratedFact::HostImage) + (metadata.hostImage.holds ? "true;" : "false;"));
+    w.line("static constexpr const char*" + fact(GeneratedFact::HostImageReason) + "\"" + metadata.hostImage.reason +
+           "\";");
     // A folded body moves the object as the wire's bytes, which holds only where the host orders
     // them as the wire does. This source is compiled for a target the generator did not see.
     if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
@@ -2055,104 +2121,96 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     }
     if (metadata.declaresPortId)
     {
-        w.line(std::string("static constexpr bool HAS_FIXED_PORT_ID = ") + (metadata.fixedPortId ? "true;" : "false;"));
+        w.line("static constexpr bool" + fact(GeneratedFact::HasFixedPortId) +
+               (metadata.fixedPortId ? "true;" : "false;"));
         if (metadata.fixedPortId)
         {
-            w.line("static constexpr " + file.standard("std::uint16_t") +
-                   " FIXED_PORT_ID = " + std::to_string(*metadata.fixedPortId) + "U;");
+            w.line("static constexpr " + file.standard("std::uint16_t") + fact(GeneratedFact::FixedPortId) +
+                   std::to_string(*metadata.fixedPortId) + "U;");
         }
     }
     if (metadata.isUnion)
     {
-        w.line("static constexpr " + file.standard("std::size_t") +
-               " UNION_OPTION_COUNT = " + std::to_string(metadata.unionOptions.size()) + "U;");
-        const NamingScope tagScope = makeSectionConstantScope(Language::Cpp, section, {});
+        w.line("static constexpr " + file.standard("std::size_t") + fact(GeneratedFact::UnionOptionCount) +
+               std::to_string(metadata.unionOptions.size()) + "U;");
         for (const auto& option : metadata.unionOptions)
         {
             w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits, file) + " " +
-                   tagScope.get(IdentifierRole::MacroName, unionOptionTagName(Language::Cpp, option.name)) + " = " +
-                   std::to_string(option.tag) + "U;");
+                   names.option(option.name) + " = " + std::to_string(option.tag) + "U;");
         }
     }
-
-    // Two DSDL constants can upper-case onto one name; a duplicate `static constexpr` does not
-
-    // compile. The generated statics are claimed by the ConstantName role's policy, so a DSDL
-
-    // constant named FULL_NAME is escaped before it reaches the scope.
-
-    NamingScope const constScope = makeSectionConstantScope(Language::Cpp, section, {});
 
     for (const auto& c : section.constants)
     {
         emitAttachedDocCpp(w, c.doc);
-        w.line("static constexpr auto " + constScope.get(IdentifierRole::ConstantName, c.name) + " = " +
-               valueToCppExpr(c.type, c.value) + ";");
+        w.line("static constexpr auto " + names.dsdlConstant(c.name) + " = " + valueToCppExpr(c.type, c.value) + ";");
     }
 
     if (!accessorsOnly)
     {
-        emitArrayMetadata(w, section, file);
+        emitArrayMetadata(w, names, section, file);
 
-        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " serialize(" +
-               file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+        const std::string& serializeEntry   = surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry);
+        const std::string& deserializeEntry = surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry);
+        const std::string& serialize =
+            surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Wrapper, GeneratedFact::Serialize);
+        const std::string& deserialize =
+            surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Wrapper, GeneratedFact::Deserialize);
+        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " + serialize +
+               "(" + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
                "* "
                "inout_buffer_size_bytes) "
                "const {");
+        // A host image holds no resource of its own, so its entry points are handed none.
+        const std::string held =
+            metadata.hostImage.holds ? std::string("nullptr") : names.dataMember(GeneratedFact::MemoryResource);
         if (isPmrFlavor(flavor))
         {
-            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) +
-                   "(this, buffer, inout_buffer_size_bytes, " +
-                   (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
+            w.line("return " + serializeEntry + "(this, buffer, inout_buffer_size_bytes, " + held + ");");
         }
         else
         {
-            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) +
-                   "(this, buffer, inout_buffer_size_bytes);");
+            w.line("return " + serializeEntry + "(this, buffer, inout_buffer_size_bytes);");
         }
         w.close("}");
 
-        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") +
-               " deserialize(const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " + deserialize +
+               "(const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
                "* "
                "inout_buffer_size_bytes) {");
         if (isPmrFlavor(flavor))
         {
-            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) +
-                   "(this, buffer, inout_buffer_size_bytes, " +
-                   (metadata.hostImage.holds ? "nullptr" : "_memory_resource") + ");");
+            w.line("return " + deserializeEntry + "(this, buffer, inout_buffer_size_bytes, " + held + ");");
         }
         else
         {
-            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) +
-                   "(this, buffer, inout_buffer_size_bytes);");
+            w.line("return " + deserializeEntry + "(this, buffer, inout_buffer_size_bytes);");
         }
         w.close("}");
 
         if (isPmrFlavor(flavor))
         {
-            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " serialize(" +
-                   file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " + serialize +
+                   "(" + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
                    "* "
                    "inout_buffer_size_bytes, " +
                    file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) const {");
-            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Serialize) +
-                   "(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.line("return " + serializeEntry + "(this, buffer, inout_buffer_size_bytes, memory_resource);");
             w.close("}");
 
-            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") +
-                   " deserialize(const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
+            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " +
+                   deserialize + "(const " + file.standard("std::uint8_t") + "* buffer, " +
+                   file.standard("std::size_t") +
                    "* "
                    "inout_buffer_size_bytes, " +
                    file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) {");
-            w.line("return " + renderEntryPointName(Language::Cpp, typeName, EntryPoint::Deserialize) +
-                   "(this, buffer, inout_buffer_size_bytes, memory_resource);");
+            w.line("return " + deserializeEntry + "(this, buffer, inout_buffer_size_bytes, memory_resource);");
             w.close("}");
         }
     }
     // A wire-flat section's field accessors, defined here as static members: each is one read
     // or one write at the field's offset, and reads the wire rather than an object.
-    for (const mlir::func::FuncOp accessor : accessors)
+    for (const mlir::func::FuncOp accessor : bodies.accessors)
     {
         if (auto err = translateFunction(accessor, spelling, w, lookups))
         {
@@ -2175,7 +2233,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
-            const std::string cppMember = fieldScope.get(IdentifierRole::FieldName, member.fieldName);
+            const std::string cppMember = names.field(member.fieldName);
             w.line("static_assert(" + file.standard("offsetof") + "(" + declaredName + ", " + cppMember +
                    ") == " + std::to_string(member.offsetBytes) + "U, \"" + declaredName + "." + cppMember +
                    ": not at the offset its serialisation assumes\");");
@@ -2184,29 +2242,19 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
         w.blank();
     }
 
-    if (section.deprecated)
+    if (const SurfaceDecl* const alias = names.alias(); section.deprecated && (alias != nullptr))
     {
-        w.line("using " + typeName + (ctx.emitDeprecationAttributes() ? " [[deprecated]]" : "") + " = " + declaredName +
-               ";");
+        w.line("using " + alias->name + (ctx.emitDeprecationAttributes() ? " [[deprecated]]" : "") + " = " +
+               declaredName + ";");
         w.blank();
     }
     return llvm::Error::success();
 }
 
-/// @brief The three bodies `lower-dsdl-bodies` built for one section.
-struct SectionBodies final
-{
-    mlir::func::FuncOp serialize;
-    mlir::func::FuncOp deserialize;
-    mlir::func::FuncOp initialize;
-    /// @brief The section's field accessors, getters and setters, in the module's order.
-    std::vector<mlir::func::FuncOp> accessors;
-};
-
 llvm::Error emitSection(SourceWriter&                         w,
                         const CppFileNames&                   file,
                         const SemanticDefinition&             def,
-                        const std::string&                    typeName,
+                        const CppSection&                     names,
                         const SectionMetadata&                metadata,
                         const SemanticSection&                section,
                         const CppFlavor                       flavor,
@@ -2216,20 +2264,19 @@ llvm::Error emitSection(SourceWriter&                         w,
                         const SectionBodies&                  bodies,
                         PlanBodyLookups&                      lookups)
 {
-    const EmitterContext& ctx          = file.context();
-    const auto            declaredName = renderDeclaredTypeName(typeName, section.deprecated);
+    const EmitterContext& ctx = file.context();
     // An accessors-only run has no bodies to declare or read: the struct holds the constants and
     // the accessors, and nothing else.
     InitializerShape init;
     if (!ctx.accessorsOnly())
     {
-        emitFunctionPrototypes(w, typeName, declaredName, flavor, file);
-        if (!bodies.initialize)
+        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no initialise body for %s in the lowered module",
+                                           "no plan bodies for %s in the lowered module",
                                            metadata.fullName.c_str());
         }
+        emitFunctionPrototypes(w, names, bodies, flavor, file);
         auto read = readInitializer(bodies.initialize);
         if (!read)
         {
@@ -2238,8 +2285,7 @@ llvm::Error emitSection(SourceWriter&                         w,
         init = std::move(*read);
     }
     if (auto err = emitSectionStruct(w,
-                                     typeName,
-                                     declaredName,
+                                     names,
                                      metadata,
                                      init,
                                      section,
@@ -2252,7 +2298,7 @@ llvm::Error emitSection(SourceWriter&                         w,
                                                               def.info.minorVersion),
                                      plan,
                                      spelling,
-                                     bodies.accessors,
+                                     bodies,
                                      lookups,
                                      ctx.accessorsOnly()))
     {
@@ -2261,12 +2307,6 @@ llvm::Error emitSection(SourceWriter&                         w,
     if (ctx.accessorsOnly())
     {
         return llvm::Error::success();
-    }
-    if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-    {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "no plan bodies for %s in the lowered module",
-                                       metadata.fullName.c_str());
     }
     if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
     {
@@ -2317,9 +2357,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     }
     // The declarations and bodies first, naming what they take from other headers as they write it;
     // the includes are written after, from what was named.
+    const CppSurface&                    names = ctx.names();
+    const std::string                    key   = keyOf(def.info);
     ImportSet                            includes;
-    const CppFileNames                   file(ctx, includes, vocabulary, EmitterContext::relativeHeaderPath(def));
-    const CppSpelling                    spelling(module, schema, flavor, ctx.typeNameVersioning(), file);
+    const CppFileNames                   file(ctx, includes, vocabulary, names.header(key));
+    const CppSpelling                    spelling(schema, flavor, names, file);
     std::vector<mlir::func::FuncOp>      helpers;
     std::map<std::string, SectionBodies> bodies;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
@@ -2361,14 +2403,14 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
 
     std::ostringstream out;
     std::ostringstream body;
-    SourceWriter       w            = makeCppWriter(body);
-    const auto         baseTypeName = ctx.cppTypeName(def);
+    SourceWriter       w = makeCppWriter(body);
 
     out << generatedCommentLine("C++ backend") << "\n";
     out << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << "\n\n";
     out << "#pragma once\n\n";
 
-    emitNamespaceOpen(w, def.info.namespaceComponents);
+    const std::vector<std::string> namespaces = names.namespaces(key);
+    emitNamespaceOpen(w, namespaces);
 
     // The helpers the plans call, ahead of the sections that call them.
     for (const mlir::func::FuncOp helper : helpers)
@@ -2381,27 +2423,34 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
 
     if (def.isService)
     {
-        // A single underscore: C++ reserves any identifier containing `__`, and these name C++
-        // structs. The C emitter keeps `__` for its own service section types, where it is legal.
-        const auto requestType  = renderSectionTypeName(Language::Cpp, baseTypeName, "request");
-        const auto responseType = renderSectionTypeName(Language::Cpp, baseTypeName, "response");
         // The service alias and its wrappers name the request struct, never the request's public
         // name, which is a deprecated alias when the service is.
-        const auto        requestDeclared = renderDeclaredTypeName(requestType, def.request.deprecated);
-        const std::string aliasAttribute =
+        const std::string& requestDeclared = names.declaredName(key, "request");
+        const std::string  aliasAttribute =
             (def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "";
+        // The service's own facts, beside its types.
+        const auto service = [&names, &key](const SurfaceDeclKind kind,
+                                            const GeneratedFact   fact) -> const std::string& {
+            const SurfaceDecl* const decl = names.beside(key, kind, {}, fact);
+            if (decl == nullptr)
+            {
+                llvm::report_fatal_error(llvm::Twine("C++ backend: the surface declares no name of the service ") +
+                                         key);
+            }
+            return decl->name;
+        };
 
-        w.line("constexpr const char* " + renderEnclosedConstantName(baseTypeName, "FULL_NAME") + " = \"" +
+        w.line("constexpr const char* " + service(SurfaceDeclKind::Constant, GeneratedFact::FullName) + " = \"" +
                def.info.fullName + "\";");
-        w.line("constexpr const char* " + renderEnclosedConstantName(baseTypeName, "FULL_NAME_AND_VERSION") + " = \"" +
-               def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
+        w.line("constexpr const char* " + service(SurfaceDeclKind::Constant, GeneratedFact::FullNameAndVersion) +
+               " = \"" + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
                std::to_string(def.info.minorVersion) + "\";");
         w.blank();
 
         if (auto err = emitSection(w,
                                    file,
                                    def,
-                                   requestType,
+                                   CppSection(names, key, "request"),
                                    sectionMetadata(def.info, def.request, schema, "request"),
                                    def.request,
                                    flavor,
@@ -2418,7 +2467,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
             if (auto err = emitSection(w,
                                        file,
                                        def,
-                                       responseType,
+                                       CppSection(names, key, "response"),
                                        sectionMetadata(def.info, *def.response, schema, "response"),
                                        *def.response,
                                        flavor,
@@ -2432,19 +2481,26 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
             }
         }
 
-        w.line("using " + baseTypeName + aliasAttribute + " = " + requestDeclared + ";");
+        if (const SurfaceDecl* const alias = names.beside(key, SurfaceDeclKind::Alias, {}))
+        {
+            w.line("using " + alias->name + aliasAttribute + " = " + requestDeclared + ";");
+        }
         w.line("constexpr " + file.standard("std::size_t") + " " +
-               renderEnclosedConstantName(baseTypeName, "EXTENT_BYTES") + " = " + requestDeclared + "::EXTENT_BYTES;");
-        w.line("constexpr " + file.standard("std::size_t") + " " +
-               renderEnclosedConstantName(baseTypeName, "SERIALIZATION_BUFFER_SIZE_BYTES") + " = " + requestDeclared +
-               "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+               service(SurfaceDeclKind::Constant, GeneratedFact::ExtentBytes) + " = " + requestDeclared +
+               "::" + names.member(key, "request", SurfaceDeclKind::Constant, {}, GeneratedFact::ExtentBytes) + ";");
+        w.line(
+            "constexpr " + file.standard("std::size_t") + " " +
+            service(SurfaceDeclKind::Constant, GeneratedFact::SerializationBufferSizeBytes) + " = " + requestDeclared +
+            "::" +
+            names.member(key, "request", SurfaceDeclKind::Constant, {}, GeneratedFact::SerializationBufferSizeBytes) +
+            ";");
         // The service-ID belongs to the service, and this alias is how the service is named.
-        w.line("constexpr bool " + renderEnclosedConstantName(baseTypeName, "HAS_FIXED_PORT_ID") + " = " +
+        w.line("constexpr bool " + service(SurfaceDeclKind::Constant, GeneratedFact::HasFixedPortId) + " = " +
                (def.info.fixedPortId ? "true;" : "false;"));
         if (def.info.fixedPortId)
         {
             w.line("constexpr " + file.standard("std::uint16_t") + " " +
-                   renderEnclosedConstantName(baseTypeName, "FIXED_PORT_ID") + " = " +
+                   service(SurfaceDeclKind::Constant, GeneratedFact::FixedPortId) + " = " +
                    std::to_string(*def.info.fixedPortId) + "U;");
         }
         w.blank();
@@ -2452,10 +2508,10 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         // The wrappers call the request's serialisation, which an accessors-only run does not emit.
         if (!ctx.accessorsOnly())
         {
+            const SectionBodies& request = bodies["request"];
             w.line("inline " + file.standard("std::int8_t") + " " +
-                   renderEntryPointName(Language::Cpp, baseTypeName, EntryPoint::Serialize) + "(const " +
-                   requestDeclared + "* const obj, " + file.standard("std::uint8_t") + "* const buffer, " +
-                   file.standard("std::size_t") +
+                   service(SurfaceDeclKind::Wrapper, GeneratedFact::Serialize) + "(const " + requestDeclared +
+                   "* const obj, " + file.standard("std::uint8_t") + "* const buffer, " + file.standard("std::size_t") +
                    "* const "
                    "inout_buffer_size_bytes" +
                    (isPmrFlavor(flavor)
@@ -2463,13 +2519,13 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                         : "") +
                    ")");
             w.open("{");
-            w.line("return " + renderEntryPointName(Language::Cpp, requestType, EntryPoint::Serialize) +
+            w.line("return " + names.function(symbolOf(request.serialize), SurfaceDeclKind::Entry) +
                    "(obj, buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
             w.close("}");
             w.blank();
 
             w.line("inline " + file.standard("std::int8_t") + " " +
-                   renderEntryPointName(Language::Cpp, baseTypeName, EntryPoint::Deserialize) + "(" + requestDeclared +
+                   service(SurfaceDeclKind::Wrapper, GeneratedFact::Deserialize) + "(" + requestDeclared +
                    "* const out_obj, const " + file.standard("std::uint8_t") + "* buffer, " +
                    file.standard("std::size_t") +
                    "* const "
@@ -2479,7 +2535,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                         : "") +
                    ")");
             w.open("{");
-            w.line("return " + renderEntryPointName(Language::Cpp, requestType, EntryPoint::Deserialize) +
+            w.line("return " + names.function(symbolOf(request.deserialize), SurfaceDeclKind::Entry) +
                    "(out_obj, buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
                    ");");
             w.close("}");
@@ -2491,7 +2547,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         if (auto err = emitSection(w,
                                    file,
                                    def,
-                                   baseTypeName,
+                                   CppSection(names, key, ""),
                                    sectionMetadata(def.info, def.request, schema, ""),
                                    def.request,
                                    flavor,
@@ -2505,7 +2561,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         }
     }
 
-    emitNamespaceClose(w, def.info.namespaceComponents);
+    emitNamespaceClose(w, namespaces);
 
     const std::string declarations = body.str();
     out << llvmdsdl::emitter::c::renderIncludeLines(includes);
@@ -2514,9 +2570,13 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     return out.str();
 }
 
+/// @param[in] outRoot The directory the profile's files are written to.
+/// @param[in] treeRoot The directory, ending in `/`, the profile's surface places its headers under;
+///            empty for the output directory.
 llvm::Error emitProfile(const SemanticModule&                  semantic,
                         mlir::ModuleOp                         module,
                         const std::filesystem::path&           outRoot,
+                        const std::string&                     treeRoot,
                         const CppFlavor                        flavor,
                         const vocabulary::Vocabulary&          vocabulary,
                         const Options&                         options,
@@ -2563,12 +2623,17 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         }
     }
 
+    auto tree = SurfaceTree::read(module, languageTraits(Language::Cpp), profileName(flavor));
+    if (!tree)
+    {
+        return tree.takeError();
+    }
+    const CppSurface     names(*tree, treeRoot);
     const EmitterContext ctx(semantic,
+                             names,
                              options.emitDeprecationAttributes,
                              options.hostImageFolded,
-
-                             options.accessorsOnly,
-                             options.typeNameVersioning);
+                             options.accessorsOnly);
     PlanBodyLookups      lookups(module);
     for (const auto& def : semantic.definitions)
     {
@@ -2577,19 +2642,15 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
             continue;
         }
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
-
-        std::filesystem::path dir = outRoot;
-        for (const auto& ns : def.info.namespaceComponents)
-        {
-            dir /= ns;
-        }
-        auto header = renderHeader(def, ctx, flavor, vocabulary, module, lookups);
+        auto                           header = renderHeader(def, ctx, flavor, vocabulary, module, lookups);
         if (!header)
         {
             return header.takeError();
         }
-        if (auto err =
-                writeGeneratedFile(dir / headerFileName(def.info), *header, options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(outRoot / names.header(keyOf(def.info)),
+                                          *header,
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }
@@ -2615,25 +2676,35 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
 
     // Every profile's bindings are resolved before any file is written, so a profile that binds
     // nothing fails the run rather than leaving another profile's output beside it.
-    const auto emitWith = [&](const CppFlavor flavor, const std::filesystem::path& root) -> llvm::Error {
+    // A run of several profiles writes each to a directory the profile names, where its surface
+    // places it.
+    const auto emitWith = [&](const CppFlavor flavor, const bool apart) -> llvm::Error {
         auto vocabulary = options.vocabulary->resolve(profileName(flavor));
         if (!vocabulary)
         {
             return vocabulary.takeError();
         }
-        return emitProfile(semantic, module, root, flavor, *vocabulary, options, selectedTypeKeys);
+        const std::string directory = apart ? profileName(flavor).str() + "/" : std::string{};
+        return emitProfile(semantic,
+                           module,
+                           outRoot / directory,
+                           directory,
+                           flavor,
+                           *vocabulary,
+                           options,
+                           selectedTypeKeys);
     };
     if (options.profile == Profile::Std)
     {
-        return emitWith(CppFlavor::Std, outRoot);
+        return emitWith(CppFlavor::Std, false);
     }
     if (options.profile == Profile::Pmr)
     {
-        return emitWith(CppFlavor::Pmr, outRoot);
+        return emitWith(CppFlavor::Pmr, false);
     }
     if (options.profile == Profile::Autosar)
     {
-        return emitWith(CppFlavor::Autosar, outRoot);
+        return emitWith(CppFlavor::Autosar, false);
     }
     for (const CppFlavor flavor : {CppFlavor::Std, CppFlavor::Pmr})
     {
@@ -2642,11 +2713,11 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
             return vocabulary.takeError();
         }
     }
-    if (auto err = emitWith(CppFlavor::Std, outRoot / "std"))
+    if (auto err = emitWith(CppFlavor::Std, true))
     {
         return err;
     }
-    return emitWith(CppFlavor::Pmr, outRoot / "pmr");
+    return emitWith(CppFlavor::Pmr, true);
 }
 
 }  // namespace llvmdsdl::emitter::cpp
