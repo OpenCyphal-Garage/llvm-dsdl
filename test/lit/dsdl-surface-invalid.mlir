@@ -39,10 +39,10 @@ dsdl.surface target = "cpp" profile = "std" {
 // CHECK: note: declared here
 dsdl.surface target = "rust" {
   dsdl.scope root "llvmdsdl_generated" path = "src/lib.rs" {
-    dsdl.scope module "ns" path = "src/ns/mod.rs" {
+    dsdl.scope namespace "ns" path = "src/ns/mod.rs" {
       dsdl.scope module "file_1_0" path = "src/ns/file_1_0.rs" {
       }
-      dsdl.scope module "file_1_0" path = "src/ns/file_1_0/mod.rs" {
+      dsdl.scope namespace "file_1_0" path = "src/ns/file_1_0/mod.rs" {
       }
     }
   }
@@ -303,6 +303,28 @@ dsdl.surface target = "rust" {
   dsdl.scope root "llvmdsdl_generated" {
     dsdl.scope type "Msg" {
       dsdl.decl "value" kind = field member = "value"
+    }
+  }
+}
+
+// -----
+
+// One version of a definition declares a name once, however many versions share it.
+// CHECK: error: 'dsdl.scope' op declares 'ns__Multi' as a type in scope '', which already declares it as a type
+// CHECK: note: declared here
+dsdl.schema @ns.Multi.1.0 attributes {full_name = "ns.Multi", major = 1 : i32, minor = 0 : i32, sealed} {
+  dsdl.field {name = "value", type_name = "saturated uint8"}
+  dsdl.serialization_plan attributes {max_bits = 8 : i64, min_bits = 8 : i64} {
+    dsdl.align {bits = 8 : i32}
+  }
+}
+dsdl.surface target = "c" {
+  dsdl.scope root "" {
+    dsdl.scope file "Multi_1_0" path = "ns/Multi_1_0.h" {
+      dsdl.scope type "ns__Multi" of = @ns.Multi.1.0 {
+      }
+      dsdl.scope type "ns__Multi" of = @ns.Multi.1.0 {
+      }
     }
   }
 }

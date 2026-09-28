@@ -89,7 +89,7 @@ Relevant dialect files:
 - [`lib/IR/DSDLOps.cpp`](lib/IR/DSDLOps.cpp)
 - [`lib/IR/DSDLDialect.cpp`](lib/IR/DSDLDialect.cpp)
 
-Core ops in active use are `dsdl.schema`, `dsdl.field`, `dsdl.constant`, `dsdl.serialization_plan`, `dsdl.align`, and `dsdl.io`.
+Core ops in active use are `dsdl.schema`, `dsdl.field`, `dsdl.constant`, `dsdl.serialization_plan`, `dsdl.align`, and `dsdl.io`, and for a codegen target `dsdl.surface`, `dsdl.scope` and `dsdl.decl`: the scopes the target's output opens and every name declared in them.
 
 Every fact an op carries is a declared attribute with a typed accessor, and the op's verifier holds
 each to the range the wire format allows. Consumers read the accessors; `tools/gates/typed_dialect_attributes.py`
@@ -114,7 +114,7 @@ Transforms are where normalisation and contract hardening happen. The pass set i
 - `dsdl-verify-alias-layout`
 - `build-dsdl-plan-bodies`
 - optional `optimize-dsdl-lowered-serdes` pipeline: the canonicaliser and common-subexpression elimination over the helpers and bodies
-- `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of
+- `lower-dsdl-bodies`: the pipeline of the three passes above, with the optional one after them, which every backend's bodies are translations of; for a target it ends with `project-dsdl-surface`, which writes the target's surface
 - `convert-dsdl-to-llvm` and `emit-dsdl-runtime`
 
 Key files:

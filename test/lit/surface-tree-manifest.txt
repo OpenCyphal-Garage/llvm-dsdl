@@ -1,0 +1,29 @@
+# The surface a target's lowering writes names each definition as the naming manifest reports it --
+# its type names, file stem, namespace, fields, constants and option tags -- since both are the
+# allocation `allocateSurface` answers. Checked in every language, over the corpus built to make
+# names collide and escape, and under both type-name schemes.
+#
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir %S/fixtures_naming > %t/in.mlir
+# RUN: %dsdlc --target-language ast %S/fixtures_naming --naming-manifest %t/names.json
+# RUN: %dsdlc --target-language ast %S/fixtures_naming --versioned-type-names --naming-manifest %t/versioned.json
+#
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=c" %t/in.mlir > %t/c.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/names.json c %t/c.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=cpp profiles=std" %t/in.mlir > %t/cpp.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/names.json cpp %t/cpp.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=rust package=m" %t/in.mlir > %t/rust.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/names.json rust %t/rust.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=go package=m" %t/in.mlir > %t/go.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/names.json go %t/go.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=ts package=m" %t/in.mlir > %t/ts.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/names.json ts %t/ts.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=python package=dsdl_gen" %t/in.mlir > %t/py.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/names.json python %t/py.mlir
+#
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=c versioned-type-names=true" %t/in.mlir > %t/cv.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/versioned.json c %t/cv.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=go package=m versioned-type-names=true" %t/in.mlir > %t/gov.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/versioned.json go %t/gov.mlir
+# RUN: %dsdl-opt --lower-dsdl-bodies="target=ts package=m versioned-type-names=true" %t/in.mlir > %t/tsv.mlir
+# RUN: %{python} %S/check_surface_manifest.py %t/versioned.json ts %t/tsv.mlir

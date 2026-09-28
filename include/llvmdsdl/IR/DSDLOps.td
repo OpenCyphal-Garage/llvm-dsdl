@@ -688,9 +688,12 @@ def DSDL_SurfaceOp : DSDL_Op<"surface", [HasParent<"::mlir::ModuleOp">,
 
     Each namespace holds a name once in each class the target's language keeps apart, which
     its `LanguageTraits` row states. A type scope's name is a type in the namespace that holds
-    it, and a namespace, module or package scope's name is a module there. Macros share one
-    class across the surface, which is the translation unit a set of headers can meet in. No
-    two scopes are written to one path.
+    it, and a namespace, module or package scope's name is a module there; a namespace's and a
+    definition's module of one name meet only where the row makes a file and a directory one
+    module. Macros share one
+    class across the surface, which is the translation unit a set of headers can meet in. Two
+    versions of one definition may declare one name: they are alternatives a consumer builds
+    against one of. No two scopes are written to one path.
   }];
   let arguments = (ins StrAttr:$target, OptionalAttr<StrAttr>:$profile);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -711,7 +714,10 @@ def DSDL_ScopeOp
   let summary = "A scope of the surface tree";
   let description = [{
     Holds the scopes and declarations its language opens and writes in it, in that order. A
-    `root` scope is the generated package and is the surface's only child. `path` is the file
+    `namespace` or `package` scope is a DSDL namespace's, and a `module` scope a definition's
+    own. A
+    `root` scope is the generated package and is the surface's only child; its name is empty
+    where the language has no package. `path` is the file
     the scope is written to, relative to the output directory; a `file` scope has one. A
     `type` scope may name the schema it declares with `of`, and a service's section with
     `section`.

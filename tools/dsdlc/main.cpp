@@ -210,6 +210,61 @@ using llvmdsdl::dsdlc::isCodegenLanguage;
 using llvmdsdl::dsdlc::isKnownLanguage;
 using llvmdsdl::dsdlc::traitsOf;
 
+namespace
+{
+
+/// @brief The surface a codegen run's lowering writes: the target's language, the profiles it
+///        generates, and the package it names; none for a run that generates no language.
+std::optional<llvmdsdl::SurfaceProjection> surfaceProjectionOf(const CliOptions&                     options,
+                                                               const llvmdsdl::LanguageTraits* const row)
+{
+    if (row == nullptr)
+    {
+        return std::nullopt;
+    }
+    llvmdsdl::SurfaceProjection projection{.target      = row->name.str(),
+                                           .profiles    = {},
+                                           .packageName = {},
+                                           .versioning  = options.typeNameVersioning};
+    switch (row->language)
+    {
+    case Language::C:
+        break;
+    case Language::Cpp:
+        switch (options.cppProfile)
+        {
+        case llvmdsdl::emitter::cpp::Profile::Std:
+            projection.profiles = {"std"};
+            break;
+        case llvmdsdl::emitter::cpp::Profile::Pmr:
+            projection.profiles = {"pmr"};
+            break;
+        case llvmdsdl::emitter::cpp::Profile::Both:
+            projection.profiles = {"std", "pmr"};
+            break;
+        case llvmdsdl::emitter::cpp::Profile::Autosar:
+            projection.profiles = {"autosar"};
+            break;
+        }
+        break;
+    case Language::Rust:
+        projection.packageName = options.rustCrateName;
+        break;
+    case Language::Go:
+        projection.packageName = options.goModuleName;
+        break;
+    case Language::TypeScript:
+        projection.packageName = options.tsModuleName;
+        break;
+    case Language::Python:
+        projection.packageName = options.pyPackageName;
+        break;
+    }
+    return projection;
+}
+
+}  // namespace
+
 void printUsage()
 {
     llvm::errs() << "Usage: dsdlc --target-language <" << llvmdsdl::dsdlc::renderTargetLanguages("|")
@@ -2255,11 +2310,17 @@ int runDsdlc(int argc, char** argv)
     const bool hostImageFolded         = bodyInterface.objectsAreByteImages;
 
     // Every backend's bodies are translations of what this pipeline builds. It runs once, here,
-    // over the module they all receive.
+    // over the module they all receive, and writes the target's surface last: the scopes its output
+    // opens and every name declared in them.
     {
         logVerbose(1, "lowering serialisation plans to bodies");
-        mlir::PassManager pm(&context);
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm, options.optimizeLoweredSerDes, bodyInterface, options.aliasableOnly);
+        mlir::PassManager                                pm(&context);
+        const std::optional<llvmdsdl::SurfaceProjection> surface = surfaceProjectionOf(options, targetTraits);
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm,
+                                             options.optimizeLoweredSerDes,
+                                             bodyInterface,
+                                             options.aliasableOnly,
+                                             surface ? &*surface : nullptr);
         if (mlir::failed(pm.run(*mlirModule)))
         {
             llvm::errs() << "error: lowering serialisation plans to bodies failed\n";

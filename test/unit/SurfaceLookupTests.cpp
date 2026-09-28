@@ -37,6 +37,7 @@ public:
     {
         plan.scopes.push_back(llvmdsdl::SurfaceScope{.kind   = SurfaceScopeKind::Root,
                                                      .name   = std::move(rootName),
+                                                     .path   = {},
                                                      .parent = std::nullopt,
                                                      .of     = std::nullopt,
                                                      .items  = {}});
@@ -50,13 +51,15 @@ public:
         const std::size_t index = plan.scopes.size();
         plan.scopes.push_back(llvmdsdl::SurfaceScope{.kind   = kind,
                                                      .name   = std::move(name),
+                                                     .path   = {},
                                                      .parent = parent,
                                                      .of     = schema.empty()
                                                                    ? std::nullopt
                                                                    : std::optional<llvmdsdl::SurfaceEntity>(
-                                                                         llvmdsdl::SurfaceEntity{.schema  = schema,
-                                                                                                 .section = {},
-                                                                                                 .member  = {}}),
+                                                                         llvmdsdl::SurfaceEntity{.schema   = schema,
+                                                                                                 .section  = {},
+                                                                                                 .member   = {},
+                                                                                                 .function = {}}),
                                                      .items  = {}});
         plan.scopes[parent].items.push_back(SurfaceItem{.scope = true, .index = index});
         return index;
@@ -70,19 +73,19 @@ public:
                      const std::optional<std::size_t> binds  = std::nullopt)
     {
         const std::size_t index = plan.decls.size();
-        plan.decls.push_back(
-            llvmdsdl::SurfaceDecl{.name       = std::move(name),
-                                  .kind       = kind,
-                                  .nameClass  = nameClass,
-                                  .visibility = llvmdsdl::SurfaceVisibility::Public,
-                                  .origin     = llvmdsdl::NameOrigin::Definition,
-                                  .of =
-                                      schema.empty()
-                                          ? std::nullopt
-                                          : std::optional<llvmdsdl::SurfaceEntity>(
-                                                llvmdsdl::SurfaceEntity{.schema = schema, .section = {}, .member = {}}),
-                                  .scope = scope,
-                                  .binds = binds});
+        plan.decls.push_back(llvmdsdl::SurfaceDecl{.name       = std::move(name),
+                                                   .kind       = kind,
+                                                   .nameClass  = nameClass,
+                                                   .visibility = llvmdsdl::SurfaceVisibility::Public,
+                                                   .origin     = llvmdsdl::NameOrigin::Definition,
+                                                   .of = schema.empty() ? std::nullopt
+                                                                        : std::optional<llvmdsdl::SurfaceEntity>(
+                                                                              llvmdsdl::SurfaceEntity{.schema  = schema,
+                                                                                                      .section = {},
+                                                                                                      .member  = {},
+                                                                                                      .function = {}}),
+                                                   .scope = scope,
+                                                   .binds = binds});
         const SurfaceItem item{.scope = false, .index = index};
         plan.scopes[scope].items.push_back(item);
         return item;

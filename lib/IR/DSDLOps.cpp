@@ -32,6 +32,7 @@
 
 #include "llvmdsdl/IR/DSDLAttrs.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "mlir/IR/Block.h"
@@ -673,6 +674,54 @@ bool isOutputPath(const llvm::StringRef path)
     });
 }
 
+/// @brief The definition @p op stands for, by its `of`; none where it names none.
+std::optional<llvmdsdl::SchemaSymbol> definitionOf(Operation* op)
+{
+    FlatSymbolRefAttr of;
+    if (auto scope = llvm::dyn_cast<ScopeOp>(op))
+    {
+        of = scope.getOfAttr();
+    }
+    else if (auto decl = llvm::dyn_cast<DeclOp>(op))
+    {
+        of = decl.getOfAttr();
+    }
+    if (!of)
+    {
+        return std::nullopt;
+    }
+    if (const std::optional<llvmdsdl::PlanSymbol> function = llvmdsdl::parsePlanSymbol(of.getValue()))
+    {
+        return function->schema;
+    }
+    return llvmdsdl::parseSchemaSymbol(of.getValue());
+}
+
+/// @brief Whether @p a and @p b stand for two versions of one definition.
+bool versionsOfOneDefinition(Operation* a, Operation* b)
+{
+    const std::optional<llvmdsdl::SchemaSymbol> first  = definitionOf(a);
+    const std::optional<llvmdsdl::SchemaSymbol> second = definitionOf(b);
+    return first && second && (first->fullName == second->fullName) &&
+           ((first->major != second->major) || (first->minor != second->minor));
+}
+
+/// @brief Whether one of @p a and @p b is a namespace's scope and the other a definition's module.
+bool directoryBesideFile(Operation* a, Operation* b)
+{
+    const auto kindOf = [](Operation* op) {
+        auto scope = llvm::dyn_cast<ScopeOp>(op);
+        return scope ? std::optional<ScopeKind>(scope.getKind()) : std::nullopt;
+    };
+    const std::optional<ScopeKind> first       = kindOf(a);
+    const std::optional<ScopeKind> second      = kindOf(b);
+    const auto                     isDirectory = [](const std::optional<ScopeKind> kind) {
+        return kind && ((*kind == ScopeKind::Namespace) || (*kind == ScopeKind::Package));
+    };
+    const auto isModule = [](const std::optional<ScopeKind> kind) { return kind && (*kind == ScopeKind::Module); };
+    return (isDirectory(first) && isModule(second)) || (isModule(first) && isDirectory(second));
+}
+
 /// @brief One name a namespace holds, and what claimed it.
 struct Claim final
 {
@@ -684,9 +733,10 @@ struct Claim final
 class SurfaceNames final
 {
 public:
-    SurfaceNames(const llvm::StringRef target, const llvmdsdl::NameClasses& classes)
+    SurfaceNames(const llvm::StringRef target, const llvmdsdl::LanguageTraits& row)
         : target_(target)
-        , classes_(classes)
+        , classes_(row.classification.nameClasses)
+        , fileAndDirectoryAreOneModule_(row.composition.fileAndDirectoryAreOneModule)
     {
     }
 
@@ -756,7 +806,12 @@ private:
         const bool              macro = (*partition == Partition::Macros);
         llvm::StringMap<Claim>& names = macro ? macros_ : names_[{space.getOperation(), *partition}];
         const auto [found, inserted]  = names.try_emplace(name, Claim{op, nameClass});
-        if (inserted)
+        // Two versions of one definition are alternatives a consumer builds against one of, and the
+        // output keeps them apart where it must, so their names may be one. A namespace's directory
+        // and a definition's module of one name are two paths where the language keeps a file and a
+        // directory apart.
+        if (inserted || versionsOfOneDefinition(op, found->second.op) ||
+            (!fileAndDirectoryAreOneModule_ && directoryBesideFile(op, found->second.op)))
         {
             return success();
         }
@@ -816,6 +871,7 @@ private:
 
     llvm::StringRef                                                    target_;
     const llvmdsdl::NameClasses&                                       classes_;
+    bool                                                               fileAndDirectoryAreOneModule_{};
     std::map<std::pair<Operation*, Partition>, llvm::StringMap<Claim>> names_;
     llvm::StringMap<Claim>                                             macros_;
     llvm::StringMap<ScopeOp>                                           paths_;
@@ -926,13 +982,14 @@ LogicalResult SurfaceOp::verifyRegions()
     {
         return failure();
     }
-    SurfaceNames names(getTarget(), row->classification.nameClasses);
+    SurfaceNames names(getTarget(), *row);
     return names.claimTree(llvm::cast<ScopeOp>(getBody()->front()));
 }
 
 LogicalResult ScopeOp::verify()
 {
-    if (getName().empty())
+    // A root scope is the output's root, which a language without a package declares no name for.
+    if (getName().empty() && (getKind() != ScopeKind::Root))
     {
         return emitOpError("has no name");
     }
