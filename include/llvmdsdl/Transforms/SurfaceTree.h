@@ -22,7 +22,7 @@
 #include <map>
 #include <optional>
 #include <string>
-#include <utility>
+#include <tuple>
 #include <vector>
 
 #include <llvm/ADT/StringRef.h>
@@ -98,9 +98,12 @@ public:
                                             const SurfaceEntity&         of,
                                             std::optional<GeneratedFact> fact = std::nullopt) const;
 
-    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol.
+    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol,
+    ///        stating @p fact.
     /// @return The name; a fatal error where the surface makes no such declaration.
-    [[nodiscard]] const std::string& nameOf(llvm::StringRef symbol, SurfaceDeclKind kind) const;
+    [[nodiscard]] const std::string& nameOf(llvm::StringRef              symbol,
+                                            SurfaceDeclKind              kind,
+                                            std::optional<GeneratedFact> fact = std::nullopt) const;
 
     /// @brief The scopes from the root's child to @p scope, outermost first.
     [[nodiscard]] std::vector<std::size_t> pathTo(std::size_t scope) const;
@@ -110,8 +113,9 @@ private:
 
     SurfacePlan plan_;
 
-    /// @brief Each declaration of a lowered function, by the function's symbol and the kind.
-    std::map<std::pair<std::string, SurfaceDeclKind>, std::size_t> functions_;
+    /// @brief Each declaration of a lowered function, by the function's symbol, the kind, and the fact
+    ///        it states.
+    std::map<std::tuple<std::string, SurfaceDeclKind, std::optional<GeneratedFact>>, std::size_t> functions_;
 };
 
 }  // namespace llvmdsdl

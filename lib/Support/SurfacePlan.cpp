@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -28,6 +29,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 
 #include "llvmdsdl/Support/BodyNaming.h"
@@ -133,6 +135,9 @@ bool states(const GeneratedFact                fact,
     case GeneratedFact::Serialize:
     case GeneratedFact::Deserialize:
     case GeneratedFact::Initialize:
+    case GeneratedFact::AppendWireImage:
+    case GeneratedFact::WireImage:
+    case GeneratedFact::FromWireImage:
         break;
     }
     return true;
@@ -438,7 +443,11 @@ private:
             if (states(member.fact, parts, message, fixedPortId))
             {
                 (void) declare(scope,
-                               renderDeclaredConstantName(language, section.typeName, member.name),
+                               (row_.composition.constants == ConstantsScope::Package)
+                                   ? makeGoConstantScope(parts, section.typeName)
+                                         .get(IdentifierRole::ConstantName,
+                                              goGeneratedConstantKey(section.typeName, member.name))
+                                   : renderDeclaredConstantName(language, section.typeName, member.name),
                                SurfaceDeclKind::Constant,
                                nameClass,
                                NameOrigin::Generated,
@@ -492,10 +501,18 @@ private:
         // Beside the type rather than in it: a language that declares a type's constants in the
         // type names these as a module declares a type's constants.
         const auto named = [&](const llvm::StringRef token) {
-            return (row_.composition.constants == ConstantsScope::Type)
-                       ? codegenProjectIdentifier(language, IdentifierRole::ConstantName, names.typeName) + "_" +
-                             token.str()
-                       : renderDeclaredConstantName(language, names.typeName, token);
+            switch (row_.composition.constants)
+            {
+            case ConstantsScope::Type:
+                return codegenProjectIdentifier(language, IdentifierRole::ConstantName, names.typeName) + "_" +
+                       token.str();
+            case ConstantsScope::Package:
+                return goConstantName({names.typeName, token});
+            case ConstantsScope::Enclosing:
+            case ConstantsScope::Module:
+                break;
+            }
+            return renderDeclaredConstantName(language, names.typeName, token);
         };
         for (const GeneratedName& constant : generatedServiceConstants(language))
         {
@@ -533,8 +550,8 @@ private:
                 {
                     if (inSection(body) && (body.plan.function == entry.function))
                     {
-                        (void) declare(section.typeScope,
-                                       entry.name.str(),
+                        (void) declare(entry.beside ? names.fileScope : section.typeScope,
+                                       entry.beside ? entry.name.str() + section.typeName : entry.name.str(),
                                        SurfaceDeclKind::Entry,
                                        NameClass::Value,
                                        NameOrigin::Generated,
@@ -542,18 +559,20 @@ private:
                     }
                 }
             }
-            for (const EntryPointName& entry : entries)
+            for (const WrapperName& wrapper : generatedWrappers(language))
             {
                 for (const BodyParts& body : definition.bodies)
                 {
-                    if (!entry.wrapper.empty() && inSection(body) && (body.plan.function == entry.function))
+                    if (inSection(body) && (body.plan.function == wrapper.wraps))
                     {
                         (void) declare(section.typeScope,
-                                       entry.wrapper.str(),
+                                       wrapper.name.str(),
                                        SurfaceDeclKind::Wrapper,
                                        NameClass::Value,
                                        NameOrigin::Generated,
-                                       of(body));
+                                       of(body),
+                                       SurfaceVisibility::Public,
+                                       wrapper.fact);
                     }
                 }
             }
@@ -618,16 +637,38 @@ private:
     {
         const Language           language = row_.language;
         const FreeFunctionNames& free     = row_.composition.freeFunctions;
-        if (free.loweredBodySuffix.empty())
-        {
-            return;
-        }
-        const std::size_t file   = *plan_.scopes[section.typeScope].parent;
-        const NamingScope fields = makeSectionFieldScope(language, parts);
-        const auto        member = [&](const llvm::StringRef name) {
+        const std::size_t        file     = *plan_.scopes[section.typeScope].parent;
+        const NamingScope        fields   = makeSectionFieldScope(language, parts);
+        const auto               member   = [&](const llvm::StringRef name) {
             return (name == kPlanUnionTagMember) ? unionTagMemberName(language).str()
                                                  : fields.get(IdentifierRole::FieldName, name);
         };
+        // Where the bodies are not compiled apart and the accessors are free functions, each
+        // accessor is its body.
+        if (free.loweredBodySuffix.empty())
+        {
+            if (free.accessors == AccessorNaming::None)
+            {
+                return;
+            }
+            for (const BodyParts& body : bodies)
+            {
+                const bool getter = body.plan.function == PlanFunction::Get;
+                if ((body.plan.section == section.section) && (getter || (body.plan.function == PlanFunction::Set)))
+                {
+                    (void) declare(file,
+                                   renderAccessorName(language,
+                                                      section.typeName,
+                                                      getter ? AccessorVerb::Get : AccessorVerb::Set,
+                                                      member(body.plan.member)),
+                                   SurfaceDeclKind::Accessor,
+                                   NameClass::Value,
+                                   NameOrigin::Generated,
+                                   SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol});
+                }
+            }
+            return;
+        }
         for (const BodyParts& body : bodies)
         {
             if (body.plan.section != section.section)
@@ -930,27 +971,16 @@ private:
         }
     }
 
-    /// @brief Declares the local name @p definition's file imports each definition it holds under.
+    /// @brief Declares the local names @p definition's file imports what it takes from other
+    ///        definitions' files under.
     ///
-    /// Band 5. What the file declares in the class an import is made in is reserved first, so the
-    /// import is what moves. A field holding a definition as a view names no type of it.
+    /// Band 5. A field holding a definition as a view names no type of it, and an accessors-only
+    /// file names no other definition's type: a composite's getter answers its bytes.
     void allocateImports(const DefinitionParts& definition, const std::size_t file)
     {
-        // Go's package imports, and TypeScript's, which bring a type's functions with it, are named
-        // by their emitters.
-        if (row_.composition.imports != ImportNaming::Type)
+        if (options_.accessorsOnly)
         {
             return;
-        }
-        const NameClasses&                 classes   = row_.classification.nameClasses;
-        const std::optional<NamePartition> partition = namePartition(classes, NameClass::Type);
-        ImportNameScope                    scope(row_.language);
-        for (const SurfaceItem& item : plan_.scopes[file].items)
-        {
-            if (namePartition(classes, classOf(item)) == partition)
-            {
-                scope.reserve(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
-            }
         }
         std::map<std::string, DefinitionRef> composites;
         for (const SectionParts* section : {&definition.request, definition.response ? &*definition.response : nullptr})
@@ -965,6 +995,38 @@ private:
                 {
                     composites.try_emplace(importOrder(*field.composite), *field.composite);
                 }
+            }
+        }
+        switch (row_.composition.imports)
+        {
+        case ImportNaming::Type:
+            allocateTypeImports(definition, file, composites);
+            return;
+        case ImportNaming::Package:
+            allocatePackageImports(definition, file, composites);
+            return;
+        case ImportNaming::None:
+        case ImportNaming::TypeAndFunctions:
+            // TypeScript's imports, which bring a type's functions with it, are named by its emitter.
+            return;
+        }
+    }
+
+    /// @brief Declares the local name the file imports each definition's type under. What the file
+    ///        declares in the class an import is made in is reserved first, so the import is what
+    ///        moves.
+    void allocateTypeImports(const DefinitionParts&                      definition,
+                             const std::size_t                           file,
+                             const std::map<std::string, DefinitionRef>& composites)
+    {
+        const NameClasses&                 classes   = row_.classification.nameClasses;
+        const std::optional<NamePartition> partition = namePartition(classes, NameClass::Type);
+        ImportNameScope                    scope(row_.language);
+        for (const SurfaceItem& item : plan_.scopes[file].items)
+        {
+            if (namePartition(classes, classOf(item)) == partition)
+            {
+                scope.reserve(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
             }
         }
         const std::string own = renderDefinitionKey(definition.ref);
@@ -992,6 +1054,58 @@ private:
                            NameOrigin::Definition,
                            SurfaceEntity{key, "", "", ""},
                            SurfaceVisibility::Private);
+        }
+    }
+
+    /// @brief Declares the local name the file imports each other package it takes a definition
+    ///        from under: `pkg_` and the package's namespace, which a later import meeting it
+    ///        follows with `_1`, `_2` and so on. An import names the package through the first
+    ///        definition the file takes from it.
+    void allocatePackageImports(const DefinitionParts&                      definition,
+                                const std::size_t                           file,
+                                const std::map<std::string, DefinitionRef>& composites)
+    {
+        const Language language = row_.language;
+        const auto     package  = [&](const DefinitionRef& ref) {
+            std::string path;
+            for (const std::string& component : ref.namespaceComponents)
+            {
+                path += (path.empty() ? "" : "/") +
+                        codegenProjectIdentifier(language, IdentifierRole::NamespaceName, component);
+            }
+            return path;
+        };
+        const std::string     own = package(definition.ref);
+        std::set<std::string> used;
+        std::set<std::string> imported;
+        for (const auto& [order, ref] : composites)
+        {
+            const std::string path = package(ref);
+            if (path.empty() || (path == own))
+            {
+                continue;
+            }
+            const std::string base  = "pkg_" + codegenProjectIdentifier(language,
+                                                                        IdentifierRole::NamespaceName,
+                                                                        llvm::join(ref.namespaceComponents, "_"));
+            std::string       alias = (base == "pkg_") ? std::string("pkg_dep") : base;
+            const std::string first = alias;
+            for (std::size_t suffix = 1; used.contains(alias); ++suffix)
+            {
+                alias = first + "_" + std::to_string(suffix);
+            }
+            used.insert(alias);
+            const std::string key = renderDefinitionKey(ref);
+            if (imported.insert(path).second && deprecated_.contains(key))
+            {
+                (void) declare(file,
+                               alias,
+                               SurfaceDeclKind::Import,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{key, "", "", ""},
+                               SurfaceVisibility::Private);
+            }
         }
     }
 

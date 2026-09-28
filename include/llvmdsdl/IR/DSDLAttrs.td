@@ -108,7 +108,10 @@ def DSDL_GeneratedFact
            I32EnumCase<"OptionSelect", 23, "option_select">,
            I32EnumCase<"Serialize", 24, "serialize">,
            I32EnumCase<"Deserialize", 25, "deserialize">,
-           I32EnumCase<"Initialize", 26, "initialize">]> {
+           I32EnumCase<"Initialize", 26, "initialize">,
+           I32EnumCase<"AppendWireImage", 27, "append_wire_image">,
+           I32EnumCase<"WireImage", 28, "wire_image">,
+           I32EnumCase<"FromWireImage", 29, "from_wire_image">]> {
   let cppNamespace = "::mlir::dsdl";
 }
 

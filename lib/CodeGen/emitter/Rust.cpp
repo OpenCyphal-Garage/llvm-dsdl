@@ -236,10 +236,10 @@ public:
                             GeneratedFact::PoolClass);
     }
 
-    /// @brief The name of the function that wraps the entry point @p entry.
-    [[nodiscard]] const std::string& wrapperOf(mlir::func::FuncOp entry) const
+    /// @brief The name of the function that wraps the entry point @p entry to state @p fact.
+    [[nodiscard]] const std::string& wrapperOf(mlir::func::FuncOp entry, const GeneratedFact fact) const
     {
-        return tree_.nameOf(entry.getSymName(), SurfaceDeclKind::Wrapper);
+        return tree_.nameOf(entry.getSymName(), SurfaceDeclKind::Wrapper, fact);
     }
 
     /// @brief The name of the entry point @p entry.
@@ -1906,8 +1906,9 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         }
         w.blank();
         const std::string& bufferSize = names.generated(GeneratedFact::SerializationBufferSizeBytes);
-        w.open("pub fn " + names.wrapperOf(bodies.serialize) + "(&self) -> " + RustFileNames::core("result::Result") +
-               "<" + RustFileNames::runtime("DsdlVec") + "<u8>, " + RustFileNames::runtime("Error") + "> {");
+        w.open("pub fn " + names.wrapperOf(bodies.serialize, GeneratedFact::WireImage) + "(&self) -> " +
+               RustFileNames::core("result::Result") + "<" + RustFileNames::runtime("DsdlVec") + "<u8>, " +
+               RustFileNames::runtime("Error") + "> {");
         w.line("let mut buffer = " + RustFileNames::runtime("DsdlVec") + "::<u8>::with_capacity(Self::" + bufferSize +
                ");");
         w.line("buffer.resize(Self::" + bufferSize + ", 0u8);");
@@ -1917,8 +1918,9 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.close("}");
         w.blank();
 
-        w.open("pub fn " + names.wrapperOf(bodies.deserialize) + "(buffer: " + borrowed + ") -> " +
-               RustFileNames::core("result::Result") + "<(Self, usize), " + RustFileNames::runtime("Error") + "> {");
+        w.open("pub fn " + names.wrapperOf(bodies.deserialize, GeneratedFact::FromWireImage) + "(buffer: " + borrowed +
+               ") -> " + RustFileNames::core("result::Result") + "<(Self, usize), " + RustFileNames::runtime("Error") +
+               "> {");
         w.line("let mut out = Self::default();");
         w.line("let used = out." + names.entryOf(bodies.deserialize) + "(buffer)?;");
         w.line("Ok((out, used))");
