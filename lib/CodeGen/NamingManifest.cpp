@@ -22,7 +22,9 @@
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
+#include "llvmdsdl/Transforms/SurfaceTree.h"
 
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/raw_ostream.h"
@@ -30,6 +32,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -134,12 +137,189 @@ llvm::json::Object renderDefinition(const Language language, const SurfacePlan& 
     return out;
 }
 
+/// @brief @p key as a key its object owns: an object keyed by a reference holds the reference.
+llvm::json::ObjectKey owned(const llvm::StringRef key)
+{
+    return llvm::json::ObjectKey(key.str());
+}
+
+/// @brief The object @p parent holds under @p key, made empty where it holds none.
+llvm::json::Object& child(llvm::json::Object& parent, const llvm::StringRef key)
+{
+    if (llvm::json::Object* const found = parent.getObject(key))
+    {
+        return *found;
+    }
+    parent[owned(key)] = llvm::json::Object{};
+    return *parent.getObject(key);
+}
+
+/// @brief The key of a section's object: `message` for a message's.
+std::string sectionKey(const llvm::StringRef section)
+{
+    return section.empty() ? std::string("message") : section.str();
+}
+
+/// @brief What a lowered function does, as the manifest keys it.
+llvm::StringRef functionKey(const PlanFunction function)
+{
+    switch (function)
+    {
+    case PlanFunction::Serialize:
+        return "serialize";
+    case PlanFunction::Deserialize:
+        return "deserialize";
+    case PlanFunction::Initialize:
+        return "initialize";
+    case PlanFunction::Get:
+        return "get";
+    case PlanFunction::Set:
+        return "set";
+    case PlanFunction::Helper:
+        break;
+    }
+    return "helper";
+}
+
+/// @brief Adds to @p entry every declaration the surface makes for the definition keyed @p key.
+///
+/// A section's names go in its object, and a service's own in the definition's; a message has one
+/// section, so its names are the message's. A generated declaration is keyed by the fact it states,
+/// and a lowered function's by what it does.
+/// @param[in] service Whether the definition is a service.
+void renderTree(llvm::json::Object& entry, const SurfacePlan& plan, const std::string& key, const bool service)
+{
+    const auto owner = [&](const llvm::StringRef section) -> llvm::json::Object& {
+        return (section.empty() && service) ? entry : child(entry, sectionKey(section));
+    };
+    // The file each section's type is declared in, whose imports are the definition's.
+    std::optional<std::size_t> file;
+    for (const SurfaceScope& scope : plan.scopes)
+    {
+        if ((scope.kind != SurfaceScopeKind::Type) || !scope.of || (scope.of->schema != key))
+        {
+            continue;
+        }
+        owner(scope.of->section)["declared_type"] = scope.name;
+        for (std::optional<std::size_t> at = scope.parent; at && !file; at = plan.scopes[*at].parent)
+        {
+            if (!plan.scopes[*at].path.empty())
+            {
+                file          = at;
+                entry["file"] = plan.scopes[*at].path;
+            }
+        }
+    }
+    llvm::json::Array helpers;
+    for (const SurfaceDecl& decl : plan.decls)
+    {
+        const bool imported = file && (decl.scope == *file) && (decl.kind == SurfaceDeclKind::Import);
+        if (!decl.of || ((decl.of->schema != key) && !imported))
+        {
+            continue;
+        }
+        const std::optional<PlanSymbol> function =
+            decl.of->function.empty() ? std::nullopt : parsePlanSymbol(decl.of->function);
+        const llvm::StringRef fact = decl.fact ? generatedFactName(*decl.fact) : llvm::StringRef{};
+        llvm::json::Object&   into = owner(decl.of->section);
+        switch (decl.kind)
+        {
+        case SurfaceDeclKind::Field:
+        case SurfaceDeclKind::Constant:
+            // A declaration of a DSDL field or constant is in the entry's `fields` or `constants`.
+            if (!decl.fact)
+            {
+                break;
+            }
+            if (decl.of->member.empty())
+            {
+                child(into, "generated")[owned(fact)] = decl.name;
+            }
+            else
+            {
+                child(child(into, "generated"), fact)[owned(decl.of->member)] = decl.name;
+            }
+            break;
+        case SurfaceDeclKind::Entry:
+            if (function)
+            {
+                child(into, "entry_points")[owned(functionKey(function->function))] = decl.name;
+            }
+            break;
+        case SurfaceDeclKind::Accessor:
+            if (function)
+            {
+                child(child(into, "accessors"), function->member)[owned(functionKey(function->function))] = decl.name;
+            }
+            break;
+        case SurfaceDeclKind::Wrapper:
+            if (decl.fact)
+            {
+                child(into, "wrappers")[owned(fact)] = decl.name;
+            }
+            else if (function && !function->member.empty())
+            {
+                child(child(into, "wrappers"), functionKey(function->function))[owned(function->member)] = decl.name;
+            }
+            else if (function)
+            {
+                child(into, "wrappers")[owned(functionKey(function->function))] = decl.name;
+            }
+            break;
+        case SurfaceDeclKind::Method:
+            if (decl.fact)
+            {
+                child(child(into, "methods"), fact)[owned(decl.of->member)] = decl.name;
+            }
+            break;
+        case SurfaceDeclKind::Helper:
+            helpers.push_back(decl.name);
+            break;
+        case SurfaceDeclKind::Alias:
+            into["alias"] = decl.name;
+            break;
+        case SurfaceDeclKind::Tag:
+            into["tag"] = decl.name;
+            break;
+        case SurfaceDeclKind::Module:
+            into["module"] = decl.name;
+            break;
+        case SurfaceDeclKind::Guard:
+            child(entry, "guards")[owned(fact)] = decl.name;
+            break;
+        case SurfaceDeclKind::Import: {
+            // A file imports a type, a package, or a function named after a type.
+            llvm::StringRef what = "package";
+            if (function)
+            {
+                what = functionKey(function->function);
+            }
+            else if (decl.nameClass == NameClass::Type)
+            {
+                what = "type";
+            }
+            child(child(entry, "imports"), decl.of->schema)[owned(what)] = decl.name;
+            break;
+        }
+        case SurfaceDeclKind::Option:
+            // In the entry's `union_options`.
+            break;
+        }
+    }
+    if (!helpers.empty())
+    {
+        entry["helpers"] = std::move(helpers);
+    }
+}
+
 }  // namespace
 
-std::string renderNamingManifest(const SemanticModule&                semantic,
-                                 const llvm::ArrayRef<LanguageTraits> languages,
-                                 const llvm::StringRef                toolVersion,
-                                 const TypeNameVersioning             typeNameVersioning)
+std::string renderNamingManifest(const SemanticModule&                 semantic,
+                                 const llvm::ArrayRef<LanguageTraits>  languages,
+                                 const llvm::StringRef                 toolVersion,
+                                 const TypeNameVersioning              typeNameVersioning,
+                                 const std::optional<Language>         target,
+                                 const llvm::ArrayRef<ManifestSurface> surfaces)
 {
     llvm::json::Object root;
     root["version"]              = 1;
@@ -156,16 +336,36 @@ std::string renderNamingManifest(const SemanticModule&                semantic,
     llvm::json::Object byLanguage;
     for (const LanguageTraits& row : languages)
     {
-        const SurfacePlan  plan = allocateSurface(row,
-                                                  definitions,
-                                                  SurfaceOptions{.packageName   = {},
-                                                                 .versioning    = typeNameVersioning,
-                                                                 .accessorsOnly = false,
-                                                                 .profile       = {}});
+        const SurfacePlan  plan      = allocateSurface(row,
+                                                       definitions,
+                                                       SurfaceOptions{.packageName   = {},
+                                                                      .versioning    = typeNameVersioning,
+                                                                      .accessorsOnly = false,
+                                                                      .profile       = {}});
+        const bool         generated = target && (*target == row.language) && !surfaces.empty();
         llvm::json::Object byType;
-        for (const DefinitionNames& definition : plan.definitions)
+        for (std::size_t index = 0; index < plan.definitions.size(); ++index)
         {
-            byType[definition.key] = renderDefinition(row.language, plan, definition);
+            const DefinitionNames& definition = plan.definitions[index];
+            llvm::json::Object     entry      = renderDefinition(row.language, plan, definition);
+            // A generation run reports the whole surface its lowering wrote, each profile's apart
+            // where it wrote several.
+            if (generated && (surfaces.size() == 1))
+            {
+                renderTree(entry, surfaces.front().plan, definition.key, definitions[index].service);
+            }
+            else if (generated)
+            {
+                llvm::json::Object profiles;
+                for (const ManifestSurface& surface : surfaces)
+                {
+                    llvm::json::Object names;
+                    renderTree(names, surface.plan, definition.key, definitions[index].service);
+                    profiles[owned(surface.profile)] = std::move(names);
+                }
+                entry["profiles"] = std::move(profiles);
+            }
+            byType[definition.key] = std::move(entry);
         }
         byLanguage[row.name.str()] = std::move(byType);
     }

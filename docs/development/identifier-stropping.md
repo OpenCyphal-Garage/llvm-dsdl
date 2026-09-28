@@ -558,5 +558,12 @@ is worse than no switch.
   projection is only part of the answer, so the manifest omits the key rather than report half a
   name.
 
+  A run that generates a language adds, for that language, everything its lowering declares: each
+  definition's `file`, `helpers`, `imports` and `guards`, and on each section its `declared_type`,
+  `entry_points`, the `wrappers` over them, `accessors`, `methods`, and under `generated` each
+  member and constant the generator adds, keyed by the fact it states. A service's own names are
+  the definition's. A C++ run of several profiles reports each profile's under `profiles`. The
+  names an analysis run reports, a generation run reports unchanged.
+
 - **Hover** groups languages by the identifier they produce — ``emits as `count` (c, cpp, rust, ts,
   python) · `Count` (go)`` — rather than printing six rows, five of which agree.
