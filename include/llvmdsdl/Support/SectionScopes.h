@@ -19,11 +19,13 @@
 #define LLVMDSDL_SUPPORT_SECTION_SCOPES_H
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "llvm/ADT/StringRef.h"
 
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 
@@ -44,6 +46,12 @@ struct FieldParts final
 
     /// @brief The tag value that selects the field, where the section is a union.
     std::uint32_t unionOptionIndex{};
+
+    /// @brief The definition the field holds, where its type is a composite.
+    std::optional<DefinitionRef> composite;
+
+    /// @brief Whether the field holds the composite as a view of its bytes.
+    bool view{};
 };
 
 /// @brief One section of a definition, as naming needs it.

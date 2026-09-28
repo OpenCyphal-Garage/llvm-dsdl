@@ -340,6 +340,23 @@ enum class HelperNaming
     Module,
 };
 
+/// @brief How a file names what it takes from another definition's file.
+enum class ImportNaming
+{
+    /// @brief It names nothing: it includes the other file, whose declarations are then its own.
+    None,
+
+    /// @brief It imports the other file's package, and names what it takes through the package.
+    Package,
+
+    /// @brief It imports the definition's type under a local name.
+    Type,
+
+    /// @brief It imports the definition's type under a local name, with the functions named after
+    ///        the type.
+    TypeAndFunctions,
+};
+
 /// @brief How a reference is spelt, where the language could spell it more than one way.
 enum class Qualification
 {
@@ -377,6 +394,25 @@ struct Composition final
     /// @brief Whether that file's directories are the namespace's components as the language names
     ///        a namespace, rather than as DSDL writes them.
     bool directoriesProjected{};
+
+    /// @brief The directory, under the output directory, the package's source files are written in;
+    ///        empty where they are written in the output directory itself.
+    llvm::StringRef sourceDirectory;
+
+    /// @brief Whether the source files are written under the directories the package's name spells,
+    ///        one per dotted component.
+    bool packageDirectory{};
+
+    /// @brief The file, in a namespace's directory, the namespace's own declarations are written to;
+    ///        empty where the language writes none.
+    llvm::StringRef namespaceFile;
+
+    /// @brief The file, in the source directory, the package's own declarations are written to;
+    ///        empty where the language writes none.
+    llvm::StringRef rootFile;
+
+    /// @brief How a file names what it takes from another definition's file.
+    ImportNaming imports{};
 
     /// @brief How a lowered helper is named.
     HelperNaming helpers{};

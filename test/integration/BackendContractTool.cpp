@@ -45,7 +45,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/Transforms/Passes.h"
-#include "llvmdsdl/Support/BodyInterface.h"
+#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
 #include "llvmdsdl/CodeGen/Vocabulary.h"
@@ -663,14 +663,24 @@ struct Session final
     }
 
     /// Runs the pipeline every backend's bodies are translations of, as dsdlc does before emission:
-    /// under what the backend's generated interface hands a body, which its language's row states.
-    /// `obj` compiles C's bodies, and takes C's row.
+    /// under what the backend's generated interface hands a body, which its language's row states,
+    /// with the surface of its output the pipeline writes last. `obj` compiles C's bodies, and takes
+    /// C's row.
     bool lowerBodies(mlir::ModuleOp module) const
     {
         const llvmdsdl::LanguageTraits* const traits =
             llvmdsdl::languageTraitsNamed(args.backend == "obj" ? llvm::StringRef{"c"} : llvm::StringRef{args.backend});
         mlir::PassManager pm(module.getContext());
-        llvmdsdl::addLowerDSDLBodiesPipeline(pm, false, (traits != nullptr) ? traits->body : llvmdsdl::BodyInterface{});
+        if (traits == nullptr)
+        {
+            llvmdsdl::addLowerDSDLBodiesPipeline(pm, false);
+            return mlir::succeeded(pm.run(module));
+        }
+        const llvmdsdl::SurfaceProjection surface{.target      = traits->name.str(),
+                                                  .profiles    = {},
+                                                  .packageName = {},
+                                                  .versioning  = llvmdsdl::TypeNameVersioning::Unversioned};
+        llvmdsdl::addLowerDSDLBodiesPipeline(pm, false, traits->body, false, &surface);
         return mlir::succeeded(pm.run(module));
     }
 

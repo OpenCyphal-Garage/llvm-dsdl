@@ -2,12 +2,15 @@
 # every name declared in them. Each language opens its own: C joins the namespace into each name and
 # declares a type's constants as macros beside it, C++ opens a namespace, Go a package its files
 # share, and Rust, TypeScript and Python a module per definition. A service's own name is an alias
-# of its request, and a deprecated type is declared apart where the language does that.
+# of its request, and a deprecated type is declared apart where the language does that. A scope the
+# output writes to a file of its own names the file, and in Rust and Python a definition's module
+# imports each definition its fields hold.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
 # RUN: printf '@union\nuint8 small\nuint16 large\n@sealed\n---\nuint8 ok\n@sealed\n' > %t/dsdl/ns/Ask.1.0.dsdl
 # RUN: printf '@deprecated\nuint8 a\n@sealed\n' > %t/dsdl/ns/Old.1.0.dsdl
+# RUN: printf 'ns.Msg.1.0 msg\n@sealed\n' > %t/dsdl/ns/Hold.1.0.dsdl
 # RUN: %dsdlc --target-language mlir %t/dsdl/ns > %t/in.mlir
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=c" %t/in.mlir | FileCheck %s --check-prefix=C
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=cpp profiles=std,pmr" %t/in.mlir | FileCheck %s --check-prefix=CPP
@@ -36,7 +39,7 @@
 # CPP:      dsdl.surface target = "cpp" profile = "std" {
 # CPP-NEXT:   dsdl.scope root "" {
 # CPP-NEXT:     dsdl.scope namespace "ns" {
-# CPP-NEXT:       dsdl.scope file "Ask_1_0" path = "ns/Ask_1_0.hpp" {
+# CPP-NEXT:       dsdl.scope file "Ask_1_0" path = "std/ns/Ask_1_0.hpp" {
 # CPP-NEXT:         dsdl.scope type "Ask_Request" of = @ns.Ask.1.0 section = "request" {
 # CPP:              dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # CPP:            dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
@@ -47,20 +50,23 @@
 # CPP:            dsdl.scope type "Old_" of = @ns.Old.1.0 {
 # CPP:            dsdl.decl "Old" kind = alias origin = generated of = @ns.Old.1.0
 # CPP:      dsdl.surface target = "cpp" profile = "pmr" {
+# CPP:              dsdl.scope file "Ask_1_0" path = "pmr/ns/Ask_1_0.hpp" {
 #
 # RUST:      dsdl.surface target = "rust" {
-# RUST-NEXT:   dsdl.scope root "m" {
-# RUST-NEXT:     dsdl.scope namespace "ns" {
-# RUST-NEXT:       dsdl.scope module "ask_1_0" {
+# RUST-NEXT:   dsdl.scope root "m" path = "src/lib.rs" {
+# RUST-NEXT:     dsdl.scope namespace "ns" path = "src/ns/mod.rs" {
+# RUST-NEXT:       dsdl.scope module "ask_1_0" path = "src/ns/ask_1_0.rs" {
 # RUST-NEXT:         dsdl.scope type "Request" of = @ns.Ask.1.0 section = "request" {
 # RUST:              dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # RUST:            dsdl.scope type "Response" of = @ns.Ask.1.0 section = "response" {
 # RUST:            dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
 # RUST-NEXT:       dsdl.decl "capacity_check_request" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
-# RUST:          dsdl.scope module "msg_1_0" {
+# RUST:          dsdl.scope module "hold_1_0" path = "src/ns/hold_1_0.rs" {
+# RUST:            dsdl.decl "Msg" kind = import class = type visibility = private of = @ns.Msg.1.0
+# RUST:          dsdl.scope module "msg_1_0" path = "src/ns/msg_1_0.rs" {
 # RUST-NEXT:       dsdl.scope type "Msg" of = @ns.Msg.1.0 {
 # RUST:              dsdl.decl "LIMIT" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
-# RUST:          dsdl.scope module "old_1_0" {
+# RUST:          dsdl.scope module "old_1_0" path = "src/ns/old_1_0.rs" {
 # RUST-NEXT:       dsdl.scope type "Old_" of = @ns.Old.1.0 {
 # RUST:            dsdl.decl "Old" kind = alias origin = generated of = @ns.Old.1.0
 #
@@ -77,21 +83,23 @@
 # GO:              dsdl.decl "MsgLimit" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
 #
 # TS:      dsdl.surface target = "ts" {
-# TS-NEXT:   dsdl.scope root "m" {
+# TS-NEXT:   dsdl.scope root "m" path = "index.ts" {
 # TS-NEXT:     dsdl.scope namespace "ns" {
-# TS-NEXT:       dsdl.scope module "ask_1_0" {
+# TS-NEXT:       dsdl.scope module "ask_1_0" path = "ns/ask_1_0.ts" {
 # TS-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
 # TS:              dsdl.decl "ASK_REQUEST_SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # TS:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
-# TS:            dsdl.scope module "msg_1_0" {
+# TS:            dsdl.scope module "msg_1_0" path = "ns/msg_1_0.ts" {
 # TS:              dsdl.decl "MSG_LIMIT" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
 #
 # PY:      dsdl.surface target = "python" {
-# PY-NEXT:   dsdl.scope root "dsdl_gen" {
-# PY-NEXT:     dsdl.scope namespace "ns" {
-# PY-NEXT:       dsdl.scope module "ask_1_0" {
+# PY-NEXT:   dsdl.scope root "dsdl_gen" path = "dsdl_gen/__init__.py" {
+# PY-NEXT:     dsdl.scope namespace "ns" path = "dsdl_gen/ns/__init__.py" {
+# PY-NEXT:       dsdl.scope module "ask_1_0" path = "dsdl_gen/ns/ask_1_0.py" {
 # PY:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
 # PY-NEXT:         dsdl.decl "_capacity_check_request" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
+# PY:            dsdl.scope module "hold_1_0" path = "dsdl_gen/ns/hold_1_0.py" {
+# PY:              dsdl.decl "Msg" kind = import class = type visibility = private of = @ns.Msg.1.0
 # PY:              dsdl.decl "MSG_LIMIT" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
 #
 # NONE-NOT: dsdl.surface
