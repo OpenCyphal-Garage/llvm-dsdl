@@ -43,6 +43,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .typeConstants                = ConstantsScope::Enclosing,
                 .constantsShareFieldNamespace = false,
                 .reservedUnderscores          = ReservedUnderscores::Leading,
+                .nameClasses =
+                    {.typesApartFromValues = false, .modulesAmongTypes = false, .tags = true, .macros = true},
             },
         // Handed pointers throughout, and a structure is its bytes.
         .body =
@@ -89,6 +91,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .typeConstants                = ConstantsScope::Type,
                 .constantsShareFieldNamespace = true,
                 .reservedUnderscores          = ReservedUnderscores::LeadingAndInterior,
+                .nameClasses =
+                    {.typesApartFromValues = false, .modulesAmongTypes = true, .tags = false, .macros = true},
             },
         // Serialise and deserialise take pointers; a field accessor takes a span.
         .body =
@@ -135,6 +139,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .typeConstants                = ConstantsScope::Type,
                 .constantsShareFieldNamespace = false,
                 .reservedUnderscores          = ReservedUnderscores::None,
+                .nameClasses =
+                    {.typesApartFromValues = true, .modulesAmongTypes = true, .tags = false, .macros = false},
             },
         // Handed a reference, a slice and a local, none of which can be null.
         .body =
@@ -177,6 +183,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .typeConstants                = ConstantsScope::Package,
                 .constantsShareFieldNamespace = false,
                 .reservedUnderscores          = ReservedUnderscores::None,
+                .nameClasses =
+                    {.typesApartFromValues = false, .modulesAmongTypes = false, .tags = false, .macros = false},
             },
         // Handed an object a caller may still omit, beside a slice.
         .body =
@@ -223,6 +231,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .typeConstants                = ConstantsScope::Type,
                 .constantsShareFieldNamespace = false,
                 .reservedUnderscores          = ReservedUnderscores::None,
+                .nameClasses =
+                    {.typesApartFromValues = true, .modulesAmongTypes = false, .tags = false, .macros = false},
             },
         // Handed an object a caller may still omit, beside a `Uint8Array`; an object has no layout.
         .body =
@@ -265,6 +275,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .typeConstants                = ConstantsScope::Type,
                 .constantsShareFieldNamespace = true,
                 .reservedUnderscores          = ReservedUnderscores::None,
+                .nameClasses =
+                    {.typesApartFromValues = false, .modulesAmongTypes = true, .tags = false, .macros = false},
             },
         // Handed an object a caller may still omit, beside a `memoryview`; an object has no layout.
         .body =

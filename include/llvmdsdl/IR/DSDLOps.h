@@ -19,6 +19,7 @@
 #include "llvmdsdl/IR/DSDLTypes.h"    // IWYU pragma: keep
 
 #include "mlir/Bytecode/BytecodeOpInterface.h"     // IWYU pragma: keep
+#include "mlir/IR/BuiltinOps.h"                    // IWYU pragma: keep
 #include "mlir/IR/OpDefinition.h"                  // IWYU pragma: keep
 #include "mlir/IR/SymbolTable.h"                   // IWYU pragma: keep
 #include "mlir/Interfaces/SideEffectInterfaces.h"  // IWYU pragma: keep

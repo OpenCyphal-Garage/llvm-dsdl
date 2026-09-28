@@ -128,6 +128,25 @@ enum class ReservedUnderscores
     LeadingAndInterior,
 };
 
+/// @brief How one scope keeps its names apart by what they name, so that a name may be declared once in
+///        each class.
+struct NameClasses final
+{
+    /// @brief Whether a type and a value may share a name.
+    bool typesApartFromValues{};
+
+    /// @brief Whether a namespace, module or package is named among the types of the scope that holds it.
+    ///
+    /// False where a module is reached by its path, and its name meets only the names of its siblings.
+    bool modulesAmongTypes{};
+
+    /// @brief Whether a structure's tag is a class of its own.
+    bool tags{};
+
+    /// @brief Whether the language has macros, whose one class spans the translation unit.
+    bool macros{};
+};
+
 /// @brief What a language can express.
 ///
 /// The table in `CLEAN_CODE.md`, *Language classification*. A column grows here when a phase needs
@@ -157,6 +176,9 @@ struct Classification final
 
     /// @brief The identifiers the language reserves by their underscores.
     ReservedUnderscores reservedUnderscores{};
+
+    /// @brief The classes one scope keeps names apart in.
+    NameClasses nameClasses{};
 };
 
 /// @brief How a free function that reads or writes one member of a type is named.

@@ -55,6 +55,8 @@ static void printPointee(AsmPrinter& printer, const bool isConst, const Type poi
 #define GET_TYPEDEF_CLASSES
 #include "llvmdsdl/IR/DSDLTypes.cpp.inc"  // IWYU pragma: keep
 
+#include "llvmdsdl/IR/DSDLEnums.cpp.inc"  // IWYU pragma: keep
+
 #define GET_ATTRDEF_CLASSES
 #include "llvmdsdl/IR/DSDLAttrs.cpp.inc"  // IWYU pragma: keep
 

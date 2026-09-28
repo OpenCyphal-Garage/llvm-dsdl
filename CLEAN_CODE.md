@@ -83,14 +83,14 @@ The classification is the input the surface layer reads. One row per language, s
 language can express, indexed by the questions a declaration's shape depends on. The rows are
 `LanguageTraits` in `llvmdsdl/Support/LanguageTraits.h`, and `LanguageTraitsTests` pins each.
 
-| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | constants and fields one namespace | reserved by underscores |
-|---|---|---|---|---|---|---|---|---|
-| C | none | no | no | `static` | status code | macros in the enclosing scope | no | leading `__`, `_X` |
-| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | yes | those, and `__` anywhere |
-| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | no | none |
-| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none |
-| Python | class | yes | yes | `_` prefix | exception | class attribute | yes | none |
-| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | no | none |
+| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | constants and fields one namespace | reserved by underscores | name classes in one scope |
+|---|---|---|---|---|---|---|---|---|---|
+| C | none | no | no | `static` | status code | macros in the enclosing scope | no | leading `__`, `_X` | ordinary identifiers and structure tags; macros across the translation unit |
+| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | yes | those, and `__` anywhere | one; macros across the translation unit |
+| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | no | none | types, modules among them, and values |
+| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none | one per package, across its files |
+| Python | class | yes | yes | `_` prefix | exception | class attribute | yes | none | one |
+| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | no | none | types and values; modules by path |
 
 A row is a claim about the language, not a preference, which is what makes it testable and what
 keeps it out of the emitters. Two consequences follow directly and are worth stating because they
@@ -140,19 +140,19 @@ The tree is built from three ops in `DSDLOps.td`, with typed attributes:
 
 | op | holds | attributes |
 |---|---|---|
-| `dsdl.surface` | the root scope for one target, only when a target is set | `target`, `profile` |
-| `dsdl.scope` | scopes and declarations, in the order the language opens and writes them | `kind` (root, namespace, module, package, file, type), `name`, `path` for the file a scope is written to, `of` for a type |
-| `dsdl.decl` | nothing: a leaf | `name`, `kind`, `class`, `visibility`, `origin` (definition or generated), and `of` with `section` and `member` where it names an entity |
+| `dsdl.surface` | the root scope for one target, only when a target is set | `target`, and `profile` where one language's profiles declare different names |
+| `dsdl.scope` | scopes and declarations, in the order the language opens and writes them | `kind` (root, namespace, module, package, file, type), `name`, `path` for the file a scope is written to, and `of` with `section` for a type |
+| `dsdl.decl` | nothing: a leaf | `name`, `kind`, `class` (which the kind implies for every kind but an import), `visibility` (public or private), `origin` (definition or generated), and `of` with `section` and `member` where it names an entity |
 
 ```mlir
-dsdl.surface target = "rust" profile = "std" {
+dsdl.surface target = "rust" {
  dsdl.scope root "llvmdsdl_generated" path = "src/lib.rs" {
   dsdl.decl "dsdl_runtime" kind = module origin = generated
   dsdl.scope module "uavcan" path = "src/uavcan/mod.rs" {
    dsdl.scope module "file" path = "src/uavcan/file/mod.rs" {
     dsdl.scope module "list_0_2" path = "src/uavcan/file/list_0_2.rs" {
       dsdl.decl "Path" kind = import class = type of = @uavcan.file.Path.2.0
-      dsdl.decl "capacity_check_request" kind = helper class = value visibility = private
+      dsdl.decl "capacity_check_request" kind = helper visibility = private
           of = @uavcan.file.List.0.2.request.plan.capacity_check
       dsdl.scope type "Request" of = @uavcan.file.List.0.2 section = "request" {
         dsdl.decl "entry_index" kind = field of = @uavcan.file.List.0.2
@@ -160,7 +160,7 @@ dsdl.surface target = "rust" profile = "std" {
         dsdl.decl "FULL_NAME" kind = constant origin = generated
         dsdl.decl "serialize" kind = entry of = @uavcan.file.List.0.2.request.serialize
       }
-      dsdl.decl "List" kind = alias class = type origin = generated
+      dsdl.decl "List" kind = alias origin = generated
     }
    }
   }
@@ -170,17 +170,19 @@ dsdl.surface target = "rust" profile = "std" {
 
 A declaration is not an MLIR symbol. One symbol table is one namespace, and a scope holds as many
 name classes as its language gives it; a symbol table per class would split a scope's declarations
-and lose the order the renderer writes them in. The verifier checks each scope's names per class and
-resolves every `of` against the module's symbol table:
+and lose the order the renderer writes them in. The classes each language keeps apart are the name
+classes column of its row in [Language classification](#language-classification), and the verifier
+holds the tree to them:
 
-| language | name classes in one scope |
-|---|---|
-| C | ordinary identifiers and struct tags; macros across the translation unit |
-| C++ | one per scope; macros across the translation unit |
-| Rust | types and values |
-| Go | one per package, across its files |
-| TypeScript | types and values |
-| Python | one per scope |
+- every scope but a `file` scope is a namespace. A `file` scope declares into the namespace around
+  it, as a C or C++ header and a Go file do; its imports are its own, as Go's file block holds them,
+  and may not meet a name the namespace declares;
+- a type scope's name is a type in its namespace, and a namespace, module or package scope's name is
+  a module there, which the row puts among the types or keeps apart as a path;
+- macros are one class across the surface, the translation unit a set of headers can meet in;
+- no two scopes are written to one path, and every path stays within the output directory;
+- every `of` resolves against the module's symbol table, a type scope's to a schema, and a `section`
+  or `member` to one the schema declares.
 
 ### What the tree holds
 
@@ -837,6 +839,10 @@ each profile, Rust in each memory mode, and the regulated corpus a second time w
 runtime specialisations change support files alone, and the oracle leaves them out.
 `tools/determinism/test_corpus_determinism.py` holds the comparison against a stand-in `dsdlc`, and
 the targets against the languages `dsdlc --help` lists.
+
+Step 4.1 has landed. The verifier reads the name classes from each language's row, and
+`dsdl-surface-roundtrip.mlir` and `dsdl-surface-invalid.mlir` hold a tree per language and each
+defect the verifier rejects.
 
 Step 4.2 lands in three parts: the definition layer, then the body layer, then the resolver. The
 definition layer has landed. `allocateSurface`, in `llvmdsdl/Support/SurfacePlan.h`,
