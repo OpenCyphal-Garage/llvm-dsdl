@@ -362,6 +362,9 @@ struct EntryPointName final
     /// @brief The entry point's name; beside the type, what comes before the type's name.
     llvm::StringRef name;
 
+    /// @brief Beside the type, what comes after the type's name.
+    llvm::StringRef suffix;
+
     /// @brief Whether the entry point is a function beside the type rather than a member of it.
     bool beside{};
 };
@@ -373,7 +376,7 @@ struct EntryPointName final
 /// @return The entry points, valid for the process lifetime.
 [[nodiscard]] llvm::ArrayRef<EntryPointName> entryPointNames(Language language);
 
-/// @brief A member of a section's type wrapping one of its entry points, and the fact it states.
+/// @brief A function wrapping one of a section's entry points, and the fact it states.
 struct WrapperName final
 {
     GeneratedFact fact{};
@@ -381,10 +384,14 @@ struct WrapperName final
     /// @brief What the entry point it wraps does.
     PlanFunction wraps{};
 
+    /// @brief The wrapper's name; beside the type, what comes before the type's name.
     llvm::StringRef name;
+
+    /// @brief Whether the wrapper is a function beside the type rather than a member of it.
+    bool beside{};
 };
 
-/// @brief The members a language's section type declares wrapping its entry points.
+/// @brief The functions a language declares for a section's type wrapping its entry points.
 ///
 /// A language whose emitter names these itself has none here.
 /// @param[in] language Naming language.

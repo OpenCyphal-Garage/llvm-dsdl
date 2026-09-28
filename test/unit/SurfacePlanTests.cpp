@@ -422,6 +422,8 @@ bool runSurfacePlanTests()
                                        "  namespace ns\n"
                                        "    module msg_1_0\n"
                                        "      type Msg\n"
+                                       "      serializeMsgInto : value\n"
+                                       "      getMsgSpeed : value\n"
                                        "      capacityCheck : value private\n"
                                        "      scalarUnsigned0Ser : value private\n",
                                        "TypeScript's helpers") &&
@@ -585,6 +587,22 @@ bool runSurfacePlanTests()
                     "Python's imports") &&
              ok;
         ok = expect(imports(allocate(Language::Cpp, definitions)), "", "C++ includes rather than imports") && ok;
+        // A TypeScript import of a type brings the functions named after it.
+        ok = expect(imports(allocate(Language::TypeScript, definitions)),
+                    "Scalar a.Scalar.1.0\n"
+                    "serializeScalarInto a.Scalar.1.0\n"
+                    "deserializeScalarFrom a.Scalar.1.0\n"
+                    "makeScalar a.Scalar.1.0\n"
+                    "BScalar b.Scalar.1.0\n"
+                    "serializeBScalarInto b.Scalar.1.0\n"
+                    "deserializeBScalarFrom b.Scalar.1.0\n"
+                    "makeBScalar b.Scalar.1.0\n"
+                    "OtherHolder other.Holder.1.0\n"
+                    "serializeOtherHolderInto other.Holder.1.0\n"
+                    "deserializeOtherHolderFrom other.Holder.1.0\n"
+                    "makeOtherHolder other.Holder.1.0\n",
+                    "TypeScript's imports") &&
+             ok;
 
         // A deprecated definition is imported under the name it is declared under.
         std::vector<DefinitionParts> deprecated{message("Holder",
@@ -827,6 +845,48 @@ bool runSurfacePlanTests()
                     "      Far : type private\n",
                     "Python's generated names") &&
              ok;
+    }
+
+    // TypeScript's generated names: the bodies, the factory and the functions a consumer calls over
+    // them are functions beside the type, named after it as the accessors are. `_tag` is the
+    // union's tag.
+    {
+        DefinitionParts pick = message("Pick",
+                                       SectionParts{.fields    = {field("small", false, 0), field("large", false, 1)},
+                                                    .constants = {},
+                                                    .isUnion   = true});
+        pick.bodies          = {body("ns.Pick.1.0.serialize"),
+                                body("ns.Pick.1.0.deserialize"),
+                                body("ns.Pick.1.0.initialize"),
+                                body("ns.Pick.1.0.get.small"),
+                                body("ns.Pick.1.0.get._tag_")};
+        ok                   = expect(outline(allocate(Language::TypeScript, {pick}), true),
+                                      "root pkg\n"
+                                      "  namespace ns\n"
+                                      "    module pick_1_0\n"
+                                      "      LLVMDSDL_GENERATOR_VERSION : value\n"
+                                      "      DSDL_FULL_NAME : value\n"
+                                      "      DSDL_IS_DEPRECATED : value\n"
+                                      "      DSDL_VERSION_MAJOR : value\n"
+                                      "      DSDL_VERSION_MINOR : value\n"
+                                      "      DSDL_HAS_FIXED_PORT_ID : value\n"
+                                      "      DSDL_WIRE_FLAT : value\n"
+                                      "      DSDL_WIRE_FLAT_REASON : value\n"
+                                      "      type Pick\n"
+                                      "        small : field\n"
+                                      "        large : field\n"
+                                      "        _tag : field\n"
+                                      "      PICK_SMALL_OPTION_TAG : value\n"
+                                      "      PICK_LARGE_OPTION_TAG : value\n"
+                                      "      serializePickInto : value\n"
+                                      "      deserializePickFrom : value\n"
+                                      "      makePick : value\n"
+                                      "      serializePick : value\n"
+                                      "      deserializePick : value\n"
+                                      "      getPickSmall : value\n"
+                                      "      getPick_tag : value\n",
+                                      "TypeScript's generated names") &&
+                               ok;
     }
 
     // Rust's accessors are allocated in a pool of their own, apart from the fields: a field

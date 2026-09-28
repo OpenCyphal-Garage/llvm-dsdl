@@ -186,7 +186,7 @@ enum class AccessorVerb : std::uint8_t
 
 /// @brief Names a free function that reads, writes, tests or selects one member of a section's type.
 ///
-/// `List_Request__get_path_` in C and `ListRequestGetPath` in Go.
+/// `List_Request__get_path_` in C, `ListRequestGetPath` in Go and `getListRequestPath` in TypeScript.
 /// @param[in] language Naming language, whose row names its accessors as free functions.
 /// @param[in] typeName The section's type name, from @ref renderSectionTypeName.
 /// @param[in] verb What the function does.
