@@ -20,6 +20,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -124,6 +125,14 @@ bool states(const GeneratedFact                fact,
     case GeneratedFact::ArrayIsVariableLength:
     case GeneratedFact::UnionTag:
     case GeneratedFact::Placeholder:
+    case GeneratedFact::IncludeGuard:
+    case GeneratedFact::SelectedType:
+    case GeneratedFact::SelectedVersion:
+    case GeneratedFact::OptionTest:
+    case GeneratedFact::OptionSelect:
+    case GeneratedFact::Serialize:
+    case GeneratedFact::Deserialize:
+    case GeneratedFact::Initialize:
         break;
     }
     return true;
@@ -205,6 +214,7 @@ public:
         const std::size_t file  = openScope(space, fileKind, names.fileStem, std::nullopt);
         names.fileScope         = file;
         plan_.scopes[file].path = directory + names.fileStem + row_.composition.fileExtension.str();
+        allocateFileGuards(names, definition.ref, file);
 
         if (definition.service)
         {
@@ -235,6 +245,7 @@ public:
             allocateServiceConstants(names, file);
         }
         allocateMembers(names, definition);
+        allocateServiceEntryPoints(names, definition);
         allocateBodies(names, space, file, definition.bodies);
         allocateImports(definition, file);
         plan_.definitions.push_back(std::move(names));
@@ -322,6 +333,17 @@ private:
         const bool declaredApart = deprecated && row_.composition.deprecatedTypeDeclaredApart;
         section.typeScope =
             openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
+        // A language that keeps structure tags as a class of their own names each type's tag as
+        // the type.
+        if (row_.classification.nameClasses.tags)
+        {
+            (void) declare(file,
+                           plan_.scopes[section.typeScope].name,
+                           SurfaceDeclKind::Tag,
+                           NameClass::Tag,
+                           NameOrigin::Definition,
+                           of(""));
+        }
 
         // An accessors-only run declares the type's accessors and none of its data members.
         if (!options_.accessorsOnly)
@@ -390,16 +412,19 @@ private:
                              const Of&                          of,
                              const std::optional<std::uint32_t> fixedPortId)
     {
-        const Language  language  = row_.language;
-        const NameClass nameClass = row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value;
-        const bool      message   = section.section.empty();
+        const Language    language  = row_.language;
+        const NameClass   nameClass = row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value;
+        const bool        message   = section.section.empty();
+        const std::size_t scope     = (row_.composition.constants == ConstantsScope::Type)
+                                          ? section.typeScope
+                                          : *plan_.scopes[section.typeScope].parent;
         for (const GeneratedName& member : generatedTypeMembers(language))
         {
             if (member.fact == GeneratedFact::PoolClass)
             {
                 for (const auto& [field, name] : poolClassConstantNames(language, parts))
                 {
-                    (void) declare(section.typeScope,
+                    (void) declare(scope,
                                    name,
                                    SurfaceDeclKind::Constant,
                                    nameClass,
@@ -412,8 +437,8 @@ private:
             }
             if (states(member.fact, parts, message, fixedPortId))
             {
-                (void) declare(section.typeScope,
-                               member.name.str(),
+                (void) declare(scope,
+                               renderDeclaredConstantName(language, section.typeName, member.name),
                                SurfaceDeclKind::Constant,
                                nameClass,
                                NameOrigin::Generated,
@@ -424,20 +449,62 @@ private:
         }
     }
 
+    /// @brief Declares the macros that guard a definition's file. One saying a translation unit holds
+    ///        a version of the definition is declared where type names carry no version, which
+    ///        makes two versions one name.
+    void allocateFileGuards(const DefinitionNames& names, const DefinitionRef& ref, const std::size_t file)
+    {
+        const Language    language  = row_.language;
+        const std::string versioned = renderDefinitionTypeName(language,
+                                                               ref.namespaceComponents,
+                                                               ref.shortName,
+                                                               ref.majorVersion,
+                                                               ref.minorVersion,
+                                                               TypeNameVersioning::Versioned);
+        for (const GuardName& guard : generatedFileGuards(language))
+        {
+            const bool selection =
+                (guard.fact == GeneratedFact::SelectedType) || (guard.fact == GeneratedFact::SelectedVersion);
+            if (selection && (options_.versioning == TypeNameVersioning::Versioned))
+            {
+                continue;
+            }
+            (void) declare(file,
+                           codegenProjectIdentifier(language,
+                                                    IdentifierRole::MacroName,
+                                                    guard.prefix.str() +
+                                                        (guard.versioned ? versioned : names.typeName) +
+                                                        guard.suffix.str()),
+                           SurfaceDeclKind::Guard,
+                           NameClass::Macro,
+                           NameOrigin::Generated,
+                           SurfaceEntity{names.key, "", "", ""},
+                           SurfaceVisibility::Public,
+                           guard.fact);
+        }
+    }
+
     /// @brief Declares a service's own constants beside its sections' types, each named after the
     ///        service.
     void allocateServiceConstants(const DefinitionNames& names, const std::size_t file)
     {
-        const std::string prefix =
-            codegenProjectIdentifier(row_.language, IdentifierRole::ConstantName, names.typeName) + "_";
-        for (const GeneratedName& constant : generatedServiceConstants(row_.language))
+        const Language language = row_.language;
+        // Beside the type rather than in it: a language that declares a type's constants in the
+        // type names these as a module declares a type's constants.
+        const auto named = [&](const llvm::StringRef token) {
+            return (row_.composition.constants == ConstantsScope::Type)
+                       ? codegenProjectIdentifier(language, IdentifierRole::ConstantName, names.typeName) + "_" +
+                             token.str()
+                       : renderDeclaredConstantName(language, names.typeName, token);
+        };
+        for (const GeneratedName& constant : generatedServiceConstants(language))
         {
             if ((constant.fact != GeneratedFact::FixedPortId) || names.fixedPortId)
             {
                 (void) declare(file,
-                               prefix + constant.name.str(),
+                               named(constant.name),
                                SurfaceDeclKind::Constant,
-                               NameClass::Value,
+                               row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value,
                                NameOrigin::Generated,
                                SurfaceEntity{names.key, "", "", ""},
                                SurfaceVisibility::Public,
@@ -490,6 +557,7 @@ private:
                     }
                 }
             }
+            allocateFreeFunctions(names, section, parts, definition.bodies);
             if (!verbs)
             {
                 continue;
@@ -536,6 +604,127 @@ private:
                                    NameOrigin::Generated,
                                    of(body));
                 }
+            }
+        }
+    }
+
+    /// @brief Declares the free functions beside a section's type, where the language compiles the
+    ///        bodies apart from them: a function wrapping each body a caller reaches, and a union's
+    ///        test and selector of each option, which take the object an accessors-only run has not.
+    void allocateFreeFunctions(const DefinitionNames&        names,
+                               const SectionNames&           section,
+                               const SectionParts&           parts,
+                               const std::vector<BodyParts>& bodies)
+    {
+        const Language           language = row_.language;
+        const FreeFunctionNames& free     = row_.composition.freeFunctions;
+        if (free.loweredBodySuffix.empty())
+        {
+            return;
+        }
+        const std::size_t file   = *plan_.scopes[section.typeScope].parent;
+        const NamingScope fields = makeSectionFieldScope(language, parts);
+        const auto        member = [&](const llvm::StringRef name) {
+            return (name == kPlanUnionTagMember) ? unionTagMemberName(language).str()
+                                                 : fields.get(IdentifierRole::FieldName, name);
+        };
+        for (const BodyParts& body : bodies)
+        {
+            if (body.plan.section != section.section)
+            {
+                continue;
+            }
+            std::optional<std::string> name;
+            switch (body.plan.function)
+            {
+            case PlanFunction::Serialize:
+                name = renderEntryPointName(language, section.typeName, EntryPoint::Serialize);
+                break;
+            case PlanFunction::Deserialize:
+                name = renderEntryPointName(language, section.typeName, EntryPoint::Deserialize);
+                break;
+            case PlanFunction::Initialize:
+                if (free.initializer)
+                {
+                    name = renderEntryPointName(language, section.typeName, EntryPoint::Initialize);
+                }
+                break;
+            case PlanFunction::Get:
+            case PlanFunction::Set:
+                if (free.accessors != AccessorNaming::None)
+                {
+                    name = renderAccessorName(language,
+                                              section.typeName,
+                                              (body.plan.function == PlanFunction::Get) ? AccessorVerb::Get
+                                                                                        : AccessorVerb::Set,
+                                              member(body.plan.member));
+                }
+                break;
+            case PlanFunction::Helper:
+                break;
+            }
+            if (name)
+            {
+                (void) declare(file,
+                               *name,
+                               SurfaceDeclKind::Wrapper,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol});
+            }
+        }
+        if (!free.unionOptionFunctions || !parts.isUnion || options_.accessorsOnly)
+        {
+            return;
+        }
+        for (const FieldParts& field : parts.fields)
+        {
+            if (field.padding)
+            {
+                continue;
+            }
+            for (const auto& [verb, fact] : {std::pair{AccessorVerb::Is, GeneratedFact::OptionTest},
+                                             std::pair{AccessorVerb::Select, GeneratedFact::OptionSelect}})
+            {
+                (void) declare(file,
+                               renderAccessorName(language, section.typeName, verb, member(field.name)),
+                               SurfaceDeclKind::Method,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, section.section, field.name, ""},
+                               SurfaceVisibility::Public,
+                               fact);
+            }
+        }
+    }
+
+    /// @brief Declares a service's own entry points beside its sections' types, where the language
+    ///        writes each as a free function: each calls its request's.
+    void allocateServiceEntryPoints(const DefinitionNames& names, const DefinitionParts& definition)
+    {
+        const FreeFunctionNames& free = row_.composition.freeFunctions;
+        if (!definition.service || free.loweredBodySuffix.empty())
+        {
+            return;
+        }
+        for (const auto& [function, entryPoint, fact] :
+             {std::tuple{PlanFunction::Serialize, EntryPoint::Serialize, GeneratedFact::Serialize},
+              std::tuple{PlanFunction::Deserialize, EntryPoint::Deserialize, GeneratedFact::Deserialize},
+              std::tuple{PlanFunction::Initialize, EntryPoint::Initialize, GeneratedFact::Initialize}})
+        {
+            const bool lowered = llvm::any_of(definition.bodies, [&](const BodyParts& body) {
+                return (body.plan.section == "request") && (body.plan.function == function);
+            });
+            if (lowered && ((function != PlanFunction::Initialize) || free.initializer))
+            {
+                (void) declare(names.fileScope,
+                               renderEntryPointName(row_.language, names.typeName, entryPoint),
+                               SurfaceDeclKind::Wrapper,
+                               NameClass::Value,
+                               NameOrigin::Generated,
+                               SurfaceEntity{names.key, "", "", ""},
+                               SurfaceVisibility::Public,
+                               fact);
             }
         }
     }
@@ -664,24 +853,6 @@ private:
         });
     }
 
-    /// @brief What a lowered function declares, by what it does.
-    static SurfaceDeclKind bodyKind(const PlanFunction function)
-    {
-        switch (function)
-        {
-        case PlanFunction::Serialize:
-        case PlanFunction::Deserialize:
-        case PlanFunction::Initialize:
-            return SurfaceDeclKind::Entry;
-        case PlanFunction::Get:
-        case PlanFunction::Set:
-            return SurfaceDeclKind::Accessor;
-        case PlanFunction::Helper:
-            break;
-        }
-        return SurfaceDeclKind::Helper;
-    }
-
     /// @brief Declares the names the definition's lowered functions take.
     void allocateBodies(const DefinitionNames&        names,
                         const std::size_t             space,
@@ -700,7 +871,7 @@ private:
             {
                 (void) declare(file,
                                renderLoweredLinkName(language, body.plan),
-                               bodyKind(body.plan.function),
+                               loweredFunctionKind(body.plan.function),
                                NameClass::Value,
                                NameOrigin::Generated,
                                of(body));
@@ -839,6 +1010,23 @@ private:
 };
 
 }  // namespace
+
+SurfaceDeclKind loweredFunctionKind(const PlanFunction function)
+{
+    switch (function)
+    {
+    case PlanFunction::Serialize:
+    case PlanFunction::Deserialize:
+    case PlanFunction::Initialize:
+        return SurfaceDeclKind::Entry;
+    case PlanFunction::Get:
+    case PlanFunction::Set:
+        return SurfaceDeclKind::Accessor;
+    case PlanFunction::Helper:
+        break;
+    }
+    return SurfaceDeclKind::Helper;
+}
 
 std::optional<NamePartition> namePartition(const NameClasses& classes, const NameClass nameClass)
 {

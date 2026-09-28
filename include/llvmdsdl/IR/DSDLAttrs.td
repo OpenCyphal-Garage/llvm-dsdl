@@ -100,7 +100,15 @@ def DSDL_GeneratedFact
            I32EnumCase<"ArrayCapacity", 15, "array_capacity">,
            I32EnumCase<"ArrayIsVariableLength", 16, "array_is_variable_length">,
            I32EnumCase<"UnionTag", 17, "union_tag">,
-           I32EnumCase<"Placeholder", 18, "placeholder">]> {
+           I32EnumCase<"Placeholder", 18, "placeholder">,
+           I32EnumCase<"IncludeGuard", 19, "include_guard">,
+           I32EnumCase<"SelectedType", 20, "selected_type">,
+           I32EnumCase<"SelectedVersion", 21, "selected_version">,
+           I32EnumCase<"OptionTest", 22, "option_test">,
+           I32EnumCase<"OptionSelect", 23, "option_select">,
+           I32EnumCase<"Serialize", 24, "serialize">,
+           I32EnumCase<"Deserialize", 25, "deserialize">,
+           I32EnumCase<"Initialize", 26, "initialize">]> {
   let cppNamespace = "::mlir::dsdl";
 }
 

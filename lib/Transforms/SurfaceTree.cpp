@@ -161,9 +161,25 @@ mlir::dsdl::GeneratedFact irGeneratedFact(const GeneratedFact fact)
     case GeneratedFact::UnionTag:
         return mlir::dsdl::GeneratedFact::UnionTag;
     case GeneratedFact::Placeholder:
+        return mlir::dsdl::GeneratedFact::Placeholder;
+    case GeneratedFact::IncludeGuard:
+        return mlir::dsdl::GeneratedFact::IncludeGuard;
+    case GeneratedFact::SelectedType:
+        return mlir::dsdl::GeneratedFact::SelectedType;
+    case GeneratedFact::SelectedVersion:
+        return mlir::dsdl::GeneratedFact::SelectedVersion;
+    case GeneratedFact::OptionTest:
+        return mlir::dsdl::GeneratedFact::OptionTest;
+    case GeneratedFact::OptionSelect:
+        return mlir::dsdl::GeneratedFact::OptionSelect;
+    case GeneratedFact::Serialize:
+        return mlir::dsdl::GeneratedFact::Serialize;
+    case GeneratedFact::Deserialize:
+        return mlir::dsdl::GeneratedFact::Deserialize;
+    case GeneratedFact::Initialize:
         break;
     }
-    return mlir::dsdl::GeneratedFact::Placeholder;
+    return mlir::dsdl::GeneratedFact::Initialize;
 }
 
 GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
@@ -207,9 +223,25 @@ GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
     case mlir::dsdl::GeneratedFact::UnionTag:
         return GeneratedFact::UnionTag;
     case mlir::dsdl::GeneratedFact::Placeholder:
+        return GeneratedFact::Placeholder;
+    case mlir::dsdl::GeneratedFact::IncludeGuard:
+        return GeneratedFact::IncludeGuard;
+    case mlir::dsdl::GeneratedFact::SelectedType:
+        return GeneratedFact::SelectedType;
+    case mlir::dsdl::GeneratedFact::SelectedVersion:
+        return GeneratedFact::SelectedVersion;
+    case mlir::dsdl::GeneratedFact::OptionTest:
+        return GeneratedFact::OptionTest;
+    case mlir::dsdl::GeneratedFact::OptionSelect:
+        return GeneratedFact::OptionSelect;
+    case mlir::dsdl::GeneratedFact::Serialize:
+        return GeneratedFact::Serialize;
+    case mlir::dsdl::GeneratedFact::Deserialize:
+        return GeneratedFact::Deserialize;
+    case mlir::dsdl::GeneratedFact::Initialize:
         break;
     }
-    return GeneratedFact::Placeholder;
+    return GeneratedFact::Initialize;
 }
 
 SurfaceScopeKind scopeKindOf(const mlir::dsdl::ScopeKind kind)

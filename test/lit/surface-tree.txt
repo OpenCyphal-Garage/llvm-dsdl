@@ -28,16 +28,26 @@
 # C:      dsdl.surface target = "c" {
 # C-NEXT:   dsdl.scope root "" {
 # C-NEXT:     dsdl.scope file "Ask_1_0" path = "ns/Ask_1_0.h" {
+# C-NEXT:       dsdl.decl "LLVMDSDL_NS__ASK_1_0_H" kind = guard origin = generated fact = include_guard of = @ns.Ask.1.0
+# C-NEXT:       dsdl.decl "LLVMDSDL_SELECTED_NS__ASK_" kind = guard origin = generated fact = selected_type of = @ns.Ask.1.0
+# C-NEXT:       dsdl.decl "LLVMDSDL_SELECTED_NS__ASK_1_0_" kind = guard origin = generated fact = selected_version of = @ns.Ask.1.0
 # C-NEXT:       dsdl.scope type "ns__Ask__Request" of = @ns.Ask.1.0 section = "request" {
+# C:            dsdl.decl "ns__Ask__Request" kind = tag of = @ns.Ask.1.0 section = "request"
+# C-NEXT:       dsdl.decl "ns__Ask__Request_FULL_NAME_" kind = constant class = macro origin = generated fact = full_name of = @ns.Ask.1.0 section = "request"
 # C:          dsdl.decl "ns__Ask__Request_SMALL_OPTION_TAG_" kind = option class = macro origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # C:          dsdl.decl "ns__Ask" kind = alias origin = generated of = @ns.Ask.1.0
-# C-NEXT:     dsdl.decl "llvmdsdl_plan_capacity_check__ns__Ask_1_0__Request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
+# C-NEXT:     dsdl.decl "ns__Ask_FULL_NAME_" kind = constant class = macro origin = generated fact = full_name of = @ns.Ask.1.0
+# C:          dsdl.decl "ns__Ask__Request__serialize_" kind = wrapper origin = generated of = @ns.Ask.1.0.request.serialize
+# C:          dsdl.decl "ns__Ask__Request__is_small_" kind = method origin = generated fact = option_test of = @ns.Ask.1.0 section = "request" member = "small"
+# C:          dsdl.decl "ns__Ask__Response__get_ok_" kind = wrapper origin = generated of = @ns.Ask.1.0.response.get.ok
+# C:          dsdl.decl "ns__Ask__serialize_" kind = wrapper origin = generated fact = serialize of = @ns.Ask.1.0
+# C:          dsdl.decl "llvmdsdl_plan_capacity_check__ns__Ask_1_0__Request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # C:          dsdl.decl "ns__Ask_1_0__Request__serialize_ir_" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
 # C:        dsdl.scope file "Msg_1_0" path = "ns/Msg_1_0.h" {
 # C:          dsdl.decl "ns__Msg_ITEMS_ARRAY_CAPACITY_" kind = constant class = macro origin = generated fact = array_capacity of = @ns.Msg.1.0 member = "items"
 # C:          dsdl.decl "ns__Msg_LIMIT" kind = constant class = macro of = @ns.Msg.1.0 member = "LIMIT"
 # C:        dsdl.scope file "Old_1_0" path = "ns/Old_1_0.h" {
-# C-NEXT:     dsdl.scope type "ns__Old" of = @ns.Old.1.0 {
+# C:            dsdl.scope type "ns__Old" of = @ns.Old.1.0 {
 #
 # CPP:      dsdl.surface target = "cpp" profile = "std" {
 # CPP-NEXT:   dsdl.scope root "" {

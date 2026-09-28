@@ -19,7 +19,7 @@
 #include "llvmdsdl/CodeGen/emitter/CIncludes.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
-#include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/GeneratedFact.h"
 #include <cstdint>
 #include <llvm/ADT/StringRef.h>
 #include <optional>
@@ -31,59 +31,61 @@ namespace llvmdsdl::emitter::c
 namespace
 {
 
-/// @brief Opens the definition of one of @p typeName's constants.
-std::string defineConstant(const std::string& typeName, const llvm::StringRef constant)
+/// @brief Opens the definition of the macro @p name.
+std::string define(const std::string& name)
 {
-    return "#define " + renderEnclosedConstantName(typeName, constant) + " ";
+    return "#define " + name + " ";
 }
 
 }  // namespace
 
-std::vector<std::string> renderTypeMetadataMacros(const std::string&     typeName,
+std::vector<std::string> renderTypeMetadataMacros(const NameOfFact&      named,
                                                   const SectionMetadata& metadata,
                                                   const CFileNames&      file)
 {
     const auto               boolean = [&](const bool value) { return file.standard(value ? "true" : "false"); };
+    const auto               macro   = [&](const GeneratedFact fact) { return define(named(fact)); };
     std::vector<std::string> lines   = {
-        defineConstant(typeName, "FULL_NAME_") + "\"" + metadata.fullName + "\"",
-        defineConstant(typeName, "FULL_NAME_AND_VERSION_") + "\"" + metadata.fullName + "." +
+        macro(GeneratedFact::FullName) + "\"" + metadata.fullName + "\"",
+        macro(GeneratedFact::FullNameAndVersion) + "\"" + metadata.fullName + "." +
             std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"",
-        defineConstant(typeName, "EXTENT_BYTES_") + std::to_string(metadata.extentBytes) + "UL",
-        defineConstant(typeName, "SERIALIZATION_BUFFER_SIZE_BYTES_") +
-            std::to_string(metadata.serializationBufferSizeBytes) + "UL",
-        defineConstant(typeName, "WIRE_FLAT_") + boolean(metadata.wireFlat.holds),
-        defineConstant(typeName, "WIRE_FLAT_REASON_") + "\"" + metadata.wireFlat.reason + "\"",
-        defineConstant(typeName, "HOST_IMAGE_") + boolean(metadata.hostImage.holds),
-        defineConstant(typeName, "HOST_IMAGE_REASON_") + "\"" + metadata.hostImage.reason + "\"",
-        defineConstant(typeName, "IS_DEPRECATED_") + boolean(metadata.deprecated),
+        macro(GeneratedFact::ExtentBytes) + std::to_string(metadata.extentBytes) + "UL",
+        macro(GeneratedFact::SerializationBufferSizeBytes) + std::to_string(metadata.serializationBufferSizeBytes) +
+            "UL",
+        macro(GeneratedFact::WireFlat) + boolean(metadata.wireFlat.holds),
+        macro(GeneratedFact::WireFlatReason) + "\"" + metadata.wireFlat.reason + "\"",
+        macro(GeneratedFact::HostImage) + boolean(metadata.hostImage.holds),
+        macro(GeneratedFact::HostImageReason) + "\"" + metadata.hostImage.reason + "\"",
+        macro(GeneratedFact::IsDeprecated) + boolean(metadata.deprecated),
     };
     if (metadata.declaresPortId)
     {
-        lines.push_back(defineConstant(typeName, "HAS_FIXED_PORT_ID_") + boolean(metadata.fixedPortId.has_value()));
+        lines.push_back(macro(GeneratedFact::HasFixedPortId) + boolean(metadata.fixedPortId.has_value()));
         if (metadata.fixedPortId)
         {
-            lines.push_back(defineConstant(typeName, "FIXED_PORT_ID_") + std::to_string(*metadata.fixedPortId) + "U");
+            lines.push_back(macro(GeneratedFact::FixedPortId) + std::to_string(*metadata.fixedPortId) + "U");
         }
     }
     return lines;
 }
 
-std::vector<std::string> renderServiceAliasIdentityMacros(const std::string&                 baseTypeName,
+std::vector<std::string> renderServiceAliasIdentityMacros(const NameOfFact&                  named,
                                                           const std::string&                 fullName,
                                                           const std::uint32_t                majorVersion,
                                                           const std::uint32_t                minorVersion,
                                                           const std::optional<std::uint32_t> fixedPortId,
                                                           const CFileNames&                  file)
 {
+    const auto               macro = [&](const GeneratedFact fact) { return define(named(fact)); };
     std::vector<std::string> lines = {
-        defineConstant(baseTypeName, "FULL_NAME_") + "\"" + fullName + "\"",
-        defineConstant(baseTypeName, "FULL_NAME_AND_VERSION_") + "\"" + fullName + "." + std::to_string(majorVersion) +
-            "." + std::to_string(minorVersion) + "\"",
-        defineConstant(baseTypeName, "HAS_FIXED_PORT_ID_") + file.standard(fixedPortId ? "true" : "false"),
+        macro(GeneratedFact::FullName) + "\"" + fullName + "\"",
+        macro(GeneratedFact::FullNameAndVersion) + "\"" + fullName + "." + std::to_string(majorVersion) + "." +
+            std::to_string(minorVersion) + "\"",
+        macro(GeneratedFact::HasFixedPortId) + file.standard(fixedPortId ? "true" : "false"),
     };
     if (fixedPortId)
     {
-        lines.push_back(defineConstant(baseTypeName, "FIXED_PORT_ID_") + std::to_string(*fixedPortId) + "U");
+        lines.push_back(macro(GeneratedFact::FixedPortId) + std::to_string(*fixedPortId) + "U");
     }
     return lines;
 }
@@ -106,45 +108,40 @@ std::vector<std::string> renderLittleEndianGuardLines(const std::string& typeNam
     };
 }
 
-std::vector<std::string> renderServiceAliasBridgeLines(const std::string& baseTypeName,
-                                                       const std::string& requestTypeName,
+std::vector<std::string> renderServiceAliasBridgeLines(const std::string& aliasName,
+                                                       const std::string& requestTag,
+                                                       const NameOfFact&  alias,
+                                                       const NameOfFact&  request,
                                                        const bool         deprecatedAttribute)
 {
     return {
-        "typedef " + renderCTagSpelling(requestTypeName) + " " + baseTypeName +
-            (deprecatedAttribute ? " __attribute__((deprecated));" : ";"),
-        defineConstant(baseTypeName, "EXTENT_BYTES_") + renderEnclosedConstantName(requestTypeName, "EXTENT_BYTES_"),
-        defineConstant(baseTypeName, "SERIALIZATION_BUFFER_SIZE_BYTES_") +
-            renderEnclosedConstantName(requestTypeName, "SERIALIZATION_BUFFER_SIZE_BYTES_"),
+        "typedef " + requestTag + " " + aliasName + (deprecatedAttribute ? " __attribute__((deprecated));" : ";"),
+        define(alias(GeneratedFact::ExtentBytes)) + request(GeneratedFact::ExtentBytes),
+        define(alias(GeneratedFact::SerializationBufferSizeBytes)) +
+            request(GeneratedFact::SerializationBufferSizeBytes),
     };
 }
 
-std::vector<std::string> renderServiceAliasWrapperLines(const std::string& baseTypeName,
-                                                        const std::string& requestTypeName,
-                                                        const CFileNames&  file)
+std::vector<std::string> renderServiceAliasWrapperLines(const NameOfEntryPoint& service,
+                                                        const NameOfEntryPoint& request,
+                                                        const std::string&      requestTag,
+                                                        const CFileNames&       file)
 {
-    const std::string objectType = renderCTagSpelling(requestTypeName);
-    const auto        base       = [&baseTypeName](const EntryPoint entryPoint) {
-        return renderEntryPointName(Language::C, baseTypeName, entryPoint);
-    };
-    const auto request = [&requestTypeName](const EntryPoint entryPoint) {
-        return renderEntryPointName(Language::C, requestTypeName, entryPoint);
-    };
     const std::string status = file.standard("int8_t");
     const std::string byte   = file.standard("uint8_t");
     const std::string size   = file.standard("size_t");
     return {
-        "static inline " + status + " " + base(EntryPoint::Serialize) + "(const " + objectType + "* const obj, " +
+        "static inline " + status + " " + service(EntryPoint::Serialize) + "(const " + requestTag + "* const obj, " +
             byte + "* const buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + request(EntryPoint::Serialize) + "(obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline " + status + " " + base(EntryPoint::Deserialize) + "(" + objectType + "* const out_obj, const " +
-            byte + "* buffer, " + size + "* const inout_buffer_size_bytes)",
+        "static inline " + status + " " + service(EntryPoint::Deserialize) + "(" + requestTag +
+            "* const out_obj, const " + byte + "* buffer, " + size + "* const inout_buffer_size_bytes)",
         "{",
         "  return " + request(EntryPoint::Deserialize) + "(out_obj, buffer, inout_buffer_size_bytes);",
         "}",
-        "static inline " + status + " " + base(EntryPoint::Initialize) + "(" + objectType + "* const out_obj)",
+        "static inline " + status + " " + service(EntryPoint::Initialize) + "(" + requestTag + "* const out_obj)",
         "{",
         "  return " + request(EntryPoint::Initialize) + "(out_obj);",
         "}",
