@@ -448,7 +448,7 @@ and the type's facts as `static constexpr` data members. A helper becomes a priv
 function of the section type it operates on, losing the prefix that type now supplies:
 `Request::capacity_check`. The type is the scope, so nothing sits beside it — no free entry points
 and no `detail` namespace. A service's outer name becomes the struct that encloses the two sections
-and holds no members of its own, which is what removes the `using List = List_Request` alias: the
+and holds no data members, which is what removes the `using List = List_Request` alias: the
 alias existed because a flat scope had no way to say that `Request` belongs to `List`.
 
 **Rust.** `pub struct Request` in module `uavcan::file::list_0_2`, with `impl Request` holding
@@ -1119,6 +1119,18 @@ one memory resource, which defaults to the struct's own. A member that reads no 
 reaches it through its type. The blank line before a struct's closing brace and the doubled blank
 line before a namespace closes go. Clang-tidy's `readability-identifier-naming` findings fall from
 1,497 to 773. C++'s declaration count falls from 99 to 65, and its body count from 53 to 52.
+
+The second part nests a service's sections. The row's `sectionEnclosure` says what encloses them:
+nothing, where each section's type is named after its service beside the other; the definition's
+module, in Rust; or a type named for the service, in C++. C++'s service struct holds the definition's
+doc and its own facts as static members, which `serviceConstants = type` places, and encloses
+`Request` and `Response`: `uavcan::file::List::Request` replaces `List_Request`, and the alias and
+the request's sizes restated beside it go. A C++ class's members may not take its name, which the
+row's `typeNameAmongMembers` states and the verifier holds, so a service named `Request` is declared
+apart as `Request_` and published under the alias `Request`, as a deprecated one is. A deprecated
+service's sections are declared apart too: Clang diagnoses no deprecated alias that only qualifies a
+name, as `Read::Request` does. `readability-identifier-naming` falls from 773 to 661: the 658
+helpers, and three structs declared apart.
 
 **6 to 11 — One phase per language**, each flipping its row from *as today* to the target above and
 turning its judge from phase 1 green. Phase 5 gives each language's bodies their public shape and

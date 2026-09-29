@@ -30,8 +30,13 @@
 # CPP_MESSAGE: static constexpr bool HAS_FIXED_PORT_ID = true;
 # CPP_MESSAGE: static constexpr std::uint16_t FIXED_PORT_ID = 1234U;
 
-# CPP_SERVICE: constexpr bool PortedCall_HAS_FIXED_PORT_ID = true;
-# CPP_SERVICE: constexpr std::uint16_t PortedCall_FIXED_PORT_ID = 200U;
+# The service's pair is its struct's, ahead of the sections it encloses.
+# CPP_SERVICE: struct PortedCall {
+# CPP_SERVICE: static constexpr bool HAS_FIXED_PORT_ID = true;
+# CPP_SERVICE-NEXT: static constexpr std::uint16_t FIXED_PORT_ID = 200U;
+# CPP_SERVICE-NOT: FIXED_PORT_ID
+# CPP_SERVICE: struct Request {
+# CPP_SERVICE-NOT: FIXED_PORT_ID
 
 # RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/go
 # RUN: cat %t/go/fixtures_unregulated/unregulated_1_0.go | FileCheck %s --check-prefix=GO_MESSAGE

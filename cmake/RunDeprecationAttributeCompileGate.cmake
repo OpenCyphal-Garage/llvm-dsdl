@@ -210,10 +210,10 @@ file(WRITE "${WORK_DIR}/cpp_include_probe.cpp"
 int main() { return 0; }
 ")
 
-# User code naming a deprecated type: the section alias, and the service alias.
+# User code naming a deprecated type: a section through the service's alias, and the alias itself.
 file(WRITE "${WORK_DIR}/cpp_use_probe.cpp"
 "#include \"uavcan/file/Read_1_0.hpp\"
-static uavcan::file::Read_Request req;
+static uavcan::file::Read::Request req;
 int main() { (void)req; return 0; }
 ")
 file(WRITE "${WORK_DIR}/cpp_alias_probe.cpp"

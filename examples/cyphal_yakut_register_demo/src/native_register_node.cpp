@@ -565,14 +565,14 @@ void sendRpcResponse(NodeApp&                    app,
 void handleRegisterListRequest(NodeApp& app, const UdpardRxRPCTransfer& transfer, const UdpardMicrosecond now)
 {
     const std::vector<uint8_t>       raw     = gatherPayload(transfer.base);
-    uavcan::register_::List_Request request = {};
+    uavcan::register_::List::Request request = {};
     if (!deserializeMessage(raw, request))
     {
         std::fprintf(stderr, "[%s] failed to deserialize register.List request\n", app.options.name.c_str());
         return;
     }
 
-    uavcan::register_::List_Response response = {};
+    uavcan::register_::List::Response response = {};
     if (request.index < app.registers.size())
     {
         setRegisterName(response.name, app.registers[request.index].name);
@@ -594,7 +594,7 @@ void handleRegisterListRequest(NodeApp& app, const UdpardRxRPCTransfer& transfer
 void handleRegisterAccessRequest(NodeApp& app, const UdpardRxRPCTransfer& transfer, const UdpardMicrosecond now)
 {
     const std::vector<uint8_t>         raw     = gatherPayload(transfer.base);
-    uavcan::register_::Access_Request request = {};
+    uavcan::register_::Access::Request request = {};
     if (!deserializeMessage(raw, request))
     {
         std::fprintf(stderr, "[%s] failed to deserialize register.Access request\n", app.options.name.c_str());
@@ -604,7 +604,7 @@ void handleRegisterAccessRequest(NodeApp& app, const UdpardRxRPCTransfer& transf
     const std::string requestedName = decodeRegisterName(request.name);
     RegisterEntry*    entry         = findRegister(app, requestedName);
 
-    uavcan::register_::Access_Response response = {};
+    uavcan::register_::Access::Response response = {};
     response.timestamp.microsecond               = uavcan::time::SynchronizedTimestamp::UNKNOWN;
 
     if (entry == nullptr)
@@ -670,11 +670,11 @@ void processRpcRx(NodeApp& app)
         UdpardRxRPCPort*        outPort    = nullptr;
         const UdpardMicrosecond now        = getMonotonicMicroseconds();
         const int_fast8_t       dispatchRc = udpardRxRPCDispatcherReceive(&app.rpcDispatcher,
-                                                                    now,
+                                                                          now,
                                                                           {.size = payloadSize, .data = datagramBuffer},
-                                                                    0U,
-                                                                    &outPort,
-                                                                    &transfer);
+                                                                          0U,
+                                                                          &outPort,
+                                                                          &transfer);
         if (dispatchRc < 0)
         {
             std::fprintf(stderr,
@@ -791,7 +791,7 @@ bool initialize(NodeApp& app)
                                                                    &app.registerAccessPort,
                                                                    kServiceRegisterAccess,
                                                                    true,
-                                                                   uavcan::register_::Access_Request::EXTENT_BYTES);
+                                                                   uavcan::register_::Access::Request::EXTENT_BYTES);
     if (accessListenRc < 0)
     {
         std::fprintf(stderr,
@@ -805,7 +805,7 @@ bool initialize(NodeApp& app)
                                                                  &app.registerListPort,
                                                                  kServiceRegisterList,
                                                                  true,
-                                                                 uavcan::register_::List_Request::EXTENT_BYTES);
+                                                                 uavcan::register_::List::Request::EXTENT_BYTES);
     if (listListenRc < 0)
     {
         std::fprintf(stderr,

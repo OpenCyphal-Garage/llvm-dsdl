@@ -616,7 +616,13 @@ std::size_t SurfaceTree::definitionScope(const llvm::StringRef key) const
     {
         if ((scope.kind == SurfaceScopeKind::Type) && scope.of && (scope.of->schema == key))
         {
-            return *scope.parent;
+            // A section's type may be declared in its service's.
+            std::size_t at = *scope.parent;
+            while (plan_.scopes[at].kind == SurfaceScopeKind::Type)
+            {
+                at = *plan_.scopes[at].parent;
+            }
+            return at;
         }
     }
     llvm::report_fatal_error(llvm::Twine("the surface declares no type of ") + key);

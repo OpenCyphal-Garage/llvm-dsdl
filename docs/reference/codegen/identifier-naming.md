@@ -104,8 +104,8 @@ Only the languages the invocation emits are checked, so a build never fails over
 it was not going to produce. An invocation that emits nothing — analysis, or the language server —
 checks every language.
 
-A service is checked the same way against its own sections. A service `Foo` emits `Foo_Request`, and
-a sibling definition may be *called* `Foo_Request`; the pair is rejected where the two would meet.
+A service is checked the same way against its own sections. A service `Foo` emits Go's `FooRequest`,
+and a sibling definition may be *called* `FooRequest`; the pair is rejected where the two would meet.
 
 ## Reserved namespaces
 

@@ -79,7 +79,9 @@ public:
     /// @brief The scope at @p index.
     [[nodiscard]] const SurfaceScope& scope(std::size_t index) const;
 
-    /// @brief The type scope that declares @p section of the definition keyed @p key.
+    /// @brief The type scope that declares @p section of the definition keyed @p key; for a service,
+    ///        an empty @p section is the type that encloses its sections, where the language declares
+    ///        one.
     /// @return Its index; a fatal error where the tree holds none.
     [[nodiscard]] std::size_t typeScope(llvm::StringRef key, llvm::StringRef section) const;
 

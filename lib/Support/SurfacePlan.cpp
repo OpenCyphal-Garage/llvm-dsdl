@@ -15,6 +15,7 @@
 #include "llvmdsdl/Support/SurfacePlan.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -31,6 +32,7 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 
 #include "llvmdsdl/Support/BodyNaming.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
@@ -251,22 +253,54 @@ public:
         allocateFileGuards(names, definition.ref, file);
         allocateModuleConstants(names, definition, file);
 
-        if (definition.service)
+        const bool declaredApart = definition.deprecated && row_.composition.deprecatedTypeDeclaredApart;
+        if (definition.service && (row_.composition.sectionEnclosure == SectionEnclosure::ServiceType))
         {
-            allocateSection(names, file, "request", definition.request, definition.deprecated);
+            // The service's type encloses its sections, and a deprecated one is declared apart, as
+            // each of its sections is. So is one whose section would take its name where no member
+            // may: a service named `Request` is reached as `Request::Request` through the alias.
+            const bool sectionTakesName =
+                row_.classification.nameClasses.typeNameAmongMembers &&
+                llvm::any_of(std::array<llvm::StringRef, 2>{"request", "response"}, [&](const llvm::StringRef section) {
+                    return renderSectionTypeName(language, names.typeName, section) == names.typeName;
+                });
+            const bool          serviceApart = declaredApart || sectionTakesName;
+            const SurfaceEntity service{names.key, "", "", ""};
+            names.serviceScope =
+                openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(names.typeName, serviceApart), service);
+            if (serviceApart)
+            {
+                (void) declare(file,
+                               names.typeName,
+                               SurfaceDeclKind::Alias,
+                               NameClass::Type,
+                               NameOrigin::Generated,
+                               service);
+            }
+            allocateServiceConstants(names, file);
+            allocateSection(names, *names.serviceScope, "request", definition.request, declaredApart);
             if (definition.response)
             {
-                allocateSection(names, file, "response", *definition.response, definition.deprecated);
+                allocateSection(names, *names.serviceScope, "response", *definition.response, declaredApart);
+            }
+        }
+        else if (definition.service)
+        {
+            allocateSection(names, file, "request", definition.request, declaredApart);
+            if (definition.response)
+            {
+                allocateSection(names, file, "response", *definition.response, declaredApart);
             }
         }
         else
         {
-            allocateSection(names, file, "", definition.request, definition.deprecated);
+            allocateSection(names, file, "", definition.request, declaredApart);
         }
-        // A service reached by its own name means its request. Where a section's type is already
-        // called that -- a service named `Request` in a language that names a section alone -- the
-        // alias would declare the name twice and stand for itself.
-        if (definition.service && !declaresName(file, names.typeName))
+        // A service reached by its own name means its request, where no type of the service's own
+        // has the name. Where a section's type is already called that -- a service named `Request`
+        // in a language that names a section alone -- the alias would declare the name twice and
+        // stand for itself.
+        if (definition.service && !names.serviceScope && !declaresName(file, names.typeName))
         {
             names.serviceAlias = declare(file,
                                          names.typeName,
@@ -275,7 +309,7 @@ public:
                                          NameOrigin::Generated,
                                          SurfaceEntity{names.key, "", "", ""});
         }
-        if (definition.service)
+        if (definition.service && !names.serviceScope)
         {
             allocateServiceConstants(names, file);
         }
@@ -350,13 +384,13 @@ private:
         return index;
     }
 
-    /// @brief Declares one section's type and its members. A deprecated type is declared under a
-    ///        name of its own where the language does that, and its public name is an alias of it.
+    /// @brief Declares one section's type in @p parent, and its members. A type declared apart is
+    ///        declared under a name of its own, and its public name is an alias of it.
     void allocateSection(DefinitionNames&    names,
-                         const std::size_t   file,
+                         const std::size_t   parent,
                          const std::string&  sectionName,
                          const SectionParts& parts,
-                         const bool          deprecated)
+                         const bool          declaredApart)
     {
         const Language language = row_.language;
         SectionNames   section;
@@ -365,14 +399,13 @@ private:
             sectionName.empty() ? names.typeName : renderSectionTypeName(language, names.typeName, sectionName);
         section.isUnion = parts.isUnion;
         const auto of   = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member, ""}; };
-        const bool declaredApart = deprecated && row_.composition.deprecatedTypeDeclaredApart;
         section.typeScope =
-            openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
+            openScope(parent, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
         // A language that keeps structure tags as a class of their own names each type's tag as
         // the type.
         if (row_.classification.nameClasses.tags)
         {
-            (void) declare(file,
+            (void) declare(parent,
                            plan_.scopes[section.typeScope].name,
                            SurfaceDeclKind::Tag,
                            NameClass::Tag,
@@ -401,16 +434,20 @@ private:
         allocateTypeMembers(section, parts, of, sectionName.empty() ? names.fixedPortId : std::nullopt);
         if (row_.composition.constants == ConstantsScope::Package)
         {
-            allocatePackageConstants(section, file, parts, of);
+            allocatePackageConstants(section, parent, parts, of);
         }
         else
         {
-            allocateConstants(section, file, parts, of);
+            allocateConstants(section, parent, parts, of);
         }
         if (declaredApart)
         {
-            (void)
-                declare(file, section.typeName, SurfaceDeclKind::Alias, NameClass::Type, NameOrigin::Generated, of(""));
+            (void) declare(parent,
+                           section.typeName,
+                           SurfaceDeclKind::Alias,
+                           NameClass::Type,
+                           NameOrigin::Generated,
+                           of(""));
         }
         names.sections.push_back(std::move(section));
     }
@@ -600,13 +637,13 @@ private:
         }
     }
 
-    /// @brief Declares a service's own constants beside its sections' types, each named after the
-    ///        service.
+    /// @brief Declares a service's own constants in the type that encloses its sections, or beside
+    ///        its sections' types, each named after the service.
     void allocateServiceConstants(const DefinitionNames& names, const std::size_t file)
     {
         const Language language = row_.language;
-        // Beside the type rather than in it: a language that declares a type's constants in the
-        // type names these as a module declares a type's constants.
+        // Beside the type, a language that declares a type's constants in the type names these as a
+        // module declares a type's constants.
         const auto named = [&](const llvm::StringRef token) {
             switch (row_.composition.serviceConstants)
             {
@@ -617,17 +654,23 @@ private:
                                                   token);
             case ConstantsScope::Package:
                 return goConstantName({names.typeName, token});
-            case ConstantsScope::Enclosing:
             case ConstantsScope::Type:
+                return token.str();
+            case ConstantsScope::Enclosing:
                 break;
             }
             return renderEnclosedConstantName(names.typeName, token);
         };
+        const bool inType = row_.composition.serviceConstants == ConstantsScope::Type;
+        if (inType && !names.serviceScope)
+        {
+            llvm::report_fatal_error("surface: a service's constants belong to a type that encloses no section");
+        }
         for (const GeneratedName& constant : generatedServiceConstants(language))
         {
             if ((constant.fact != GeneratedFact::FixedPortId) || names.fixedPortId)
             {
-                (void) declare(file,
+                (void) declare(inType ? *names.serviceScope : file,
                                named(constant.name),
                                SurfaceDeclKind::Constant,
                                row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value,

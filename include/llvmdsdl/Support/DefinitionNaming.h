@@ -135,10 +135,11 @@ struct DefinitionRef final
 /// @brief Names the generated type of one section of a definition.
 ///
 /// A message is its own type and takes @p baseTypeName unchanged. A service declares a type per
-/// section, and where that type goes depends on what the language scopes it with. C, C++, Go,
+/// section, and where that type goes depends on what the language scopes it with. C, Go,
 /// TypeScript and Python reach both sections through the name of the service, so the section is a
-/// suffix on it. Rust reaches them through the definition's own module, which names the service
-/// already, so the section alone is the name and `list_0_2::Request` is the whole path.
+/// suffix on it. Rust reaches them through the definition's own module and C++ through the
+/// service's struct, each of which names the service already, so the section alone is the name:
+/// `list_0_2::Request` and `List_0_2::Request` are the whole paths.
 ///
 /// This exists so that the emitter, the frontend's collision check and the naming manifest compose
 /// one answer rather than three.

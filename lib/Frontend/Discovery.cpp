@@ -581,13 +581,26 @@ std::vector<ScopedTypeName> scopedTypeNames(const LanguageTraits&             la
     {
         out.push_back(ScopedTypeName{scope, names.typeName, versionedNames.typeName, "", ""});
     }
+    // A deprecated definition's struct is declared under a name of its own, which a sibling may be
+    // called; that name is claimed beside the public one.
+    if (names.serviceScope && (plan.scopes[*names.serviceScope].name != names.typeName))
+    {
+        out.push_back(ScopedTypeName{scope,
+                                     plan.scopes[*names.serviceScope].name,
+                                     versioned.scopes[*versionedNames.serviceScope].name,
+                                     "",
+                                     ""});
+    }
     for (std::size_t section = 0; section < names.sections.size(); ++section)
     {
         const SectionNames& held          = names.sections[section];
         const SectionNames& versionedHeld = versionedNames.sections[section];
+        // A section declared in its service's type is out of the shared scope's reach.
+        if (plan.scopes[held.typeScope].parent != names.fileScope)
+        {
+            continue;
+        }
         out.push_back(ScopedTypeName{scope, held.typeName, versionedHeld.typeName, held.section, ""});
-        // A deprecated definition's struct is declared under a name of its own, which a sibling may
-        // be called; that name is claimed beside the public one.
         const std::string& declared = plan.scopes[held.typeScope].name;
         if (declared != held.typeName)
         {

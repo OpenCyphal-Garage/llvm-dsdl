@@ -367,13 +367,13 @@ TypeScript generates the pair: it resolves `./file_1_0` to the file, and imports
 directory by that type's own path.
 
 A name a type does not declare can still collide. A service emits a type per section named after
-itself — `Foo` gives `Foo_Request` — and a sibling definition may be *called* `Foo_Request`, which is
-conformant DSDL. Neither declared name collides, so the check above cannot see it. A second pass
+itself — Go's `Foo` gives `FooRequest` — and a sibling definition may be *called* `FooRequest`, which
+is conformant DSDL. Neither declared name collides, so the check above cannot see it. A second pass
 therefore registers each service's section names beside every declared one:
 
 ```
-error: type name collision in generated output: 'ns.Foo_Request' and the request section
-       of 'ns.Foo' both emit 'Foo_Request' for target language 'cpp';
+error: type name collision in generated output: 'ns.FooRequest' and the request section
+       of 'ns.Foo' both emit 'FooRequest' for target language 'go';
        pass --versioned-type-names, or rename one of them
 ```
 
@@ -417,9 +417,9 @@ error: type name collision in generated output: 'ns.A__B' and 'ns.A.B' both emit
 
 ### 6.1 Names generated beside a type
 
-C, C++ and Go declare names of their own beside a type, in the scope the type shares with other
-definitions: C its entry points, accessors, union option functions and macros; C++ a service's
-constants; Go its constants and accessors. Each carries its type's name, and
+C and Go declare names of their own beside a type, in the scope the type shares with other
+definitions: C its entry points, accessors, union option functions and macros; Go its constants and
+accessors. Each carries its type's name, and
 a type's name can be another type's with a generated suffix after it, so `ns.A_EXTENT_BYTES_` beside
 `ns.A` in C, or `ns.MsgExtentBytes` beside `ns.Msg` in Go, is one identifier declared twice. A third
 pass, `checkGeneratedNameCollisions`, claims every such name in its scope and rejects one two

@@ -760,6 +760,12 @@ private:
             return success();
         }
         const ScopeOp space = namespaceOf(scope);
+        // A type's own name is its members' to avoid where the language says so.
+        if ((scope.getKind() == ScopeKind::Type) && classes_.typeNameAmongMembers &&
+            failed(claim(scope, scope, scope.getName(), NameClass::Type)))
+        {
+            return failure();
+        }
         for (Operation& op : *scope.getBody())
         {
             if (auto child = llvm::dyn_cast<ScopeOp>(op))

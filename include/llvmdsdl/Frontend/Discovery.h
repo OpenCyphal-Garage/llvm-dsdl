@@ -89,10 +89,11 @@ struct ScopedTypeName final
 
 /// @brief Rejects a generated type name that another name declared in its scope also takes.
 ///
-/// A service emits a type per section, named after the service with a suffix -- `Foo` gives
-/// `Foo_Request`. A sibling definition may be *called* `Foo_Request`, which is conformant DSDL, and
+/// A service emits a type per section, named after the service with a suffix -- Go's `Foo` gives
+/// `FooRequest`. A sibling definition may be *called* `FooRequest`, which is conformant DSDL, and
 /// then the two land on one identifier. @ref discoverDefinitions cannot see this: it keys each
-/// definition on its own short name, and `Foo` and `Foo_Request` do not collide as declared names.
+/// definition on its own short name, and `Foo` and `FooRequest` do not collide as declared names.
+/// A section declared in its service's own type is in no shared scope, and is not claimed.
 ///
 /// A deprecated definition's C++ struct is declared as `<name>_`, with `<name>` a deprecated alias of
 /// it (@ref renderDeclaredTypeName), so that name is claimed as well.

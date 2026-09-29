@@ -23,6 +23,8 @@
 #ifndef LLVMDSDL_SUPPORT_LANGUAGE_TRAITS_H
 #define LLVMDSDL_SUPPORT_LANGUAGE_TRAITS_H
 
+#include <cstdint>
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -149,6 +151,9 @@ struct NameClasses final
     /// @brief Whether a structure's fields are a class of their own, apart from its constants and
     ///        methods.
     bool fieldsApart{};
+
+    /// @brief Whether a type's own name is among its members' names, so no member may take it.
+    bool typeNameAmongMembers{};
 };
 
 /// @brief How a body reaches a member of the type it is declared in, where a lookup of the bare name
@@ -313,6 +318,20 @@ struct DefinitionNamePolicy final
     bool typeNameReachesTheType{true};
 };
 
+/// @brief What encloses a service's sections.
+enum class SectionEnclosure : std::uint8_t
+{
+    /// @brief Nothing: each section's type is declared beside the other, named after the service.
+    None,
+
+    /// @brief The definition's own module, so a section is named alone.
+    Module,
+
+    /// @brief A type named for the service, which holds the service's own facts, so a section is
+    ///        named alone.
+    ServiceType,
+};
+
 /// @brief How the output opens a DSDL namespace.
 enum class NamespaceForm
 {
@@ -381,8 +400,8 @@ struct Composition final
     /// @brief What joins a service's name to its section's, as in `List__Request`.
     llvm::StringRef sectionJoin;
 
-    /// @brief Whether a section is named alone, since the definition's own module already encloses it.
-    bool sectionNamedAlone{};
+    /// @brief What encloses a service's sections.
+    SectionEnclosure sectionEnclosure{};
 
     /// @brief Whether the definitions of one DSDL namespace are generated into one scope.
     ///
@@ -438,8 +457,9 @@ struct Composition final
     /// @brief Where a type's constants are declared.
     ConstantsScope constants{};
 
-    /// @brief How a service's own constants, declared beside its section types, are named: after the
-    ///        service's name as a constant of that scope is named after its type's.
+    /// @brief Where a service's own constants are declared: in the type that encloses its sections,
+    ///        named as a type's constants are, or beside its section types, named after the service
+    ///        as a constant of that scope is named after its type's.
     ConstantsScope serviceConstants{};
 
     /// @brief Whether a type's constants, its array metadata and its option tags are macros.

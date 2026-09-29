@@ -46,7 +46,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .modulesAmongTypes    = false,
                                         .tags                 = true,
                                         .macros               = true,
-                                        .fieldsApart          = true},
+                                        .fieldsApart          = true,
+                                        .typeNameAmongMembers = false},
                 .lookup              = {.separator                  = "",
                                         .rootPrefix                 = "",
                                         .rootPrefixOnlyWhenShadowed = false,
@@ -69,9 +70,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // No scope below the file, so a composed name carries the whole path.
         .composition =
             {
-                .definitionName = {.namespaceJoin = "__", .versionInTypeName = true, .typeNameReachesTheType = false},
-                .sectionJoin    = "__",
-                .sectionNamedAlone              = false,
+                .definitionName   = {.namespaceJoin = "__", .versionInTypeName = true, .typeNameReachesTheType = false},
+                .sectionJoin      = "__",
+                .sectionEnclosure = SectionEnclosure::None,
                 .definitionsShareNamespaceScope = true,
                 .namespaces                     = NamespaceForm::Joined,
                 .fileExtension                  = ".h",
@@ -114,7 +115,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .modulesAmongTypes    = true,
                                         .tags                 = false,
                                         .macros               = true,
-                                        .fieldsApart          = false},
+                                        .fieldsApart          = false,
+                                        .typeNameAmongMembers = true},
                 .lookup              = {.separator                  = "::",
                                         .rootPrefix                 = "::",
                                         .rootPrefixOnlyWhenShadowed = true,
@@ -135,12 +137,12 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .bodiesAnswerSize         = false,
                 .boolArrays               = BoolArrayStorage::PackedWhenFixed,
             },
-        // A section is flattened into its service's namespace-scope name rather than nested in it.
+        // A service is a struct that holds its own facts and encloses its two sections.
         .composition =
             {
-                .definitionName    = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = false},
-                .sectionJoin       = "_",
-                .sectionNamedAlone = false,
+                .definitionName   = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = false},
+                .sectionJoin      = "",
+                .sectionEnclosure = SectionEnclosure::ServiceType,
                 .definitionsShareNamespaceScope = true,
                 .namespaces                     = NamespaceForm::Namespace,
                 .fileExtension                  = ".hpp",
@@ -155,7 +157,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .fileAndDirectoryAreOneModule   = false,
                 .namespaceAndTypeShareScope     = true,
                 .constants                      = ConstantsScope::Type,
-                .serviceConstants               = ConstantsScope::Enclosing,
+                .serviceConstants               = ConstantsScope::Type,
                 .constantsAreMacros             = false,
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = true,
@@ -179,7 +181,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .modulesAmongTypes    = true,
                                         .tags                 = false,
                                         .macros               = false,
-                                        .fieldsApart          = true},
+                                        .fieldsApart          = true,
+                                        .typeNameAmongMembers = false},
                 .lookup              = {.separator                  = "::",
                                         .rootPrefix                 = "crate::",
                                         .rootPrefixOnlyWhenShadowed = false,
@@ -210,9 +213,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // Each definition and version is a module, which is what encloses a service's sections.
         .composition =
             {
-                .definitionName    = {.namespaceJoin = "", .versionInTypeName = false, .typeNameReachesTheType = true},
-                .sectionJoin       = "",
-                .sectionNamedAlone = true,
+                .definitionName   = {.namespaceJoin = "", .versionInTypeName = false, .typeNameReachesTheType = true},
+                .sectionJoin      = "",
+                .sectionEnclosure = SectionEnclosure::Module,
                 .definitionsShareNamespaceScope = false,
                 .namespaces                     = NamespaceForm::Module,
                 .fileExtension                  = ".rs",
@@ -251,7 +254,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .modulesAmongTypes    = false,
                                         .tags                 = false,
                                         .macros               = false,
-                                        .fieldsApart          = false},
+                                        .fieldsApart          = false,
+                                        .typeNameAmongMembers = false},
                 .lookup              = {.separator                  = ".",
                                         .rootPrefix                 = "",
                                         .rootPrefixOnlyWhenShadowed = false,
@@ -278,9 +282,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // A package holds a whole DSDL namespace, so a constant's name carries its type's.
         .composition =
             {
-                .definitionName    = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
-                .sectionJoin       = "",
-                .sectionNamedAlone = false,
+                .definitionName   = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
+                .sectionJoin      = "",
+                .sectionEnclosure = SectionEnclosure::None,
                 .definitionsShareNamespaceScope = true,
                 .namespaces                     = NamespaceForm::Package,
                 .fileExtension                  = ".go",
@@ -323,7 +327,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .modulesAmongTypes    = false,
                                         .tags                 = false,
                                         .macros               = false,
-                                        .fieldsApart          = true},
+                                        .fieldsApart          = true,
+                                        .typeNameAmongMembers = false},
                 .lookup              = {.separator                  = ".",
                                         .rootPrefix                 = "",
                                         .rootPrefixOnlyWhenShadowed = false,
@@ -353,9 +358,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // A type's constants are the module's, where the classification puts them on the type.
         .composition =
             {
-                .definitionName    = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
-                .sectionJoin       = "",
-                .sectionNamedAlone = false,
+                .definitionName   = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
+                .sectionJoin      = "",
+                .sectionEnclosure = SectionEnclosure::None,
                 .definitionsShareNamespaceScope = false,
                 .namespaces                     = NamespaceForm::Module,
                 .fileExtension                  = ".ts",
@@ -398,7 +403,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .modulesAmongTypes    = true,
                                         .tags                 = false,
                                         .macros               = false,
-                                        .fieldsApart          = false},
+                                        .fieldsApart          = false,
+                                        .typeNameAmongMembers = false},
                 .lookup              = {.separator                  = ".",
                                         .rootPrefix                 = "",
                                         .rootPrefixOnlyWhenShadowed = false,
@@ -424,9 +430,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
         // A type's constants are the module's, where the classification puts them on the class.
         .composition =
             {
-                .definitionName    = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
-                .sectionJoin       = "",
-                .sectionNamedAlone = false,
+                .definitionName   = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
+                .sectionJoin      = "",
+                .sectionEnclosure = SectionEnclosure::None,
                 .definitionsShareNamespaceScope = false,
                 .namespaces                     = NamespaceForm::Module,
                 .fileExtension                  = ".py",

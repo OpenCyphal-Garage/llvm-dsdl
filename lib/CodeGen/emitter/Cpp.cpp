@@ -201,19 +201,36 @@ public:
     ///        the structure's own name otherwise.
     [[nodiscard]] const std::string& publicName(const llvm::StringRef key, const llvm::StringRef section) const
     {
-        const SurfaceDecl* const alias =
-            tree_.find(file(key), SurfaceDeclKind::Alias, SurfaceEntity{key.str(), section.str(), {}, {}});
+        const SurfaceDecl* const alias = beside(key, SurfaceDeclKind::Alias, section);
         return (alias != nullptr) ? alias->name : declaredName(key, section);
     }
 
-    /// @brief The declaration of @p kind beside the definition's types for @p section, stating
-    ///        @p fact; null where the file makes none.
+    /// @brief @p section's type, after each type that encloses it, joined by `::`: each type's
+    ///        declared name where @p declared is set, and its public name otherwise.
+    [[nodiscard]] std::string typePath(const llvm::StringRef key,
+                                       const llvm::StringRef section,
+                                       const bool            declared) const
+    {
+        std::string       out    = declared ? declaredName(key, section) : publicName(key, section);
+        const std::size_t parent = *tree_.scope(tree_.typeScope(key, section)).parent;
+        if (!section.empty() && (tree_.scope(parent).kind == SurfaceScopeKind::Type))
+        {
+            return typePath(key, {}, declared) + "::" + out;
+        }
+        return out;
+    }
+
+    /// @brief The declaration of @p kind beside @p section's type, in the scope that encloses it,
+    ///        stating @p fact; null where that scope makes none.
     [[nodiscard]] const SurfaceDecl* beside(const llvm::StringRef              key,
                                             const SurfaceDeclKind              kind,
                                             const llvm::StringRef              section,
                                             const std::optional<GeneratedFact> fact = std::nullopt) const
     {
-        return tree_.find(file(key), kind, SurfaceEntity{key.str(), section.str(), {}, {}}, fact);
+        return tree_.find(*tree_.scope(tree_.typeScope(key, section)).parent,
+                          kind,
+                          SurfaceEntity{key.str(), section.str(), {}, {}},
+                          fact);
     }
 
     /// @brief The name of the declaration of @p kind in @p section's structure for @p member,
@@ -284,6 +301,12 @@ public:
     [[nodiscard]] const std::string& publicName() const
     {
         return names_.publicName(key_, section_);
+    }
+
+    /// @brief The section's type after each type that encloses it, by declared or public names.
+    [[nodiscard]] std::string path(const bool declared) const
+    {
+        return names_.typePath(key_, section_, declared);
     }
 
     /// @brief The name of the data member the DSDL field @p member is.
@@ -2100,7 +2123,7 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
     {
         // The same guard C carries, rendered once: generated C++ already includes the C runtime.
-        for (const auto& line : llvmdsdl::emitter::c::renderLittleEndianGuardLines(typeName))
+        for (const auto& line : llvmdsdl::emitter::c::renderLittleEndianGuardLines(names.path(false)))
         {
             w.line(line);
         }
@@ -2161,17 +2184,18 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     // header is compiled for.
     if (!accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
     {
+        const std::string path = names.path(true);
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
         w.line("static_assert(" + file.standard("std::is_standard_layout") + "<" + declaredName + ">::value, \"" +
-               declaredName + ": the structure is not the byte image its serialisation assumes\");");
+               path + ": the structure is not the byte image its serialisation assumes\");");
         w.line("static_assert(sizeof(" + declaredName +
-               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + declaredName +
+               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + path +
                ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
             const std::string cppMember = names.field(member.fieldName);
             w.line("static_assert(" + file.standard("offsetof") + "(" + declaredName + ", " + cppMember +
-                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + declaredName + "." + cppMember +
+                   ") == " + std::to_string(member.offsetBytes) + "U, \"" + path + "." + cppMember +
                    ": not at the offset its serialisation assumes\");");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
@@ -2189,12 +2213,11 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
 
 llvm::Error emitSection(SourceWriter&                         w,
                         const CppFileNames&                   file,
-                        const SemanticDefinition&             def,
                         const CppSection&                     names,
                         const SectionMetadata&                metadata,
                         const SemanticSection&                section,
                         const CppFlavor                       flavor,
-                        const AttachedDoc&                    typeDoc,
+                        const AttachedDoc&                    doc,
                         const mlir::dsdl::SerializationPlanOp plan,
                         const CppSpelling&                    spelling,
                         const SectionBodies&                  bodies,
@@ -2226,11 +2249,7 @@ llvm::Error emitSection(SourceWriter&                         w,
                                      section,
                                      file,
                                      flavor,
-                                     docWithDeprecationNotice(typeDoc,
-                                                              section.deprecated,
-                                                              def.info.fullName,
-                                                              def.info.majorVersion,
-                                                              def.info.minorVersion),
+                                     doc,
                                      plan,
                                      spelling,
                                      bodies,
@@ -2344,40 +2363,39 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         }
     }
 
+    // The definition's doc, with the notice of its deprecation, is its outermost type's.
+    const AttachedDoc doc = docWithDeprecationNotice(def.doc,
+                                                     def.request.deprecated,
+                                                     def.info.fullName,
+                                                     def.info.majorVersion,
+                                                     def.info.minorVersion);
     if (def.isService)
     {
-        // The service alias and its wrappers name the request struct, never the request's public
-        // name, which is a deprecated alias when the service is.
-        const std::string& requestDeclared = names.declaredName(key, "request");
-        const std::string  aliasAttribute =
-            (def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "";
-        // The service's own facts, beside its types.
-        const auto service = [&names, &key](const SurfaceDeclKind kind,
-                                            const GeneratedFact   fact) -> const std::string& {
-            const SurfaceDecl* const decl = names.beside(key, kind, {}, fact);
-            if (decl == nullptr)
-            {
-                llvm::report_fatal_error(llvm::Twine("C++ backend: the surface declares no name of the service ") +
-                                         key);
-            }
-            return decl->name;
+        // The service is the struct that encloses its sections and states its own facts. One
+        // declared apart is published under an alias, deprecated where the service is.
+        const auto fact = [&names, &key](const GeneratedFact stated) -> const std::string& {
+            return names.member(key, {}, SurfaceDeclKind::Constant, {}, stated);
         };
-
-        w.line("constexpr const char* " + service(SurfaceDeclKind::Constant, GeneratedFact::FullName) + " = \"" +
-               def.info.fullName + "\";");
-        w.line("constexpr const char* " + service(SurfaceDeclKind::Constant, GeneratedFact::FullNameAndVersion) +
-               " = \"" + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-               std::to_string(def.info.minorVersion) + "\";");
+        emitAttachedDocCpp(w, doc);
+        w.open("struct " + names.declaredName(key, {}) + " {");
+        w.line("static constexpr const char* " + fact(GeneratedFact::FullName) + " = \"" + def.info.fullName + "\";");
+        w.line("static constexpr const char* " + fact(GeneratedFact::FullNameAndVersion) + " = \"" + def.info.fullName +
+               "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + "\";");
+        w.line("static constexpr bool " + fact(GeneratedFact::HasFixedPortId) + " = " +
+               (def.info.fixedPortId ? "true;" : "false;"));
+        if (def.info.fixedPortId)
+        {
+            w.line("static constexpr " + file.standard("std::uint16_t") + " " + fact(GeneratedFact::FixedPortId) +
+                   " = " + std::to_string(*def.info.fixedPortId) + "U;");
+        }
         w.separate();
-
         if (auto err = emitSection(w,
                                    file,
-                                   def,
                                    CppSection(names, key, "request"),
                                    sectionMetadata(def.info, def.request, schema, "request"),
                                    def.request,
                                    flavor,
-                                   def.doc,
+                                   {},
                                    sectionPlan(schema, "request"),
                                    spelling,
                                    bodies["request"],
@@ -2389,12 +2407,11 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         {
             if (auto err = emitSection(w,
                                        file,
-                                       def,
                                        CppSection(names, key, "response"),
                                        sectionMetadata(def.info, *def.response, schema, "response"),
                                        *def.response,
                                        flavor,
-                                       def.doc,
+                                       {},
                                        sectionPlan(schema, "response"),
                                        spelling,
                                        bodies["response"],
@@ -2403,41 +2420,25 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                 return std::move(err);
             }
         }
-
+        w.close("};");
+        w.separate();
         if (const SurfaceDecl* const alias = names.beside(key, SurfaceDeclKind::Alias, {}))
         {
-            w.line("using " + alias->name + aliasAttribute + " = " + requestDeclared + ";");
+            w.line("using " + alias->name +
+                   ((def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "") + " = " +
+                   names.declaredName(key, {}) + ";");
+            w.separate();
         }
-        w.line("constexpr " + file.standard("std::size_t") + " " +
-               service(SurfaceDeclKind::Constant, GeneratedFact::ExtentBytes) + " = " + requestDeclared +
-               "::" + names.member(key, "request", SurfaceDeclKind::Constant, {}, GeneratedFact::ExtentBytes) + ";");
-        w.line(
-            "constexpr " + file.standard("std::size_t") + " " +
-            service(SurfaceDeclKind::Constant, GeneratedFact::SerializationBufferSizeBytes) + " = " + requestDeclared +
-            "::" +
-            names.member(key, "request", SurfaceDeclKind::Constant, {}, GeneratedFact::SerializationBufferSizeBytes) +
-            ";");
-        // The service-ID belongs to the service, and this alias is how the service is named.
-        w.line("constexpr bool " + service(SurfaceDeclKind::Constant, GeneratedFact::HasFixedPortId) + " = " +
-               (def.info.fixedPortId ? "true;" : "false;"));
-        if (def.info.fixedPortId)
-        {
-            w.line("constexpr " + file.standard("std::uint16_t") + " " +
-                   service(SurfaceDeclKind::Constant, GeneratedFact::FixedPortId) + " = " +
-                   std::to_string(*def.info.fixedPortId) + "U;");
-        }
-        w.separate();
     }
     else
     {
         if (auto err = emitSection(w,
                                    file,
-                                   def,
                                    CppSection(names, key, ""),
                                    sectionMetadata(def.info, def.request, schema, ""),
                                    def.request,
                                    flavor,
-                                   def.doc,
+                                   doc,
                                    sectionPlan(schema, ""),
                                    spelling,
                                    bodies[""],
