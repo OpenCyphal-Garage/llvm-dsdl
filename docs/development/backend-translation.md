@@ -98,6 +98,14 @@ operation through a `BodySpelling` — types and literals, operators with width 
 primitive calls, member, element, array and union access, signatures. One skeleton; one spelling
 per language. It takes the function and nothing else: no `SemanticModule`.
 
+The declaration half has the same shape. `DeclarationRenderer`, in
+[`lib/CodeGen/DeclarationRenderer.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/DeclarationRenderer.cpp),
+walks one file scope of the surface tree in the order a language's layout names the parts of each
+file it writes, one empty line between two parts, and asks a `DeclarationSpelling` for the syntax.
+It declares and defines each lowered function from one signature the spelling writes, and writes
+the body through `translateFunction`; what the tree does not hold, it reads from the definition's
+facts. C's declaration half is written by it.
+
 ## A value is named by the operation that defines it
 
 A `dsdl` operation states what its result is, and several name the DSDL member it belongs to:

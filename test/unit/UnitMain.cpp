@@ -32,7 +32,7 @@ int main()
     ok      = runAnalyzerTests() && ok;
     ok      = runAliasLayoutTests() && ok;
     ok      = runRuntimeTests() && ok;
-    ok      = runCHeaderRenderTests() && ok;
+    ok      = runSourceWriterTests() && ok;
     ok      = runConstantLiteralRenderTests() && ok;
     ok      = runDefinitionDependenciesTests() && ok;
     ok      = runDefinitionIndexTests() && ok;

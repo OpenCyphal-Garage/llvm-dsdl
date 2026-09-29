@@ -144,7 +144,8 @@ public:
 
     // Functions.
 
-    /// @brief Opens @p fn: its signature and the start of its body.
+    /// @brief Opens @p fn's body, and writes its signature ahead of it where no
+    ///        `DeclarationRenderer` wrote the signature already.
     /// @return The parameter names, one per argument.
     virtual std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const = 0;
 

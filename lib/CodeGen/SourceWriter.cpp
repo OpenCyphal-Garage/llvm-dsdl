@@ -38,14 +38,34 @@ std::string IndentPolicy::prefix(const int depth) const
     return out;
 }
 
+void SourceWriter::begin()
+{
+    if (separating_ && written_ && !afterBlank_)
+    {
+        out_ << '\n';
+    }
+    separating_ = false;
+}
+
 void SourceWriter::line(const std::string& text)
 {
+    begin();
     out_ << policy_.prefix(depth_) << text << '\n';
+    written_    = true;
+    afterBlank_ = false;
 }
 
 void SourceWriter::blank()
 {
+    separating_ = false;
     out_ << '\n';
+    written_    = true;
+    afterBlank_ = true;
+}
+
+void SourceWriter::separate()
+{
+    separating_ = true;
 }
 
 void SourceWriter::indent()

@@ -20,7 +20,7 @@ add_executable(llvmdsdl-unit-tests
   AnalyzerTests.cpp
   AliasLayoutTests.cpp
   RuntimeTests.cpp
-  CHeaderRenderTests.cpp
+  SourceWriterTests.cpp
   ConstantLiteralRenderTests.cpp
   DefinitionDependenciesTests.cpp
   DefinitionIndexTests.cpp

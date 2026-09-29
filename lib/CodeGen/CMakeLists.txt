@@ -59,6 +59,7 @@ add_custom_target(llvmdsdl-embedded-sources
 add_library(llvmdsdlCodeGen
   EmbeddedSources.cpp
   BodyTranslator.cpp
+  DeclarationRenderer.cpp
   ConstantLiteralRender.cpp
   DefinitionDependencies.cpp
   DefinitionIndex.cpp
