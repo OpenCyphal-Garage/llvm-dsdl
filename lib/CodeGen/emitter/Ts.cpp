@@ -20,6 +20,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
+#include "llvmdsdl/CodeGen/DeclarationRenderer.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
 #include "llvmdsdl/CodeGen/SourceWriter.h"
@@ -711,6 +712,8 @@ public:
 
     // Functions.
 
+    /// @brief Opens a body under the signature `TsDeclarations` wrote, binding what the body reads
+    ///        in the plan's types where the signature speaks the member's.
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
@@ -723,34 +726,21 @@ public:
         }
         if (direction && (*direction == "wire_image"))
         {
-            w.open("export function " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) +
-                   "(value: " + planOf(fn.getArgument(0)).typeName + "): Uint8Array {");
             return {"value"};
         }
         if (direction && (*direction == "from_wire_image"))
         {
-            const std::string& type = planOf(fn.getResultTypes().front()).typeName;
-            w.open("export function " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) +
-                   "(bytes: Uint8Array): " +
-                   ((fn.getNumResults() == 3) ? "{ value: " + type + "; consumed: number }" : type) + " {");
             return {"bytes"};
         }
         if (!direction)
         {
             std::vector<std::string> parameters;
-            std::string              list;
             for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
             {
                 parameters.push_back("p" + std::to_string(index));
-                list += (list.empty() ? "" : ", ") + parameters.back() + ": " + typeName(argument.getType());
             }
-            w.open("function " + functionName(fn.getSymName()) + "(" + list +
-                   "): " + typeName(fn.getResultTypes().front()) + " {");
             return parameters;
         }
-        const Plan& plan = planOf(fn.getArgument(0));
-        w.open("export function " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) +
-               "(obj: " + plan.typeName + ", buffer: Uint8Array): number {");
         // A body of a definition with no fields reads nothing of its buffer, and the entry point's
         // signature is every body's.
         if (!readsArgument(fn, 1))
@@ -758,6 +748,38 @@ public:
             w.line("void buffer;");
         }
         return {"obj", "buffer"};
+    }
+
+    /// @brief The signature of @p fn, declared as @p name.
+    [[nodiscard]] std::string signature(mlir::func::FuncOp fn, const std::string& name) const
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            std::string list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                list +=
+                    (list.empty() ? "" : ", ") + ("p" + std::to_string(index)) + ": " + typeName(argument.getType());
+            }
+            return "function " + name + "(" + list + "): " + typeName(fn.getResultTypes().front());
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return accessorSignature(fn, name, *direction == "get");
+        }
+        if (*direction == "wire_image")
+        {
+            return "export function " + name + "(value: " + planOf(fn.getArgument(0)).typeName + "): Uint8Array";
+        }
+        if (*direction == "from_wire_image")
+        {
+            const std::string& type = planOf(fn.getResultTypes().front()).typeName;
+            return "export function " + name + "(bytes: Uint8Array): " +
+                   ((fn.getNumResults() == 3) ? "{ value: " + type + "; consumed: number }" : type);
+        }
+        return "export function " + name + "(obj: " + planOf(fn.getArgument(0)).typeName +
+               ", buffer: Uint8Array): number";
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -840,28 +862,41 @@ public:
         w.line("void " + expr.str() + ";");
     }
 
-    /// @brief Opens a getter or a setter: an exported function named after the type and the
-    ///        member, as the bodies are, speaking the member's own type. The plan holds an
-    ///        integer in a `bigint`: the size is the buffer's own length as one, an expression
-    ///        rather than a local; an index, and a `number` or a `boolean` member, are rebound at
-    ///        entry and a getter's answer is converted at the return.
-    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    /// @brief A getter's or a setter's signature: an exported function named after the type and the
+    ///        member, as the bodies are, speaking the member's own type.
+    [[nodiscard]] std::string accessorSignature(mlir::func::FuncOp fn, const std::string& name, const bool getter) const
     {
-        const Accessed     a         = accessed(fn);
-        const Storage      storage   = storageOf(*a.member);
-        const std::string& name      = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
-        const bool         composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
-        const bool         indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const std::string  index     = indexed ? ", elementIndex: number" : "";
-        const bool         rebind    = (storage == Storage::Number) || (storage == Storage::Boolean);
-        accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_.clear();
-        if (composite)
+        const Accessed    a       = accessed(fn);
+        const Storage     storage = storageOf(*a.member);
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string index   = indexed ? ", elementIndex: number" : "";
+        const bool        rebind  = (storage == Storage::Number) || (storage == Storage::Boolean);
+        if (getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front()))
         {
             // The nested type's buffer, as a subarray, which carries its own length.
-            w.open("export function " + name + "(buffer: Uint8Array" + index + "): Uint8Array {");
+            return "export function " + name + "(buffer: Uint8Array" + index + "): Uint8Array";
         }
-        else if (getter)
+        if (getter)
+        {
+            return "export function " + name + "(buffer: Uint8Array" + index + "): " + elementTsType(*a.member);
+        }
+        return "export function " + name + "(buffer: Uint8Array" + index + ", " +
+               (rebind ? "memberValue: " : "value: ") + elementTsType(*a.member) + "): void";
+    }
+
+    /// @brief Opens a getter or a setter. The plan holds an integer in a `bigint`: the size is the
+    ///        buffer's own length as one, an expression rather than a local; an index, and a
+    ///        `number` or a `boolean` member, are rebound at entry and a getter's answer is converted
+    ///        at the return.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const Accessed a         = accessed(fn);
+        const Storage  storage   = storageOf(*a.member);
+        const bool     composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
+        const bool     indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
+        accessor_                = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
+        if (getter && !composite)
         {
             if (storage == Storage::Number)
             {
@@ -871,12 +906,6 @@ public:
             {
                 returnCast_ = "boolean";
             }
-            w.open("export function " + name + "(buffer: Uint8Array" + index + "): " + elementTsType(*a.member) + " {");
-        }
-        else
-        {
-            w.open("export function " + name + "(buffer: Uint8Array" + index + ", " +
-                   (rebind ? "memberValue: " : "value: ") + elementTsType(*a.member) + "): void {");
         }
         std::vector<std::string> parameters{"buffer", "BigInt(buffer.length)"};
         if (indexed)
@@ -1895,25 +1924,6 @@ private:
     mutable unsigned fresh_{0};
 };
 
-/// @brief The symbol of @p function.
-llvm::StringRef symbolOf(mlir::func::FuncOp function)
-{
-    return function.getSymName();
-}
-
-/// @brief The bodies `lower-dsdl-bodies` built for one section.
-struct SectionBodies final
-{
-    mlir::func::FuncOp serialize;
-    mlir::func::FuncOp deserialize;
-    mlir::func::FuncOp initialize;
-    /// @brief The wire image over the pair: into new bytes, and a new value read from them.
-    mlir::func::FuncOp wireImage;
-    mlir::func::FuncOp fromWireImage;
-    /// @brief The section's field accessors, getters and setters, in the module's order.
-    std::vector<mlir::func::FuncOp> accessors;
-};
-
 /// @brief The literal a stored constant is, for a member of @p type.
 std::string tsStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value)
 {
@@ -2025,74 +2035,196 @@ void emitMakeFunction(SourceWriter&           w,
 }
 
 /// @brief One section: its type, its constants, its three bodies and the entry points that wrap them.
-llvm::Error emitSection(SourceWriter&             w,
-                        const TsSection&          names,
-                        const SemanticSection&    section,
-                        const SectionMetadata&    metadata,
-                        const AttachedDoc&        typeDoc,
-                        const TsFileNames&        file,
-                        const SemanticDefinition& def,
-                        const TsSpelling&         spelling,
-                        const SectionBodies&      bodies,
-                        PlanBodyLookups&          lookups)
+/// @brief TypeScript's layout: a module per definition, holding its facts and helpers, then each
+///        section's interface, factory, constants and functions, then a service's alias.
+const DeclarationLayout& tsLayout()
 {
-    // The object type and its factory, which an accessors-only run leaves out.
-    if (!file.context().accessorsOnly())
-    {
-        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no plan bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
-        }
-        auto init = readInitializer(bodies.initialize);
-        if (!init)
-        {
-            return init.takeError();
-        }
-        emitSectionType(w,
-                        names,
-                        section,
-                        typeDoc,
-                        file,
-                        def.info.fullName,
-                        def.info.majorVersion,
-                        def.info.minorVersion);
-        w.separate();
-        emitMakeFunction(w,
-                         names,
-                         names.names().function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry),
-                         section,
-                         *init,
-                         file);
-    }
-    w.separate();
-    emitUnionOptionTags(w, names, metadata);
-    emitSectionConstants(w, names, section);
-    // The serdes and the wire image over them, then a wire-flat section's field accessors, each one
-    // read or one write at the field's offset.
-    std::vector<mlir::func::FuncOp> functions;
-    if (!file.context().accessorsOnly())
-    {
-        if (!bodies.wireImage || !bodies.fromWireImage)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no wire image bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
-        }
-        functions = {bodies.serialize, bodies.deserialize, bodies.wireImage, bodies.fromWireImage};
-    }
-    functions.insert(functions.end(), bodies.accessors.begin(), bodies.accessors.end());
-    for (const mlir::func::FuncOp function : functions)
-    {
-        w.separate();
-        if (auto err = translateFunction(function, spelling, w, lookups))
-        {
-            return err;
-        }
-    }
-    return llvm::Error::success();
+    static const DeclarationLayout layout{
+        .files   = {{LayoutPart::Prelude,
+                     LayoutPart::Imports,
+                     LayoutPart::DefinitionConstants,
+                     LayoutPart::HelperDefinitions,
+                     LayoutPart::Sections,
+                     LayoutPart::Alias}},
+        .section = {LayoutPart::Type,
+                    LayoutPart::Methods,
+                    LayoutPart::SectionConstants,
+                    LayoutPart::SectionDefinitions},
+        .indent  = IndentPolicy::spaces(2),
+    };
+    return layout;
 }
+
+/// @brief Spells TypeScript's declarations: a module per definition, holding each section's
+///        interface and factory beside its bodies, accessors and wire image.
+class TsDeclarations final : public DeclarationSpelling
+{
+public:
+    /// @param[in] file How the module names what it takes from other modules.
+    /// @param[in] imports What the module named, which @p file records.
+    /// @param[in] types The TypeScript spelling of the IR's types and signatures.
+    /// @param[in] initializers Each section's initialiser, by section; none in an accessors-only run.
+    TsDeclarations(const TsFileNames&                             file,
+                   const ImportSet&                               imports,
+                   const TsSpelling&                              types,
+                   const std::map<std::string, InitializerShape>& initializers)
+        : file_(file)
+        , imports_(imports)
+        , types_(types)
+        , initializers_(initializers)
+    {
+    }
+
+    void write(DeclarationSite& site, const LayoutPart part) const override
+    {
+        switch (part)
+        {
+        case LayoutPart::Prelude: {
+            const DiscoveredDefinition& info = site.facts().definition().info;
+            site.writer().line(generatedCommentLine("TypeScript backend"));
+            site.writer().line("// Source: " + info.fullName + "." + std::to_string(info.majorVersion) + "." +
+                               std::to_string(info.minorVersion));
+            return;
+        }
+        case LayoutPart::DefinitionConstants:
+            definitionConstants(site);
+            return;
+        case LayoutPart::Type:
+            if (!file_.context().accessorsOnly())
+            {
+                const DiscoveredDefinition& info = site.facts().definition().info;
+                emitSectionType(site.writer(),
+                                sectionOf(site),
+                                site.facts().section(*site.section()),
+                                site.facts().definition().doc,
+                                file_,
+                                info.fullName,
+                                info.majorVersion,
+                                info.minorVersion);
+            }
+            return;
+        case LayoutPart::Methods:
+            factory(site);
+            return;
+        case LayoutPart::SectionConstants:
+            emitUnionOptionTags(site.writer(), sectionOf(site), site.facts().metadata(*site.section()));
+            emitSectionConstants(site.writer(), sectionOf(site), site.facts().section(*site.section()));
+            return;
+        case LayoutPart::Alias:
+            alias(site);
+            return;
+        default:
+            return;
+        }
+    }
+
+    [[nodiscard]] std::string imports(const DeclarationSite& /*site*/) const override
+    {
+        return renderTsImports(imports_);
+    }
+
+    [[nodiscard]] std::string signature(const SurfaceDecl& decl, mlir::func::FuncOp fn) const override
+    {
+        return types_.signature(fn, decl.name);
+    }
+
+    void prototype(SourceWriter& /*w*/, const std::string& /*signature*/) const override
+    {
+        llvm::report_fatal_error("TypeScript declares no function ahead of its definition");
+    }
+
+    void openDefinition(SourceWriter& w, const SurfaceDecl& /*decl*/, const std::string& signature) const override
+    {
+        w.open(signature + " {");
+    }
+
+    void forward(SourceWriter& /*w*/,
+                 const SurfaceDecl& /*published*/,
+                 llvm::StringRef /*callee*/,
+                 mlir::func::FuncOp /*fn*/) const override
+    {
+        llvm::report_fatal_error("TypeScript publishes no function over another");
+    }
+
+private:
+    [[nodiscard]] TsSection sectionOf(const DeclarationSite& site) const
+    {
+        return TsSection(file_.context().names(), site.facts().key(), *site.section());
+    }
+
+    /// @brief The definition's facts at the top of its module. Aliasability is a property of a
+    ///        payload, so a service answers for each of its two and a message answers once, under the
+    ///        name of the thing the verdict is about.
+    void definitionConstants(DeclarationSite& site) const
+    {
+        const TsSurface&          names = file_.context().names();
+        const std::string&        key   = site.facts().key();
+        const SemanticDefinition& def   = site.facts().definition();
+        SourceWriter&             w     = site.writer();
+        const auto constant             = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
+            return "export const " + names.declared(key, SurfaceDeclKind::Constant, section, {}, fact) + " = ";
+        };
+        w.line(constant(GeneratedFact::GeneratorVersion) + "\"" + std::string(llvmdsdl::kVersionString) + "\";");
+        w.line(constant(GeneratedFact::FullName) + "\"" + def.info.fullName + "\";");
+        w.line(constant(GeneratedFact::IsDeprecated) + std::string(def.request.deprecated ? "true" : "false") + ";");
+        w.line(constant(GeneratedFact::VersionMajor) + std::to_string(def.info.majorVersion) + ";");
+        w.line(constant(GeneratedFact::VersionMinor) + std::to_string(def.info.minorVersion) + ";");
+        w.line(constant(GeneratedFact::HasFixedPortId) + std::string(def.info.fixedPortId ? "true" : "false") + ";");
+        if (def.info.fixedPortId)
+        {
+            w.line(constant(GeneratedFact::FixedPortId) + std::to_string(*def.info.fixedPortId) + ";");
+        }
+        for (const std::string& section : site.facts().sections())
+        {
+            const AliasVerdict flat = wireFlatVerdict(site.facts().plan(section));
+            w.line(constant(GeneratedFact::WireFlat, section) + std::string(flat.holds ? "true" : "false") + ";");
+            w.line(constant(GeneratedFact::WireFlatReason, section) + "\"" + flat.reason + "\";");
+        }
+    }
+
+    /// @brief The section's factory, which makes a value as the initialise body sets it.
+    void factory(DeclarationSite& site) const
+    {
+        const auto found = initializers_.find(*site.section());
+        if (found == initializers_.end())
+        {
+            return;
+        }
+        const TsSection section = sectionOf(site);
+        for (const SurfaceDecl* const entry : site.declarations(SurfaceDeclKind::Entry))
+        {
+            const std::optional<PlanSymbol> symbol = parsePlanSymbol(entry->of->function);
+            if (symbol && (symbol->function == PlanFunction::Initialize))
+            {
+                emitMakeFunction(site.writer(),
+                                 section,
+                                 entry->name,
+                                 site.facts().section(*site.section()),
+                                 found->second,
+                                 file_);
+            }
+        }
+    }
+
+    /// @brief A service's alias for its request's type, which an accessors-only run does not emit.
+    void alias(DeclarationSite& site) const
+    {
+        if (file_.context().accessorsOnly() || !site.facts().definition().isService)
+        {
+            return;
+        }
+        for (const SurfaceDecl* const alias : site.fileDeclarations(SurfaceDeclKind::Alias))
+        {
+            site.writer().line("export type " + alias->name + " = " +
+                               TsSection(file_.context().names(), site.facts().key(), "request").typeName() + ";");
+        }
+    }
+
+    const TsFileNames&                             file_;
+    const ImportSet&                               imports_;
+    const TsSpelling&                              types_;
+    const std::map<std::string, InitializerShape>& initializers_;
+};
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
@@ -2106,177 +2238,39 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-
     // The declarations and bodies first, naming what they take from other modules as they write it;
     // the imports are written after, from what was named.
-    const TsSurface&                     names = ctx.names();
-    const std::string                    key   = keyOf(def.info);
-    ImportSet                            imports;
-    const TsFileNames                    file(ctx, imports, key);
-    const TsSpelling                     spelling(schema, names, file);
-    std::vector<mlir::func::FuncOp>      helpers;
-    std::map<std::string, SectionBodies> bodies;
+    const TsSurface&  names = ctx.names();
+    const std::string key   = keyOf(def.info);
+    ImportSet         imports;
+    const TsFileNames file(ctx, imports, key);
+    const TsSpelling  spelling(schema, names, file);
+    // The functions the module translates: every one but a helper nothing calls, which an
+    // accessors-only run has many of, and an initialiser, which is the section's factory.
+    FunctionBodies                          bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    std::map<std::string, InitializerShape> initializers;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
-        const auto direction = planBodyDirection(fn);
-        if (!direction)
+        if (fn->hasAttr("llvmdsdl.unreferenced"))
         {
-            // A helper nothing calls is left out; an accessors-only run has many.
-            if (fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            helpers.push_back(fn);
             continue;
         }
-        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
-        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        if (*direction == "serialize")
+        if (planBodyDirection(fn) == "initialize")
         {
-            entry.serialize = fn;
+            auto init = readInitializer(fn);
+            if (!init)
+            {
+                return init.takeError();
+            }
+            const auto section = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+            initializers.emplace(section ? section.getValue().str() : std::string{}, std::move(*init));
+            continue;
         }
-        else if (*direction == "deserialize")
-        {
-            entry.deserialize = fn;
-        }
-        else if (*direction == "initialize")
-        {
-            entry.initialize = fn;
-        }
-        else if (*direction == "wire_image")
-        {
-            entry.wireImage = fn;
-        }
-        else if (*direction == "from_wire_image")
-        {
-            entry.fromWireImage = fn;
-        }
-        else if (*direction == "get" || *direction == "set")
-        {
-            entry.accessors.push_back(fn);
-        }
-        else
-        {
-            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
-        }
+        bodies.functions.push_back(fn);
     }
-
-    std::ostringstream head;
-    {
-        SourceWriter hw = makeTsWriter(head);
-        hw.line(generatedCommentLine("TypeScript backend"));
-        hw.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-                std::to_string(def.info.minorVersion));
-    }
-    std::ostringstream out;
-    SourceWriter       w = makeTsWriter(out);
-    // The header, the imports and the declarations, one empty line apart.
-    const auto assemble = [&]() {
-        const std::string block = renderTsImports(imports);
-        return head.str() + "\n" + (block.empty() ? "" : block + "\n") + out.str();
-    };
-
-    const auto constant = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
-        return "export const " + names.declared(key, SurfaceDeclKind::Constant, section, {}, fact) + " = ";
-    };
-    w.line(constant(GeneratedFact::GeneratorVersion) + "\"" + std::string(llvmdsdl::kVersionString) + "\";");
-    w.line(constant(GeneratedFact::FullName) + "\"" + def.info.fullName + "\";");
-    w.line(constant(GeneratedFact::IsDeprecated) + std::string(def.request.deprecated ? "true" : "false") + ";");
-    w.line(constant(GeneratedFact::VersionMajor) + std::to_string(def.info.majorVersion) + ";");
-    w.line(constant(GeneratedFact::VersionMinor) + std::to_string(def.info.minorVersion) + ";");
-    w.line(constant(GeneratedFact::HasFixedPortId) + std::string(def.info.fixedPortId ? "true" : "false") + ";");
-    if (def.info.fixedPortId)
-    {
-        w.line(constant(GeneratedFact::FixedPortId) + std::to_string(*def.info.fixedPortId) + ";");
-    }
-    // Aliasability is a property of a payload, so a service answers for each of its two and a
-    // message answers once, under the name of the thing the verdict is about.
-    const auto emitLayoutVerdicts = [&w, &constant, schema](const llvm::StringRef section) {
-        const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
-        const AliasVerdict                    flat = wireFlatVerdict(plan);
-        w.line(constant(GeneratedFact::WireFlat, section) + std::string(flat.holds ? "true" : "false") + ";");
-        w.line(constant(GeneratedFact::WireFlatReason, section) + "\"" + flat.reason + "\";");
-    };
-    if (def.isService)
-    {
-        emitLayoutVerdicts("request");
-        emitLayoutVerdicts("response");
-    }
-    else
-    {
-        emitLayoutVerdicts("");
-    }
-    w.separate();
-
-    for (const mlir::func::FuncOp helper : helpers)
-    {
-        if (auto err = translateFunction(helper, spelling, w, lookups))
-        {
-            return std::move(err);
-        }
-        w.separate();
-    }
-
-    if (!def.isService)
-    {
-        if (auto err = emitSection(w,
-                                   TsSection(names, key, ""),
-                                   def.request,
-                                   sectionMetadata(def.info, def.request, schema, ""),
-                                   def.doc,
-                                   file,
-                                   def,
-                                   spelling,
-                                   bodies[""],
-                                   lookups))
-        {
-            return std::move(err);
-        }
-        return assemble();
-    }
-
-    const TsSection request(names, key, "request");
-    if (auto err = emitSection(w,
-                               request,
-                               def.request,
-                               sectionMetadata(def.info, def.request, schema, "request"),
-                               def.doc,
-                               file,
-                               def,
-                               spelling,
-                               bodies["request"],
-                               lookups))
-    {
-        return std::move(err);
-    }
-    w.separate();
-
-    if (def.response)
-    {
-        if (auto err = emitSection(w,
-                                   TsSection(names, key, "response"),
-                                   *def.response,
-                                   sectionMetadata(def.info, *def.response, schema, "response"),
-                                   def.doc,
-                                   file,
-                                   def,
-                                   spelling,
-                                   bodies["response"],
-                                   lookups))
-        {
-            return std::move(err);
-        }
-        w.separate();
-    }
-
-    // The alias names the request's object type, which an accessors-only run does not emit.
-    const SurfaceDecl* const alias =
-        names.tree().find(names.file(key), SurfaceDeclKind::Alias, SurfaceEntity{key, "", "", ""});
-    if (!ctx.accessorsOnly() && (alias != nullptr))
-    {
-        w.line("export type " + alias->name + " = " + request.typeName() + ";");
-    }
-    return assemble();
+    const TsDeclarations declarations(file, imports, spelling, initializers);
+    return DeclarationRenderer(names.tree(), tsLayout(), declarations)
+        .render(names.file(key), 0, DefinitionFacts(def, schema), &bodies);
 }
 
 /// @brief The runtime the generated modules call, for @p runtimeSpecialization, from the source
