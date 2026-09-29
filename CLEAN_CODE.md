@@ -314,8 +314,8 @@ is a scope together with what the enclosing function is to its type. Nothing sto
 reference. The lookup model is a `Lookup` part of the `LanguageTraits` row, which
 `llvmdsdl-language-classification` holds to naming no language. C++ writes rooted names today, such as
 `::uavcan::file::Path` inside its own namespace, so phase 4 reproduces them through a `Composition`
-column, `qualification = rooted`, which C++'s phase sets to `shortest` in the change that nests its
-types.
+column, `qualification = rooted`, which C++'s output change in phase 5 sets to `shortest` as it nests
+its types.
 
 ## One renderer, one declaration spelling per language
 
@@ -324,16 +324,31 @@ The declaration half takes the same shape: a shared renderer walks the surface t
 closing scopes, emitting declarations in dependency order, placing definitions — and asks a
 `DeclarationSpelling` for the syntax.
 
-The renderer holds: scope nesting and ordering, forward declarations where a language needs them,
-which declarations are public, and where a body is attached. The spelling holds: how this language
-opens a namespace, writes a field, declares a constant, spells a signature, marks a declaration
-internal, and returns an error. Every reference the renderer writes, in a declaration or a body, is
-spelled by `spell(site, declaration)`.
+The renderer holds: the order of a file's parts, from a layout each language states; scope nesting;
+forward declarations where a language needs them; which declarations are public; and where a body is
+attached. The spelling holds: how this language opens a namespace, writes a field, declares a
+constant, spells a signature, marks a declaration internal, and returns an error. A lowered
+function's signature is spelt once, from its IR function's types and its declaration's place in the
+tree, and serves as the prototype C and C++ declare and as the definition; `translateFunction` writes
+only the body. The signatures of functions no body lowers -- Go's encoding methods, C's public names,
+the initialiser factories -- are the spelling's too. What the tree does not hold -- a field's type and
+default, a constant's value, a section's metadata, a doc -- the spelling reads from a view of the
+definition's facts the renderer hands it. Every reference the renderer writes, in a declaration or a
+body, is spelled by `spell(site, declaration)`.
 
-This is where the string emission falls. `tools/count_emission_sites.py` counts the calls that write
+No declaration wraps a body. A body is written in the shape its language publishes -- the member's
+types, the row's error convention, a member or a free function where the language's target places
+it -- rather than in a neutral shape with an adapter around it. The interface that allocates and
+returns the encoded bytes is written once in each language's runtime and reached by the type; Go
+keeps a one-line method per type, which its `encoding` interfaces require, calling the runtime. C
+publishes an unversioned name over the versioned link name it compiles each body under, which
+unversioned type names require.
+
+This is where the string emission falls. `tools/count_emission_sites.py` counts the places that write
 generated text. When phase 2 took the count the six emitters held 1,230, 918 of them outside the
-`BodySpelling` subclass — the declaration half — and 412 of those in `Ts.cpp` alone. A signature is assembled by
-concatenation at every entry point, for every profile, in every language:
+`BodySpelling` subclass — the declaration half — and 412 of those in `Ts.cpp` alone, 340 of which
+wrote TypeScript's runtime line by line. A signature is assembled by concatenation at every entry
+point, for every profile, in every language:
 
 ```cpp
 w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const " : "_deserialize_(") +
@@ -341,10 +356,12 @@ w.line("inline std::int8_t " + plan.typeName + (serialize ? "_serialize_(const "
        "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes" + resource + ")");
 ```
 
-A signature in the tree is a declaration with typed parameters and a return; the spelling writes
-one parameter list. `llvmdsdl-emission-sites` holds each emitter's two counts to
-`test/integration/emission-sites.json`, so a count rises only by a retake that says why, and the
-declaration half is the measure the renderer is gated on.
+A lowered function's IR states its parameters and its return, and the spelling writes one parameter
+list from them. `llvmdsdl-emission-sites` holds each emitter's counts to
+`test/integration/emission-sites.json`, so a count rises only by a retake that says why. The
+declaration half is the measure the renderer is gated on, so the count scans every file of a
+language's declaration half and counts every line built as a string. A language's packaging writers
+live in a support file of their own, counted as a third figure that may not rise either.
 
 This is not licence to add a template engine. A template is a second statement of the shape, in a
 language the compiler cannot check, and it is what every code generator reaches for — nnvg included,
@@ -555,7 +572,8 @@ code: the same families, with a check subtracted only where its reason holds the
 written beside it. `readability-identifier-naming` states the design above. C's composed names are
 accepted in the three forms the design gives them -- a type, an entry point or accessor, and a fact
 or constant -- and every other C name takes C's own case. The C++ ruleset accepts no composed form,
-so `List_Request` and its free entry points are findings until the C++ phase nests them.
+so `List_Request` and its free entry points are findings until C++'s output change in phase 5 nests
+them.
 
 Every header is judged as a translation unit of its own, because `misc-include-cleaner` reads only a
 unit's main file and would otherwise never check a header's includes. The C++ judge reads the `std`
@@ -677,7 +695,7 @@ What is left is per-language.
 |------:|----------|------|-------|
 | 2,167 | C | `readability-identifier-naming` | 813 out-of-line bodies named apart from their type (`uavcan__file__List_0_2__Request__serialize_ir_`), 658 helpers, 334 `LLVMDSDL_SELECTED_*_` guards, and 360 locals with a trailing `_` |
 | 1,910 | C++ | `modernize-use-auto` | a declaration spells the type its initialising cast already names |
-| 1,163 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, and the section types and facts the C++ phase nests |
+| 1,163 | C++ | `readability-identifier-naming` | 658 helpers, 390 free entry points, and the section types and facts that nesting places inside the type |
 | 996 | Python | `E501` | long lines |
 | 756 | C | `bugprone-narrowing-conversions` | `int8_t` initialised from a conditional of `int` literals, where C++ spells the cast |
 | 658 | C | `misc-use-internal-linkage` | the helpers, which the design makes `static` |
@@ -735,7 +753,7 @@ the surface tree takes over.
 `tools/check_language_classification.py`, run as `llvmdsdl-language-classification`, refuses a
 comparison with a `Language` enumerator, a `case` on one, or a comparison with a language's
 `--target-language` spelling, outside the spelling tables and the driver's dispatch; the tree before
-this phase has 27. `llvmdsdl-emission-sites` holds each emitter's count of the calls that write text.
+this phase has 27. `llvmdsdl-emission-sites` holds each emitter's count of the places that write text.
 No generated byte changed: over the showroom and the regulated corpus, all seven targets, their
 naming manifests and the MLIR are identical before and after.
 
@@ -980,17 +998,35 @@ allows. The verifier holds each scope to one declaration of a name, so a collisi
 misses fails the run rather than the build.
 
 **5 — The declaration renderer.** `DeclarationSpelling` and the shared renderer; the hand-assembled
-signatures and scope prefixes are deleted from all six emitters. Still no generated byte changes.
-Gate: the same oracle, plus the emission-site count in the declaration half, which must fall.
+signatures and scope prefixes are deleted from all six emitters.
 
 TypeScript's runtime is an embedded source, `runtime/ts/`, as every other language's is. `Ts.cpp`
-had written it line by line in 340 of its 412 declaration sites, so its count is 72.
+had written it line by line in 340 of its 412 declaration sites. The count measures exactly what the
+renderer replaces: C's header text in `CHeaderRender.cpp` and `CIncludes.cpp`, the import blocks and
+every other line built as a string are counted, and the packaging writers are counted apart, in each
+language's `Packaging.cpp` file. Retaken, the declaration half holds 569 sites -- C 155, C++ 99, Rust 89,
+Go 98, TypeScript 68, Python 60 -- and packaging 54.
+
+The renderer lands a language at a time, in the order C, Python, Go, Rust, TypeScript, C++, and each
+language in two changes:
+
+1. Its output changes. The defects a renderer would otherwise encode are fixed -- the doubled blank
+   lines in C, C++ and TypeScript and in the accessors-only output of Go, Rust and TypeScript, and
+   the service wrappers' `deserialize` buffer that C and C++ leave without `const` -- and its bodies
+   take the shape its language publishes, which removes its wrappers. Gate: the language's judge,
+   the round-trip and parity lanes, and the oracle retaken.
+2. Its declaration half moves onto the renderer, byte-identical against that output. C's change
+   carries the renderer, the `DeclarationSpelling` interface and the facts view. Gate: the oracle
+   byte-identical, and the language's declaration count, which must fall.
+
+C++'s output change nests its types, and comes last: nesting is the largest change to the surface
+tree any language asks for, and taking it after five languages have exercised the tree tests it on
+the shape that stresses it most.
 
 **6 to 11 — One phase per language**, each flipping its row from *as today* to the target above and
-turning its judge from phase 1 green. Rust's and Go's names landed ahead of the mechanism, in #41
-and #42, and C++'s accessors in #49 and #54. C is cheapest and can go anywhere. C++ goes last of the
-six: nesting is the largest change to the surface tree any language asks for, and taking it after
-five languages have exercised the tree tests it on the shape that stresses it most.
+turning its judge from phase 1 green. Phase 5 gives each language's bodies their public shape and
+nests C++'s types; these phases carry the rest of each row. Rust's and Go's names landed ahead of the
+mechanism, in #41 and #42, and C++'s accessors in #49 and #54. C is cheapest and can go anywhere.
 
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
@@ -1167,6 +1203,36 @@ at six lowerings per analysis run.
 root-level names is then reported with every other collision. Rooting it at the DSDL namespaces would
 have kept those names in each language's reserved-name table only, and given the tree no scope
 without a DSDL source.
+
+**No declaration wraps a body.** A wrapper is a function the generator writes around one lowered
+function: C's accessor that casts an `int64_t` to the member's type, TypeScript's and Python's
+functions that raise on the status code their body returns, C++'s member that forwards to a free
+function. Each adapts a shape the generator chose, so the generator writes the shape instead. The
+interface that allocates and returns bytes composes the primitive the same way for every type, so it
+lives once in each runtime rather than in every type. C's unversioned public name over each versioned
+link name stays, so that two versions of a type link into one program.
+
+**A language's output changes before its renderer change.** The renderer is then held
+byte-identical to the output it keeps, and never learns a wrapper or a defect; the public API
+changes during phase 5, a language at a time. Holding phase 5 to today's bytes would have written
+each wrapper and defect into a spelling to delete in the language's phase.
+
+**A signature is the declaration spelling's.** A signature is a function's name, its parameters and
+their types, its return type, and the qualifiers that place it. The renderer asks for a lowered
+function's signature once and writes it as the prototype and as the definition. C and C++ build the
+two apart, and C++'s copies disagree on a parameter's `const`. `BodySpelling::openFunction` names
+the parameters and writes the body's opening lines, such as C++'s memory-resource lines.
+
+**The renderer lands with C, then Python, Go, Rust, TypeScript and C++.** C's output change is the
+smallest, so its renderer change is mostly the renderer itself, and C's shape tests the interface
+hardest short of nesting: two files per definition, prototypes, guards, macros, and a tag beside its
+typedef. Python is the simplest class-member shape, and C++ comes last with its nesting.
+
+**The count measures exactly what the renderer replaces.** It scans every file of a language's
+declaration half and counts each line built as a string, since C's header text in
+`CHeaderRender.cpp` and `CIncludes.cpp` and every import block would otherwise read as new when the
+renderer writes them. Packaging files are no declaration the renderer writes, so each language's
+packaging writers move to a support file, counted as a third figure that may not rise either.
 
 **TypeScript's index becomes per-directory barrels, in TypeScript's phase.** A module's public path
 then follows from its own DSDL name, so adding a definition cannot rename another's export. The
