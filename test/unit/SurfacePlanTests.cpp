@@ -822,10 +822,10 @@ bool runSurfacePlanTests()
         ok = expect(accessors, "FlatGetSpeed2\nFlatSetSpeed\n", "Go's accessors among its constants") && ok;
     }
 
-    // Python's generated names: the definition's facts at the top of its module, the bodies as
-    // the class's own methods and the ones a consumer calls over them, and the accessors among
-    // the fields, whose names they share a class with. A module imports each class its fields
-    // hold.
+    // Python's generated names: the definition's facts at the top of its module, the size the
+    // runtime's base class serialises into on the class, the bodies as the class's own methods, and
+    // the accessors among the fields, whose names they share a class with. A module imports each
+    // class its fields hold.
     {
         DefinitionParts pick = message("Pick",
                                        SectionParts{.fields    = {field("get_small", false, 0),
@@ -853,10 +853,9 @@ bool runSurfacePlanTests()
                     "        small : field\n"
                     "        far : field\n"
                     "        _tag : field\n"
+                    "        SERIALIZATION_BUFFER_SIZE_BYTES : value\n"
                     "        _serialize_into : value\n"
                     "        _deserialize_from : value\n"
-                    "        serialize : value\n"
-                    "        deserialize : value\n"
                     "        get_small_2 : value\n"
                     "      PICK_GET_SMALL_OPTION_TAG : value\n"
                     "      PICK_SMALL_OPTION_TAG : value\n"

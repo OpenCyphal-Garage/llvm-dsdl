@@ -493,6 +493,18 @@ private:
                 }
                 continue;
             }
+            if (member.onType && states(member.fact, parts, message, fixedPortId))
+            {
+                (void) declare(section.typeScope,
+                               member.name.str(),
+                               SurfaceDeclKind::Constant,
+                               nameClass,
+                               NameOrigin::Generated,
+                               of(""),
+                               SurfaceVisibility::Public,
+                               member.fact);
+                continue;
+            }
             if (states(member.fact, parts, message, fixedPortId))
             {
                 (void) declare(scope,

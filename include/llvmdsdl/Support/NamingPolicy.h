@@ -286,6 +286,10 @@ struct GeneratedName final
     /// @brief The name; for a fact stated once for each variable-length array field, what the
     ///        field's name follows.
     llvm::StringRef name;
+
+    /// @brief Whether the fact is stated on the type itself, under @ref name, wherever the language
+    ///        places the type's other constants.
+    bool onType{};
 };
 
 /// @brief The members the generator declares in a section's type beside those of its fields and

@@ -354,6 +354,18 @@ public:
         return imports_.member(ImportOrigin::Runtime, runtimeLoader(), "error_message");
     }
 
+    /// @brief The runtime's base of every generated class.
+    [[nodiscard]] std::string compositeObject() const
+    {
+        return imports_.member(ImportOrigin::Runtime, runtimeLoader(), "CompositeObject");
+    }
+
+    /// @brief The standard library's `typing` member @p name.
+    [[nodiscard]] std::string typing(const llvm::StringRef name) const
+    {
+        return imports_.member(ImportOrigin::Standard, "typing", name);
+    }
+
 private:
     [[nodiscard]] std::string runtimeLoader() const
     {
@@ -367,6 +379,9 @@ private:
 
 /// @brief The import block of a Python file that names @p imports: the standard library's, then the
 ///        package's own, each group closed by a blank line.
+/// @brief The line length `ruff` and `black` hold a Python file to by default.
+constexpr std::size_t kPythonLineLength = 88;
+
 std::string renderPythonImports(const ImportSet& imports)
 {
     // isort's layout: a group per origin, and within one the plain imports ahead of the `from` ones.
@@ -385,13 +400,26 @@ std::string renderPythonImports(const ImportSet& imports)
         }
         if (!module.members.empty())
         {
-            from += "from " + module.path + " import ";
-            for (const auto& [index, member] : llvm::enumerate(module.members))
+            std::vector<std::string> names;
+            std::string              joined;
+            for (const auto& member : module.members)
             {
-                from += (index == 0) ? "" : ", ";
-                from += member.name + ((member.local == member.name) ? "" : " as " + member.local);
+                names.push_back(member.name + ((member.local == member.name) ? "" : " as " + member.local));
+                joined += (joined.empty() ? "" : ", ") + names.back();
             }
-            from += "\n";
+            const std::string head = "from " + module.path + " import ";
+            if (head.size() + joined.size() <= kPythonLineLength)
+            {
+                from += head + joined + "\n";
+                continue;
+            }
+            // Too long for a line, it is wrapped as `ruff format` writes it: one name to a line.
+            from += head + "(\n";
+            for (const std::string& name : names)
+            {
+                from += "    " + name + ",\n";
+            }
+            from += ")\n";
         }
     }
     std::string out;
@@ -554,6 +582,16 @@ public:
         return names_.member(key_, section_, {}, fact);
     }
 
+    /// @brief The name of the class attribute stating @p fact.
+    [[nodiscard]] const std::string& classAttribute(const GeneratedFact fact) const
+    {
+        const SurfaceTree& tree = names_.tree();
+        return tree.nameOf(tree.typeScope(key_, section_),
+                           SurfaceDeclKind::Constant,
+                           SurfaceEntity{key_, section_, {}, {}},
+                           fact);
+    }
+
     /// @brief The name of the constant holding the tag value of the union option @p member.
     [[nodiscard]] const std::string& option(const llvm::StringRef member) const
     {
@@ -604,71 +642,38 @@ void emitSectionConstants(SourceWriter& w, const PySection& names, const Semanti
     }
 }
 
-/// @brief The methods a consumer calls, each wrapping the body it names.
-struct SectionEntryNames final
+/// @brief Opens a section's class: a dataclass of the runtime's `CompositeObject`, which composes
+///        `serialize` and `deserialize` from the class's bodies, stating the size of the buffer
+///        `serialize` writes into.
+void openClass(SourceWriter& w, const PySection& names, const SemanticSection& section, const PyFileNames& file)
 {
-    std::string serialize;
-    std::string serializeInto;
-    std::string deserialize;
-    std::string deserializeFrom;
-};
-
-void emitClassMethods(SourceWriter&            w,
-                      const std::string&       typeName,
-                      const SemanticSection&   section,
-                      const PyFileNames&       file,
-                      const SectionEntryNames& entries)
-{
-    const std::string raise = "raise ValueError(" + file.errorMessage() + "(result))";
-    // A value serialises into a buffer of the type's largest size; a deserialisation fills a
-    // default-constructed object. Each raises on the code a body answers.
-    w.open("def " + entries.serialize + "(self) -> bytes:");
-    w.line("buffer = bytearray(" + std::to_string((section.serializationBufferSizeBits + 7) / 8) + ")");
-    w.line("result = self." + entries.serializeInto + "(memoryview(buffer))");
-    w.open("if result < 0:");
-    w.line(raise);
-    w.dedent();
-    w.line("return bytes(buffer[:result])");
-    w.dedent();
-    w.blank();
-
-    w.line("@classmethod");
-    w.open("def " + entries.deserialize + "(cls, data: bytes | bytearray | memoryview) -> \"" + typeName + "\":");
-    w.line("value = cls()");
-    w.line("result = value." + entries.deserializeFrom + "(memoryview(data).cast(\"B\"))");
-    w.open("if result < 0:");
-    w.line(raise);
-    w.dedent();
-    w.line("return value");
-    w.dedent();
+    w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
+    w.open("class " + names.typeName() + "(" + file.compositeObject() + "):");
+    w.line(names.classAttribute(GeneratedFact::SerializationBufferSizeBytes) + ": " + file.typing("ClassVar") +
+           "[int] = " + std::to_string((section.serializationBufferSizeBits + 7) / 8));
 }
 
 const MemberDefault* memberDefault(const InitializerShape& init, const std::string& name);
 
-void emitStructSectionType(SourceWriter&            w,
-                           const InitializerShape&  init,
-                           const PySection&         names,
-                           const SectionEntryNames& entries,
-                           const SemanticSection&   section,
-                           const AttachedDoc&       typeDoc,
-                           const PyFileNames&       file,
-                           const std::string&       fullName,
-                           const std::uint32_t      majorVersion,
-                           const std::uint32_t      minorVersion)
+void emitStructSectionType(SourceWriter&           w,
+                           const InitializerShape& init,
+                           const PySection&        names,
+                           const SemanticSection&  section,
+                           const AttachedDoc&      typeDoc,
+                           const PyFileNames&      file,
+                           const std::string&      fullName,
+                           const std::uint32_t     majorVersion,
+                           const std::uint32_t     minorVersion)
 {
     const std::string& typeName = names.typeName();
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
-    w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
-    w.open("class " + typeName + ":");
-
-    bool emittedField = false;
+    openClass(w, names, section, file);
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
         {
             continue;
         }
-        emittedField = true;
         emitAttachedDocPy(w, field.doc);
         const auto  fieldName = names.field(field.name);
         const auto* entry     = memberDefault(init, field.name);
@@ -683,11 +688,6 @@ void emitStructSectionType(SourceWriter&            w,
                     : pyFieldType(field.resolvedType, file)) +
                " = " + pyDefaultFromBody(field.resolvedType, *entry, file));
     }
-    if (emittedField)
-    {
-        w.blank();
-    }
-    emitClassMethods(w, typeName, section, file, entries);
 }
 
 /// @brief The member named @p name in @p init, or null.
@@ -703,21 +703,19 @@ const MemberDefault* memberDefault(const InitializerShape& init, const std::stri
     return nullptr;
 }
 
-void emitUnionSectionType(SourceWriter&            w,
-                          const InitializerShape&  init,
-                          const PySection&         names,
-                          const SectionEntryNames& entries,
-                          const SemanticSection&   section,
-                          const AttachedDoc&       typeDoc,
-                          const PyFileNames&       file,
-                          const std::string&       fullName,
-                          const std::uint32_t      majorVersion,
-                          const std::uint32_t      minorVersion)
+void emitUnionSectionType(SourceWriter&           w,
+                          const InitializerShape& init,
+                          const PySection&        names,
+                          const SemanticSection&  section,
+                          const AttachedDoc&      typeDoc,
+                          const PyFileNames&      file,
+                          const std::string&      fullName,
+                          const std::uint32_t     majorVersion,
+                          const std::uint32_t     minorVersion)
 {
     const std::string& typeName = names.typeName();
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
-    w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
-    w.open("class " + typeName + ":");
+    openClass(w, names, section, file);
     // A Python union holds one arm: the tag the body stores, and that arm at the default the body
     // gives it. The other arms are absent, which is what `None` says.
     w.line(names.dataMember(GeneratedFact::UnionTag) + ": int = " + std::to_string(init.unionTag));
@@ -740,29 +738,25 @@ void emitUnionSectionType(SourceWriter&            w,
         w.line(fieldName + ": " + pyFieldType(field.resolvedType, file) +
                " | None = " + (selected ? pyDefaultFromBody(field.resolvedType, *entry, file) : "None"));
     }
-
-    w.blank();
-    emitClassMethods(w, typeName, section, file, entries);
 }
 
-void emitSectionType(SourceWriter&            w,
-                     const InitializerShape&  init,
-                     const PySection&         names,
-                     const SectionEntryNames& entries,
-                     const SemanticSection&   section,
-                     const AttachedDoc&       typeDoc,
-                     const PyFileNames&       file,
-                     const std::string&       fullName,
-                     const std::uint32_t      majorVersion,
-                     const std::uint32_t      minorVersion)
+void emitSectionType(SourceWriter&           w,
+                     const InitializerShape& init,
+                     const PySection&        names,
+                     const SemanticSection&  section,
+                     const AttachedDoc&      typeDoc,
+                     const PyFileNames&      file,
+                     const std::string&      fullName,
+                     const std::uint32_t     majorVersion,
+                     const std::uint32_t     minorVersion)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, init, names, entries, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, init, names, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
     else
     {
-        emitStructSectionType(w, init, names, entries, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitStructSectionType(w, init, names, section, typeDoc, file, fullName, majorVersion, minorVersion);
     }
 }
 
@@ -834,6 +828,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         accessor_            = Accessor::None;
+        infallible_          = fn->hasAttr("llvmdsdl.infallible");
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -997,7 +992,7 @@ public:
         }
         else
         {
-            open(w, "def " + name + "(buffer: memoryview" + index + ", value: " + storage + ") -> int:");
+            open(w, "def " + name + "(buffer: memoryview" + index + ", value: " + storage + ") -> None:");
         }
         std::vector<std::string> parameters{"buffer", "len(buffer)"};
         if (indexed)
@@ -1017,7 +1012,8 @@ public:
 
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
-        // A getter answers the value in the member's own type; a setter answers the code alone.
+        // A getter answers the value in the member's own type; a setter answers nothing, and raises
+        // where the code it would answer is an error.
         if (accessor_ == Accessor::Getter)
         {
             line(w, returnCast_.empty() ? "return " + expr.str() : "return bool(" + expr.str() + ")");
@@ -1025,7 +1021,7 @@ public:
         }
         if (accessor_ == Accessor::Setter)
         {
-            line(w, "return " + expr.str());
+            raiseOn(w, expr);
             return;
         }
         line(w, "return " + expr.str());
@@ -1033,11 +1029,22 @@ public:
 
     void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
     {
-        // The size used on success, and the code, which is negative, on failure.
-        open(w, "if " + error.str() + " == 0:");
+        // The size used, where the code is no error, which is raised.
+        raiseOn(w, error);
         line(w, "return " + used.str());
+    }
+
+    /// @brief Raises the error @p code states, where it states one: a body the lowering found cannot
+    ///        fail raises nothing.
+    void raiseOn(SourceWriter& w, const llvm::StringRef code) const
+    {
+        if (infallible_)
+        {
+            return;
+        }
+        open(w, "if " + code.str() + " != 0:");
+        line(w, "raise ValueError(" + file_.errorMessage() + "(" + code.str() + "))");
         closeBlock(w);
-        line(w, "return " + error.str());
     }
 
     [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
@@ -1911,13 +1918,9 @@ private:
     mutable std::string returnCast_;
     mutable bool        blockEmpty_{false};
     mutable unsigned    fresh_{0};
+    /// @brief Whether the function being spelt answers no error, which it then never raises.
+    mutable bool infallible_{false};
 };
-
-/// @brief The symbol of @p function.
-llvm::StringRef symbolOf(mlir::func::FuncOp function)
-{
-    return function.getSymName();
-}
 
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
@@ -1966,21 +1969,9 @@ llvm::Error emitSection(SourceWriter&             w,
         {
             return init.takeError();
         }
-        const PySurface&        surface = names.names();
-        const SectionEntryNames entries{.serialize = surface.function(symbolOf(bodies.serialize),
-                                                                      SurfaceDeclKind::Wrapper,
-                                                                      GeneratedFact::WireImage),
-                                        .serializeInto =
-                                            surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry),
-                                        .deserialize = surface.function(symbolOf(bodies.deserialize),
-                                                                        SurfaceDeclKind::Wrapper,
-                                                                        GeneratedFact::FromWireImage),
-                                        .deserializeFrom =
-                                            surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry)};
         emitSectionType(w,
                         *init,
                         names,
-                        entries,
                         section,
                         typeDoc,
                         file,

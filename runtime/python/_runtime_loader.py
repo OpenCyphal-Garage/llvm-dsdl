@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import os
+from typing import ClassVar, TypeVar
 
 mode = os.environ.get("LLVMDSDL_PY_RUNTIME_MODE", "auto").strip().lower()
 if mode not in {"auto", "pure", "accel"}:
@@ -60,3 +61,40 @@ _ERROR_MESSAGES = {
 def error_message(code: int) -> str:
     """The text of the error code a generated body answers with."""
     return _ERROR_MESSAGES.get(code, f"serialisation error {code}")
+
+
+_Composite = TypeVar("_Composite", bound="CompositeObject")
+
+
+class CompositeObject:
+    """The base of every class generated from a DSDL composite type.
+
+    A generated class writes itself into a buffer it is handed and reads itself from
+    one, and each raises ``ValueError`` where the runtime refuses. The two are composed
+    once here, for every type: ``serialize`` writes into a buffer of the type's largest
+    size, and ``deserialize`` fills a default-constructed object.
+    """
+
+    __slots__ = ()
+
+    SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int]
+
+    def _serialize_into(self, buffer: memoryview) -> int:
+        raise NotImplementedError
+
+    def _deserialize_from(self, buffer: memoryview) -> int:
+        raise NotImplementedError
+
+    def serialize(self) -> bytes:
+        """The object's wire image."""
+        buffer = bytearray(self.SERIALIZATION_BUFFER_SIZE_BYTES)
+        return bytes(buffer[: self._serialize_into(memoryview(buffer))])
+
+    @classmethod
+    def deserialize(
+        cls: type[_Composite], data: bytes | bytearray | memoryview
+    ) -> _Composite:
+        """A new object read from ``data``."""
+        value = cls()
+        value._deserialize_from(memoryview(data).cast("B"))
+        return value
