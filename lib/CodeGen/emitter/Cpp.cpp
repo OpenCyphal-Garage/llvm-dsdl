@@ -68,6 +68,7 @@
 #include "llvmdsdl/Transforms/SurfaceTree.h"
 #include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
+#include "llvmdsdl/Support/SurfaceLookup.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
@@ -89,6 +90,7 @@
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <tuple>
 #include <utility>
 #include "mlir/IR/BuiltinOps.h"
 
@@ -179,16 +181,49 @@ public:
         return out;
     }
 
-    /// @brief What qualifies a name the definition keyed @p key declares from the global namespace:
-    ///        `::` and each enclosing namespace, each followed by `::`.
-    [[nodiscard]] std::string qualifier(const llvm::StringRef key) const
+    /// @brief The shortest spelling C++'s lookup resolves to @p target from code written in @p site,
+    ///        which is to the type @p site is what @p relation says.
+    [[nodiscard]] const std::string& spell(const std::size_t  site,
+                                           const SiteRelation relation,
+                                           const SurfaceItem& target) const
     {
-        std::string out = "::";
-        for (const std::string& name : namespaces(key))
+        const auto key   = std::tuple{site, relation, target.scope, target.index};
+        auto       found = spelt_.find(key);
+        if (found == spelt_.end())
         {
-            out += name + "::";
+            std::optional<std::string> spelling = spellReference(languageTraits(Language::Cpp),
+                                                                 tree_.plan(),
+                                                                 SurfaceSite{.scope = site, .relation = relation},
+                                                                 target);
+            if (!spelling)
+            {
+                llvm::report_fatal_error("C++ backend: no spelling reaches a declaration of the surface");
+            }
+            found = spelt_.emplace(key, std::move(*spelling)).first;
         }
-        return out;
+        return found->second;
+    }
+
+    /// @brief @p section's type of the definition keyed @p key, as code written in @p site reaches it.
+    [[nodiscard]] const std::string& typeFrom(const std::size_t     site,
+                                              const SiteRelation    relation,
+                                              const llvm::StringRef key,
+                                              const llvm::StringRef section) const
+    {
+        return spell(site, relation, SurfaceItem{.scope = true, .index = tree_.typeScope(key, section)});
+    }
+
+    /// @brief The helper the lowered function @p symbol is, as code written in @p site reaches it.
+    [[nodiscard]] const std::string& helperFrom(const std::size_t     site,
+                                                const SiteRelation    relation,
+                                                const llvm::StringRef symbol) const
+    {
+        const std::optional<std::size_t> index = tree_.declarationIndex(symbol, SurfaceDeclKind::Helper);
+        if (!index)
+        {
+            llvm::report_fatal_error(llvm::Twine("C++ backend: the surface declares no helper ") + symbol);
+        }
+        return spell(site, relation, SurfaceItem{.scope = false, .index = *index});
     }
 
     /// @brief The name @p section's structure is declared under.
@@ -273,6 +308,8 @@ public:
 private:
     const SurfaceTree& tree_;
     std::string        root_;
+    /// @brief Each spelling made, by the site it was made from and its target.
+    mutable std::map<std::tuple<std::size_t, SiteRelation, bool, std::size_t>, std::string> spelt_;
 };
 
 /// @brief One section's names, as the surface declares them.
@@ -301,6 +338,12 @@ public:
     [[nodiscard]] const std::string& publicName() const
     {
         return names_.publicName(key_, section_);
+    }
+
+    /// @brief The scope of the section's type.
+    [[nodiscard]] std::size_t typeScope() const
+    {
+        return names_.tree().typeScope(key_, section_);
     }
 
     /// @brief The section's type after each type that encloses it, by declared or public names.
@@ -542,12 +585,12 @@ public:
         return includes_.member(ImportOrigin::Definition, "\"" + header + "\"", name);
     }
 
-    /// @brief The declared name of the definition @p ref's structure, qualified from the global
-    ///        namespace, for spelling a field or a pointer of its type.
-    [[nodiscard]] std::string declaredType(const SemanticTypeRef& ref) const
+    /// @brief The declared name of the definition @p ref's structure, as a declaration in the type
+    ///        scope @p site reaches it, for spelling a field of its type.
+    [[nodiscard]] std::string declaredType(const SemanticTypeRef& ref, const std::size_t site) const
     {
         const std::string key = keyOf(ref);
-        return declaredIn(key, ctx_.names().qualifier(key) + ctx_.names().declaredName(key, {}));
+        return declaredIn(key, ctx_.names().typeFrom(site, SiteRelation::Static, key, {}));
     }
 
 private:
@@ -627,6 +670,7 @@ public:
         : flavor_(flavor)
         , names_(names)
         , file_(file)
+        , helperSite_(names.file(schema.getSymName()))
     {
         if (schema.getBody().empty())
         {
@@ -641,6 +685,7 @@ public:
             entry.unionTagBits   = plan.getUnionTagBits().value_or(0);
             entry.hostImage      = plan.getHostImage();
             entry.memoryResource = names.field(key, section, {}, GeneratedFact::MemoryResource);
+            entry.typeScope      = names.tree().typeScope(key, section);
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
@@ -685,6 +730,7 @@ public:
         }
         const Plan& plan      = planOf(fn.getArgument(0));
         const bool  serialize = *direction == "serialize";
+        site_                 = plan.typeScope;
         // A member that reads no object, as a section with no fields has, is static.
         const bool        onObject = readsArgument(fn, 0);
         const std::string resource = file_.cppRuntime("::llvmdsdl::cpp::MemoryResource");
@@ -749,7 +795,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return names_.function(callee, SurfaceDeclKind::Helper);
+        return names_.helperFrom(site_, SiteRelation::Static, callee);
     }
 
     // Statements.
@@ -816,6 +862,7 @@ public:
         const bool         integer   = mlir::isa<mlir::IntegerType>(held);
         const std::string  index     = indexed ? ", const " + file_.standard("std::size_t") + " element_index" : "";
         accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
+        site_                        = a.plan->typeScope;
         returnCast_.clear();
         // The member's type is named where it is written: a composite getter answers bytes.
         if (composite)
@@ -1396,7 +1443,7 @@ public:
             llvm::report_fatal_error("C++ spelling: a nested call to a function that is no body");
         }
         const std::string key = renderSchemaSymbol(symbol->schema);
-        return file_.declaredIn(key, names_.qualifier(key) + names_.declaredName(key, symbol->section)) + "::" + name +
+        return file_.declaredIn(key, names_.typeFrom(site_, SiteRelation::Static, key, symbol->section)) + "::" + name +
                arguments;
     }
 
@@ -1416,7 +1463,9 @@ private:
         ///        such a structure carries no memory resource.
         bool hostImage{false};
         /// @brief The data member holding the structure's memory resource; empty where it holds none.
-        std::string             memoryResource;
+        std::string memoryResource;
+        /// @brief The scope of the section's type, where its members are written.
+        std::size_t             typeScope{};
         llvm::StringMap<Member> members;
     };
 
@@ -1430,8 +1479,9 @@ private:
             list += (list.empty() ? "" : ", ") + std::string("const ") + typeName(argument.getType()) + " " +
                     parameters.back();
         }
-        w.line("inline " + typeName(fn.getResultTypes().front()) + " " + functionName(fn.getSymName()) + "(" + list +
-               ")");
+        site_ = helperSite_;
+        w.line("inline " + typeName(fn.getResultTypes().front()) + " " +
+               names_.function(fn.getSymName(), SurfaceDeclKind::Helper) + "(" + list + ")");
         w.open("{");
         return parameters;
     }
@@ -1509,11 +1559,12 @@ private:
         return qualifiedTypeName(typeRefOf(io));
     }
 
-    /// @brief The qualified public name of the definition @p ref, from the header that declares it.
+    /// @brief The declared name of the definition @p ref's structure, as the function being written
+    ///        reaches it, from the header that declares it.
     std::string qualifiedTypeName(const SemanticTypeRef& ref) const
     {
         const std::string key = keyOf(ref);
-        return file_.declaredIn(key, names_.qualifier(key) + names_.publicName(key, {}));
+        return file_.declaredIn(key, names_.typeFrom(site_, SiteRelation::Static, key, {}));
     }
 
     /// @brief @p access read as a value of @p type. A bool is read as a bool.
@@ -1774,12 +1825,17 @@ private:
         Getter,
         Setter
     };
-    mutable Accessor    accessor_{Accessor::None};
+    mutable Accessor accessor_{Accessor::None};
+    /// @brief The scope the function being written is in, which the references it makes are spelt from.
+    mutable std::size_t site_{};
+    /// @brief The file scope the schema's helpers are declared in.
+    std::size_t         helperSite_{};
     mutable std::string returnCast_;
     mutable std::size_t counter_{0};
 };
 
-std::string cppTypeFromFieldType(const SemanticFieldType& type, const CppFileNames& file)
+/// @brief The C++ type a field of @p type is declared as, in the type scope @p site.
+std::string cppTypeFromFieldType(const SemanticFieldType& type, const CppFileNames& file, const std::size_t site)
 {
     switch (type.scalarCategory)
     {
@@ -1802,7 +1858,7 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const CppFileNam
     case SemanticScalarCategory::Composite:
         if (type.compositeType)
         {
-            return file.declaredType(*type.compositeType);
+            return file.declaredType(*type.compositeType, site);
         }
         return file.standard("std::uint8_t");
     }
@@ -1959,8 +2015,8 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
             const auto member = names.field(field.name);
             // A view is a span over the field's bytes in the buffer the object was deserialised
             // from; it allocates nothing and takes no memory resource.
-            const auto baseType =
-                field.heldAsView ? spelling.viewType() : cppTypeFromFieldType(field.resolvedType, file);
+            const auto baseType = field.heldAsView ? spelling.viewType()
+                                                   : cppTypeFromFieldType(field.resolvedType, file, names.typeScope());
             emitAttachedDocCpp(w, field.doc);
 
             const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));

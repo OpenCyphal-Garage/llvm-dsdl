@@ -381,16 +381,6 @@ enum class ImportNaming
     TypeAndFunctions,
 };
 
-/// @brief How a reference is spelt, where the language could spell it more than one way.
-enum class Qualification
-{
-    /// @brief The shortest spelling the language's lookup resolves to the declaration.
-    Shortest,
-
-    /// @brief From the root, for a declaration outside the site's own type.
-    Rooted,
-};
-
 /// @brief How the output composes a language's declarations today.
 struct Composition final
 {
@@ -440,9 +430,6 @@ struct Composition final
 
     /// @brief How a lowered helper is named.
     HelperNaming helpers{};
-
-    /// @brief How a reference is spelt.
-    Qualification qualification{};
 
     /// @brief Whether a definition's file and a namespace's directory of one name are one module.
     ///

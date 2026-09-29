@@ -143,15 +143,14 @@ bool runSurfaceLookupTests()
     // the definition's own file and the namespace the definitions share; a name found beyond it is
     // spelt from the root, with `::` only where the root's name is shadowed.
     {
-        llvmdsdl::LanguageTraits row  = llvmdsdl::languageTraits(Language::Cpp);
-        row.composition.qualification = llvmdsdl::Qualification::Shortest;
-        Tree       tree("out");
-        const auto uavcan  = tree.scope(0, SurfaceScopeKind::Namespace, "uavcan");
-        const auto file    = tree.scope(uavcan, SurfaceScopeKind::Namespace, "file");
-        const auto listHdr = tree.scope(file, SurfaceScopeKind::File, "List_0_2");
-        const auto list    = tree.scope(listHdr, SurfaceScopeKind::Type, "List_0_2");
-        const auto request = tree.scope(list, SurfaceScopeKind::Type, "Request");
-        const auto extent  = tree.decl(request, "EXTENT_BYTES", SurfaceDeclKind::Constant, NameClass::Value);
+        const llvmdsdl::LanguageTraits& row = llvmdsdl::languageTraits(Language::Cpp);
+        Tree                            tree("out");
+        const auto                      uavcan  = tree.scope(0, SurfaceScopeKind::Namespace, "uavcan");
+        const auto                      file    = tree.scope(uavcan, SurfaceScopeKind::Namespace, "file");
+        const auto                      listHdr = tree.scope(file, SurfaceScopeKind::File, "List_0_2");
+        const auto                      list    = tree.scope(listHdr, SurfaceScopeKind::Type, "List_0_2");
+        const auto                      request = tree.scope(list, SurfaceScopeKind::Type, "Request");
+        const auto extent = tree.decl(request, "EXTENT_BYTES", SurfaceDeclKind::Constant, NameClass::Value);
         (void) tree.decl(request, "Path", SurfaceDeclKind::Field, NameClass::Field);
         const auto pathHdr = tree.scope(file, SurfaceScopeKind::File, "Path_2_0");
         const auto path    = tree.scope(pathHdr, SurfaceScopeKind::Type, "Path");
@@ -183,16 +182,6 @@ bool runSurfaceLookupTests()
                     "::uavcan::si::unit::length::Scalar",
                     "C++: a type whose root is shadowed") &&
              ok;
-
-        const auto& rooted = llvmdsdl::languageTraits(Language::Cpp);
-        ok                 = expect(spell(rooted, tree, request, SiteRelation::Static, scopeItem(path)),
-                                    "::uavcan::file::Path",
-                                    "C++, rooted: another definition's type") &&
-                             ok;
-        ok                 = expect(spell(rooted, tree, request, SiteRelation::Static, extent),
-                                    "EXTENT_BYTES",
-                                    "C++, rooted: a member of the site's own type") &&
-                             ok;
     }
 
     // Rust sees the module's items and its `use` declarations; a body reaches its own type's members

@@ -279,18 +279,6 @@ std::string render(const llvmdsdl::MemberReach value)
     return "?";
 }
 
-std::string render(const llvmdsdl::Qualification value)
-{
-    switch (value)
-    {
-    case llvmdsdl::Qualification::Shortest:
-        return "shortest";
-    case llvmdsdl::Qualification::Rooted:
-        return "rooted";
-    }
-    return "?";
-}
-
 std::string flag(const bool value)
 {
     return value ? "1" : "0";
@@ -324,7 +312,7 @@ std::string render(const LanguageTraits& row)
            " source='" + d.sourceDirectory.str() + "' package-directory=" + flag(d.packageDirectory) +
            " namespace-file='" + d.namespaceFile.str() + "' root-file='" + d.rootFile.str() +
            "' imports=" + render(d.imports) + " helpers=" + render(d.helpers) +
-           " qualification=" + render(d.qualification) +
+
            " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
            " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
            " service-constants=" + render(d.serviceConstants) + " constant-macros=" + flag(d.constantsAreMacros) +
@@ -366,7 +354,7 @@ bool runLanguageTraitsTests()
          "version-in-name=1 name-reaches-type=0 section-join='__' sections=none namespace-shared=1 namespaces=joined "
          "extension='.h' directories-projected=0 source='' package-directory=0 namespace-file='' root-file='' "
          "imports=none "
-         "helpers=link-name qualification=shortest "
+         "helpers=link-name "
          "file-directory-module=0 namespace-type-scope=0 constants=enclosing service-constants=enclosing "
          "constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
@@ -382,7 +370,7 @@ bool runLanguageTraitsTests()
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='' sections=service-type "
          "namespace-shared=1 namespaces=namespace extension='.hpp' directories-projected=0 source='' "
          "package-directory=0 namespace-file='' root-file='' imports=none helpers=binding "
-         "qualification=rooted file-directory-module=0 "
+         "file-directory-module=0 "
          "namespace-type-scope=1 "
          "constants=type service-constants=type "
          "constant-macros=0 generated-suffix='' "
@@ -398,7 +386,7 @@ bool runLanguageTraitsTests()
          "version-in-name=0 name-reaches-type=1 section-join='' sections=module namespace-shared=0 namespaces=module "
          "extension='.rs' directories-projected=1 source='src/' package-directory=0 namespace-file='mod.rs' "
          "root-file='lib.rs' imports=type "
-         "helpers=module qualification=shortest "
+         "helpers=module "
          "file-directory-module=1 namespace-type-scope=0 constants=type service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "
@@ -412,7 +400,7 @@ bool runLanguageTraitsTests()
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' sections=none "
          "namespace-shared=1 namespaces=package extension='.go' directories-projected=1 source='' package-directory=0 "
          "namespace-file='' root-file='' imports=package helpers=package "
-         "qualification=shortest file-directory-module=0 "
+         "file-directory-module=0 "
          "namespace-type-scope=0 "
          "constants=package service-constants=package "
          "constant-macros=0 generated-suffix='' "
@@ -428,7 +416,7 @@ bool runLanguageTraitsTests()
          "version-in-name=1 name-reaches-type=1 section-join='' sections=none namespace-shared=0 namespaces=module "
          "extension='.ts' directories-projected=1 source='' package-directory=0 namespace-file='' root-file='index.ts' "
          "imports=type-and-functions "
-         "helpers=module qualification=shortest "
+         "helpers=module "
          "file-directory-module=0 namespace-type-scope=0 constants=module service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "
@@ -443,7 +431,7 @@ bool runLanguageTraitsTests()
          "version-in-name=1 name-reaches-type=1 section-join='' sections=none namespace-shared=0 namespaces=module "
          "extension='.py' directories-projected=1 source='' package-directory=1 namespace-file='__init__.py' "
          "root-file='__init__.py' imports=type "
-         "helpers=module qualification=shortest "
+         "helpers=module "
          "file-directory-module=1 namespace-type-scope=0 constants=module service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "

@@ -75,11 +75,6 @@ public:
 
     std::optional<std::string> spell(const SurfaceItem& target) const
     {
-        if ((row_.composition.qualification == Qualification::Rooted) && !ofOwnType(target) &&
-            !lookup_.separator.empty())
-        {
-            return rooted(target, true);
-        }
         // A body names its own type as its language does from within, where the language has such a
         // name, ahead of the type's own name.
         const bool ownType = !types_.empty() && target.scope && (target.index == types_.front());
@@ -106,7 +101,7 @@ public:
         {
             return spelt;
         }
-        return rooted(target, false);
+        return rooted(target);
     }
 
 private:
@@ -439,7 +434,7 @@ private:
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::string> rooted(const SurfaceItem& target, const bool prefixed) const
+    [[nodiscard]] std::optional<std::string> rooted(const SurfaceItem& target) const
     {
         if (lookup_.separator.empty())
         {
@@ -450,7 +445,7 @@ private:
         {
             return std::nullopt;
         }
-        if (!prefixed && lookup_.rootPrefixOnlyWhenShadowed && reaches(path.front()))
+        if (lookup_.rootPrefixOnlyWhenShadowed && reaches(path.front()))
         {
             return join(path);
         }

@@ -219,8 +219,9 @@ same change.
 [`lib/CodeGen/emitter/Cpp.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Cpp.cpp),
 names members from the scope the struct declaration names them in, built from the schema's own
 fields and constants; calls a nested object's own member, or the static member of its type where
-the callee reads no object; and emits the helpers as inline functions ahead of the sections that
-call them. The plan's `i64` is spelled
+the callee reads no object; writes a type or a helper as the shortest name C++'s lookup resolves
+from where the reference is written; and emits the helpers as inline functions ahead of the
+sections that call them. The plan's `i64` is spelled
 unsigned, which is what the wire arithmetic and the runtime primitives take, and the few signed
 comparisons cast for the comparison alone. A fixed bool array is packed bytes and copies as a
 run; a variable-length one is the profile's container of `bool` and copies an element at a time.

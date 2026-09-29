@@ -1,0 +1,28 @@
+# C++ writes a reference to another definition's type as the shortest spelling its lookup resolves
+# from where the reference is written: bare within the definition's own namespace, and from the root
+# where it leaves it, with `::` only where the root's name is shadowed. A member of the class is in
+# the class's scope from its first declaration, so a field named like a type captures the bare name
+# for every field of the class.
+
+# RUN: rm -rf %t && mkdir -p %t/ns/a %t/ns/b
+# RUN: printf 'uint8 x\n@sealed\n' > %t/ns/a/Inner.1.0.dsdl
+# RUN: printf 'ns.a.Inner.1.0 inner\n@sealed\n' > %t/ns/a/Near.1.0.dsdl
+# RUN: printf 'ns.a.Inner.1.0 inner\nns.a.Inner.1.0 Inner\n@sealed\n' > %t/ns/a/Captured.1.0.dsdl
+# RUN: printf 'ns.a.Inner.1.0[<=2] inner\n@sealed\n' > %t/ns/b/Far.1.0.dsdl
+# RUN: printf 'uint8 ns\nns.a.Inner.1.0 inner\n@sealed\n' > %t/ns/b/Shadowed.1.0.dsdl
+# RUN: %dsdlc --target-language cpp --cpp-profile pmr %t/ns --outdir %t/cpp
+
+# RUN: FileCheck %s --check-prefix=NEAR < %t/cpp/ns/a/Near_1_0.hpp
+# NEAR: {{^ *}}Inner inner{};
+
+# RUN: FileCheck %s --check-prefix=CAPTURED < %t/cpp/ns/a/Captured_1_0.hpp
+# CAPTURED: {{^ *}}ns::a::Inner inner{};
+# CAPTURED-NEXT: {{^ *}}ns::a::Inner Inner{};
+
+# RUN: FileCheck %s --check-prefix=FAR < %t/cpp/ns/b/Far_1_0.hpp
+# FAR: std::pmr::vector<ns::a::Inner> inner{};
+# FAR: std::pmr::vector<ns::a::Inner> _sized0_(
+
+# RUN: FileCheck %s --check-prefix=SHADOWED < %t/cpp/ns/b/Shadowed_1_0.hpp
+# SHADOWED: std::uint8_t ns{};
+# SHADOWED-NEXT: {{^ *}}::ns::a::Inner inner{};
