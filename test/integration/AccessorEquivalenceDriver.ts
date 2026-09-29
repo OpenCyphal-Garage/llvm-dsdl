@@ -23,12 +23,27 @@ function fill(buffer: Uint8Array): void {
   }
 }
 
+// Whether a setter refuses what it is handed: it throws rather than write.
+function refused(call: () => void): boolean {
+  try {
+    call();
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+// Whether a setter writes what it is handed without throwing.
+function accepted(call: () => void): boolean {
+  return !refused(call);
+}
+
 function checkField<T, V>(
   size: number,
   make: () => T,
   deser: (o: T, b: Uint8Array) => number,
   get: (b: Uint8Array) => V,
-  set: (b: Uint8Array, v: V) => number,
+  set: (b: Uint8Array, v: V) => void,
   field: (o: T) => V,
   exact: boolean,
 ): boolean {
@@ -41,11 +56,11 @@ function checkField<T, V>(
   ok = ok && deser(short, wire.subarray(0, size / 2)) >= 0 && Object.is(get(wire.subarray(0, size / 2)), field(short));
   const out = new Uint8Array(size);
   const v = get(wire);
-  ok = ok && set(out, v) === 0;
+  ok = ok && accepted(() => set(out, v));
   const back = make();
   ok = ok && deser(back, out) >= 0 && Object.is(get(out), field(back));
   ok = ok && (!exact || Object.is(v, field(back)));
-  ok = ok && set(out.subarray(0, 0), v) !== 0;
+  ok = ok && refused(() => set(out.subarray(0, 0), v));
   return ok;
 }
 
@@ -57,7 +72,7 @@ function checkElement<T, V>(
   make: () => T,
   deser: (o: T, b: Uint8Array) => number,
   get: (b: Uint8Array, i: number) => V,
-  set: (b: Uint8Array, i: number, v: V) => number,
+  set: (b: Uint8Array, i: number, v: V) => void,
   element: (o: T, i: number) => V,
   zero: V,
 ): boolean {
@@ -70,10 +85,10 @@ function checkElement<T, V>(
     ok = ok && Object.is(get(wire, capacity), zero);
     const out = new Uint8Array(size);
     const v = get(wire, i);
-    ok = ok && set(out, i, v) === 0;
+    ok = ok && accepted(() => set(out, i, v));
     const back = make();
     ok = ok && deser(back, out) >= 0 && Object.is(get(out, i), element(back, i));
-    ok = ok && set(out, capacity, v) !== 0;
+    ok = ok && refused(() => set(out, capacity, v));
   }
   return ok;
 }

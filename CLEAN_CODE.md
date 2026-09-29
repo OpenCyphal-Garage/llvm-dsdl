@@ -1089,6 +1089,17 @@ the functions it hands the renderer. A block's closing line follows its last uni
 `SourceWriter::close` states. Rust's declaration count falls from 68 to 59, and its body count from
 66 to 59.
 
+TypeScript's output change makes its bodies throw and takes the wire image's bodies. A body and a
+setter throw an `Error` with the text of an error code, and a setter answers nothing. `serializeX`
+answers new bytes, and `deserializeX` makes the value through the type's factory and answers it
+with the bytes it read. A module imports another definition's type and the entry points a nested
+call or a nested initialiser reaches, and no other definition's wire image. The doubled blank line
+that followed a factory where a section declares no constants goes, and a module's header, imports
+and declarations are one empty line apart, where the header ran into the imports and a module that
+imports another definition ran its imports into its declarations. Eslint holds at 75. TypeScript's
+declaration count falls from 68 to 43; its body count rises from 41 to 44, since the spelling now
+writes the throw and the wire image's signatures.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.

@@ -336,7 +336,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
             },
-        // Handed an object a caller may still omit, beside a `Uint8Array`; an object has no layout.
+        // Handed an object a caller may still omit, beside a `Uint8Array`; an object has no layout. A
+        // module encodes a value into new bytes, and reads a new value and the bytes it read.
         .body =
             {
                 .nullability              = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
@@ -345,6 +346,12 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .objectsAreByteImages     = false,
                 .bodiesAnswerSize         = true,
                 .boolArrays               = BoolArrayStorage::PerElement,
+                .wireImage                = {.appends            = false,
+                                             .answersNew         = true,
+                                             .reads              = false,
+                                             .makes              = true,
+                                             .makesAnswerUsed    = true,
+                                             .readerKeepsNothing = false},
             },
         // A type's constants are the module's, where the classification puts them on the type.
         .composition =

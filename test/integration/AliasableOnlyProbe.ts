@@ -19,14 +19,14 @@ const view = new DataView(buffer.buffer);
 
 const orientation = pose.getPoseOrientation(buffer);
 const y = vec3.getVec3Y(orientation);
-const setResult = vec3.setVec3Z(buffer.subarray(0, 12), 9.5);
+vec3.setVec3Z(buffer.subarray(0, 12), 9.5);
 const z = vec3.getVec3Z(buffer);
 const shortRead = vec3.getVec3Z(buffer.subarray(0, 4));
 const x = vec3.getVec3X(pose.getPosePosition(buffer));
 
-const ok = orientation.length === 12 && y === 5.5 && setResult === 0 && z === 9.5 && shortRead === 0 && x === 1.5;
+const ok = orientation.length === 12 && y === 5.5 && z === 9.5 && shortRead === 0 && x === 1.5;
 console.log(
-  `aliasable-only TypeScript: ${ok ? "ok" : "FAILED"} (orientation ${orientation.length} bytes, y ${y}, set ${setResult}, z ${z}, short ${shortRead}, x ${x})`,
+  `aliasable-only TypeScript: ${ok ? "ok" : "FAILED"} (orientation ${orientation.length} bytes, y ${y}, z ${z}, short ${shortRead}, x ${x})`,
 );
 if (!ok) {
   throw new Error("aliasable-only TypeScript probe failed");

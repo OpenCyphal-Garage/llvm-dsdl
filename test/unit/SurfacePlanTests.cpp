@@ -946,6 +946,8 @@ bool runSurfacePlanTests()
                                                     .isUnion   = true});
         pick.bodies          = {body("ns.Pick.1.0.serialize"),
                                 body("ns.Pick.1.0.deserialize"),
+                                body("ns.Pick.1.0.from_wire_image"),
+                                body("ns.Pick.1.0.wire_image"),
                                 body("ns.Pick.1.0.initialize"),
                                 body("ns.Pick.1.0.get.small"),
                                 body("ns.Pick.1.0.get._tag_")};

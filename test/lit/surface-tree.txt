@@ -151,7 +151,8 @@
 # TS-NEXT:         dsdl.decl "serializeAskRequestInto" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
 # TS-NEXT:         dsdl.decl "deserializeAskRequestFrom" kind = entry origin = generated of = @ns.Ask.1.0.request.deserialize
 # TS-NEXT:         dsdl.decl "makeAskRequest" kind = entry origin = generated of = @ns.Ask.1.0.request.initialize
-# TS-NEXT:         dsdl.decl "serializeAskRequest" kind = wrapper origin = generated fact = wire_image of = @ns.Ask.1.0.request.serialize
+# TS-NEXT:         dsdl.decl "serializeAskRequest" kind = entry origin = generated of = @ns.Ask.1.0.request.wire_image
+# TS-NEXT:         dsdl.decl "deserializeAskRequest" kind = entry origin = generated of = @ns.Ask.1.0.request.from_wire_image
 # TS:              dsdl.decl "getAskResponseOk" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
 # TS:            dsdl.scope module "hold_1_0" path = "ns/hold_1_0.ts" {
 # TS:              dsdl.decl "Msg" kind = import class = type visibility = private of = @ns.Msg.1.0

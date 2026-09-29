@@ -357,7 +357,16 @@ std::string renderTsImports(const ImportSet& imports)
             types += "import type { " + typeList + " } from \"" + module.path + "\";\n";
         }
     }
-    return runtime + "\n" + values + types;
+    // The runtime's namespace, then the definitions the module names, one empty line apart.
+    std::string block;
+    for (const std::string& group : {runtime, values + types})
+    {
+        if (!group.empty())
+        {
+            block += (block.empty() ? "" : "\n") + group;
+        }
+    }
+    return block;
 }
 
 std::string tsFieldBaseType(const SemanticFieldType& type, const TsFileNames& file)
@@ -660,7 +669,7 @@ void emitSectionType(SourceWriter&          w,
 /// it. A deserialise body is handed an empty object, so the storage a member address names is
 /// created where it is first addressed. A union is one of its option objects, so an option is
 /// reached through the object cast to the option's shape.
-class TsSpelling final : public BodySpelling
+class TsSpelling final : public BodySpelling, public WireImageSpelling
 {
 public:
     TsSpelling(mlir::dsdl::SchemaOp schema, const TsSurface& names, const TsFileNames& file)
@@ -707,9 +716,24 @@ public:
         const auto direction = planBodyDirection(fn);
         deserialize_         = direction.has_value() && *direction == "deserialize";
         accessor_            = Accessor::None;
+        cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
         if (direction && (*direction == "get" || *direction == "set"))
         {
             return openAccessor(w, fn, *direction == "get");
+        }
+        if (direction && (*direction == "wire_image"))
+        {
+            w.open("export function " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) +
+                   "(value: " + planOf(fn.getArgument(0)).typeName + "): Uint8Array {");
+            return {"value"};
+        }
+        if (direction && (*direction == "from_wire_image"))
+        {
+            const std::string& type = planOf(fn.getResultTypes().front()).typeName;
+            w.open("export function " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) +
+                   "(bytes: Uint8Array): " +
+                   ((fn.getNumResults() == 3) ? "{ value: " + type + "; consumed: number }" : type) + " {");
+            return {"bytes"};
         }
         if (!direction)
         {
@@ -852,7 +876,7 @@ public:
         else
         {
             w.open("export function " + name + "(buffer: Uint8Array" + index + ", " +
-                   (rebind ? "memberValue: " : "value: ") + elementTsType(*a.member) + "): number {");
+                   (rebind ? "memberValue: " : "value: ") + elementTsType(*a.member) + "): void {");
         }
         std::vector<std::string> parameters{"buffer", "BigInt(buffer.length)"};
         if (indexed)
@@ -894,9 +918,10 @@ public:
             }
             return;
         }
+        // A setter answers nothing, and throws where the code it would answer is an error.
         if (accessor_ == Accessor::Setter)
         {
-            w.line("return " + expr.str() + ";");
+            raiseOn(w, expr);
             return;
         }
         w.line("return " + expr.str() + ";");
@@ -904,11 +929,22 @@ public:
 
     void returnWithSize(SourceWriter& w, const llvm::StringRef error, const llvm::StringRef used) const override
     {
-        // The size used on success, and the code, which is negative, on failure.
-        w.open("if (" + error.str() + " === 0) {");
+        // The size used, where the code is no error, which is thrown.
+        raiseOn(w, error);
         w.line("return " + used.str() + ";");
+    }
+
+    /// @brief Throws the error @p code states, where it states one: a body the lowering found cannot
+    ///        fail throws nothing.
+    void raiseOn(SourceWriter& w, const llvm::StringRef code) const
+    {
+        if (cannotFail_)
+        {
+            return;
+        }
+        w.open("if (" + code.str() + " !== 0) {");
+        w.line("throw new Error(" + file_.runtime() + ".errorMessage(" + code.str() + "));");
         w.close("}");
-        w.line("return " + error.str() + ";");
     }
 
     [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
@@ -1079,7 +1115,11 @@ public:
 
     [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
-        if (mlir::isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp>(op))
+        if (mlir::isa<mlir::dsdl::IsNullOp,
+                      mlir::dsdl::BufferOrEmptyOp,
+                      mlir::dsdl::BytesAtOp,
+                      mlir::dsdl::BytesTruncateOp,
+                      mlir::dsdl::CopyBufferOp>(op))
         {
             return true;
         }
@@ -1403,6 +1443,68 @@ public:
         }
     }
 
+    [[nodiscard]] const WireImageSpelling* wireImages() const override
+    {
+        return this;
+    }
+
+    // A whole wire image, in a `Uint8Array`.
+
+    [[nodiscard]] std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const override
+    {
+        return "new Uint8Array(" + asNumber(op.getLength(), names) + ")";
+    }
+
+    [[nodiscard]] std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const override
+    {
+        return "BigInt(" + names(op.getBytes()) + ".length)";
+    }
+
+    [[nodiscard]] std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error(
+            llvm::Twine("TypeScript spelling: TypeScript's row appends no image to bytes it is handed; '") +
+            op->getName().getStringRef() + "' reached it");
+    }
+
+    [[nodiscard]] std::string bytesAt(mlir::dsdl::BytesAtOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        return op.getOffset() ? bytes + ".subarray(" + asNumber(op.getOffset(), names) + ")" : bytes;
+    }
+
+    [[nodiscard]] std::string bytesTruncate(mlir::dsdl::BytesTruncateOp op, const ValueNames& names) const override
+    {
+        return names(op.getBytes()) + ".subarray(0, " + asNumber(op.getLength(), names) + ")";
+    }
+
+    [[nodiscard]] std::string copyBuffer(mlir::dsdl::CopyBufferOp op, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error(llvm::Twine("TypeScript spelling: a TypeScript value keeps the bytes it reads; '") +
+                                 op->getName().getStringRef() + "' reached it");
+    }
+
+    [[nodiscard]] std::string makeObject(mlir::dsdl::MakeObjectOp op, const ValueNames& /*names*/) const override
+    {
+        return names_.function(op.getInitializer(), SurfaceDeclKind::Entry) + "()";
+    }
+
+    void returnImage(SourceWriter& w, const llvm::StringRef bytes, const llvm::StringRef error) const override
+    {
+        raiseOn(w, error);
+        w.line("return " + bytes.str() + ";");
+    }
+
+    void returnObject(SourceWriter&         w,
+                      const llvm::StringRef object,
+                      const llvm::StringRef used,
+                      const llvm::StringRef error) const override
+    {
+        raiseOn(w, error);
+        w.line(used.empty() ? "return " + object.str() + ";"
+                            : "return { value: " + object.str() + ", consumed: " + used.str() + " };");
+    }
+
 private:
     struct Member final
     {
@@ -1420,7 +1522,12 @@ private:
     /// @brief The plan the object a pointer names belongs to.
     const Plan& planOf(const mlir::Value object) const
     {
-        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        return planOf(object.getType());
+    }
+
+    const Plan& planOf(const mlir::Type object) const
+    {
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object);
         const auto identity =
             pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
         const auto found = identity ? plans_.find(identity.getIdentity()) : plans_.end();
@@ -1782,7 +1889,10 @@ private:
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
     mutable bool        deserialize_{false};
-    mutable unsigned    fresh_{0};
+
+    /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
+    mutable bool     cannotFail_{false};
+    mutable unsigned fresh_{0};
 };
 
 /// @brief The symbol of @p function.
@@ -1791,52 +1901,18 @@ llvm::StringRef symbolOf(mlir::func::FuncOp function)
     return function.getSymName();
 }
 
-/// @brief The three bodies `lower-dsdl-bodies` built for one section.
+/// @brief The bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The wire image over the pair: into new bytes, and a new value read from them.
+    mlir::func::FuncOp wireImage;
+    mlir::func::FuncOp fromWireImage;
     /// @brief The section's field accessors, getters and setters, in the module's order.
     std::vector<mlir::func::FuncOp> accessors;
 };
-
-/// @brief The entry points a consumer calls, which wrap the translated bodies: a value serialises
-/// into a buffer of the type's largest size, and a deserialisation fills an empty object.
-void emitEntryPoints(SourceWriter&          w,
-                     const TsSection&       names,
-                     const SemanticSection& section,
-                     const TsFileNames&     file,
-                     const SectionBodies&   bodies)
-{
-    const TsSurface&   surface     = names.names();
-    const std::string& typeName    = names.typeName();
-    const std::string  raise       = "throw new Error(" + file.runtime() + ".errorMessage(result));";
-    const auto         bufferBytes = (section.serializationBufferSizeBits + 7) / 8;
-    w.open("export function " +
-           surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Wrapper, GeneratedFact::WireImage) +
-           "(value: " + typeName + "): Uint8Array {");
-    w.line("const buffer = new Uint8Array(" + std::to_string(bufferBytes) + ");");
-    w.line("const result = " + surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry) +
-           "(value, buffer);");
-    w.open("if (result < 0) {");
-    w.line(raise);
-    w.close("}");
-    w.line("return buffer.subarray(0, result);");
-    w.close("}");
-    w.blank();
-    w.open("export function " +
-           surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Wrapper, GeneratedFact::FromWireImage) +
-           "(bytes: Uint8Array): { value: " + typeName + "; consumed: number } {");
-    w.line("const value = " + surface.function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry) + "();");
-    w.line("const result = " + surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry) +
-           "(value, bytes);");
-    w.open("if (result < 0) {");
-    w.line(raise);
-    w.close("}");
-    w.line("return { value, consumed: result };");
-    w.close("}");
-}
 
 /// @brief The literal a stored constant is, for a member of @p type.
 std::string tsStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr value)
@@ -1982,43 +2058,38 @@ llvm::Error emitSection(SourceWriter&             w,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
-        w.blank();
+        w.separate();
         emitMakeFunction(w,
                          names,
                          names.names().function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry),
                          section,
                          *init,
                          file);
-        w.blank();
     }
+    w.separate();
     emitUnionOptionTags(w, names, metadata);
     emitSectionConstants(w, names, section);
-    w.blank();
+    // The serdes and the wire image over them, then a wire-flat section's field accessors, each one
+    // read or one write at the field's offset.
+    std::vector<mlir::func::FuncOp> functions;
     if (!file.context().accessorsOnly())
     {
-        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        if (!bodies.wireImage || !bodies.fromWireImage)
         {
-            return err;
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no wire image bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
         }
-        w.blank();
-        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-        {
-            return err;
-        }
+        functions = {bodies.serialize, bodies.deserialize, bodies.wireImage, bodies.fromWireImage};
     }
-    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
-    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    functions.insert(functions.end(), bodies.accessors.begin(), bodies.accessors.end());
+    for (const mlir::func::FuncOp function : functions)
     {
-        w.blank();
-        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        w.separate();
+        if (auto err = translateFunction(function, spelling, w, lookups))
         {
             return err;
         }
-    }
-    if (!file.context().accessorsOnly())
-    {
-        w.blank();
-        emitEntryPoints(w, names, section, file, bodies);
     }
     return llvm::Error::success();
 }
@@ -2072,6 +2143,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             entry.initialize = fn;
         }
+        else if (*direction == "wire_image")
+        {
+            entry.wireImage = fn;
+        }
+        else if (*direction == "from_wire_image")
+        {
+            entry.fromWireImage = fn;
+        }
         else if (*direction == "get" || *direction == "set")
         {
             entry.accessors.push_back(fn);
@@ -2090,8 +2169,12 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                 std::to_string(def.info.minorVersion));
     }
     std::ostringstream out;
-    SourceWriter       w        = makeTsWriter(out);
-    const auto         assemble = [&]() { return head.str() + renderTsImports(imports) + out.str(); };
+    SourceWriter       w = makeTsWriter(out);
+    // The header, the imports and the declarations, one empty line apart.
+    const auto assemble = [&]() {
+        const std::string block = renderTsImports(imports);
+        return head.str() + "\n" + (block.empty() ? "" : block + "\n") + out.str();
+    };
 
     const auto constant = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
         return "export const " + names.declared(key, SurfaceDeclKind::Constant, section, {}, fact) + " = ";
@@ -2123,7 +2206,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         emitLayoutVerdicts("");
     }
-    w.blank();
+    w.separate();
 
     for (const mlir::func::FuncOp helper : helpers)
     {
@@ -2131,7 +2214,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        w.blank();
+        w.separate();
     }
 
     if (!def.isService)
@@ -2166,7 +2249,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     {
         return std::move(err);
     }
-    w.blank();
+    w.separate();
 
     if (def.response)
     {
@@ -2183,7 +2266,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        w.blank();
+        w.separate();
     }
 
     // The alias names the request's object type, which an accessors-only run does not emit.

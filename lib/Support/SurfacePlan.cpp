@@ -1229,8 +1229,18 @@ private:
                                         const std::size_t                           file,
                                         const std::map<std::string, DefinitionRef>& composites)
     {
-        const llvm::ArrayRef<EntryPointName> entries = entryPointNames(row_.language);
-        const auto                           beside  = [](const std::string& type, const EntryPointName& entry) {
+        // The entry points another definition's bodies reach: a nested call's and a nested
+        // initialiser's. No body calls another definition's wire image.
+        std::vector<EntryPointName> entries;
+        for (const EntryPointName& entry : entryPointNames(row_.language))
+        {
+            if ((entry.function == PlanFunction::Serialize) || (entry.function == PlanFunction::Deserialize) ||
+                (entry.function == PlanFunction::Initialize))
+            {
+                entries.push_back(entry);
+            }
+        }
+        const auto beside = [](const std::string& type, const EntryPointName& entry) {
             return entry.name.str() + type + entry.suffix.str();
         };
         ImportNameScope scope(row_.language, [&](const std::string& type) {
