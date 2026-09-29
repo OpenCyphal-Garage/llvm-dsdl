@@ -96,6 +96,7 @@ enum class LayoutPart : std::uint8_t
     Prelude,              ///< What opens the file.
     Guards,               ///< What keeps the file from being read with one it conflicts with.
     Imports,              ///< What the file's declarations name from other files.
+    Opening,              ///< What opens the scope the file's declarations are made in.
     DefinitionConstants,  ///< The generated constants a definition states of itself.
     Sections,             ///< Each section, in the order its layout names its parts.
     Alias,                ///< The name a service is known by, and what it states through it.
