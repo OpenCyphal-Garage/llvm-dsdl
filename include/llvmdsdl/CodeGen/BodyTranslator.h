@@ -142,16 +142,19 @@ public:
     WireImageSpelling& operator=(WireImageSpelling&&)      = delete;
     virtual ~WireImageSpelling()                           = default;
 
-    [[nodiscard]] virtual std::string bytesEmpty(mlir::dsdl::BytesEmptyOp op, const ValueNames& names) const       = 0;
     [[nodiscard]] virtual std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const     = 0;
     [[nodiscard]] virtual std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const     = 0;
     [[nodiscard]] virtual std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& names) const         = 0;
     [[nodiscard]] virtual std::string bytesAt(mlir::dsdl::BytesAtOp op, const ValueNames& names) const             = 0;
     [[nodiscard]] virtual std::string bytesTruncate(mlir::dsdl::BytesTruncateOp op, const ValueNames& names) const = 0;
     [[nodiscard]] virtual std::string copyBuffer(mlir::dsdl::CopyBufferOp op, const ValueNames& names) const       = 0;
+    [[nodiscard]] virtual std::string makeObject(mlir::dsdl::MakeObjectOp op, const ValueNames& names) const       = 0;
 
     /// @brief Returns @p bytes, holding an image, and @p error, the code of the body that wrote it.
     virtual void returnImage(SourceWriter& w, llvm::StringRef bytes, llvm::StringRef error) const = 0;
+
+    /// @brief Returns @p object, read from an image, and @p error, the code of the body that read it.
+    virtual void returnObject(SourceWriter& w, llvm::StringRef object, llvm::StringRef error) const = 0;
 };
 
 /// @brief One language's spelling of the plan-body vocabulary.

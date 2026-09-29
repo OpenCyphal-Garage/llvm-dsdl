@@ -76,17 +76,20 @@ struct WireImageInterface final
     /// @brief Whether the target answers new bytes holding an object's image.
     bool answersNew{false};
 
-    /// @brief Whether the target reads an object from bytes that hold its whole image.
+    /// @brief Whether the target reads an object it is handed from bytes that hold its whole image.
     bool reads{false};
 
-    /// @brief Whether that reader may keep none of the bytes it is handed, so an object that holds a
+    /// @brief Whether the target answers a new object read from bytes that hold its whole image.
+    bool makes{false};
+
+    /// @brief Whether a reader may keep none of the bytes it is handed, so an object that holds a
     ///        view reads a copy of them.
     bool readerKeepsNothing{false};
 
     /// @brief Whether the target publishes any of them.
     [[nodiscard]] constexpr bool any() const
     {
-        return appends || answersNew || reads;
+        return appends || answersNew || reads || makes;
     }
 };
 

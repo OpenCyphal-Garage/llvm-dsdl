@@ -373,10 +373,14 @@ private:
     std::string           ownKey_;
 };
 
-/// @brief The import block of a Python file that names @p imports: the standard library's, then the
-///        package's own, each group closed by a blank line.
 /// @brief The line length `ruff` and `black` hold a Python file to by default.
 constexpr std::size_t kPythonLineLength = 88;
+
+/// @brief The spaces a Python block is indented by.
+constexpr unsigned kPythonIndent = 4;
+
+/// @brief The import block of a Python file that names @p imports: the standard library's, then the
+///        package's own, each group closed by a blank line.
 
 std::string renderPythonImports(const ImportSet& imports)
 {
@@ -739,12 +743,12 @@ void emitSectionType(SourceWriter&           w,
 /// Every integer of the plan is a Python `int`, which holds the value it stands for: a
 /// constant is spelled as that value, and a bigint's bitwise operators read a negative value as
 /// its two's complement. A buffer is a `memoryview`, and a pointer into it is a slice of the
-/// view. A body is a method of the dataclass that answers the size it used, or the error code,
-/// which is negative; the `serialize` and `deserialize` methods a consumer calls wrap it. A
-/// deserialise body is handed a default-constructed object, whose fixed arrays and nested
-/// objects exist; a union's option is created when the plan sets the tag. Python has no
-/// empty block, so a block that spelled no statement closes with `pass`.
-class PythonSpelling final : public BodySpelling
+/// view. A body is a method of the dataclass that answers the size it used and raises on an error
+/// code; the `serialize` and `deserialize` methods a consumer calls are bodies over that pair,
+/// which hold the wire image in a `bytearray`. A deserialise body is handed a default-constructed object, whose fixed
+/// arrays and nested objects exist; a union's option is created when the plan sets the tag. Python has no empty block,
+/// so a block that spelled no statement closes with `pass`.
+class PythonSpelling final : public BodySpelling, public WireImageSpelling
 {
 public:
     PythonSpelling(mlir::dsdl::SchemaOp schema, const PySurface& names, const PyFileNames& file)
@@ -817,6 +821,14 @@ public:
         if (*direction == "get" || *direction == "set")
         {
             return openAccessor(w, fn, *direction == "get");
+        }
+        if (*direction == "wire_image")
+        {
+            return {"self"};
+        }
+        if (*direction == "from_wire_image")
+        {
+            return {"data"};
         }
         return {"self", "buffer"};
     }
@@ -1176,9 +1188,13 @@ public:
 
     [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
-        return mlir::
-            isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp, mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(
-                op);
+        return mlir::isa<mlir::dsdl::IsNullOp,
+                         mlir::dsdl::BufferOrEmptyOp,
+                         mlir::dsdl::MemberAddrOp,
+                         mlir::dsdl::ElementAddrOp,
+                         mlir::dsdl::BytesAtOp,
+                         mlir::dsdl::BytesTruncateOp,
+                         mlir::dsdl::CopyBufferOp>(op);
     }
 
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
@@ -1490,6 +1506,62 @@ public:
         {
             declare(w, op.getError().getType(), error, consumed.str() + " if " + consumed.str() + " < 0 else 0");
         }
+    }
+
+    [[nodiscard]] const WireImageSpelling* wireImages() const override
+    {
+        return this;
+    }
+
+    // A whole wire image, in a `bytearray`, read through a byte view of whatever bytes it is handed.
+
+    [[nodiscard]] std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const override
+    {
+        return "bytearray(" + names(op.getLength()) + ")";
+    }
+
+    [[nodiscard]] std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const override
+    {
+        return "len(" + names(op.getBytes()) + ")";
+    }
+
+    [[nodiscard]] std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& names) const override
+    {
+        return "bytearray(" + names(op.getBytes()) + ") + bytes(" + names(op.getCount()) + ")";
+    }
+
+    [[nodiscard]] std::string bytesAt(mlir::dsdl::BytesAtOp op, const ValueNames& names) const override
+    {
+        const std::string view = "memoryview(" + names(op.getBytes()) + ").cast(\"B\")";
+        return op.getOffset() ? view + "[" + names(op.getOffset()) + ":]" : view;
+    }
+
+    [[nodiscard]] std::string bytesTruncate(mlir::dsdl::BytesTruncateOp op, const ValueNames& names) const override
+    {
+        return names(op.getBytes()) + "[:" + names(op.getLength()) + "]";
+    }
+
+    [[nodiscard]] std::string copyBuffer(mlir::dsdl::CopyBufferOp op, const ValueNames& names) const override
+    {
+        return "memoryview(bytes(" + names(op.getBuffer()) + "))";
+    }
+
+    [[nodiscard]] std::string makeObject(mlir::dsdl::MakeObjectOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        // The reader is a class method, so a subclass reads an instance of itself.
+        return "cls()";
+    }
+
+    void returnImage(SourceWriter& w, const llvm::StringRef bytes, const llvm::StringRef error) const override
+    {
+        raiseOn(w, error);
+        line(w, "return bytes(" + bytes.str() + ")");
+    }
+
+    void returnObject(SourceWriter& w, const llvm::StringRef object, const llvm::StringRef error) const override
+    {
+        raiseOn(w, error);
+        line(w, "return " + object.str());
     }
 
 private:
@@ -1893,7 +1965,7 @@ const DeclarationLayout& pyLayout()
                     LayoutPart::TypeEnd,
                     LayoutPart::Options,
                     LayoutPart::Constants},
-        .indent  = IndentPolicy::spaces(4),
+        .indent  = IndentPolicy::spaces(kPythonIndent),
     };
     return layout;
 }
@@ -1981,6 +2053,16 @@ public:
             }
             return "def " + decl.name + "(" + list + ") -> " + PythonSpelling::typeName(fn.getResultTypes().front());
         }
+        if (*direction == "wire_image")
+        {
+            return "def " + decl.name + "(self) -> bytes";
+        }
+        if (*direction == "from_wire_image")
+        {
+            // A class method answering an instance of the class whose section the body reads.
+            return "def " + decl.name + "(cls, data: bytes | bytearray | memoryview) -> " +
+                   PySection(ctx_.names(), decl.of->schema, decl.of->section).typeName();
+        }
         if ((*direction != "get") && (*direction != "set"))
         {
             return "def " + decl.name + "(self, buffer: memoryview) -> int";
@@ -2009,11 +2091,28 @@ public:
 
     void openDefinition(SourceWriter& w, const SurfaceDecl& decl, const std::string& signature) const override
     {
-        if (decl.kind == SurfaceDeclKind::Accessor)
+        // An accessor is a static method, and a reader that makes its object a class method.
+        const std::optional<PlanSymbol> symbol = decl.of ? parsePlanSymbol(decl.of->function) : std::nullopt;
+        const bool                      makes  = symbol && (symbol->function == PlanFunction::FromWireImage);
+        if ((decl.kind == SurfaceDeclKind::Accessor) || makes)
         {
-            w.line("@staticmethod");
+            w.line(makes ? "@classmethod" : "@staticmethod");
         }
-        w.open(signature + ":");
+        // A definition too long for its line takes its parameters on a line of their own, as
+        // `ruff format` writes it.
+        const std::size_t column = static_cast<std::size_t>(w.depth()) * kPythonIndent;
+        if (column + signature.size() + 1 <= kPythonLineLength)
+        {
+            w.open(signature + ":");
+            return;
+        }
+        const std::size_t open  = signature.find('(');
+        const std::size_t close = signature.rfind(')');
+        w.line(signature.substr(0, open + 1));
+        w.indent();
+        w.line(signature.substr(open + 1, close - open - 1));
+        w.dedent();
+        w.open(signature.substr(close) + ":");
     }
 
     void forward(SourceWriter& /*w*/,

@@ -172,6 +172,8 @@
 # PY-NEXT:           dsdl.decl "SERIALIZATION_BUFFER_SIZE_BYTES" kind = constant origin = generated fact = serialization_buffer_size_bytes of = @ns.Ask.1.0 section = "request"
 # PY-NEXT:           dsdl.decl "_serialize_into" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
 # PY-NEXT:           dsdl.decl "_deserialize_from" kind = entry origin = generated of = @ns.Ask.1.0.request.deserialize
+# PY-NEXT:           dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.wire_image
+# PY-NEXT:           dsdl.decl "deserialize" kind = entry origin = generated of = @ns.Ask.1.0.request.from_wire_image
 # PY-NEXT:         }
 # PY-NEXT:         dsdl.decl "ASK_REQUEST_SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # PY:              dsdl.scope type "AskResponse" of = @ns.Ask.1.0 section = "response" {

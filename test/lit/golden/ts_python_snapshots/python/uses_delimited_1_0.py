@@ -113,3 +113,21 @@ class UsesDelimited(CompositeObject):
         if err != 0:
             raise ValueError(error_message(err))
         return v0
+
+    def serialize(self) -> bytes:
+        v0 = bytearray(12)
+        size = self._serialize_into(memoryview(v0).cast("B"))
+        err = size if size < 0 else 0
+        v1 = err == 0
+        v2 = (size if v1 else 0)
+        if err != 0:
+            raise ValueError(error_message(err))
+        return bytes(v0[:v2])
+
+    @classmethod
+    def deserialize(cls, data: bytes | bytearray | memoryview) -> UsesDelimited:
+        v0 = cls()
+        err = min(v0._deserialize_from(memoryview(data).cast("B")), 0)
+        if err != 0:
+            raise ValueError(error_message(err))
+        return v0

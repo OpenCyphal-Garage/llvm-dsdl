@@ -542,12 +542,6 @@ def DSDL_BufferLengthOp : DSDL_Op<"buffer_length", [Pure]> {
   let assemblyFormat = "$buffer attr-dict `:` type($buffer)";
 }
 
-def DSDL_BytesEmptyOp : DSDL_Op<"bytes_empty", [Pure]> {
-  let summary = "Bytes holding nothing";
-  let results = (outs DSDL_BytesType:$bytes);
-  let assemblyFormat = "attr-dict";
-}
-
 def DSDL_BytesZeroedOp : DSDL_Op<"bytes_zeroed", [Pure]> {
   let summary = "New bytes holding `length` zeros";
   let arguments = (ins I64:$length);
@@ -565,8 +559,7 @@ def DSDL_BytesLengthOp : DSDL_Op<"bytes_length", [Pure]> {
 def DSDL_BytesGrowOp : DSDL_Op<"bytes_grow", [Pure]> {
   let summary = "Bytes with `count` zeros after them";
   let description = [{
-    The result holds what `bytes` holds, then `count` zeros. `bytes` itself is unchanged, so a body
-    that makes room for an image and then fails can answer the bytes it was handed.
+    The result holds what `bytes` holds, then `count` zeros. `bytes` itself is unchanged.
   }];
   let arguments = (ins DSDL_BytesType:$bytes, I64:$count);
   let results = (outs DSDL_BytesType:$grown);
@@ -604,6 +597,18 @@ def DSDL_CopyBufferOp
   let arguments = (ins DSDL_PtrType:$buffer);
   let results = (outs DSDL_PtrType:$copy);
   let assemblyFormat = "$buffer attr-dict `:` type($buffer)";
+}
+
+def DSDL_MakeObjectOp : DSDL_Op<"make_object"> {
+  let summary = "A new object, initialised";
+  let description = [{
+    What a reader that answers a new object reads into. `initializer` is the object's initialise
+    body, as `build-dsdl-plan-bodies` names it, and a target makes the object as its own emission
+    of that type initialises one.
+  }];
+  let arguments = (ins FlatSymbolRefAttr:$initializer);
+  let results = (outs DSDL_PtrType:$object);
+  let assemblyFormat = "$initializer attr-dict `:` type($object)";
 }
 
 def DSDL_LocalOp : DSDL_Op<"local"> {

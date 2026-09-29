@@ -991,13 +991,15 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
                         .name     = "UnmarshalBinary",
                         .suffix   = "",
                         .beside   = false}};
-    // Python's bodies are the class's own methods, which the ones a consumer calls wrap.
-    static constexpr std::array<EntryPointName, 2> kPython =
+    // Python's bodies are the class's own methods: the pair over a buffer, then the wire image's.
+    static constexpr std::array<EntryPointName, 4> kPython =
         {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .suffix = "", .beside = false},
          EntryPointName{.function = PlanFunction::Deserialize,
                         .name     = "_deserialize_from",
                         .suffix   = "",
-                        .beside   = false}};
+                        .beside   = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .suffix = "", .beside = false}};
     // TypeScript's bodies, and the factory its initialiser is read into, are functions of the module.
     static constexpr std::array<EntryPointName, 3> kTypeScript =
         {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "Into", .beside = true},

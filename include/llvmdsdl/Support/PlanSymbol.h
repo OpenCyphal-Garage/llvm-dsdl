@@ -17,11 +17,10 @@
 /// |---|---|
 /// | `ns.Msg.1.0` | the schema |
 /// | `ns.Msg.1.0.serialize` | a body: `serialize`, `deserialize` or `initialize` |
-/// | `ns.Msg.1.0.wire_image` | a body over the pair: `append_wire_image`, `wire_image` or `read_wire_image` |
-/// | `ns.Svc.1.0.request.serialize` | a service section's body |
-/// | `ns.Msg.1.0.get.speed` | an accessor of a member: `get` or `set` |
-/// | `ns.Msg.1.0.plan.scalar_unsigned.2.ser` | a helper: its kind, then the plan step and the direction it serves,
-/// where it serves one |
+/// | `ns.Msg.1.0.wire_image` | a body over the pair: `append_wire_image`, `wire_image`, `read_wire_image` or
+/// `from_wire_image` | | `ns.Svc.1.0.request.serialize` | a service section's body | | `ns.Msg.1.0.get.speed` | an
+/// accessor of a member: `get` or `set` | | `ns.Msg.1.0.plan.scalar_unsigned.2.ser` | a helper: its kind, then the plan
+/// step and the direction it serves, where it serves one |
 ///
 /// No DSDL name component begins with a digit, so the first all-digit component is the major
 /// version and the grammar reads back unambiguously. A backend that cannot declare these spells
@@ -61,8 +60,11 @@ enum class PlanFunction : std::uint8_t
     /// @brief Answers new bytes holding an object's wire image.
     WireImage,
 
-    /// @brief Reads an object from bytes that hold its whole wire image.
+    /// @brief Reads an object it is handed from bytes that hold its whole wire image.
     ReadWireImage,
+
+    /// @brief Answers a new object read from bytes that hold its whole wire image.
+    FromWireImage,
 
     /// @brief Reads one member from a buffer.
     Get,

@@ -112,6 +112,8 @@ llvm::StringRef planFunctionWord(const PlanFunction function)
         return "wire_image";
     case PlanFunction::ReadWireImage:
         return "read_wire_image";
+    case PlanFunction::FromWireImage:
+        return "from_wire_image";
     case PlanFunction::Get:
         return "get";
     case PlanFunction::Set:
@@ -158,6 +160,7 @@ std::string renderPlanSymbol(const PlanSymbol& symbol)
     case PlanFunction::AppendWireImage:
     case PlanFunction::WireImage:
     case PlanFunction::ReadWireImage:
+    case PlanFunction::FromWireImage:
         break;
     }
     return out;
@@ -202,7 +205,8 @@ std::optional<PlanSymbol> parsePlanSymbol(const llvm::StringRef symbol)
                                         PlanFunction::Initialize,
                                         PlanFunction::AppendWireImage,
                                         PlanFunction::WireImage,
-                                        PlanFunction::ReadWireImage})
+                                        PlanFunction::ReadWireImage,
+                                        PlanFunction::FromWireImage})
     {
         if (word == planFunctionWord(function))
         {

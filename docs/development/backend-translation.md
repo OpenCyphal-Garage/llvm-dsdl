@@ -49,7 +49,8 @@ target that stores a bool array a bool per element, `dsdl-expand-bool-runs` turn
 through `dsdl.write_bit` and `dsdl.read_bit`. For a target whose row publishes a wire image,
 `dsdl-build-wire-image-bodies` builds the bodies that move one whole over each section's serialise
 and deserialise: an encoder that appends to bytes the caller hands it, one that answers new bytes,
-and a reader, as the row's `wireImage` names them. Each calls its section's own entry point through
+a reader into an object it is handed, and one that answers an object it makes with
+`dsdl.make_object`, as the row's `wireImage` names them. Each calls its section's own entry point through
 `dsdl.call_serdes_sized` with no bound, so the entry point is offered the whole buffer. The caller's
 bytes are `!dsdl.bytes`, which carry their length and can be lengthened. A reader that may keep
 none of its bytes reads an object holding a view, which the pass finds in the deserialise body and
@@ -289,9 +290,10 @@ spells every integer of the plan as a Python `int`, which holds the value it sta
 constant is that value and the bitwise operators read a negative one as its two's complement. A
 body is a method of the dataclass that answers the size it used and raises `ValueError` with the
 text of an error code, and a setter raises the same way. The dataclass derives from the runtime's
-`CompositeObject`, whose `serialize` and `deserialize` compose the two bodies once for every type:
-the one with a buffer of the size the class's `SERIALIZATION_BUFFER_SIZE_BYTES` states, the other
-with a default-constructed object. A buffer is a `memoryview`, and a pointer into it is a slice of the view, which the three runtimes
+`CompositeObject` and states its largest image as `SERIALIZATION_BUFFER_SIZE_BYTES`. Its
+`serialize` and `deserialize` translate the bodies `dsdl-build-wire-image-bodies` builds over the
+pair: the one writes into a `bytearray` of that size, and the other is a class method that reads
+into `cls()`, the object `dsdl.make_object` makes. A buffer is a `memoryview`, and a pointer into it is a slice of the view, which the three runtimes
 read and write in place. A fixed-length array holds its elements from construction, so a
 deserialised object has the storage the plan addresses; a union's option is created when the
 plan sets the tag. Python has no empty block, so a block that spelled no statement closes with

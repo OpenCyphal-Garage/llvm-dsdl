@@ -162,12 +162,13 @@ std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(BoolArrayStorage storag
 
 /// @brief Builds the bodies a target publishes over each section's serialise and deserialise that
 ///        move a whole wire image: an encoder into new bytes, one appending to bytes the caller
-///        hands it, and a reader, as @p target names them.
+///        hands it, a reader into an object it is handed, and one answering a new object, as
+///        @p target names them.
 ///
 /// Each calls its section's entry point through `dsdl.call_serdes_sized`, so it runs after
 /// `dsdl-fold-body-sizes`, and a body that does not answer its size fails the pass. Registered with
-/// `dsdl-opt` as `dsdl-build-wire-image-bodies`, whose options default to all three and a reader that
-/// keeps nothing.
+/// `dsdl-opt` as `dsdl-build-wire-image-bodies`, whose options default to Go's: both encoders, a
+/// reader into an object it is handed, and a reader that keeps nothing.
 /// @param[in] target What the target publishes.
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createBuildDSDLWireImageBodiesPass(const WireImageInterface& target);
