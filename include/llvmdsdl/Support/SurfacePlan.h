@@ -243,6 +243,10 @@ struct DefinitionNames final
     ///        where a section's type already has the name.
     std::optional<std::size_t> serviceAlias;
 
+    /// @brief The type a service's sections are declared in, where the language encloses them in
+    ///        one; none otherwise.
+    std::optional<std::size_t> serviceScope;
+
     /// @brief The namespace's components, each as the language names a namespace.
     std::vector<std::string> namespaceNames;
 

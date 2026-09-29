@@ -180,11 +180,16 @@ void forEachServiceName(const LanguageTraits&                              langu
                         const llvm::function_ref<void(const std::string&)> claim)
 {
     const Composition& composition = language.composition;
-    for (const llvm::StringRef token : codegenGeneratedConstantTokens())
+    // A service's constants declared in its own type are declared beside nothing.
+    if (composition.serviceConstants != ConstantsScope::Type)
     {
-        claim((composition.constants == ConstantsScope::Package)
-                  ? goConstantName({baseTypeName, token})
-                  : renderEnclosedConstantName(baseTypeName, token.str() + composition.generatedConstantSuffix.str()));
+        for (const llvm::StringRef token : codegenGeneratedConstantTokens())
+        {
+            claim((composition.constants == ConstantsScope::Package)
+                      ? goConstantName({baseTypeName, token})
+                      : renderEnclosedConstantName(baseTypeName,
+                                                   token.str() + composition.generatedConstantSuffix.str()));
+        }
     }
     const FreeFunctionNames& free = composition.freeFunctions;
     if (!free.entryPointJoin.empty())

@@ -75,15 +75,16 @@
 # C_OK_NEG-NOT: __attribute__((deprecated))
 # C_OK_NEG-NOT: #pragma GCC diagnostic
 
-# The struct is declared under a name of its own and the public name is a deprecated alias of it, so
-# a struct that embeds it never mentions the deprecated name; only user code, which names the alias,
-# is diagnosed.
+# The service's struct and each section's are declared under names of their own, and the public names
+# are deprecated aliases of them, so the header never mentions a deprecated name; only user code,
+# which names an alias, is diagnosed. A section has an alias of its own: Clang diagnoses no alias
+# that only qualifies a name, as `Retired::Request` does.
 # CPP_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# CPP_DEP: struct Retired_Request_ {
+# CPP_DEP: struct Retired_ {
+# CPP_DEP: struct Request_ {
 # CPP_DEP: IS_DEPRECATED = true
-# CPP_DEP: using Retired_Request {{\[\[}}deprecated{{\]\]}} = Retired_Request_;
-# The service alias is deprecated the same way.
-# CPP_DEP: using Retired {{\[\[}}deprecated{{\]\]}} = Retired_Request_;
+# CPP_DEP: using Request {{\[\[}}deprecated{{\]\]}} = Request_;
+# CPP_DEP: using Retired {{\[\[}}deprecated{{\]\]}} = Retired_;
 # CPP_DEP_NEG-NOT: #pragma GCC diagnostic
 # CPP_DEP_NEG-NOT: struct {{\[\[}}deprecated{{\]\]}}
 
@@ -168,9 +169,10 @@
 
 # CPP_NOATTR-NOT: {{\[\[}}deprecated{{\]\]}}
 # CPP_NOATTR-NOT: #pragma GCC diagnostic
-# CPP_NOATTR_DOC: IS_DEPRECATED = true
-# CPP_NOATTR_DOC: using Retired_Request = Retired_Request_;
 # CPP_NOATTR_DOC: Deprecated: dep.Retired.1.0 is marked @deprecated
+# CPP_NOATTR_DOC: IS_DEPRECATED = true
+# CPP_NOATTR_DOC: using Request = Request_;
+# CPP_NOATTR_DOC: using Retired = Retired_;
 
 # RUST_NOATTR-NOT: #[deprecated]
 # RUST_NOATTR-NOT: #![allow(deprecated)]

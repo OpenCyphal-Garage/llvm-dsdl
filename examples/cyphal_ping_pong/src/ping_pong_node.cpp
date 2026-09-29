@@ -38,8 +38,8 @@ extern "C"
 namespace
 {
 
-using PingPongRequest  = dsdl::demo::ping::PingPong_Request;
-using PingPongResponse = dsdl::demo::ping::PingPong_Response;
+using PingPongRequest  = dsdl::demo::ping::PingPong::Request;
+using PingPongResponse = dsdl::demo::ping::PingPong::Response;
 
 constexpr size_t            kTxQueueCapacity    = 64U;
 constexpr size_t            kRxDatagramCapacity = 2048U;
@@ -492,11 +492,11 @@ void processRx(NodeApp& app)
         UdpardRxRPCPort*    outPort    = nullptr;
         const auto          now        = getMonotonicMicroseconds();
         const int_fast8_t   dispatchRc = udpardRxRPCDispatcherReceive(&app.rpcDispatcher,
-                                                                    now,
+                                                                      now,
                                                                       {.size = payloadSize, .data = datagramBuffer},
-                                                                    0U,
-                                                                    &outPort,
-                                                                    &transfer);
+                                                                      0U,
+                                                                      &outPort,
+                                                                      &transfer);
         if (dispatchRc < 0)
         {
             std::fprintf(stderr,

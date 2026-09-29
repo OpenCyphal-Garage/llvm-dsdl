@@ -1,6 +1,6 @@
-# Regression: C declares every type in one global scope, and C++ and Go every type of a namespace in
-# one namespace or package, and each declares names of its own beside a type. A definition could be
-# called one of them, and the output did not compile: `ns.A_EXTENT_BYTES_` redefined `ns.A`'s macro,
+# Regression: C declares every type in one global scope, and Go every type of a namespace in one
+# package, and each declares names of its own beside a type. A definition could be called one of
+# them, and the output did not compile: `ns.A_EXTENT_BYTES_` redefined `ns.A`'s macro,
 # `ns.A.serialize_` met `ns__A__serialize_`, and `ns.MsgExtentBytes` redeclared `ns.Msg`'s constant
 # in Go.
 
@@ -48,12 +48,6 @@
 # RUN: not %dsdlc --target-language obj %t/cmacro/ns --outdir %t/obj 2>&1 | FileCheck %s --check-prefix=OBJ
 # OBJ: both emit 'ns__A_EXTENT_BYTES_' for target language 'c'
 
-# C++: a service's own constant.
-# RUN: mkdir -p %t/cppsvc/ns && printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/cppsvc/ns/Svc.1.0.dsdl
-# RUN: printf 'uint8 b\n@sealed\n' > %t/cppsvc/ns/Svc_FULL_NAME.1.0.dsdl
-# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/cppsvc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CPPSVC
-# CPPSVC: 'ns.Svc_FULL_NAME' and a name generated for 'ns.Svc' both emit 'Svc_FULL_NAME' for target language 'cpp'
-
 # Go: a package constant, an accessor, and the accessor of a union's tag.
 # RUN: mkdir -p %t/goconst/ns && printf 'uint8 a\n@sealed\n' > %t/goconst/ns/Msg.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/goconst/ns/MsgExtentBytes.1.0.dsdl
@@ -78,3 +72,6 @@
 # RUN: printf 'uint8 b\n@sealed\n' > %t/entry/ns/Foo_serialize_.1.0.dsdl
 # RUN: %dsdlc --target-language python %t/entry/ns --outdir %t/py
 # RUN: %dsdlc --target-language cpp --cpp-profile std %t/entry/ns --outdir %t/cpp
+# RUN: mkdir -p %t/svc/ns && printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/svc/ns/Svc.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/svc/ns/Svc_FULL_NAME.1.0.dsdl
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/svc/ns --outdir %t/cppsvc

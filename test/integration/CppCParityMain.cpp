@@ -175,10 +175,10 @@ std::int8_t cExecuteRequestSerialize(const uavcan__node__ExecuteCommand@CV1_3@__
 std::int8_t cExecuteRequestDeserialize(uavcan__node__ExecuteCommand@CV1_3@__Request* outObj,
                                        const std::uint8_t*                    buffer,
                                        std::size_t*                           inoutSize);
-std::int8_t cppExecuteRequestSerialize(const uavcan::node::ExecuteCommand@CV1_3@_Request* obj,
+std::int8_t cppExecuteRequestSerialize(const uavcan::node::ExecuteCommand@CV1_3@::Request* obj,
                                        std::uint8_t*                                    buffer,
                                        std::size_t*                                     inoutSize);
-std::int8_t cppExecuteRequestDeserialize(uavcan::node::ExecuteCommand@CV1_3@_Request* outObj,
+std::int8_t cppExecuteRequestDeserialize(uavcan::node::ExecuteCommand@CV1_3@::Request* outObj,
                                          const std::uint8_t*                        buffer,
                                          std::size_t*                               inoutSize);
 std::int8_t cExecuteResponseDeserialize(uavcan__node__ExecuteCommand@CV1_3@__Response* outObj,
@@ -187,10 +187,10 @@ std::int8_t cExecuteResponseDeserialize(uavcan__node__ExecuteCommand@CV1_3@__Res
 std::int8_t cExecuteResponseSerialize(const uavcan__node__ExecuteCommand@CV1_3@__Response* obj,
                                       std::uint8_t*                                 buffer,
                                       std::size_t*                                  inoutSize);
-std::int8_t cppExecuteResponseDeserialize(uavcan::node::ExecuteCommand@CV1_3@_Response* outObj,
+std::int8_t cppExecuteResponseDeserialize(uavcan::node::ExecuteCommand@CV1_3@::Response* outObj,
                                           const std::uint8_t*                         buffer,
                                           std::size_t*                                inoutSize);
-std::int8_t cppExecuteResponseSerialize(const uavcan::node::ExecuteCommand@CV1_3@_Response* obj,
+std::int8_t cppExecuteResponseSerialize(const uavcan::node::ExecuteCommand@CV1_3@::Response* obj,
                                         std::uint8_t*                                     buffer,
                                         std::size_t*                                      inoutSize);
 std::int8_t cFrameDeserialize(uavcan__metatransport__can__Frame@CV0_2@* outObj,
@@ -362,7 +362,7 @@ int runDirectedErrorCases()
         // Deserialisation should succeed via implicit truncation/zero-extension.
         const std::uint8_t input[4] = {0x34U, 0x12U, 0x02U, 0xAAU};  // command=0x1234, parameter.count=2
         uavcan__node__ExecuteCommand@CV1_3@__Request     cObj{};
-        uavcan::node::ExecuteCommand@CV1_3@_Request cppObj{};
+        uavcan::node::ExecuteCommand@CV1_3@::Request cppObj{};
         std::size_t                               cConsumed   = sizeof(input);
         std::size_t                               cppConsumed = sizeof(input);
         const std::int8_t                         cDesRc      = cExecuteRequestDeserialize(&cObj, input, &cConsumed);
@@ -383,7 +383,7 @@ int runDirectedErrorCases()
         std::uint8_t cppOut[300]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize      = uavcan::node::ExecuteCommand@CV1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize      = uavcan::node::ExecuteCommand@CV1_3@::Request::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cSerRc       = cExecuteRequestSerialize(&cObj, cOut, &cSize);
         const std::int8_t cppSerRc     = cppExecuteRequestSerialize(&cppObj, cppOut, &cppSize);
         const bool        byteMismatch = (cSize == cppSize) && (std::memcmp(cOut, cppOut, cSize) != 0);
@@ -442,7 +442,7 @@ int runDirectedErrorCases()
         // This should deserialise successfully via implicit truncation/zero-extension.
         const std::uint8_t input[3] = {0x01U, 0x02U, 0xAAU};  // status=1, output.count=2, payload[0]=0xAA
         uavcan__node__ExecuteCommand@CV1_3@__Response     cObj{};
-        uavcan::node::ExecuteCommand@CV1_3@_Response cppObj{};
+        uavcan::node::ExecuteCommand@CV1_3@::Response cppObj{};
         std::size_t                                cConsumed   = sizeof(input);
         std::size_t                                cppConsumed = sizeof(input);
         const std::int8_t                          cDesRc      = cExecuteResponseDeserialize(&cObj, input, &cConsumed);
@@ -463,7 +463,7 @@ int runDirectedErrorCases()
         std::uint8_t cppOut[128]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Response_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize      = uavcan::node::ExecuteCommand@CV1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize      = uavcan::node::ExecuteCommand@CV1_3@::Response::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cSerRc       = cExecuteResponseSerialize(&cObj, cOut, &cSize);
         const std::int8_t cppSerRc     = cppExecuteResponseSerialize(&cppObj, cppOut, &cppSize);
         const bool        byteMismatch = (cSize == cppSize) && (std::memcmp(cOut, cppOut, cSize) != 0);
@@ -488,7 +488,7 @@ int runDirectedErrorCases()
         // Invalid variable-array length in ExecuteCommand.Response deserialisation.
         const std::uint8_t                         input[2] = {0x00U, 0xFFU};  // status=0, output.count=255
         uavcan__node__ExecuteCommand@CV1_3@__Response     cObj{};
-        uavcan::node::ExecuteCommand@CV1_3@_Response cppObj{};
+        uavcan::node::ExecuteCommand@CV1_3@::Response cppObj{};
         std::size_t                                cConsumed   = sizeof(input);
         std::size_t                                cppConsumed = sizeof(input);
         const std::int8_t                          cRc         = cExecuteResponseDeserialize(&cObj, input, &cConsumed);
@@ -710,12 +710,12 @@ int runDirectedErrorCases()
     {
         // Service request-path failure: too-small buffer on serialisation.
         uavcan__node__ExecuteCommand@CV1_3@__Request     cObj{};
-        uavcan::node::ExecuteCommand@CV1_3@_Request cppObj{};
+        uavcan::node::ExecuteCommand@CV1_3@::Request cppObj{};
         std::uint8_t                              cBuffer[300]{};
         std::uint8_t                              cppBuffer[300]{};
         std::size_t                               cSize =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_ - 1U);
-        std::size_t       cppSize  = uavcan::node::ExecuteCommand@CV1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES - 1U;
+        std::size_t       cppSize  = uavcan::node::ExecuteCommand@CV1_3@::Request::SERIALIZATION_BUFFER_SIZE_BYTES - 1U;
         const std::int8_t cRc      = cExecuteRequestSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc    = cppExecuteRequestSerialize(&cppObj, cppBuffer, &cppSize);
         const std::int8_t expected = static_cast<std::int8_t>(-3);
@@ -736,17 +736,17 @@ int runDirectedErrorCases()
     {
         // Service request-path failure: ExecuteCommand.Request parameter length exceeds capacity.
         uavcan__node__ExecuteCommand@CV1_3@__Request     cObj{};
-        uavcan::node::ExecuteCommand@CV1_3@_Request cppObj{};
+        uavcan::node::ExecuteCommand@CV1_3@::Request cppObj{};
         cObj.command = 0U;
         cObj.parameter.count =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Request_PARAMETER_ARRAY_CAPACITY_ + 1U);
         cppObj.command = 0U;
-        cppObj.parameter.resize(uavcan::node::ExecuteCommand@CV1_3@_Request::PARAMETER_ARRAY_CAPACITY + 1U, 0U);
+        cppObj.parameter.resize(uavcan::node::ExecuteCommand@CV1_3@::Request::PARAMETER_ARRAY_CAPACITY + 1U, 0U);
         std::uint8_t cBuffer[300]{};
         std::uint8_t cppBuffer[300]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize  = uavcan::node::ExecuteCommand@CV1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize  = uavcan::node::ExecuteCommand@CV1_3@::Request::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc      = cExecuteRequestSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc    = cppExecuteRequestSerialize(&cppObj, cppBuffer, &cppSize);
         const std::int8_t expected = static_cast<std::int8_t>(-10);
@@ -767,17 +767,17 @@ int runDirectedErrorCases()
     {
         // Invalid variable-array length in ExecuteCommand.Response serialisation.
         uavcan__node__ExecuteCommand@CV1_3@__Response     cObj{};
-        uavcan::node::ExecuteCommand@CV1_3@_Response cppObj{};
+        uavcan::node::ExecuteCommand@CV1_3@::Response cppObj{};
         cObj.status = 0U;
         cObj.output.count =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Response_OUTPUT_ARRAY_CAPACITY_ + 1U);
         cppObj.status = 0U;
-        cppObj.output.resize(uavcan::node::ExecuteCommand@CV1_3@_Response::OUTPUT_ARRAY_CAPACITY + 1U, 0U);
+        cppObj.output.resize(uavcan::node::ExecuteCommand@CV1_3@::Response::OUTPUT_ARRAY_CAPACITY + 1U, 0U);
         std::uint8_t cBuffer[128]{};
         std::uint8_t cppBuffer[128]{};
         std::size_t  cSize =
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Response_SERIALIZATION_BUFFER_SIZE_BYTES_);
-        std::size_t       cppSize  = uavcan::node::ExecuteCommand@CV1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES;
+        std::size_t       cppSize  = uavcan::node::ExecuteCommand@CV1_3@::Response::SERIALIZATION_BUFFER_SIZE_BYTES;
         const std::int8_t cRc      = cExecuteResponseSerialize(&cObj, cBuffer, &cSize);
         const std::int8_t cppRc    = cppExecuteResponseSerialize(&cppObj, cppBuffer, &cppSize);
         const std::int8_t expected = static_cast<std::int8_t>(-10);
@@ -1012,13 +1012,13 @@ std::int8_t cExecuteRequestSerialize(const uavcan__node__ExecuteCommand@CV1_3@__
 {
     return uavcan__node__ExecuteCommand@CV1_3@__Request__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppExecuteRequestDeserialize(uavcan::node::ExecuteCommand@CV1_3@_Request* const outObj,
+std::int8_t cppExecuteRequestDeserialize(uavcan::node::ExecuteCommand@CV1_3@::Request* const outObj,
                                          const std::uint8_t* const                        buffer,
                                          std::size_t* const                               inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppExecuteRequestSerialize(const uavcan::node::ExecuteCommand@CV1_3@_Request* const obj,
+std::int8_t cppExecuteRequestSerialize(const uavcan::node::ExecuteCommand@CV1_3@::Request* const obj,
                                        std::uint8_t* const                                    buffer,
                                        std::size_t* const                                     inoutSize)
 {
@@ -1037,13 +1037,13 @@ std::int8_t cExecuteResponseSerialize(const uavcan__node__ExecuteCommand@CV1_3@_
 {
     return uavcan__node__ExecuteCommand@CV1_3@__Response__serialize_(obj, buffer, inoutSize);
 }
-std::int8_t cppExecuteResponseDeserialize(uavcan::node::ExecuteCommand@CV1_3@_Response* const outObj,
+std::int8_t cppExecuteResponseDeserialize(uavcan::node::ExecuteCommand@CV1_3@::Response* const outObj,
                                           const std::uint8_t* const                         buffer,
                                           std::size_t* const                                inoutSize)
 {
     return outObj->deserialize(buffer, inoutSize);
 }
-std::int8_t cppExecuteResponseSerialize(const uavcan::node::ExecuteCommand@CV1_3@_Response* const obj,
+std::int8_t cppExecuteResponseSerialize(const uavcan::node::ExecuteCommand@CV1_3@::Response* const obj,
                                         std::uint8_t* const                                     buffer,
                                         std::size_t* const                                      inoutSize)
 {
@@ -1207,11 +1207,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (runCase<uavcan__node__ExecuteCommand@CV1_3@__Request, uavcan::node::ExecuteCommand@CV1_3@_Request>(
+    if (runCase<uavcan__node__ExecuteCommand@CV1_3@__Request, uavcan::node::ExecuteCommand@CV1_3@::Request>(
             "uavcan.node.ExecuteCommand.Request.1.3",
             iterations,
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Request_SERIALIZATION_BUFFER_SIZE_BYTES_),
-            uavcan::node::ExecuteCommand@CV1_3@_Request::SERIALIZATION_BUFFER_SIZE_BYTES,
+            uavcan::node::ExecuteCommand@CV1_3@::Request::SERIALIZATION_BUFFER_SIZE_BYTES,
             cExecuteRequestDeserialize,
             cExecuteRequestSerialize,
             cppExecuteRequestDeserialize,
@@ -1220,11 +1220,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (runCase<uavcan__node__ExecuteCommand@CV1_3@__Response, uavcan::node::ExecuteCommand@CV1_3@_Response>(
+    if (runCase<uavcan__node__ExecuteCommand@CV1_3@__Response, uavcan::node::ExecuteCommand@CV1_3@::Response>(
             "uavcan.node.ExecuteCommand.Response.1.3",
             iterations,
             static_cast<std::size_t>(uavcan__node__ExecuteCommand@CV1_3@__Response_SERIALIZATION_BUFFER_SIZE_BYTES_),
-            uavcan::node::ExecuteCommand@CV1_3@_Response::SERIALIZATION_BUFFER_SIZE_BYTES,
+            uavcan::node::ExecuteCommand@CV1_3@::Response::SERIALIZATION_BUFFER_SIZE_BYTES,
             cExecuteResponseDeserialize,
             cExecuteResponseSerialize,
             cppExecuteResponseDeserialize,

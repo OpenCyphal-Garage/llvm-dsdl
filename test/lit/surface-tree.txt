@@ -2,7 +2,8 @@
 # every name declared in them. Each language opens its own: C joins the namespace into each name and
 # declares a type's constants as macros beside it, C++ opens a namespace, Go a package its files
 # share, and Rust, TypeScript and Python a module per definition. A service's own name is an alias
-# of its request, and a deprecated type is declared apart where the language does that. A scope the
+# of its request, or in C++ the struct that holds the service's facts and encloses its sections, and
+# a deprecated type is declared apart where the language does that. A scope the
 # output writes to a file of its own names the file, and in Rust, TypeScript and Python a
 # definition's module imports each definition its fields hold, TypeScript's with the functions
 # named after it. A type holds the members the generator adds, each generated constant and data
@@ -56,16 +57,19 @@
 # CPP-NEXT:   dsdl.scope root "" {
 # CPP-NEXT:     dsdl.scope namespace "ns" {
 # CPP-NEXT:       dsdl.scope file "Ask_1_0" path = "std/ns/Ask_1_0.hpp" {
-# CPP-NEXT:         dsdl.scope type "Ask_Request" of = @ns.Ask.1.0 section = "request" {
-# CPP:                dsdl.decl "_tag_" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
-# CPP-NEXT:           dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0 section = "request"
-# CPP:                dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
-# CPP:                dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
-# CPP:                dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
-# CPP:            dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
-# CPP-NEXT:       dsdl.decl "Ask_FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0
-# CPP:            dsdl.decl "Ask_HAS_FIXED_PORT_ID" kind = constant origin = generated fact = has_fixed_port_id of = @ns.Ask.1.0
-# CPP-NEXT:       dsdl.decl "mlir_llvmdsdl_plan_capacity_check_ns_Ask_1_0_request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
+# CPP-NEXT:         dsdl.scope type "Ask" of = @ns.Ask.1.0 {
+# CPP-NEXT:           dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0
+# CPP-NEXT:           dsdl.decl "FULL_NAME_AND_VERSION" kind = constant origin = generated fact = full_name_and_version of = @ns.Ask.1.0
+# CPP-NEXT:           dsdl.decl "HAS_FIXED_PORT_ID" kind = constant origin = generated fact = has_fixed_port_id of = @ns.Ask.1.0
+# CPP-NEXT:           dsdl.scope type "Request" of = @ns.Ask.1.0 section = "request" {
+# CPP:                  dsdl.decl "_tag_" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
+# CPP-NEXT:             dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0 section = "request"
+# CPP:                  dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
+# CPP:                  dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
+# CPP:                dsdl.scope type "Response" of = @ns.Ask.1.0 section = "response" {
+# CPP:                  dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
+# CPP-NOT:          kind = alias
+# CPP:              dsdl.decl "mlir_llvmdsdl_plan_capacity_check_ns_Ask_1_0_request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # CPP:            dsdl.scope type "Msg" of = @ns.Msg.1.0 {
 # CPP:              dsdl.decl "ITEMS_ARRAY_CAPACITY" kind = constant origin = generated fact = array_capacity of = @ns.Msg.1.0 member = "items"
 # CPP:              dsdl.decl "LIMIT" kind = constant of = @ns.Msg.1.0 member = "LIMIT"
@@ -74,7 +78,7 @@
 # CPP:      dsdl.surface target = "cpp" profile = "pmr" {
 # CPP:              dsdl.scope file "Ask_1_0" path = "pmr/ns/Ask_1_0.hpp" {
 # CPP:                  dsdl.decl "_memory_resource" kind = field origin = generated fact = memory_resource of = @ns.Ask.1.0 section = "request"
-# CPP:                dsdl.scope type "Ask_Response" of = @ns.Ask.1.0 section = "response" {
+# CPP:                  dsdl.scope type "Response" of = @ns.Ask.1.0 section = "response" {
 # CPP-NOT:              memory_resource
 # CPP:                  dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
 #

@@ -110,7 +110,7 @@ namespace
 /// Go, TypeScript and Python join the two parts with nothing between them: each of them writes a
 /// type name in PascalCase, and an underscore inside one is what `ST1003` and `N801` report and
 /// what `naming-convention` rejects. C separates with `__`, which is the separator it flattens a
-/// whole namespace with; C++ keeps the single underscore it has always had.
+/// whole namespace with.
 std::string renderSectionTypeSuffix(const Language language, const llvm::StringRef sectionName)
 {
     if ((sectionName != "request") && (sectionName != "response"))
@@ -131,9 +131,11 @@ std::string renderSectionTypeName(const Language        language,
     {
         return baseTypeName.str();
     }
-    if (languageTraits(language).composition.sectionNamedAlone)
+    if (languageTraits(language).composition.sectionEnclosure != SectionEnclosure::None)
     {
-        return codegenProjectIdentifier(language, IdentifierRole::TypeName, sectionName);
+        return codegenProjectIdentifier(language,
+                                        IdentifierRole::TypeName,
+                                        (sectionName == "request") ? "Request" : "Response");
     }
     return baseTypeName.str() + renderSectionTypeSuffix(language, sectionName);
 }

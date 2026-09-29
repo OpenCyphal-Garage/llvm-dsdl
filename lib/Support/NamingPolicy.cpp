@@ -944,15 +944,14 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES_"},
          GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES_"}};
-    // C++ names a service by an alias of its request, with the service's own identity and the
-    // request's sizes beside it.
-    static constexpr std::array<GeneratedName, 6> kCpp =
-        {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
-         GeneratedName{GeneratedFact::FullNameAndVersion, "FULL_NAME_AND_VERSION"},
-         GeneratedName{GeneratedFact::ExtentBytes, "EXTENT_BYTES"},
-         GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES"},
-         GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
-         GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"}};
+    // C++'s service is the struct that encloses its sections, which states the service's own identity;
+    // the request's sizes are the request's.
+    static constexpr std::array<GeneratedName, 4> kCpp = {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
+                                                          GeneratedName{GeneratedFact::FullNameAndVersion,
+                                                                        "FULL_NAME_AND_VERSION"},
+                                                          GeneratedName{GeneratedFact::HasFixedPortId,
+                                                                        "HAS_FIXED_PORT_ID"},
+                                                          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"}};
     switch (language)
     {
     case Language::Rust:
