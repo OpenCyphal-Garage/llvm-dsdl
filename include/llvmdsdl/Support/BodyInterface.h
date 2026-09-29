@@ -82,6 +82,9 @@ struct WireImageInterface final
     /// @brief Whether the target answers a new object read from bytes that hold its whole image.
     bool makes{false};
 
+    /// @brief Whether that reader answers the bytes it read beside the object.
+    bool makesAnswerUsed{false};
+
     /// @brief Whether a reader may keep none of the bytes it is handed, so an object that holds a
     ///        view reads a copy of them.
     bool readerKeepsNothing{false};

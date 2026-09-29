@@ -622,8 +622,8 @@ std::vector<BodyRow> wireImageRows(const llvmdsdl::WireImageInterface& target)
             return changed;
         };
     };
-    // A reader reads from a copy of what it is handed.
-    const auto copies = [](const llvm::StringRef body) {
+    // A reader offers its entry point no more than the bytes it is handed hold.
+    const auto bounded = [](const llvm::StringRef body) {
         return [body](mlir::ModuleOp module) {
             auto reader = fixtureBody(module, body);
             if (!reader)
@@ -632,12 +632,15 @@ std::vector<BodyRow> wireImageRows(const llvmdsdl::WireImageInterface& target)
             }
             bool changed = false;
             reader->walk([&](mlir::dsdl::CallSerdesSizedOp call) {
+                auto at = call.getBuffer().getDefiningOp<mlir::dsdl::BytesAtOp>();
+                if (!at || call.getAvailable())
+                {
+                    return;
+                }
                 mlir::OpBuilder builder(call);
-                auto            copy = mlir::dsdl::CopyBufferOp::create(builder,
-                                                                        call.getLoc(),
-                                                                        call.getBuffer().getType(),
-                                                                        call.getBuffer());
-                call.getBufferMutable().assign(copy.getCopy());
+                auto            length =
+                    mlir::dsdl::BytesLengthOp::create(builder, call.getLoc(), builder.getI64Type(), at.getBytes());
+                call.getAvailableMutable().assign(length.getLength());
                 changed = true;
             });
             return changed;
@@ -654,11 +657,11 @@ std::vector<BodyRow> wireImageRows(const llvmdsdl::WireImageInterface& target)
     }
     if (target.reads)
     {
-        rows.push_back({"wire-image-reader-copies", copies("read_wire_image")});
+        rows.push_back({"wire-image-reader-bounded", bounded("read_wire_image")});
     }
     if (target.makes)
     {
-        rows.push_back({"wire-image-maker-copies", copies("from_wire_image")});
+        rows.push_back({"wire-image-maker-bounded", bounded("from_wire_image")});
     }
     return rows;
 }

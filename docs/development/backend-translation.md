@@ -244,6 +244,10 @@ into it is a sub-slice clamped to the buffer's end. A fixed-length array is `[T;
 object the plan addresses without a count; it was a growable container with a length check the
 plan does not state. A variable-length array is sized within its capacity, under the section's
 memory contract, before the plan validates the count. The helpers are functions of the module.
+`to_bytes` and `from_bytes` translate the bodies `dsdl-build-wire-image-bodies` builds over the
+pair: the one writes into the runtime's `DsdlVec`, and the other reads into `Self::default()`, the
+value `dsdl.make_object` makes, and answers it with the bytes it read. A nested call names its
+callee's entry point as the surface tree declares it.
 Both profiles, both runtime specialisations and both memory modes are one spelling. The C↔Rust
 parity lanes and their variants, the cargo-check lanes and the generation lane accept it.
 

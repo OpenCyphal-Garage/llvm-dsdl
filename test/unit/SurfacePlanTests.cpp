@@ -617,8 +617,8 @@ bool runSurfacePlanTests()
     }
 
     // The members the generator adds to a Rust type: its data members, its facts as associated
-    // constants, its entry points with the functions that wrap them, and its accessors. A service's
-    // own facts are constants beside its types, named after it.
+    // constants, its entry points, the wire image's among them, and its accessors. A service's own
+    // facts are constants beside its types, named after it.
     {
         DefinitionParts pick = message("Pick",
                                        SectionParts{.fields    = {field("small", false, 0), varying("items")},
@@ -627,6 +627,8 @@ bool runSurfacePlanTests()
         pick.fixedPortId     = 7;
         pick.bodies          = {body("ns.Pick.1.0.serialize"),
                                 body("ns.Pick.1.0.deserialize"),
+                                body("ns.Pick.1.0.from_wire_image"),
+                                body("ns.Pick.1.0.wire_image"),
                                 body("ns.Pick.1.0.initialize"),
                                 body("ns.Pick.1.0.get._tag_"),
                                 body("ns.Pick.1.0.get.small")};

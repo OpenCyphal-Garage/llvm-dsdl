@@ -1588,6 +1588,7 @@ public:
 
     void returnObject(SourceWriter& /*w*/,
                       const llvm::StringRef /*object*/,
+                      const llvm::StringRef /*used*/,
                       const llvm::StringRef /*error*/) const override
     {
         llvm::report_fatal_error("Go spelling: Go's row answers no object read from a wire image");

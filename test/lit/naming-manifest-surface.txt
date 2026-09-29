@@ -62,9 +62,11 @@
 # RUST:      file = src/ns/hold_1_0.rs
 # RUST:      helpers/0 = capacity_check
 # RUST-NEXT: imports/ns.Msg.1.0/type = Msg
-# RUST:      message/entry_points/serialize = serialize
+# RUST:      message/entry_points/from_wire_image = from_bytes
+# RUST-NEXT: message/entry_points/serialize = serialize
+# RUST-NEXT: message/entry_points/wire_image = to_bytes
 # RUST:      message/generated/memory_mode = __LLVMDSDL_MEMORY_MODE
-# RUST:      message/wrappers/wire_image = to_bytes
+# RUST-NOT:  wrappers
 #
 # GO:      generated/has_fixed_port_id = AskHasFixedPortID
 # GO:      request/entry_points/append_wire_image = AppendBinary

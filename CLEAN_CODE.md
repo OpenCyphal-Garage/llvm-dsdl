@@ -1072,6 +1072,14 @@ declaration whose function the caller leaves out of the functions it hands the r
 spelling's to write: Go's constructor, which is Go's zero value or is written from the initialise
 body's facts. Go's declaration count falls from 77 to 70, and its body count from 59 to 53.
 
+Rust's output change takes the wire image's bodies. `to_bytes` answers new bytes in the runtime's
+`DsdlVec`, and `from_bytes` makes the value it reads and answers it with the bytes it read, which
+the row's `makesAnswerUsed` names. A nested call names its callee's entry point from the surface
+tree. The doubled blank lines of a service and of the accessors-only output go, as does the blank
+that ended every message's file. Rust's declaration count falls from 89 to 68; its body count rises
+from 60 to 66, since the spelling now writes the wire image's signatures and returns. Clippy holds
+at 641.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.

@@ -2203,6 +2203,7 @@ struct BuildDSDLWireImageBodiesPass final
         answersNew_.setValue(target.answersNew);
         reads_.setValue(target.reads);
         makes_.setValue(target.makes);
+        makesAnswerUsed_.setValue(target.makesAnswerUsed);
         readerKeepsNothing_.setValue(target.readerKeepsNothing);
     }
 
@@ -2268,11 +2269,11 @@ struct BuildDSDLWireImageBodiesPass final
             const bool copies = readerKeepsNothing_ && holdsView(symbols, section.deserialize);
             if (reads_)
             {
-                buildReader(builder, section, copies, false);
+                buildReader(builder, section, copies, false, false);
             }
             if (makes_)
             {
-                buildReader(builder, section, copies, true);
+                buildReader(builder, section, copies, true, makesAnswerUsed_);
             }
             if (answersNew_)
             {
@@ -2446,18 +2447,32 @@ private:
     }
 
     /// @brief Builds a reader: an object read from bytes that hold its whole image, or from a copy
-    ///        of them where @p copies. Where @p makes, the reader makes the object and answers it;
-    ///        otherwise it is handed the object.
-    static void buildReader(mlir::OpBuilder& builder, Section& section, const bool copies, const bool makes)
+    ///        of them where @p copies. Where @p makes, the reader makes the object and answers it,
+    ///        and the bytes it read beside it where @p answersUsed; otherwise it is handed the object.
+    static void buildReader(mlir::OpBuilder& builder,
+                            Section&         section,
+                            const bool       copies,
+                            const bool       makes,
+                            const bool       answersUsed)
     {
-        mlir::MLIRContext* const ctx    = builder.getContext();
-        const mlir::Location     loc    = section.deserialize.getLoc();
-        const mlir::Type         object = section.deserialize.getArgumentTypes()[0];
-        const mlir::Type         data   = section.deserialize.getArgumentTypes()[1];
-        const mlir::Type         bytes  = mlir::dsdl::BytesType::get(ctx);
-        const mlir::Type         i8     = builder.getIntegerType(8);
+        mlir::MLIRContext* const         ctx    = builder.getContext();
+        const mlir::Location             loc    = section.deserialize.getLoc();
+        const mlir::Type                 object = section.deserialize.getArgumentTypes()[0];
+        const mlir::Type                 data   = section.deserialize.getArgumentTypes()[1];
+        const mlir::Type                 bytes  = mlir::dsdl::BytesType::get(ctx);
+        const mlir::Type                 i8     = builder.getIntegerType(8);
+        llvm::SmallVector<mlir::Type, 3> results;
+        if (makes)
+        {
+            results.push_back(object);
+        }
+        if (makes && answersUsed)
+        {
+            results.push_back(builder.getIndexType());
+        }
+        results.push_back(i8);
         const mlir::FunctionType type =
-            makes ? builder.getFunctionType({bytes}, {object, i8}) : builder.getFunctionType({object, bytes}, {i8});
+            builder.getFunctionType(makes ? mlir::TypeRange{bytes} : mlir::TypeRange{object, bytes}, results);
         mlir::func::FuncOp fn =
             declare(builder, section, makes ? PlanFunction::FromWireImage : PlanFunction::ReadWireImage, type);
         mlir::OpBuilder::InsertionGuard const guard(builder);
@@ -2494,7 +2509,11 @@ private:
                                                   target,
                                                   buffer,
                                                   mlir::Value{});
-        if (makes)
+        if (makes && answersUsed)
+        {
+            mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{target, call.getConsumed(), call.getError()});
+        }
+        else if (makes)
         {
             mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{target, call.getError()});
         }
@@ -2521,6 +2540,10 @@ private:
                         llvm::cl::desc(
                             "Whether the target answers a new object read from bytes holding its whole image"),
                         llvm::cl::init(false)};
+    Option<bool> makesAnswerUsed_{*this,
+                                  "makes-answer-used",
+                                  llvm::cl::desc("Whether the reader that makes its object answers the bytes it read"),
+                                  llvm::cl::init(false)};
     Option<bool> readerKeepsNothing_{*this,
                                      "reader-keeps-nothing",
                                      llvm::cl::desc("Whether the reader may keep none of the bytes it is handed"),
