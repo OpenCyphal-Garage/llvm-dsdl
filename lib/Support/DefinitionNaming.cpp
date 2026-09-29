@@ -151,6 +151,12 @@ llvm::StringRef entryPointVerb(const EntryPoint entryPoint)
         return "deserialize";
     case EntryPoint::Initialize:
         return "initialize";
+    case EntryPoint::AppendWireImage:
+        return "append_wire_image";
+    case EntryPoint::WireImage:
+        return "wire_image";
+    case EntryPoint::ReadWireImage:
+        return "read_wire_image";
     }
     return "";
 }

@@ -338,11 +338,11 @@ body, is spelled by `spell(site, declaration)`.
 
 No declaration wraps a body. A body is written in the shape its language publishes -- the member's
 types, the row's error convention, a member or a free function where the language's target places
-it -- rather than in a neutral shape with an adapter around it. The interface that allocates and
-returns the encoded bytes is written once in each language's runtime and reached by the type; Go
-keeps a one-line method per type, which its `encoding` interfaces require, calling the runtime. C
-publishes an unversioned name over the versioned link name it compiles each body under, which
-unversioned type names require.
+it -- rather than in a neutral shape with an adapter around it. The interface that encodes a value
+into bytes and decodes one from them is a body too: `dsdl-build-wire-image-bodies` builds it over
+each section's serialise and deserialise for every language whose row publishes it, and each
+language translates it as it translates the pair. C publishes an unversioned name over the
+versioned link name it compiles each body under, which unversioned type names require.
 
 This is where the string emission falls. `tools/count_emission_sites.py` counts the places that write
 generated text. When phase 2 took the count the six emitters held 1,230, 918 of them outside the
@@ -465,7 +465,7 @@ runtime does not define is `Unrecognised`, which carries it.
 `UnmarshalBinary([]byte) error`, so a generated type satisfies `encoding.BinaryAppender`,
 `encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler` and drops into anything that already
 speaks them. `AppendBinary` appends to a slice the caller owns and can reuse, which allocates
-nothing once its capacity suffices, and `MarshalBinary` is `AppendBinary(nil)`.
+nothing once its capacity suffices, and `MarshalBinary` answers a new one.
 `encoding.BinaryAppender` is Go 1.24's; the method itself needs nothing newer than the module's
 `go 1.22`. A type holding a view unmarshals a copy of its data, which the interface asks it not to
 keep. The buffer-oriented pair stays beside them, writing into a slice the caller has sized:
@@ -1044,6 +1044,17 @@ section's bodies and accessors in it, and closes it, and a helper is defined at 
 renderer finds a section's declarations in its type scope as well as in the file's. Python's
 declaration count falls from 46 to 26.
 
+Go's output change builds the wire image in the lowering. `dsdl-build-wire-image-bodies`, selected
+by the row's `wireImage`, builds up to three bodies over each section's serialise and deserialise:
+one appends the image to bytes the caller hands it, one answers new bytes, and one reads an object
+from a whole image. The reader reads from a copy of its bytes where the object holds a view and the
+row's reader may keep none of what it is handed. The IR holds the caller's bytes as `!dsdl.bytes`,
+which carry their length and can be lengthened. Go's `AppendBinary`, `MarshalBinary` and
+`UnmarshalBinary` are those bodies, and none of them allocates to read or append through a buffer
+on the caller's stack. The accessors-only output loses its doubled blank line. Go's declaration
+count falls from 98 to 77. Python's classes take the same bodies in place of `CompositeObject`'s
+methods, and Rust and TypeScript take them in their output changes.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.
@@ -1232,9 +1243,11 @@ without a DSDL source.
 **No declaration wraps a body.** A wrapper is a function the generator writes around one lowered
 function to adapt its shape: TypeScript's and Python's functions that raise on the status code their
 body returns, C++'s member that forwards to a free function. Each adapts a shape the generator chose, so the generator writes the shape instead. The
-interface that allocates and returns bytes composes the primitive the same way for every type, so it
-lives once in each runtime rather than in every type. C's unversioned public name over each versioned
-link name stays, so that two versions of a type link into one program.
+interface that encodes into bytes and decodes from them is a body the lowering builds, so each
+language calls its own entry point directly. A runtime function handed the entry point makes that
+call indirect, and in Go the compiler then assumes the caller's buffer escapes, so an append into a
+stack array allocates. C's unversioned public name over each versioned link name stays, so that two
+versions of a type link into one program.
 
 **A language's output changes before its renderer change.** The renderer is then held
 byte-identical to the output it keeps, and never learns a wrapper or a defect; the public API

@@ -1,0 +1,56 @@
+# `dsdl-build-wire-image-bodies` builds the bodies a target publishes over each section's serialise
+# and deserialise that move a whole wire image, as the row's `wireImage` names them. Each calls its
+# section's own entry point, offered the whole buffer. An encoder makes room for the section's
+# largest image and keeps what the entry point used, or answers the bytes it was handed where the
+# entry point fails. A reader that may keep none of its bytes reads an object holding a view from a
+# copy of them. A row that publishes no wire image is built none.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable > %t/plans.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies{target=go})' %t/plans.mlir > %t/go.mlir
+# RUN: FileCheck %s < %t/go.mlir
+# RUN: FileCheck %s --check-prefix=PLAIN < %t/go.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies{target=c})' %t/plans.mlir | FileCheck %s --check-prefix=NONE
+
+# Frame holds a view, so its reader reads a copy.
+# CHECK-LABEL: func.func @fixtures_views.vendor.Frame.1.0.read_wire_image(
+# CHECK-SAME:  [[OBJECT:%[a-z0-9_]+]]: !dsdl.ptr<!dsdl.object<"fixtures_views.vendor.Frame.1.0">>, [[DATA:%[a-z0-9_]+]]: !dsdl.ptr<const !dsdl.byte>) -> i8
+# CHECK-SAME:  llvmdsdl.plan_body = "read_wire_image"
+# CHECK-NEXT:  [[COPY:%[a-z0-9_]+]] = dsdl.copy_buffer [[DATA]]
+# CHECK-NEXT:  [[ERROR:%[a-z0-9_]+]], %{{.*}} = dsdl.call_serdes_sized @fixtures_views.vendor.Frame.1.0.deserialize([[OBJECT]], [[COPY]]) {direction = "deserialize", member = ""}
+# CHECK-NEXT:  return [[ERROR]] : i8
+
+# New bytes hold the largest image, and keep what the entry point used.
+# CHECK-LABEL: func.func @fixtures_views.vendor.Frame.1.0.wire_image(
+# CHECK-SAME:  -> (!dsdl.bytes, i8)
+# CHECK:       [[ROOM:%[a-z0-9_]+]] = arith.constant 41 : i64
+# CHECK-NEXT:  [[IMAGE:%[a-z0-9_]+]] = dsdl.bytes_zeroed [[ROOM]]
+# CHECK-NEXT:  [[BUFFER:%[a-z0-9_]+]] = dsdl.bytes_at [[IMAGE]] -> <!dsdl.byte>
+# CHECK-NEXT:  [[ERROR:%[a-z0-9_]+]], [[USED:%[a-z0-9_]+]] = dsdl.call_serdes_sized @fixtures_views.vendor.Frame.1.0.serialize(%{{.*}}, [[BUFFER]])
+# CHECK:       scf.if
+# CHECK:       [[KEPT:%[a-z0-9_]+]] = arith.index_castui [[USED]] : index to i64
+# CHECK-NEXT:  dsdl.bytes_truncate [[IMAGE]] to [[KEPT]]
+# CHECK:       } else {
+# CHECK-NEXT:  dsdl.bytes_empty
+# CHECK:       return %{{.*}}, [[ERROR]] : !dsdl.bytes, i8
+
+# Appending makes the room after the bytes the caller hands it, and answers those bytes on failure.
+# CHECK-LABEL: func.func @fixtures_views.vendor.Frame.1.0.append_wire_image(
+# CHECK-SAME:  [[HANDED:%[a-z0-9_]+]]: !dsdl.bytes) -> (!dsdl.bytes, i8)
+# CHECK:       [[START:%[a-z0-9_]+]] = dsdl.bytes_length [[HANDED]]
+# CHECK-NEXT:  [[GROWN:%[a-z0-9_]+]] = dsdl.bytes_grow [[HANDED]] by %{{.*}}
+# CHECK-NEXT:  [[TAIL:%[a-z0-9_]+]] = dsdl.bytes_at [[GROWN]]{{\[}}[[START]]{{\]}} -> <!dsdl.byte>
+# CHECK-NEXT:  %{{.*}}, [[USED:%[a-z0-9_]+]] = dsdl.call_serdes_sized @fixtures_views.vendor.Frame.1.0.serialize(%{{.*}}, [[TAIL]])
+# CHECK:       [[COUNT:%[a-z0-9_]+]] = arith.index_castui [[USED]] : index to i64
+# CHECK-NEXT:  [[END:%[a-z0-9_]+]] = arith.addi [[START]], [[COUNT]] : i64
+# CHECK-NEXT:  dsdl.bytes_truncate [[GROWN]] to [[END]]
+# CHECK:       } else {
+# CHECK-NEXT:  scf.yield [[HANDED]] : !dsdl.bytes
+
+# Vec3 holds no view, so its reader reads what it is handed.
+# PLAIN-LABEL: func.func @fixtures_aliasable.vendor.Vec3.1.0.read_wire_image(
+# PLAIN-NOT:   dsdl.copy_buffer
+# PLAIN:       dsdl.call_serdes_sized @fixtures_aliasable.vendor.Vec3.1.0.deserialize(
+# PLAIN-NEXT:  return
+
+# NONE-NOT: wire_image

@@ -759,9 +759,9 @@ bool runSurfacePlanTests()
              ok;
     }
 
-    // Go's generated names: the type's facts as constants of the package, its methods and the
-    // encoding package's over them, a constructor beside it, and its accessors, free functions
-    // named after it. A file imports each other package it takes a definition from under `pkg_`.
+    // Go's generated names: the type's facts as constants of the package, its methods, the encoding
+    // package's among them, a constructor beside it, and its accessors, free functions named after
+    // it. A file imports each other package it takes a definition from under `pkg_`.
     {
         DefinitionParts pick =
             message("Pick",
@@ -770,6 +770,9 @@ bool runSurfacePlanTests()
                                  .isUnion   = true});
         pick.bodies           = {body("ns.Pick.1.0.serialize"),
                                  body("ns.Pick.1.0.deserialize"),
+                                 body("ns.Pick.1.0.read_wire_image"),
+                                 body("ns.Pick.1.0.wire_image"),
+                                 body("ns.Pick.1.0.append_wire_image"),
                                  body("ns.Pick.1.0.initialize"),
                                  body("ns.Pick.1.0.get._tag_")};
         const std::string all = outline(allocate(Language::Go, {pick, message("Far", SectionParts{}, "other")}), true);

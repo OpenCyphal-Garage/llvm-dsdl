@@ -66,6 +66,30 @@ enum class BoolArrayStorage
     PerElement,
 };
 
+/// @brief The functions a target publishes over a section's serialise and deserialise that move a
+///        whole wire image, each a body `dsdl-build-wire-image-bodies` builds.
+struct WireImageInterface final
+{
+    /// @brief Whether the target appends an object's image to bytes the caller hands it.
+    bool appends{false};
+
+    /// @brief Whether the target answers new bytes holding an object's image.
+    bool answersNew{false};
+
+    /// @brief Whether the target reads an object from bytes that hold its whole image.
+    bool reads{false};
+
+    /// @brief Whether that reader may keep none of the bytes it is handed, so an object that holds a
+    ///        view reads a copy of them.
+    bool readerKeepsNothing{false};
+
+    /// @brief Whether the target publishes any of them.
+    [[nodiscard]] constexpr bool any() const
+    {
+        return appends || answersNew || reads;
+    }
+};
+
 /// @brief What a target's generated interface hands a body, and what its objects are.
 struct BodyInterface final
 {
@@ -109,6 +133,10 @@ struct BodyInterface final
     /// bool per element is expanded by `dsdl-expand-bool-runs` into a loop over the elements, which
     /// every backend already translates, rather than each spelling looping on its own.
     BoolArrayStorage boolArrays{BoolArrayStorage::Packed};
+
+    /// @brief What the target publishes over the serialise and deserialise bodies that moves a whole
+    ///        wire image.
+    WireImageInterface wireImage{};
 };
 
 }  // namespace llvmdsdl

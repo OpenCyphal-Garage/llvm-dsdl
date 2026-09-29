@@ -178,8 +178,6 @@ mlir::dsdl::GeneratedFact irGeneratedFact(const GeneratedFact fact)
         return mlir::dsdl::GeneratedFact::Deserialize;
     case GeneratedFact::Initialize:
         return mlir::dsdl::GeneratedFact::Initialize;
-    case GeneratedFact::AppendWireImage:
-        return mlir::dsdl::GeneratedFact::AppendWireImage;
     case GeneratedFact::WireImage:
         return mlir::dsdl::GeneratedFact::WireImage;
     case GeneratedFact::FromWireImage:
@@ -254,8 +252,6 @@ GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
         return GeneratedFact::Deserialize;
     case mlir::dsdl::GeneratedFact::Initialize:
         return GeneratedFact::Initialize;
-    case mlir::dsdl::GeneratedFact::AppendWireImage:
-        return GeneratedFact::AppendWireImage;
     case mlir::dsdl::GeneratedFact::WireImage:
         return GeneratedFact::WireImage;
     case mlir::dsdl::GeneratedFact::FromWireImage:

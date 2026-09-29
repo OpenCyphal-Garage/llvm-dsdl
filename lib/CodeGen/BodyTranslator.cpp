@@ -585,6 +585,22 @@ private:
     /// @brief Defines @p result as @p expr: declared under a name, or read as the expression.
     ///
     /// A pure result nothing reads is dropped; an effectful one is evaluated and discarded.
+    /// @brief The language's spelling of a whole wire image, or null having joined onto @p outcome
+    ///        that @p op has none.
+    const WireImageSpelling* wireImages(mlir::Operation* const op, llvm::Error& outcome) const
+    {
+        const WireImageSpelling* const images = spelling_.wireImages();
+        if (images == nullptr)
+        {
+            outcome = llvm::joinErrors(std::move(outcome),
+                                        llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                                                "no spelling for '%s': the target publishes no wire "
+                                                                "image",
+                                                                op->getName().getStringRef().str().c_str()));
+        }
+        return images;
+    }
+
     void define(const mlir::Value result, std::string expr, const bool pure)
     {
         if (spelling_.spellsInline(result.getDefiningOp()))
@@ -936,6 +952,14 @@ private:
                        false);
             })
             .Case<mlir::func::ReturnOp>([&](mlir::func::ReturnOp ret) -> void {
+                if ((ret.getNumOperands() == 2) && mlir::isa<mlir::dsdl::BytesType>(ret.getOperand(0).getType()))
+                {
+                    if (const WireImageSpelling* const images = wireImages(op, outcome))
+                    {
+                        images->returnImage(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
+                    }
+                    return;
+                }
                 if (ret.getNumOperands() == 2)
                 {
                     spelling_.returnWithSize(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
@@ -1094,6 +1118,49 @@ private:
                 [&](mlir::dsdl::BitReadOp read) -> void { spelling_.bitRead(w_, read, *this); })
             .Case<mlir::dsdl::ImageReadOp>(
                 [&](mlir::dsdl::ImageReadOp read) -> void { spelling_.imageRead(w_, read, *this); })
+            // The dialect: a whole wire image.
+            .Case<mlir::dsdl::BytesEmptyOp>([&](mlir::dsdl::BytesEmptyOp bytes) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(bytes.getBytes(), images->bytesEmpty(bytes, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::BytesZeroedOp>([&](mlir::dsdl::BytesZeroedOp bytes) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(bytes.getBytes(), images->bytesZeroed(bytes, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::BytesLengthOp>([&](mlir::dsdl::BytesLengthOp length) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(length.getLength(), images->bytesLength(length, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::BytesGrowOp>([&](mlir::dsdl::BytesGrowOp grow) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(grow.getGrown(), images->bytesGrow(grow, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::BytesAtOp>([&](mlir::dsdl::BytesAtOp at) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(at.getBuffer(), images->bytesAt(at, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::BytesTruncateOp>([&](mlir::dsdl::BytesTruncateOp truncate) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(truncate.getTruncated(), images->bytesTruncate(truncate, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::CopyBufferOp>([&](mlir::dsdl::CopyBufferOp copy) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(copy.getCopy(), images->copyBuffer(copy, *this), true);
+                }
+            })
             .Case<mlir::dsdl::ImageWriteOp>(
                 [&](mlir::dsdl::ImageWriteOp write) -> void { spelling_.imageWrite(w_, write, *this); })
             .Default([&](mlir::Operation* other) -> void {

@@ -976,10 +976,18 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
         {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "", .beside = false},
          EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false}};
     // Go's zero value is its type's; a type whose initialiser stores anything else has a constructor.
-    static constexpr std::array<EntryPointName, 3> kGo =
+    // The wire image's bodies are the encoding package's BinaryAppender, BinaryMarshaler and
+    // BinaryUnmarshaler.
+    static constexpr std::array<EntryPointName, 6> kGo =
         {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .suffix = "", .beside = false},
          EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .suffix = "", .beside = true}};
+         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .suffix = "", .beside = true},
+         EntryPointName{.function = PlanFunction::AppendWireImage, .name = "AppendBinary", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "MarshalBinary", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::ReadWireImage,
+                        .name     = "UnmarshalBinary",
+                        .suffix   = "",
+                        .beside   = false}};
     // Python's bodies are the class's own methods, which the ones a consumer calls wrap.
     static constexpr std::array<EntryPointName, 2> kPython =
         {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .suffix = "", .beside = false},
@@ -1019,19 +1027,6 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
                                                                      .wraps  = PlanFunction::Deserialize,
                                                                      .name   = "from_bytes",
                                                                      .beside = false}};
-    // The encoding package's interfaces: BinaryAppender, BinaryMarshaler and BinaryUnmarshaler.
-    static constexpr std::array<WrapperName, 3> kGo = {WrapperName{.fact   = GeneratedFact::AppendWireImage,
-                                                                   .wraps  = PlanFunction::Serialize,
-                                                                   .name   = "AppendBinary",
-                                                                   .beside = false},
-                                                       WrapperName{.fact   = GeneratedFact::WireImage,
-                                                                   .wraps  = PlanFunction::Serialize,
-                                                                   .name   = "MarshalBinary",
-                                                                   .beside = false},
-                                                       WrapperName{.fact   = GeneratedFact::FromWireImage,
-                                                                   .wraps  = PlanFunction::Deserialize,
-                                                                   .name   = "UnmarshalBinary",
-                                                                   .beside = false}};
     // C++'s methods call the free functions the bodies are.
     static constexpr std::array<WrapperName, 2> kCpp        = {WrapperName{.fact   = GeneratedFact::Serialize,
                                                                            .wraps  = PlanFunction::Serialize,
@@ -1053,12 +1048,11 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
     {
     case Language::Rust:
         return kRust;
-    case Language::Go:
-        return kGo;
     case Language::TypeScript:
         return kTypeScript;
     case Language::Cpp:
         return kCpp;
+    case Language::Go:
     case Language::Python:
     case Language::C:
         break;

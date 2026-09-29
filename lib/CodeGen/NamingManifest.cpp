@@ -171,6 +171,12 @@ llvm::StringRef functionKey(const PlanFunction function)
         return "deserialize";
     case PlanFunction::Initialize:
         return "initialize";
+    case PlanFunction::AppendWireImage:
+        return "append_wire_image";
+    case PlanFunction::WireImage:
+        return "wire_image";
+    case PlanFunction::ReadWireImage:
+        return "read_wire_image";
     case PlanFunction::Get:
         return "get";
     case PlanFunction::Set:

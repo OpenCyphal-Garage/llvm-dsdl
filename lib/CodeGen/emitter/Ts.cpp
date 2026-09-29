@@ -1378,10 +1378,14 @@ public:
         // where the space the plan offers does or the buffer does, and answers what it used or a
         // negative code. What it used means something only where the code is zero, so it holds
         // the answer as it came, and the code is read off it.
-        const std::string buffer = names(op.getBuffer());
-        const std::string call =
-            nestedFunction(op) + "(" + names(op.getObject()) + ", " + buffer + ".subarray(0, " +
-            cast(names(op.getAvailable()), op.getAvailable().getType(), mlir::IndexType::get(op.getContext())) + "))";
+        const std::string buffer  = names(op.getBuffer());
+        const std::string bounded = op.getAvailable() ? buffer + ".subarray(0, " +
+                                                            cast(names(op.getAvailable()),
+                                                                 op.getAvailable().getType(),
+                                                                 mlir::IndexType::get(op.getContext())) +
+                                                            ")"
+                                                      : buffer;
+        const std::string call    = nestedFunction(op) + "(" + names(op.getObject()) + ", " + bounded + ")";
         if (consumed.empty() && error.empty())
         {
             discard(w, call);

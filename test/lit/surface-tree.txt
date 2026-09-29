@@ -126,7 +126,9 @@
 # GO-NEXT:           dsdl.decl "Small" kind = field of = @ns.Ask.1.0 section = "request" member = "small"
 # GO:                dsdl.decl "Tag" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
 # GO-NEXT:           dsdl.decl "Serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
-# GO:                dsdl.decl "AppendBinary" kind = wrapper origin = generated fact = append_wire_image of = @ns.Ask.1.0.request.serialize
+# GO:                dsdl.decl "AppendBinary" kind = entry origin = generated of = @ns.Ask.1.0.request.append_wire_image
+# GO-NEXT:           dsdl.decl "MarshalBinary" kind = entry origin = generated of = @ns.Ask.1.0.request.wire_image
+# GO-NEXT:           dsdl.decl "UnmarshalBinary" kind = entry origin = generated of = @ns.Ask.1.0.request.read_wire_image
 # GO:              dsdl.decl "AskRequestSmallOptionTag" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # GO:              dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
 # GO-NEXT:         dsdl.decl "AskHasFixedPortID" kind = constant origin = generated fact = has_fixed_port_id of = @ns.Ask.1.0

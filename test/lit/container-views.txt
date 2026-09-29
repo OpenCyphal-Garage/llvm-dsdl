@@ -215,21 +215,21 @@
 # RUN: %dsdlc --target-language go --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/go/fixtures_views/vendor/frame_1_0.go | FileCheck %s --check-prefix=GO
 # GO:      "bytes"
-# GO-NEXT: "slices"
+# GO-NOT:  "slices"
 # GO:      Pose {{ *}}[]byte
 # GO:      f.Pose = buf[:dsdlruntime.ChooseMin(
 # A view keeps the bytes it reads, so UnmarshalBinary reads a copy, as encoding.BinaryUnmarshaler
 # asks; a type holding no view reads its data as it is.
 # GO:      func (f *Frame) AppendBinary(buffer []byte) ([]byte, error) {
-# GO:      grown := slices.Grow(buffer, FrameSerializationBufferSizeBytes)
+# GO:      append(buffer, make([]byte, uint64(41))...)
 # GO:      func (f *Frame) MarshalBinary() ([]byte, error) {
-# GO-NEXT:   return f.AppendBinary(nil)
+# GO-NEXT:   make([]byte, uint64(41))
 # GO:      func (f *Frame) UnmarshalBinary(data []byte) error {
-# GO-NEXT:   _, err := f.Deserialize(bytes.Clone(data))
+# GO-NEXT:   err, _ := dsdlruntime.Coded(f.Deserialize(bytes.Clone(data)))
 # RUN: cat %t/go/fixtures_aliasable/vendor/vec3_1_0.go | FileCheck %s --check-prefix=GO_PLAIN
 # GO_PLAIN-NOT: "bytes"
 # GO_PLAIN:     func (v *Vec3) UnmarshalBinary(data []byte) error {
-# GO_PLAIN-NEXT:  _, err := v.Deserialize(data)
+# GO_PLAIN-NEXT:  err, _ := dsdlruntime.Coded(v.Deserialize(data))
 # RUN: cat %t/go/fixtures_views/vendor/track_1_0.go | FileCheck %s --check-prefix=GO_TRACK
 # GO_TRACK:      Pair {{ *}}[2][]byte
 # GO_TRACK:      Trail {{ *}}[][]byte

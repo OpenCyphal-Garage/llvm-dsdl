@@ -160,6 +160,18 @@ std::unique_ptr<mlir::Pass> createFoldDSDLBodySizesPass();
 /// @return The pass.
 std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(BoolArrayStorage storage);
 
+/// @brief Builds the bodies a target publishes over each section's serialise and deserialise that
+///        move a whole wire image: an encoder into new bytes, one appending to bytes the caller
+///        hands it, and a reader, as @p target names them.
+///
+/// Each calls its section's entry point through `dsdl.call_serdes_sized`, so it runs after
+/// `dsdl-fold-body-sizes`, and a body that does not answer its size fails the pass. Registered with
+/// `dsdl-opt` as `dsdl-build-wire-image-bodies`, whose options default to all three and a reader that
+/// keeps nothing.
+/// @param[in] target What the target publishes.
+/// @return The pass.
+std::unique_ptr<mlir::Pass> createBuildDSDLWireImageBodiesPass(const WireImageInterface& target);
+
 /// @brief Marks each plan body or setter whose every return answers an error of zero as
 ///        `llvmdsdl.infallible`.
 ///

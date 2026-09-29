@@ -67,9 +67,12 @@
 # RUST:      message/wrappers/wire_image = to_bytes
 #
 # GO:      generated/has_fixed_port_id = AskHasFixedPortID
+# GO:      request/entry_points/append_wire_image = AppendBinary
 # GO:      request/entry_points/initialize = NewAskRequest
+# GO-NEXT: request/entry_points/read_wire_image = UnmarshalBinary
+# GO:      request/entry_points/wire_image = MarshalBinary
 # GO:      request/generated/union_tag = Tag
-# GO:      request/wrappers/append_wire_image = AppendBinary
+# GO-NOT:  wrappers
 # GO:      response/accessors/ok/get = AskResponseGetOk
 # GO-NEXT: response/accessors/ok/set = AskResponseSetOk
 #

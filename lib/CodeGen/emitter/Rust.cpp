@@ -1350,9 +1350,10 @@ public:
         // the code is zero.
         const bool        serialize = op.getDirection() == "serialize";
         const std::string buffer    = names(op.getBuffer());
-        const std::string slice     = "{ let _len = " + RustFileNames::core("cmp::min") + "(" +
-                                      asSize(names(op.getAvailable())) + ", " + buffer + ".len()); " +
-                                      (serialize ? "&mut " : "&") + buffer + "[.._len] }";
+        const std::string slice =
+            op.getAvailable() ? "{ let _len = " + RustFileNames::core("cmp::min") + "(" + asSize(names(op.getAvailable())) +
+                                    ", " + buffer + ".len()); " + (serialize ? "&mut " : "&") + buffer + "[.._len] }"
+                              : buffer;
         const std::string call = names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ")";
         if (consumed.empty() && error.empty())
         {
