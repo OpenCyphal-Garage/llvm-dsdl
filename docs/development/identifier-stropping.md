@@ -418,8 +418,8 @@ error: type name collision in generated output: 'ns.A__B' and 'ns.A.B' both emit
 ### 6.1 Names generated beside a type
 
 C, C++ and Go declare names of their own beside a type, in the scope the type shares with other
-definitions: C its entry points, accessors, union option functions and macros; C++ its free entry
-points and a service's constants; Go its constants and accessors. Each carries its type's name, and
+definitions: C its entry points, accessors, union option functions and macros; C++ a service's
+constants; Go its constants and accessors. Each carries its type's name, and
 a type's name can be another type's with a generated suffix after it, so `ns.A_EXTENT_BYTES_` beside
 `ns.A` in C, or `ns.MsgExtentBytes` beside `ns.Msg` in Go, is one identifier declared twice. A third
 pass, `checkGeneratedNameCollisions`, claims every such name in its scope and rejects one two

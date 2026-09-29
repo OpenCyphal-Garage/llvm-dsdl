@@ -57,8 +57,8 @@
 # readability-identifier-naming states the design in CLEAN_CODE.md: namespaces
 # in lower_case, types in CamelCase, functions, fields, parameters, and locals
 # in lower_case, and a type's facts and constants in UPPER_CASE. No option
-# excepts the way the output composes names today, so `List_Request` and
-# `List_Request_serialize_` are findings until the C++ phase nests them.
+# excepts the way the output composes names today, so `List_Request` is a
+# finding until the C++ phase nests it.
 #
 # A namespace or member ending in `_` is a DSDL name as its author spelt it or
 # as the generator strops a keyword, or a member the generator adds beside the

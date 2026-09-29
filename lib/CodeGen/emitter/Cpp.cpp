@@ -81,6 +81,7 @@
 #include <mlir/IR/BuiltinAttributeInterfaces.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -347,7 +348,7 @@ void emitNamespaceClose(SourceWriter& w, const std::vector<std::string>& namespa
     {
         return;
     }
-    w.blank();
+    w.separate();
     for (const auto& name : std::views::reverse(namespaces))
     {
         w.line("} // namespace " + name);
@@ -613,9 +614,10 @@ public:
         {
             const llvm::StringRef section = plan.getSection().value_or(llvm::StringRef{});
             Plan                  entry;
-            entry.declaredName = names.declaredName(key, section);
-            entry.unionTagBits = plan.getUnionTagBits().value_or(0);
-            entry.hostImage    = plan.getHostImage();
+            entry.declaredName   = names.declaredName(key, section);
+            entry.unionTagBits   = plan.getUnionTagBits().value_or(0);
+            entry.hostImage      = plan.getHostImage();
+            entry.memoryResource = names.field(key, section, {}, GeneratedFact::MemoryResource);
             if (!plan.getBody().empty())
             {
                 for (mlir::dsdl::IOOp io : plan.getBody().front().getOps<mlir::dsdl::IOOp>())
@@ -658,47 +660,46 @@ public:
         {
             return openAccessor(w, fn, *direction == "get");
         }
-        const Plan&       plan      = planOf(fn.getArgument(0));
-        const bool        serialize = *direction == "serialize";
-        const std::string object    = serialize ? "obj" : "out_obj";
-        const std::string resource = isPmrFlavor(flavor_) ? ", " + file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
-                                                                "* const memory_resource"
-                                                          : "";
-        w.line("inline " + file_.standard("std::int8_t") + " " +
-               names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + (serialize ? "(const " : "(") +
-               plan.declaredName + "* const " + object + ", " + (serialize ? "" : "const ") +
+        const Plan& plan      = planOf(fn.getArgument(0));
+        const bool  serialize = *direction == "serialize";
+        // A member that reads no object, as a section with no fields has, is static.
+        const bool        onObject = readsArgument(fn, 0);
+        const std::string resource = file_.cppRuntime("::llvmdsdl::cpp::MemoryResource");
+        w.line(file_.cppRuntime("LLVMDSDL_NODISCARD") + (onObject ? " " : " static ") + file_.standard("std::int8_t") +
+               " " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(" + (serialize ? "" : "const ") +
                file_.standard("std::uint8_t") + "* const buffer, " + file_.standard("std::size_t") +
-               "* const inout_buffer_size_bytes" + resource + ")");
+               "* const inout_buffer_size_bytes" +
+               (isPmrFlavor(flavor_) ? ", " + resource + "* const memory_resource = nullptr" : "") + ")" +
+               ((serialize && onObject) ? " const" : ""));
         w.open("{");
-        if (isPmrFlavor(flavor_) && plan.hostImage)
+        if (isPmrFlavor(flavor_) && (plan.hostImage || !onObject))
         {
-            // A host image holds no resource of its own; the one handed in reaches its nested calls.
-            w.line(file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
-                   "* const effective_memory_resource = memory_resource;");
+            // A host image holds no resource of its own, and a static member reaches none; the one
+            // handed in reaches the nested calls.
+            w.line(resource + "* const effective_memory_resource = memory_resource;");
             w.line("(void)effective_memory_resource;");
         }
         else if (isPmrFlavor(flavor_))
         {
-            // The plan tests its object for null before it reads it, so the resource it would be
-            // read from is taken only when there is an object to take it from.
-            w.line(file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
-                   "* const effective_memory_resource = (memory_resource != nullptr) ? "
-                   "memory_resource : ((" +
-                   object + " != nullptr) ? " + object + "->_memory_resource : nullptr);");
-            w.line("(void)effective_memory_resource;");
-            if (!serialize)
+            w.line(resource +
+                   "* const effective_memory_resource = (memory_resource != nullptr) ? memory_resource : this->" +
+                   plan.memoryResource + ";");
+            if (serialize)
             {
-                w.line("if ((effective_memory_resource != nullptr) && (out_obj != nullptr)) { "
-                       "out_obj->set_memory_resource(effective_memory_resource); }");
+                w.line("(void)effective_memory_resource;");
+            }
+            else
+            {
+                w.line("this->set_memory_resource(effective_memory_resource);");
             }
         }
-        return {object, "buffer", "inout_buffer_size_bytes"};
+        return {"this", "buffer", "inout_buffer_size_bytes"};
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
     {
         w.close("}");
-        w.blank();
+        w.separate();
     }
 
     [[nodiscard]] std::string valueName(const ValueRole       role,
@@ -1191,16 +1192,16 @@ public:
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
     {
-        return "static_cast<" + file_.standard("std::uint64_t") + ">(" + names(op.getObject()) + "->" +
-               memberOf(op.getObject(), kPlanUnionTagMember).cppName + ")";
+        return "static_cast<" + file_.standard("std::uint64_t") + ">(" +
+               memberAccess(op.getObject(), kPlanUnionTagMember, names) + ")";
     }
 
     void setUnionTag(SourceWriter& w, mlir::dsdl::SetUnionTagOp op, const ValueNames& names) const override
     {
         const Plan& plan = planOf(op.getObject());
-        w.line(names(op.getObject()) + "->" + memberOf(op.getObject(), kPlanUnionTagMember).cppName +
-               " = static_cast<" + unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits), file_) + ">(" +
-               names(op.getValue()) + ");");
+        w.line(memberAccess(op.getObject(), kPlanUnionTagMember, names) + " = static_cast<" +
+               unsignedStorageType(static_cast<std::uint32_t>(plan.unionTagBits), file_) + ">(" + names(op.getValue()) +
+               ");");
     }
 
     [[nodiscard]] std::string writeBits(mlir::dsdl::WriteBitsOp op, const ValueNames& names) const override
@@ -1356,16 +1357,24 @@ public:
 
     [[nodiscard]] std::string callSerdes(mlir::dsdl::CallSerdesOp op, const ValueNames& names) const override
     {
-        // The callee is the nested type's own body, a function of the namespace its header opens.
-        const std::optional<PlanSymbol> callee = parsePlanSymbol(op.getCallee());
-        if (!callee)
+        // The callee is the nested object's own member, from the header its member's type is. A
+        // member that reads no object is static, and is called through its type.
+        const std::string  arguments = "(" + names(op.getBuffer()) + ", " + names(op.getSize()) +
+                                       (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ")";
+        const std::string& name      = names_.function(op.getCallee(), SurfaceDeclKind::Entry);
+        const auto callee = mlir::SymbolTable::lookupNearestSymbolFrom<mlir::func::FuncOp>(op, op.getCalleeAttr());
+        if (!callee || readsArgument(callee, 0))
+        {
+            return pointee(names(op.getObject())) + name + arguments;
+        }
+        const std::optional<PlanSymbol> symbol = parsePlanSymbol(op.getCallee());
+        if (!symbol)
         {
             llvm::report_fatal_error("C++ spelling: a nested call to a function that is no body");
         }
-        const std::string key = renderSchemaSymbol(callee->schema);
-        return file_.declaredIn(key, names_.qualifier(key) + names_.function(op.getCallee(), SurfaceDeclKind::Entry)) +
-               "(" + names(op.getObject()) + ", " + names(op.getBuffer()) + ", " + names(op.getSize()) +
-               (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") + ")";
+        const std::string key = renderSchemaSymbol(symbol->schema);
+        return file_.declaredIn(key, names_.qualifier(key) + names_.declaredName(key, symbol->section)) + "::" + name +
+               arguments;
     }
 
 private:
@@ -1382,7 +1391,9 @@ private:
         std::int64_t unionTagBits{0};
         /// @brief Whether the structure is the byte image of its wire form; under the PMR profile
         ///        such a structure carries no memory resource.
-        bool                    hostImage{false};
+        bool hostImage{false};
+        /// @brief The data member holding the structure's memory resource; empty where it holds none.
+        std::string             memoryResource;
         llvm::StringMap<Member> members;
     };
 
@@ -1429,7 +1440,7 @@ private:
 
     std::string memberAccess(const mlir::Value object, const llvm::StringRef member, const ValueNames& names) const
     {
-        return names(object) + "->" + memberOf(object, member).cppName;
+        return pointee(names(object)) + memberOf(object, member).cppName;
     }
 
     std::string elementAccess(const mlir::Value     object,
@@ -1546,6 +1557,13 @@ private:
     static std::string through(const std::string& pointer)
     {
         return pointer.starts_with('&') ? pointer.substr(1) : "*" + pointer;
+    }
+
+    /// @brief What a member of the object @p pointer addresses is reached through: a member's
+    ///        address by the member itself.
+    static std::string pointee(const std::string& pointer)
+    {
+        return pointer.starts_with('&') ? pointer.substr(1) + "." : pointer + "->";
     }
 
     /// @brief @p buffer as the runtime takes it. An accessor's span is handed over by its pointer,
@@ -1793,12 +1811,6 @@ void emitArrayMetadata(SourceWriter&          w,
     }
 }
 
-/// @brief The symbol of @p function.
-llvm::StringRef symbolOf(mlir::func::FuncOp function)
-{
-    return function.getSymName();
-}
-
 /// @brief The three bodies `lower-dsdl-bodies` built for one section.
 struct SectionBodies final
 {
@@ -1808,31 +1820,6 @@ struct SectionBodies final
     /// @brief The section's field accessors, getters and setters, in the module's order.
     std::vector<mlir::func::FuncOp> accessors;
 };
-
-void emitFunctionPrototypes(SourceWriter&        w,
-                            const CppSection&    names,
-                            const SectionBodies& bodies,
-                            const CppFlavor      flavor,
-                            const CppFileNames&  file)
-{
-    const CppSurface&  surface      = names.names();
-    const std::string& declaredName = names.declaredName();
-    w.line("struct " + declaredName + ";");
-    w.line(
-        "inline " + file.standard("std::int8_t") + " " +
-        surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry) + "(const " + declaredName + "* obj, " +
-        file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") + "* inout_buffer_size_bytes" +
-        (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
-        ");");
-    w.line(
-        "inline " + file.standard("std::int8_t") + " " +
-        surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry) + "(" + declaredName +
-        "* out_obj, const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
-        "* inout_buffer_size_bytes" +
-        (isPmrFlavor(flavor) ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource" : "") +
-        ");");
-    w.blank();
-}
 
 /// @brief The member initialiser a field's default renders to: `{}` for the type's zero, the
 ///        value otherwise.
@@ -1910,7 +1897,6 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                               const bool                            accessorsOnly)
 {
     const EmitterContext& ctx          = file.context();
-    const CppSurface&     surface      = names.names();
     const std::string&    typeName     = names.publicName();
     const std::string&    declaredName = names.declaredName();
     // Every member's default is what the initialise body stores for it. A field the body does not
@@ -2149,77 +2135,27 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
     if (!accessorsOnly)
     {
         emitArrayMetadata(w, names, section, file);
-
-        const std::string& serializeEntry   = surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry);
-        const std::string& deserializeEntry = surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry);
-        const std::string& serialize =
-            surface.function(symbolOf(bodies.serialize), SurfaceDeclKind::Wrapper, GeneratedFact::Serialize);
-        const std::string& deserialize =
-            surface.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Wrapper, GeneratedFact::Deserialize);
-        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " + serialize +
-               "(" + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
-               "* "
-               "inout_buffer_size_bytes) "
-               "const {");
-        // A host image holds no resource of its own, so its entry points are handed none.
-        const std::string held =
-            metadata.hostImage.holds ? std::string("nullptr") : names.dataMember(GeneratedFact::MemoryResource);
-        if (isPmrFlavor(flavor))
-        {
-            w.line("return " + serializeEntry + "(this, buffer, inout_buffer_size_bytes, " + held + ");");
-        }
-        else
-        {
-            w.line("return " + serializeEntry + "(this, buffer, inout_buffer_size_bytes);");
-        }
-        w.close("}");
-
-        w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " + deserialize +
-               "(const " + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
-               "* "
-               "inout_buffer_size_bytes) {");
-        if (isPmrFlavor(flavor))
-        {
-            w.line("return " + deserializeEntry + "(this, buffer, inout_buffer_size_bytes, " + held + ");");
-        }
-        else
-        {
-            w.line("return " + deserializeEntry + "(this, buffer, inout_buffer_size_bytes);");
-        }
-        w.close("}");
-
-        if (isPmrFlavor(flavor))
-        {
-            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " + serialize +
-                   "(" + file.standard("std::uint8_t") + "* buffer, " + file.standard("std::size_t") +
-                   "* "
-                   "inout_buffer_size_bytes, " +
-                   file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) const {");
-            w.line("return " + serializeEntry + "(this, buffer, inout_buffer_size_bytes, memory_resource);");
-            w.close("}");
-
-            w.open(file.cppRuntime("LLVMDSDL_NODISCARD") + " inline " + file.standard("std::int8_t") + " " +
-                   deserialize + "(const " + file.standard("std::uint8_t") + "* buffer, " +
-                   file.standard("std::size_t") +
-                   "* "
-                   "inout_buffer_size_bytes, " +
-                   file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* memory_resource) {");
-            w.line("return " + deserializeEntry + "(this, buffer, inout_buffer_size_bytes, memory_resource);");
-            w.close("}");
-        }
     }
-    // A wire-flat section's field accessors, defined here as static members: each is one read
-    // or one write at the field's offset, and reads the wire rather than an object.
-    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    // The section's serialise and deserialise, then a wire-flat section's field accessors, defined
+    // here as static members: each is one read or one write at the field's offset, and reads the
+    // wire rather than an object.
+    std::vector<mlir::func::FuncOp> members;
+    if (!accessorsOnly)
     {
-        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        members = {bodies.serialize, bodies.deserialize};
+    }
+    members.insert(members.end(), bodies.accessors.begin(), bodies.accessors.end());
+    w.separate();
+    for (const mlir::func::FuncOp member : members)
+    {
+        if (auto err = translateFunction(member, spelling, w, lookups))
         {
             return err;
         }
     }
 
     w.close("};");
-    w.blank();
+    w.separate();
 
     // The verdict was decided under natural alignment; this pins the layout on the target the
     // header is compiled for.
@@ -2239,14 +2175,14 @@ llvm::Error emitSectionStruct(SourceWriter&                         w,
                    ": not at the offset its serialisation assumes\");");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
-        w.blank();
+        w.separate();
     }
 
     if (const SurfaceDecl* const alias = names.alias(); section.deprecated && (alias != nullptr))
     {
         w.line("using " + alias->name + (ctx.emitDeprecationAttributes() ? " [[deprecated]]" : "") + " = " +
                declaredName + ";");
-        w.blank();
+        w.separate();
     }
     return llvm::Error::success();
 }
@@ -2276,7 +2212,6 @@ llvm::Error emitSection(SourceWriter&                         w,
                                            "no plan bodies for %s in the lowered module",
                                            metadata.fullName.c_str());
         }
-        emitFunctionPrototypes(w, names, bodies, flavor, file);
         auto read = readInitializer(bodies.initialize);
         if (!read)
         {
@@ -2301,18 +2236,6 @@ llvm::Error emitSection(SourceWriter&                         w,
                                      bodies,
                                      lookups,
                                      ctx.accessorsOnly()))
-    {
-        return err;
-    }
-    if (ctx.accessorsOnly())
-    {
-        return llvm::Error::success();
-    }
-    if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
-    {
-        return err;
-    }
-    if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
     {
         return err;
     }
@@ -2445,7 +2368,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
         w.line("constexpr const char* " + service(SurfaceDeclKind::Constant, GeneratedFact::FullNameAndVersion) +
                " = \"" + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
                std::to_string(def.info.minorVersion) + "\";");
-        w.blank();
+        w.separate();
 
         if (auto err = emitSection(w,
                                    file,
@@ -2503,44 +2426,7 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
                    service(SurfaceDeclKind::Constant, GeneratedFact::FixedPortId) + " = " +
                    std::to_string(*def.info.fixedPortId) + "U;");
         }
-        w.blank();
-
-        // The wrappers call the request's serialisation, which an accessors-only run does not emit.
-        if (!ctx.accessorsOnly())
-        {
-            const SectionBodies& request = bodies["request"];
-            w.line("inline " + file.standard("std::int8_t") + " " +
-                   service(SurfaceDeclKind::Wrapper, GeneratedFact::Serialize) + "(const " + requestDeclared +
-                   "* const obj, " + file.standard("std::uint8_t") + "* const buffer, " + file.standard("std::size_t") +
-                   "* const "
-                   "inout_buffer_size_bytes" +
-                   (isPmrFlavor(flavor)
-                        ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* const memory_resource"
-                        : "") +
-                   ")");
-            w.open("{");
-            w.line("return " + names.function(symbolOf(request.serialize), SurfaceDeclKind::Entry) +
-                   "(obj, buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
-            w.close("}");
-            w.blank();
-
-            w.line("inline " + file.standard("std::int8_t") + " " +
-                   service(SurfaceDeclKind::Wrapper, GeneratedFact::Deserialize) + "(" + requestDeclared +
-                   "* const out_obj, const " + file.standard("std::uint8_t") + "* buffer, " +
-                   file.standard("std::size_t") +
-                   "* const "
-                   "inout_buffer_size_bytes" +
-                   (isPmrFlavor(flavor)
-                        ? ", " + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* const memory_resource"
-                        : "") +
-                   ")");
-            w.open("{");
-            w.line("return " + names.function(symbolOf(request.deserialize), SurfaceDeclKind::Entry) +
-                   "(out_obj, buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
-                   ");");
-            w.close("}");
-            w.blank();
-        }
+        w.separate();
     }
     else
     {

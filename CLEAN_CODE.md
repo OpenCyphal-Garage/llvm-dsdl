@@ -1111,6 +1111,15 @@ C++'s output change nests its types, and comes last: nesting is the largest chan
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.
 
+C++'s output change lands in two parts. The first makes each section's serialise and deserialise
+members of its struct, over `this`, and removes the free `Msg_serialize_` and a service's
+`Ask_serialize_`. A nested object is serialised through its own member. Under `pmr` a member takes
+one memory resource, which defaults to the struct's own. A member that reads no object, which
+`dsdl-mark-unread-arguments` marks and a section with no fields has, is static, and a nested call
+reaches it through its type. The blank line before a struct's closing brace and the doubled blank
+line before a namespace closes go. Clang-tidy's `readability-identifier-naming` findings fall from
+1,497 to 773. C++'s declaration count falls from 99 to 65, and its body count from 53 to 52.
+
 **6 to 11 — One phase per language**, each flipping its row from *as today* to the target above and
 turning its judge from phase 1 green. Phase 5 gives each language's bodies their public shape and
 nests C++'s types; these phases carry the rest of each row. Rust's and Go's names landed ahead of the

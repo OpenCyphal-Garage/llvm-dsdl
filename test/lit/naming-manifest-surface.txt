@@ -51,11 +51,10 @@
 # CPP:      message/constants/LIMIT = LIMIT
 # CPP:      profiles/pmr/file = pmr/ns/Msg_1_0.hpp
 # CPP:      profiles/pmr/message/declared_type = Msg
-# CPP-NEXT: profiles/pmr/message/entry_points/deserialize = Msg_deserialize_
-# CPP-NEXT: profiles/pmr/message/entry_points/serialize = Msg_serialize_
+# CPP-NEXT: profiles/pmr/message/entry_points/deserialize = deserialize
+# CPP-NEXT: profiles/pmr/message/entry_points/serialize = serialize
 # CPP-NEXT: profiles/pmr/message/generated/array_capacity/items = ITEMS_ARRAY_CAPACITY
 # CPP:      profiles/pmr/message/generated/memory_resource = _memory_resource
-# CPP:      profiles/pmr/message/wrappers/serialize = serialize
 # CPP:      profiles/std/file = std/ns/Msg_1_0.hpp
 # CPP-NOT:  memory_resource
 #

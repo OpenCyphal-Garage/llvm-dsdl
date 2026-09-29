@@ -396,7 +396,6 @@ bool runSurfacePlanTests()
                                        "  namespace ns\n"
                                        "    file Msg_1_0\n"
                                        "      type Msg\n"
-                                       "      Msg_serialize_ : value\n"
                                        "      mlir_llvmdsdl_plan_capacity_check_ns_Msg_1_0 : value\n"
                                        "      mlir_llvmdsdl_plan_scalar_unsigned_ns_Msg_1_0_0_ser : value\n",
                                        "C++'s helpers") &&
@@ -909,9 +908,7 @@ bool runSurfacePlanTests()
                                       "        deserialize : value\n"
                                       "        get_small : value\n"
                                       "        get_tag_ : value\n"
-                                      "        get_tag_2 : value\n"
-                                      "      Pick_serialize_ : value\n"
-                                      "      Pick_deserialize_ : value\n",
+                                      "        get_tag_2 : value\n",
                                       "C++'s generated names") &&
                                ok;
         std::string pmr;

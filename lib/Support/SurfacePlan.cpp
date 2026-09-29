@@ -640,7 +640,7 @@ private:
     }
 
     /// @brief Declares the members of each section's type its lowered functions are: the entry
-    ///        points, the functions that wrap them, and the accessors.
+    ///        points and the accessors.
     void allocateMembers(const DefinitionNames& names, const DefinitionParts& definition)
     {
         const Language                       language = row_.language;
@@ -666,23 +666,6 @@ private:
                                        NameClass::Value,
                                        NameOrigin::Generated,
                                        of(body));
-                    }
-                }
-            }
-            for (const WrapperName& wrapper : generatedWrappers(language))
-            {
-                for (const BodyParts& body : definition.bodies)
-                {
-                    if (inSection(body) && (body.plan.function == wrapper.wraps))
-                    {
-                        (void) declare(wrapper.beside ? names.fileScope : section.typeScope,
-                                       wrapper.beside ? wrapper.name.str() + section.typeName : wrapper.name.str(),
-                                       SurfaceDeclKind::Wrapper,
-                                       NameClass::Value,
-                                       NameOrigin::Generated,
-                                       of(body),
-                                       SurfaceVisibility::Public,
-                                       wrapper.fact);
                     }
                 }
             }

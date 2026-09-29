@@ -1,8 +1,8 @@
 # Regression: C declares every type in one global scope, and C++ and Go every type of a namespace in
 # one namespace or package, and each declares names of its own beside a type. A definition could be
 # called one of them, and the output did not compile: `ns.A_EXTENT_BYTES_` redefined `ns.A`'s macro,
-# `ns.A.serialize_` met `ns__A__serialize_`, `ns.MsgExtentBytes` redeclared `ns.Msg`'s constant in
-# Go, and `ns.Foo_serialize_` was hidden by `ns.Foo`'s free function in C++.
+# `ns.A.serialize_` met `ns__A__serialize_`, and `ns.MsgExtentBytes` redeclared `ns.Msg`'s constant
+# in Go.
 
 # RUN: rm -rf %t && mkdir -p %t
 
@@ -48,12 +48,7 @@
 # RUN: not %dsdlc --target-language obj %t/cmacro/ns --outdir %t/obj 2>&1 | FileCheck %s --check-prefix=OBJ
 # OBJ: both emit 'ns__A_EXTENT_BYTES_' for target language 'c'
 
-# C++: a free entry point, and a service's own constant.
-# RUN: mkdir -p %t/cppentry/ns && printf 'uint8 a\n@sealed\n' > %t/cppentry/ns/Foo.1.0.dsdl
-# RUN: printf 'uint8 b\n@sealed\n' > %t/cppentry/ns/Foo_serialize_.1.0.dsdl
-# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/cppentry/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CPPENTRY
-# CPPENTRY: 'ns.Foo_serialize_' and a name generated for 'ns.Foo' both emit 'Foo_serialize_' for target language 'cpp'
-
+# C++: a service's own constant.
 # RUN: mkdir -p %t/cppsvc/ns && printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/cppsvc/ns/Svc.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/cppsvc/ns/Svc_FULL_NAME.1.0.dsdl
 # RUN: not %dsdlc --target-language cpp --cpp-profile std %t/cppsvc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=CPPSVC
@@ -79,4 +74,7 @@
 # RUN: %dsdlc --target-language rust %t/goconst/ns --outdir %t/rust
 # RUN: %dsdlc --target-language c %t/goconst/ns --outdir %t/c
 # RUN: %dsdlc --target-language go --go-module m %t/cmacro/ns --outdir %t/go
-# RUN: %dsdlc --target-language python %t/cppentry/ns --outdir %t/py
+# RUN: mkdir -p %t/entry/ns && printf 'uint8 a\n@sealed\n' > %t/entry/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/entry/ns/Foo_serialize_.1.0.dsdl
+# RUN: %dsdlc --target-language python %t/entry/ns --outdir %t/py
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/entry/ns --outdir %t/cpp

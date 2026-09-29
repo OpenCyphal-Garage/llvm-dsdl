@@ -25,8 +25,7 @@
 # GO-DAG: m.Serialize_
 # GO-DAG: m.Deserialize_
 
-# Python: attribute escaped so it does not shadow the method the class inherits from the runtime's
-# `CompositeObject`.
+# Python: attribute escaped so it does not shadow the class's own method.
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
 # RUN: cat %t/py/dsdl_gen/dsdl/mf/m_1_0.py | FileCheck %s --check-prefix=PY
 # PY-DAG: class M(CompositeObject):
@@ -40,4 +39,7 @@
 # RUN: cat %t/cpp/dsdl/mf/M_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP-DAG: std::uint8_t serialize_{};
 # CPP-DAG: std::uint8_t deserialize_{};
-# CPP-DAG: inline std::int8_t serialize(
+# CPP-DAG: std::int8_t serialize(
+# CPP-DAG: std::int8_t deserialize(
+# CPP-DAG: this->serialize_
+# CPP-DAG: this->deserialize_
