@@ -14,9 +14,7 @@
 
 #include "llvmdsdl/Support/BodyNaming.h"
 
-#include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -25,6 +23,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Language.h"
@@ -52,10 +51,10 @@ std::string collapseUnderscoreRuns(const llvm::StringRef name)
     return out;
 }
 
-std::string helperParts(const PlanSymbol& helper, const llvm::StringRef separator)
+std::string helperParts(const PlanSymbol& helper, const llvm::StringRef separator, const bool withSection)
 {
     std::string out = helper.helperKind;
-    if (!helper.section.empty())
+    if (withSection && !helper.section.empty())
     {
         out += separator.str() + helper.section;
     }
@@ -88,37 +87,12 @@ std::string versionedSectionTypeName(const Language language, const PlanSymbol& 
 
 }  // namespace
 
-std::string renderHelperBindingIdentifier(const Language language, const llvm::StringRef name)
-{
-    // C++ reserves any identifier containing a double underscore, so for that language the runs are
-    // collapsed -- after the prefix is joined, since a name beginning with an underscore would make
-    // a fresh pair at the seam. No other language reserves an interior double underscore.
-    std::string joined = "mlir_" + codegenSanitizeIdentifier(language, name);
-    if (languageTraits(language).classification.reservedUnderscores != ReservedUnderscores::LeadingAndInterior)
-    {
-        return joined;
-    }
-
-    return collapseUnderscoreRuns(joined);
-}
-
-std::string renderHelperBindingIdentifier(const Language language, const PlanSymbol& helper)
-{
-    std::string fullName = helper.schema.fullName;
-    std::ranges::replace(fullName, '.', '_');
-    const std::string version = std::to_string(helper.schema.major) + "_" + std::to_string(helper.schema.minor);
-    std::string       parts   = helperParts(helper, "__");
-    const std::size_t kindEnd = helper.helperKind.size();
-    // The definition sits between the kind and what tells the helper from its siblings.
-    parts.insert(kindEnd, "__" + fullName + "_" + version);
-    return renderHelperBindingIdentifier(language, "llvmdsdl_plan_" + parts);
-}
-
 std::string renderScopeLocalHelperName(const Language        language,
                                        const PlanSymbol&     helper,
-                                       const llvm::StringRef qualifier)
+                                       const llvm::StringRef qualifier,
+                                       const bool            sectionScope)
 {
-    std::string name = collapseUnderscoreRuns(helperParts(helper, "_"));
+    std::string name = collapseUnderscoreRuns(helperParts(helper, "_", !sectionScope));
     while (!name.empty() && name.front() == '_')
     {
         name.erase(name.begin());
@@ -161,22 +135,14 @@ std::string renderLoweredLinkName(const Language language, const PlanSymbol& sym
     case PlanFunction::Helper:
         break;
     }
-    std::string helper = "llvmdsdl_plan_" + symbol.helperKind + "__" + type;
-    if (symbol.step)
-    {
-        helper += "__" + std::to_string(*symbol.step);
-    }
-    if (symbol.direction != PlanHelperDirection::None)
-    {
-        helper += (symbol.direction == PlanHelperDirection::Serialize) ? "__ser" : "__deser";
-    }
-    return helper;
+    llvm::report_fatal_error("a helper is declared where its row places it, and is not linked");
 }
 
 llvm::StringMap<std::string> declareHelperNames(const Language                  language,
                                                 const llvm::ArrayRef<BodyParts> bodies,
                                                 NamingScope&                    scope,
-                                                const llvm::StringRef           qualifier)
+                                                const llvm::StringRef           qualifier,
+                                                const bool                      sectionScope)
 {
     llvm::StringMap<std::string> names;
     for (const BodyParts& body : bodies)
@@ -189,9 +155,10 @@ llvm::StringMap<std::string> declareHelperNames(const Language                  
         // one takes an ordinal. The marker goes on after the scope has allocated the name, because
         // the projection a scope applies folds a leading underscore away. Every helper takes the same
         // marker, so two that the scope kept apart stay apart.
-        const std::string declared = scope.declare(IdentifierRole::InternalFunctionName,
-                                                   body.symbol,
-                                                   renderScopeLocalHelperName(language, body.plan, qualifier));
+        const std::string declared =
+            scope.declare(IdentifierRole::InternalFunctionName,
+                          body.symbol,
+                          renderScopeLocalHelperName(language, body.plan, qualifier, sectionScope));
         names[body.symbol] =
             (languageTraits(language).classification.internalLinkage == InternalLinkage::UnderscorePrefix)
                 ? "_" + declared

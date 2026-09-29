@@ -154,7 +154,7 @@ The write is value-based, not a memory-to-memory copy. A typed body reads a stru
 normalises it through a scalar helper, and writes the resulting value at a bit offset:
 
 ```c
-const uint64_t _norm_0 = (uint64_t)llvmdsdl_plan_scalar_unsigned__..._ser((int64_t)(obj->foo));
+const uint64_t _norm_0 = (uint64_t)scalar_unsigned_0_ser((int64_t)(obj->foo));
 const int8_t _err_0 = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, _norm_0, 8U);
 ```
 

@@ -95,6 +95,22 @@ dsdl.surface target = "go" {
 
 // -----
 
+// A name C keeps to its file may not meet a name its namespace declares.
+// CHECK: error: 'dsdl.decl' op declares 'capacity_check' in file 'B_1_0', where scope 'dsdl_out' declares it as a value
+// CHECK: note: declared here
+dsdl.surface target = "c" {
+  dsdl.scope root "dsdl_out" {
+    dsdl.scope file "A_1_0" path = "ns/A_1_0.h" {
+      dsdl.decl "capacity_check" kind = entry
+    }
+    dsdl.scope file "B_1_0" path = "ns/B_1_0.h" {
+      dsdl.decl "capacity_check" kind = helper visibility = private origin = generated
+    }
+  }
+}
+
+// -----
+
 // A Go file's import may not meet a name its package declares.
 // CHECK: error: 'dsdl.decl' op imports 'dsdlruntime' into file 'list_0_2', where scope 'file' declares it as a value
 // CHECK: note: declared here

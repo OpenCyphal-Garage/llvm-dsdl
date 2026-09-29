@@ -229,18 +229,16 @@ std::string render(const llvmdsdl::NamespaceForm value)
     return "?";
 }
 
-std::string render(const llvmdsdl::HelperNaming value)
+std::string render(const llvmdsdl::HelperPlacement value)
 {
     switch (value)
     {
-    case llvmdsdl::HelperNaming::LinkName:
-        return "link-name";
-    case llvmdsdl::HelperNaming::Binding:
-        return "binding";
-    case llvmdsdl::HelperNaming::Package:
-        return "package";
-    case llvmdsdl::HelperNaming::Module:
+    case llvmdsdl::HelperPlacement::Module:
         return "module";
+    case llvmdsdl::HelperPlacement::Package:
+        return "package";
+    case llvmdsdl::HelperPlacement::Type:
+        return "type";
     }
     return "?";
 }
@@ -354,7 +352,7 @@ bool runLanguageTraitsTests()
          "version-in-name=1 name-reaches-type=0 section-join='__' sections=none namespace-shared=1 namespaces=joined "
          "extension='.h' directories-projected=0 source='' package-directory=0 namespace-file='' root-file='' "
          "imports=none "
-         "helpers=link-name "
+         "helpers=module "
          "file-directory-module=0 namespace-type-scope=0 constants=enclosing service-constants=enclosing "
          "constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
@@ -369,7 +367,7 @@ bool runLanguageTraitsTests()
          "| "
          "namespace-join='' version-in-name=1 name-reaches-type=0 section-join='' sections=service-type "
          "namespace-shared=1 namespaces=namespace extension='.hpp' directories-projected=0 source='' "
-         "package-directory=0 namespace-file='' root-file='' imports=none helpers=binding "
+         "package-directory=0 namespace-file='' root-file='' imports=none helpers=type "
          "file-directory-module=0 "
          "namespace-type-scope=1 "
          "constants=type service-constants=type "
@@ -458,12 +456,13 @@ bool runLanguageTraitsTests()
                  row.name.str() + ": a buffer no body sees null is not null to a getter");
     }
 
-    // A helper is named by its link name exactly where the bodies are compiled apart.
+    // A helper is declared in its section's type exactly where a private member is how the language
+    // keeps a declaration from its users.
     for (const LanguageTraits& row : llvmdsdl::allLanguageTraits())
     {
-        t.expect((row.composition.helpers == llvmdsdl::HelperNaming::LinkName) ==
-                     !row.composition.freeFunctions.loweredBodySuffix.empty(),
-                 row.name.str() + ": a helper takes a link name where, and only where, the bodies are apart");
+        t.expect((row.composition.helpers == llvmdsdl::HelperPlacement::Type) ==
+                     (row.classification.internalLinkage == llvmdsdl::InternalLinkage::PrivateMember),
+                 row.name.str() + ": a helper is a member of its type where, and only where, a private member is");
     }
 
     // A namespace is joined into each identifier exactly where the row names a separator to join it.

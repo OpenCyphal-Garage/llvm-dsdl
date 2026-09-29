@@ -348,20 +348,21 @@ enum class NamespaceForm
     Package,
 };
 
-/// @brief How a lowered helper is named, and in what scope its name is allocated.
-enum class HelperNaming
+/// @brief Where a lowered helper is declared, which is the scope its name is allocated in.
+///
+/// A helper is private to what declares it, as the row's `internalLinkage` keeps a declaration from
+/// the language's users.
+enum class HelperPlacement
 {
-    /// @brief Under the link name of its section and version, as the bodies are compiled apart.
-    LinkName,
+    /// @brief In the definition's own module or file, each named by its section, step and direction.
+    Module,
 
-    /// @brief By the definition's full name and version, in the namespace the definitions share.
-    Binding,
-
-    /// @brief In one scope for the package, each carrying its definition's type name.
+    /// @brief In the package's scope, each carrying its definition's type name.
     Package,
 
-    /// @brief In one scope for the definition's own module.
-    Module,
+    /// @brief In its section's type, named by its step and direction, since the type names the
+    ///        section.
+    Type,
 };
 
 /// @brief How a file names what it takes from another definition's file.
@@ -428,8 +429,8 @@ struct Composition final
     /// @brief How a file names what it takes from another definition's file.
     ImportNaming imports{};
 
-    /// @brief How a lowered helper is named.
-    HelperNaming helpers{};
+    /// @brief Where a lowered helper is declared.
+    HelperPlacement helpers{};
 
     /// @brief Whether a definition's file and a namespace's directory of one name are one module.
     ///

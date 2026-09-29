@@ -67,7 +67,6 @@ add_library(llvmdsdlCodeGen
   EmitCommon.cpp
   ImportSet.cpp
   GeneratedNameCollisions.cpp
-  HelperBindingNaming.cpp
   InitializerRender.cpp
   NamingManifest.cpp
   SchemaLookup.cpp

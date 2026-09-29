@@ -739,6 +739,7 @@ public:
         : target_(target)
         , classes_(row.classification.nameClasses)
         , fileAndDirectoryAreOneModule_(row.composition.fileAndDirectoryAreOneModule)
+        , privateToFile_(row.classification.internalLinkage == llvmdsdl::InternalLinkage::Static)
     {
     }
 
@@ -749,7 +750,7 @@ public:
         {
             return failure();
         }
-        return checkFileImports();
+        return checkFileLocals();
     }
 
 private:
@@ -776,15 +777,20 @@ private:
                 }
                 continue;
             }
-            auto       decl       = llvm::cast<DeclOp>(op);
-            const bool fileImport = (scope.getKind() == ScopeKind::File) && (decl.getKind() == DeclKind::Import);
-            if (failed(claim(fileImport ? scope : space, decl, decl.getName(), decl.declaredClass())))
+            // A file's import is the file's own, and so is a private name where the language keeps
+            // one to its file. Each is claimed in the file, and then held apart from the names its
+            // namespace declares.
+            auto       decl      = llvm::cast<DeclOp>(op);
+            const bool fileLocal = (scope.getKind() == ScopeKind::File) &&
+                                   ((decl.getKind() == DeclKind::Import) ||
+                                    (privateToFile_ && (decl.getVisibility() == Visibility::Private)));
+            if (failed(claim(fileLocal ? scope : space, decl, decl.getName(), decl.declaredClass())))
             {
                 return failure();
             }
-            if (fileImport)
+            if (fileLocal)
             {
-                fileImports_.emplace_back(scope, decl);
+                fileLocals_.emplace_back(scope, decl);
             }
         }
         return success();
@@ -850,10 +856,11 @@ private:
         return diag;
     }
 
-    /// @brief Holds each import a file scope makes apart from the names its namespace declares.
-    LogicalResult checkFileImports()
+    /// @brief Holds each name a file scope keeps to itself apart from the names its namespace
+    ///        declares.
+    LogicalResult checkFileLocals()
     {
-        for (auto& [file, decl] : fileImports_)
+        for (auto& [file, decl] : fileLocals_)
         {
             ScopeOp                        space     = namespaceOf(file);
             const std::optional<Partition> partition = partitionOf(decl.declaredClass(), classes_);
@@ -867,9 +874,10 @@ private:
             {
                 continue;
             }
-            InFlightDiagnostic diag = decl.emitOpError("imports '")
-                                      << decl.getName() << "' into file '" << file.getName() << "', where scope '"
-                                      << space.getName() << "' declares it as a "
+            const bool         import = decl.getKind() == DeclKind::Import;
+            InFlightDiagnostic diag = decl.emitOpError(import ? "imports '" : "declares '")
+                                      << decl.getName() << (import ? "' into file '" : "' in file '") << file.getName()
+                                      << "', where scope '" << space.getName() << "' declares it as a "
                                       << stringifyNameClass(found->second.nameClass);
             diag.attachNote(found->second.op->getLoc()) << "declared here";
             return diag;
@@ -880,10 +888,11 @@ private:
     llvm::StringRef                                                    target_;
     const llvmdsdl::NameClasses&                                       classes_;
     bool                                                               fileAndDirectoryAreOneModule_{};
+    bool                                                               privateToFile_{};
     std::map<std::pair<Operation*, Partition>, llvm::StringMap<Claim>> names_;
     llvm::StringMap<Claim>                                             macros_;
     llvm::StringMap<ScopeOp>                                           paths_;
-    std::vector<std::pair<ScopeOp, DeclOp>>                            fileImports_;
+    std::vector<std::pair<ScopeOp, DeclOp>>                            fileLocals_;
 };
 
 /// @brief Whether @p schema has a section named @p section.

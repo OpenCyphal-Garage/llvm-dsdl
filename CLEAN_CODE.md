@@ -621,7 +621,7 @@ and every one of those fixes was in a single place:
 | `dsdl-fold-null-guards` | reads the fold orphaned, which a canonicaliser keeps | swept to a fixed point, so no arm arrives empty |
 | `BodyTranslator` | an `scf.if` of values spelled as a branch | the select it is |
 | `BodyTranslator` | a null test negated by wrapping its text | `isNotNull`, which each language spells as its own test |
-| `HelperBindingNaming` | one lowered symbol per helper, in four languages | a name the scope holding it reaches it by |
+| `declareHelperNames` | one lowered symbol per helper, in four languages | a name the scope holding it reaches it by |
 | `Ts.cpp` | `interface X {}`, which any non-nullish value satisfies | `Record<string, never>` |
 | `dsdl-fold-unobserved-accessor-sizes` | a composite getter's written-back length, in a local each of four languages suppressed | erased where the getter returns a view that carries its length |
 
@@ -640,12 +640,12 @@ The helper naming was the largest of them. A definition's 658 lowered helper sym
 output verbatim -- `mlir_llvmdsdl_plan_capacity_check__uavcan_diagnostic_Record_1_1` -- which was
 every one of Python's `N802` findings and three fifths of its over-long lines. Rust had already
 answered it: a helper is private to the scope the definition is generated into, so the schema
-component of the symbol names what that scope already says. `renderSchemaHelperNames` is that answer
-for all four. Rust, TypeScript and Python each give a definition a module of its own, so the scope
+component of the symbol names what that scope already says. `declareHelperNames` is that answer for
+all four. Rust, TypeScript and Python each give a definition a module of its own, so the scope
 covers one definition and the name is what distinguishes one helper from its siblings:
 `capacity_check`, `capacityCheck`, `_capacity_check`. A Go package holds a whole DSDL namespace, so
 the scope is the package's and the name carries the definition: `recordCapacityCheck`. C and C++
-reach a helper by a symbol that carries the whole definition and are unchanged.
+kept a symbol that carries the whole definition; phases 6 to 11 place their helpers.
 
 Three generation gates asserted the old symbol by name. A presence gate ratchets in the shape it
 finds, which is what this phase exists to notice.
@@ -1149,6 +1149,17 @@ and its body count from 52 to 44.
 turning its judge from phase 1 green. Phase 5 gives each language's bodies their public shape and
 nests C++'s types; these phases carry the rest of each row. Rust's and Go's names landed ahead of the
 mechanism, in #41 and #42, and C++'s accessors in #49 and #54. C is cheapest and can go anywhere.
+
+Helper placement took C and C++ together, as one mechanism. The row's `helpers` says where a lowered
+helper is declared: in the definition's module or file, in the package, or in its section's type.
+The scope names it. C++ declares each helper a private static member of its section's struct, named
+by its step and direction, since the struct names the section: `Request::capacity_check`. C declares
+each `static` in the definition's source file, named by its section, step and direction:
+`capacity_check_request`. The verifier claims a name C keeps to its file in that file, as it claims
+an import, and holds it apart from the names its namespace declares. An object gives a private
+function internal linkage, and erases a helper nothing calls, as the C file leaves it out. C's
+`misc-use-internal-linkage` falls from 658 to none and its `readability-identifier-naming` from
+1,808 to 1,150; C++'s `readability-identifier-naming` falls from 661 to 3.
 
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase

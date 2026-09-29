@@ -515,6 +515,9 @@ public:
         {
             taken_.insert(reserved);
         }
+        // A body reaches a helper by the name its scope gives it, which may be bare, so no local
+        // takes the name of a function the body calls.
+        fn.walk([&](mlir::func::CallOp call) { taken_.insert(spelling_.functionName(call.getCallee())); });
         for (const auto& [argument, name] : llvm::zip(fn.getArguments(), parameters))
         {
             names_[argument] = name;
