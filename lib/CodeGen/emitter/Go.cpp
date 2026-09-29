@@ -19,6 +19,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
+#include "llvmdsdl/CodeGen/DeclarationRenderer.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -585,7 +586,8 @@ private:
 void writeGoImports(SourceWriter& w, const ImportSet& imports)
 {
     std::vector<std::string> standard;
-    std::vector<std::string> own;
+    // A group of the module's own sorts by path, which is past the alias each line opens with.
+    std::vector<std::pair<std::string, std::string>> own;
     for (const ImportedModule& module : imports.modules())
     {
         if (module.origin == ImportOrigin::Standard)
@@ -594,17 +596,14 @@ void writeGoImports(SourceWriter& w, const ImportSet& imports)
         }
         else
         {
-            own.push_back(module.binding + " \"" + module.path + "\"");
+            own.emplace_back(module.path, module.binding + " \"" + module.path + "\"");
         }
     }
     if (standard.empty() && own.empty())
     {
         return;
     }
-    // A group of the module's own sorts by path, which is past the alias each line opens with.
-    std::ranges::sort(own, [](const std::string& a, const std::string& b) {
-        return a.substr(a.find(' ')) < b.substr(b.find(' '));
-    });
+    std::ranges::sort(own);
     w.open("import (");
     for (const std::string& line : standard)
     {
@@ -614,7 +613,7 @@ void writeGoImports(SourceWriter& w, const ImportSet& imports)
     {
         w.blank();
     }
-    for (const std::string& line : own)
+    for (const auto& [path, line] : own)
     {
         w.line(line);
     }
@@ -729,6 +728,8 @@ public:
 
     // Functions.
 
+    /// @brief Opens a body under the signature `GoDeclarations` wrote, binding what the body reads
+    ///        in the plan's types where the signature speaks the member's.
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
@@ -738,29 +739,70 @@ public:
         if (!direction)
         {
             std::vector<std::string> parameters;
-            std::string              list;
             for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
             {
                 parameters.push_back("p" + std::to_string(index));
-                list += (list.empty() ? "" : ", ") + parameters.back() + " " + typeName(argument.getType());
             }
-            w.open("func " + functionName(fn.getSymName()) + "(" + list + ") " + typeName(fn.getResultTypes().front()) +
-                   " {");
             return parameters;
         }
         if (*direction == "get" || *direction == "set")
         {
             return openAccessor(w, fn, *direction == "get");
         }
+        const std::string receiver = goReceiverName(planOf(fn.getArgument(0)).typeName);
         if ((*direction == "append_wire_image") || (*direction == "wire_image") || (*direction == "read_wire_image"))
         {
-            return openWireImage(w, fn, *direction == "read_wire_image");
+            const bool               reader = *direction == "read_wire_image";
+            std::vector<std::string> parameters{receiver};
+            for (std::size_t index = 1; index < fn.getNumArguments(); ++index)
+            {
+                parameters.emplace_back(reader ? "data" : "buffer");
+            }
+            answersError_ = reader;
+            return parameters;
         }
-        const Plan&       plan     = planOf(fn.getArgument(0));
-        const std::string receiver = goReceiverName(plan.typeName);
-        w.open("func (" + receiver + " *" + plan.typeName + ") " +
-               names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(buffer []byte) (int, error) {");
         return {receiver, "buffer"};
+    }
+
+    /// @brief The signature of @p fn, declared as @p name: its receiver where it is a method, its
+    ///        parameters, and what it answers.
+    [[nodiscard]] std::string signature(mlir::func::FuncOp fn, const std::string& name) const
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            std::string list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                list += (list.empty() ? "" : ", ") + ("p" + std::to_string(index)) + " " + typeName(argument.getType());
+            }
+            return "func " + name + "(" + list + ") " + typeName(fn.getResultTypes().front());
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return accessorSignature(fn, name, *direction == "get");
+        }
+        const Plan&       plan   = planOf(fn.getArgument(0));
+        const std::string method = "func (" + goReceiverName(plan.typeName) + " *" + plan.typeName + ") " + name;
+        if ((*direction == "append_wire_image") || (*direction == "wire_image") || (*direction == "read_wire_image"))
+        {
+            // The encoding package's interfaces: the bytes an encoder appends to or a reader reads,
+            // and the bytes and the runtime's error it answers.
+            std::string list;
+            for (const mlir::Type type : fn.getArgumentTypes().drop_front())
+            {
+                list += (list.empty() ? "" : ", ") +
+                        std::string(*direction == "read_wire_image" ? "data " : "buffer ") + typeName(type);
+            }
+            std::vector<std::string> results;
+            for (const mlir::Type type : fn.getResultTypes())
+            {
+                results.push_back(type.isInteger(8) ? std::string{"error"} : typeName(type));
+            }
+            return method + "(" + list + ") " +
+                   ((results.size() == 1) ? results.front() : "(" + llvm::join(results, ", ") + ")");
+        }
+        return method + "(buffer []byte) (int, error)";
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -863,30 +905,41 @@ public:
         w.line("_ = " + expr.str());
     }
 
-    /// @brief Opens a getter or a setter: a package-level function named after the type and the
-    ///        member, taking the buffer as a slice and speaking the member's own type. The plan
-    ///        holds the size, an index and an integer in a `uint64`: the size is the slice's own
-    ///        length, an expression rather than a local, since a slice read needs no size beside
-    ///        it; an index and a value are bound at entry.
-    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    /// @brief A getter's or a setter's signature: a package-level function named after the type and
+    ///        the member, taking the buffer as a slice and speaking the member's own type.
+    [[nodiscard]] std::string accessorSignature(mlir::func::FuncOp fn, const std::string& name, const bool getter) const
     {
-        const Accessed    a         = accessed(fn);
-        const std::string storage   = scalarType(a.member->io);
-        const std::string name      = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
-        const mlir::Type  answer    = fn.getResultTypes().front();
-        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type  held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool        integer   = mlir::isa<mlir::IntegerType>(held);
-        const std::string index     = indexed ? ", elementIndex int" : "";
-        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_.clear();
-        if (composite)
+        const std::string storage = scalarType(accessed(fn).member->io);
+        const mlir::Type  answer  = fn.getResultTypes().front();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string index   = indexed ? ", elementIndex int" : "";
+        if (getter && mlir::isa<mlir::dsdl::PtrType>(answer))
         {
             // The nested type's buffer, as a slice, which carries its own length.
-            w.open("func " + name + "(buffer []byte" + index + ") []byte {");
+            return "func " + name + "(buffer []byte" + index + ") []byte";
         }
-        else if (getter)
+        if (getter)
+        {
+            return "func " + name + "(buffer []byte" + index + ") " + storage;
+        }
+        const bool integer = mlir::isa<mlir::IntegerType>(fn.getArgument(indexed ? 3 : 2).getType());
+        return "func " + name + "(buffer []byte" + index + ", " + (integer ? "memberValue " : "value ") + storage +
+               ") error";
+    }
+
+    /// @brief Opens a getter or a setter. The plan holds the size, an index and an integer in a
+    ///        `uint64`: the size is the slice's own length, an expression rather than a local, since
+    ///        a slice read needs no size beside it; an index and a value are bound at entry.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const std::string storage = scalarType(accessed(fn).member->io);
+        const mlir::Type  answer  = fn.getResultTypes().front();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type  held    = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
+        if (getter && !mlir::isa<mlir::dsdl::PtrType>(answer))
         {
             if (storage == "bool")
             {
@@ -896,12 +949,6 @@ public:
             {
                 returnCast_ = storage;
             }
-            w.open("func " + name + "(buffer []byte" + index + ") " + storage + " {");
-        }
-        else
-        {
-            w.open("func " + name + "(buffer []byte" + index + ", " + (integer ? "memberValue " : "value ") + storage +
-                   ") error {");
         }
         std::vector<std::string> parameters{"buffer", "uint64(len(buffer))"};
         if (indexed)
@@ -921,31 +968,6 @@ public:
             }
             parameters.emplace_back("value");
         }
-        return parameters;
-    }
-
-    /// @brief Opens a method of the encoding package's interfaces: the receiver, then the bytes an
-    ///        encoder appends to or a reader reads, and the bytes and the runtime's error it answers.
-    std::vector<std::string> openWireImage(SourceWriter& w, mlir::func::FuncOp fn, const bool reader) const
-    {
-        const Plan&              plan     = planOf(fn.getArgument(0));
-        const std::string        receiver = goReceiverName(plan.typeName);
-        std::vector<std::string> parameters{receiver};
-        std::string              list;
-        for (const mlir::Type type : fn.getArgumentTypes().drop_front())
-        {
-            parameters.emplace_back(reader ? "data" : "buffer");
-            list += (list.empty() ? "" : ", ") + parameters.back() + " " + typeName(type);
-        }
-        std::vector<std::string> results;
-        for (const mlir::Type type : fn.getResultTypes())
-        {
-            results.push_back(type.isInteger(8) ? std::string{"error"} : typeName(type));
-        }
-        const std::string answer = (results.size() == 1) ? results.front() : "(" + llvm::join(results, ", ") + ")";
-        answersError_            = reader;
-        w.open("func (" + receiver + " *" + plan.typeName + ") " +
-               names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(" + list + ") " + answer + " {");
         return parameters;
     }
 
@@ -1893,21 +1915,6 @@ private:
     mutable std::size_t counter_{0};
 };
 
-/// @brief The three bodies `lower-dsdl-bodies` built for one section.
-struct SectionBodies final
-{
-    mlir::func::FuncOp serialize;
-    mlir::func::FuncOp deserialize;
-    mlir::func::FuncOp initialize;
-    /// @brief The encoding package's interfaces over the pair: BinaryAppender, BinaryMarshaler and
-    ///        BinaryUnmarshaler.
-    mlir::func::FuncOp appendWireImage;
-    mlir::func::FuncOp wireImage;
-    mlir::func::FuncOp readWireImage;
-    /// @brief The section's field accessors, getters and setters, in the module's order.
-    std::vector<mlir::func::FuncOp> accessors;
-};
-
 /// @brief Whether a stored constant is its type's zero. No constant -- a length of nought, a bool
 /// array -- is zero.
 bool goStoredValueIsZero(const mlir::TypedAttr value)
@@ -2013,297 +2020,462 @@ llvm::Expected<bool> goInitializerIsZero(const InitializerShape& shape, mlir::Mo
     return true;
 }
 
-llvm::Error emitSectionType(SourceWriter&                         w,
-                            const EmitterContext&                 ctx,
-                            const std::string&                    key,
-                            const std::string&                    sectionName,
-                            const SectionMetadata&                metadata,
-                            const SemanticSection&                section,
-                            const AttachedDoc&                    typeDoc,
-                            const std::string&                    definitionFullName,
-                            const GoFileNames&                    file,
-                            const mlir::dsdl::SerializationPlanOp plan,
-                            const GoSpelling&                     spelling,
-                            const SectionBodies&                  bodies,
-                            mlir::ModuleOp                        module,
-                            PlanBodyLookups&                      lookups)
+/// @brief A section's constructor, as its initialise body states it.
+struct GoConstructor final
 {
-    const GoSurface&   names    = ctx.names();
-    const std::string& typeName = names.typeName(key, sectionName);
-    const auto         meta     = [&](const GeneratedFact fact) {
-        return names.declared(key, SurfaceDeclKind::Constant, sectionName, {}, fact);
+    /// @brief The initialise body's symbol, which the constructor is declared by.
+    std::string symbol;
+
+    InitializerShape shape;
+
+    /// @brief Whether each nested initialiser a member is set through stores only zeros, by callee.
+    std::map<std::string, bool> nestedZero;
+};
+
+/// @brief The constructor @p initialize states for the definition @p fullName; none where every store
+///        is its type's zero, which Go's zero value stands in for.
+///
+/// A body that stores anything else has no zero value to lean on and gets a constructor that sets
+/// what the body sets, member by member and element by element.
+llvm::Expected<std::optional<GoConstructor>> readGoConstructor(mlir::func::FuncOp initialize,
+                                                               const std::string& fullName)
+{
+    auto init = readInitializer(initialize);
+    if (!init)
+    {
+        return init.takeError();
+    }
+    auto module  = initialize->getParentOfType<mlir::ModuleOp>();
+    auto allZero = goInitializerIsZero(*init, module);
+    if (!allZero)
+    {
+        return allZero.takeError();
+    }
+    if (*allZero)
+    {
+        return std::nullopt;
+    }
+    GoConstructor constructor{initialize.getSymName().str(), *init, {}};
+    for (const auto& entry : init->members)
+    {
+        if ((entry.kind != MemberDefault::Kind::Composite) && (entry.kind != MemberDefault::Kind::FixedCompositeArray))
+        {
+            continue;
+        }
+        auto body = module.lookupSymbol<mlir::func::FuncOp>(entry.callee);
+        if (!body)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "the initialise body of %s calls %s, which the lowered module does not hold",
+                                           fullName.c_str(),
+                                           entry.callee.c_str());
+        }
+        auto nested = readInitializer(body);
+        if (!nested)
+        {
+            return nested.takeError();
+        }
+        auto zero = goInitializerIsZero(*nested, module);
+        if (!zero)
+        {
+            return zero.takeError();
+        }
+        constructor.nestedZero[entry.callee] = *zero;
+    }
+    return constructor;
+}
+
+/// @brief Go's layout: a file per definition, holding its helpers, then each section's constants,
+///        type, layout checks, constructor and functions, then a service's alias and constants.
+const DeclarationLayout& goLayout()
+{
+    static const DeclarationLayout layout{
+        .files   = {{LayoutPart::Prelude,
+                     LayoutPart::Imports,
+                     LayoutPart::HelperDefinitions,
+                     LayoutPart::Sections,
+                     LayoutPart::Alias}},
+        .section = {LayoutPart::SectionConstants,
+                    LayoutPart::Type,
+                    LayoutPart::LayoutChecks,
+                    LayoutPart::Methods,
+                    LayoutPart::SectionDefinitions},
+        .indent  = IndentPolicy::tabs(),
     };
-    w.line("const " + meta(GeneratedFact::FullName) + " = \"" + metadata.fullName + "\"");
-    w.line("const " + meta(GeneratedFact::IsDeprecated) + " = " + std::string(metadata.deprecated ? "true" : "false"));
-    w.line("const " + meta(GeneratedFact::FullNameAndVersion) + " = \"" + metadata.fullName + "." +
-           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"");
-    w.line("const " + meta(GeneratedFact::ExtentBytes) + " = " + std::to_string(metadata.extentBytes));
-    w.line("const " + meta(GeneratedFact::SerializationBufferSizeBytes) + " = " +
-           std::to_string(metadata.serializationBufferSizeBytes));
-    w.line("const " + meta(GeneratedFact::WireFlat) + " = " + std::string(metadata.wireFlat.holds ? "true" : "false"));
-    w.line("const " + meta(GeneratedFact::WireFlatReason) + " = \"" + metadata.wireFlat.reason + "\"");
-    w.line("const " + meta(GeneratedFact::HostImage) + " = " +
-           std::string(metadata.hostImage.holds ? "true" : "false"));
-    w.line("const " + meta(GeneratedFact::HostImageReason) + " = \"" + metadata.hostImage.reason + "\"");
+    return layout;
+}
 
-    if (metadata.declaresPortId)
+/// @brief Spells Go's declarations: a file per definition, holding each section's constants, its
+///        struct and its methods, and the accessors and constructor beside it.
+class GoDeclarations final : public DeclarationSpelling
+{
+public:
+    /// @param[in] ctx The run.
+    /// @param[in] file How the file names what it takes from other packages.
+    /// @param[in] imports What the file named, which @p file records.
+    /// @param[in] types The Go spelling of the IR's types and signatures.
+    /// @param[in] constructors Each section's constructor, by section, where it has one.
+    GoDeclarations(const EmitterContext&                       ctx,
+                   const GoFileNames&                          file,
+                   const ImportSet&                            imports,
+                   const GoSpelling&                           types,
+                   const std::map<std::string, GoConstructor>& constructors)
+        : ctx_(ctx)
+        , file_(file)
+        , imports_(imports)
+        , types_(types)
+        , constructors_(constructors)
     {
-        w.line("const " + meta(GeneratedFact::HasFixedPortId) + " = " +
-               std::string(metadata.fixedPortId ? "true" : "false"));
-        if (metadata.fixedPortId)
-        {
-            w.line("const " + meta(GeneratedFact::FixedPortId) + " = " + std::to_string(*metadata.fixedPortId));
-        }
-    }
-    if (metadata.isUnion)
-    {
-        w.line("const " + meta(GeneratedFact::UnionOptionCount) + " = " + std::to_string(metadata.unionOptions.size()));
-        for (const auto& option : metadata.unionOptions)
-        {
-            w.line("const " + names.declared(key, SurfaceDeclKind::Option, sectionName, option.name) + " " +
-                   unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
-        }
     }
 
-    for (const auto& c : section.constants)
+    void write(DeclarationSite& site, const LayoutPart part) const override
     {
-        // gofmt separates a documented declaration from whatever precedes it, so a doc
-        // comment landing directly under another constant needs the blank line first.
-        if (!c.doc.lines.empty())
+        switch (part)
         {
-            w.blank();
+        case LayoutPart::Prelude:
+            prelude(site);
+            return;
+        case LayoutPart::SectionConstants:
+            constants(site);
+            return;
+        case LayoutPart::Type:
+            type(site);
+            return;
+        case LayoutPart::LayoutChecks:
+            layoutChecks(site);
+            return;
+        case LayoutPart::Methods:
+            constructor(site);
+            return;
+        case LayoutPart::Alias:
+            alias(site);
+            return;
+        default:
+            return;
         }
-        emitAttachedDocGo(w, c.doc);
-        w.line("const " + names.declared(key, SurfaceDeclKind::Constant, sectionName, c.name) + " = " +
-               goConstValue(c.type, c.value));
     }
-    w.blank();
 
-    const auto dataMember = [&](const llvm::StringRef member) { return names.member(key, sectionName, member); };
-    // A function's symbol, which an op handle held const does not answer.
-    const auto symbolOf = [](mlir::func::FuncOp fn) { return fn.getSymName(); };
-    // The object type, which an accessors-only run leaves out.
-    if (!ctx.accessorsOnly())
+    [[nodiscard]] std::string imports(const DeclarationSite& /*site*/) const override
     {
+        std::ostringstream out;
+        SourceWriter       w = makeGoWriter(out);
+        writeGoImports(w, imports_);
+        // No empty line after the block, which the renderer writes.
+        std::string block = out.str();
+        while (block.ends_with("\n\n"))
+        {
+            block.pop_back();
+        }
+        return block;
+    }
+
+    [[nodiscard]] std::string signature(const SurfaceDecl& decl, mlir::func::FuncOp fn) const override
+    {
+        return types_.signature(fn, decl.name);
+    }
+
+    void prototype(SourceWriter& /*w*/, const std::string& /*signature*/) const override
+    {
+        llvm::report_fatal_error("Go declares no function ahead of its definition");
+    }
+
+    void openDefinition(SourceWriter& w, const SurfaceDecl& decl, const std::string& signature) const override
+    {
+        // The encoding package's interfaces say what each is for.
+        const std::optional<PlanSymbol> symbol = decl.of ? parsePlanSymbol(decl.of->function) : std::nullopt;
+        if (symbol)
+        {
+            const std::string receiver = goReceiverName(ctx_.names().typeName(decl.of->schema, decl.of->section));
+            switch (symbol->function)
+            {
+            case PlanFunction::AppendWireImage:
+                w.line("// " + decl.name + " appends the wire image of " + receiver +
+                       " to buffer, as encoding.BinaryAppender asks.");
+                break;
+            case PlanFunction::WireImage:
+                w.line("// " + decl.name + " answers the wire image of " + receiver +
+                       ", as encoding.BinaryMarshaler asks.");
+                break;
+            case PlanFunction::ReadWireImage:
+                w.line("// " + decl.name + " reads " + receiver +
+                       " from its wire image, as encoding.BinaryUnmarshaler asks.");
+                break;
+            default:
+                break;
+            }
+        }
+        w.open(signature + " {");
+    }
+
+    void forward(SourceWriter& /*w*/,
+                 const SurfaceDecl& /*published*/,
+                 llvm::StringRef /*callee*/,
+                 mlir::func::FuncOp /*fn*/) const override
+    {
+        llvm::report_fatal_error("Go publishes no function over another");
+    }
+
+private:
+    void prelude(DeclarationSite& site) const
+    {
+        const DiscoveredDefinition& info = site.facts().definition().info;
+        SourceWriter&               w    = site.writer();
+        w.line(generatedCommentLine("Go backend"));
+        w.line("// Source: " + info.fullName + "." + std::to_string(info.majorVersion) + "." +
+               std::to_string(info.minorVersion));
+        w.blank();
+        w.line("package " + ctx_.names().packageName(site.facts().key()));
+    }
+
+    /// @brief The section's facts, a union's option tags, then its DSDL constants.
+    void constants(DeclarationSite& site) const
+    {
+        const GoSurface&       names    = ctx_.names();
+        const std::string&     key      = site.facts().key();
+        const std::string&     section  = *site.section();
+        const SectionMetadata& metadata = site.facts().metadata(section);
+        SourceWriter&          w        = site.writer();
+        const auto             meta     = [&](const GeneratedFact fact) {
+            return names.declared(key, SurfaceDeclKind::Constant, section, {}, fact);
+        };
+        const auto boolean = [](const bool value) { return std::string(value ? "true" : "false"); };
+        w.line("const " + meta(GeneratedFact::FullName) + " = \"" + metadata.fullName + "\"");
+        w.line("const " + meta(GeneratedFact::IsDeprecated) + " = " + boolean(metadata.deprecated));
+        w.line("const " + meta(GeneratedFact::FullNameAndVersion) + " = \"" + metadata.fullName + "." +
+               std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\"");
+        w.line("const " + meta(GeneratedFact::ExtentBytes) + " = " + std::to_string(metadata.extentBytes));
+        w.line("const " + meta(GeneratedFact::SerializationBufferSizeBytes) + " = " +
+               std::to_string(metadata.serializationBufferSizeBytes));
+        w.line("const " + meta(GeneratedFact::WireFlat) + " = " + boolean(metadata.wireFlat.holds));
+        w.line("const " + meta(GeneratedFact::WireFlatReason) + " = \"" + metadata.wireFlat.reason + "\"");
+        w.line("const " + meta(GeneratedFact::HostImage) + " = " + boolean(metadata.hostImage.holds));
+        w.line("const " + meta(GeneratedFact::HostImageReason) + " = \"" + metadata.hostImage.reason + "\"");
+        if (metadata.declaresPortId)
+        {
+            w.line("const " + meta(GeneratedFact::HasFixedPortId) + " = " + boolean(metadata.fixedPortId.has_value()));
+            if (metadata.fixedPortId)
+            {
+                w.line("const " + meta(GeneratedFact::FixedPortId) + " = " + std::to_string(*metadata.fixedPortId));
+            }
+        }
+        if (metadata.isUnion)
+        {
+            w.line("const " + meta(GeneratedFact::UnionOptionCount) + " = " +
+                   std::to_string(metadata.unionOptions.size()));
+            for (const auto& option : metadata.unionOptions)
+            {
+                w.line("const " + names.declared(key, SurfaceDeclKind::Option, section, option.name) + " " +
+                       unsignedStorageType(metadata.unionTagBits) + " = " + std::to_string(option.tag));
+            }
+        }
+        for (const auto& c : site.facts().section(section).constants)
+        {
+            // gofmt separates a documented declaration from whatever precedes it, so a doc
+            // comment landing directly under another constant needs the blank line first.
+            if (!c.doc.lines.empty())
+            {
+                w.blank();
+            }
+            emitAttachedDocGo(w, c.doc);
+            w.line("const " + names.declared(key, SurfaceDeclKind::Constant, section, c.name) + " = " +
+                   goConstValue(c.type, c.value));
+        }
+    }
+
+    /// @brief The section's struct, which an accessors-only run leaves out.
+    void type(DeclarationSite& site) const
+    {
+        if (ctx_.accessorsOnly())
+        {
+            return;
+        }
+        const GoSurface&          names    = ctx_.names();
+        const std::string&        key      = site.facts().key();
+        const std::string&        section  = *site.section();
+        const SectionMetadata&    metadata = site.facts().metadata(section);
+        const SemanticSection&    parts    = site.facts().section(section);
+        const SemanticDefinition& def      = site.facts().definition();
+        SourceWriter&             w        = site.writer();
         emitAttachedDocGo(w,
-                          docWithDeprecationNotice(typeDoc,
-                                                   section.deprecated,
-                                                   definitionFullName,
+                          docWithDeprecationNotice(def.doc,
+                                                   parts.deprecated,
+                                                   def.info.fullName,
                                                    metadata.majorVersion,
                                                    metadata.minorVersion));
-        w.open("type " + typeName + " struct {");
-
+        w.open("type " + names.typeName(key, section) + " struct {");
         // gofmt aligns a struct's types into a column, and a doc comment starts a fresh
         // one: the members are collected first so each run's width is known before any of
         // it is written.
         std::vector<GoStructMember> members;
-        for (const auto& field : section.fields)
+        for (const auto& field : parts.fields)
         {
             if (field.isPadding)
             {
                 continue;
             }
-            members.push_back(GoStructMember{names.member(key, sectionName, field.name),
+            members.push_back(GoStructMember{names.member(key, section, field.name),
                                              field.heldAsView ? goViewType(field.resolvedType)
-                                                              : goFieldType(field.resolvedType, file),
+                                                              : goFieldType(field.resolvedType, file_),
                                              field.doc});
         }
-        if (section.isUnion)
+        if (parts.isUnion)
         {
             // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
             // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            members.push_back(GoStructMember{names.member(key, sectionName, {}, GeneratedFact::UnionTag),
-                                             unsignedStorageType(unionTagBits(plan)),
+            members.push_back(GoStructMember{names.member(key, section, {}, GeneratedFact::UnionTag),
+                                             unsignedStorageType(unionTagBits(site.facts().plan(section))),
                                              {}});
         }
-        if (section.fields.empty())
+        if (parts.fields.empty())
         {
             members.push_back(GoStructMember{"_", "uint8", {}});
         }
         emitAlignedStructMembers(w, members);
         w.close("}");
-        w.blank();
     }
 
-    // The verdict was decided under natural alignment; this pins the layout on the architecture the
-    // package is compiled for. A mismatch is an index out of bounds, or a uintptr overflow, here.
-    if (!ctx.accessorsOnly() && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    /// @brief The layout the struct's host image was decided under, pinned on the architecture the
+    ///        package is compiled for. A mismatch is an index out of bounds, or a uintptr overflow.
+    void layoutChecks(DeclarationSite& site) const
     {
+        const std::string&     section  = *site.section();
+        const SectionMetadata& metadata = site.facts().metadata(section);
+        if (ctx_.accessorsOnly() || !metadata.hostImage.holds || metadata.hostImageMembers.empty())
+        {
+            return;
+        }
+        const GoSurface&   names    = ctx_.names();
+        const std::string& key      = site.facts().key();
+        const std::string& typeName = names.typeName(key, section);
+        SourceWriter&      w        = site.writer();
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Sizeof(" + typeName + "{})-" +
+        w.line("var _ = [1]struct{}{}[" + file_.standard("unsafe") + ".Sizeof(" + typeName + "{})-" +
                std::to_string(metadata.serializationBufferSizeBytes) + "]");
         for (const auto& member : metadata.hostImageMembers)
         {
-            w.line("var _ = [1]struct{}{}[" + file.standard("unsafe") + ".Offsetof(" + typeName + "{}." +
-                   dataMember(member.fieldName) + ")-" + std::to_string(member.offsetBytes) + "]");
+            w.line("var _ = [1]struct{}{}[" + file_.standard("unsafe") + ".Offsetof(" + typeName + "{}." +
+                   names.member(key, section, member.fieldName) + ")-" + std::to_string(member.offsetBytes) + "]");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
-        w.blank();
     }
 
-    // The initialiser and the serdes, which an accessors-only run leaves out.
-    if (!ctx.accessorsOnly())
+    /// @brief The section's constructor, where its initialiser stores anything but zeros.
+    void constructor(DeclarationSite& site) const
     {
-        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        const std::string& section = *site.section();
+        const auto         found   = constructors_.find(section);
+        if (found == constructors_.end())
         {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no plan bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
+            return;
         }
-        // Go's zero value is the language's, and it is the rendering of the initialise body wherever
-        // every store in that body, and in every nested body it calls, is its type's zero -- which is
-        // decidable from the bodies, so nothing is emitted on that decision rather than on an
-        // assumption. A body that stores anything else has no zero value to lean on and gets a
-        // constructor that sets what the body sets, member by member and element by element.
-        auto init = readInitializer(bodies.initialize);
-        if (!init)
+        const GoConstructor& made     = found->second;
+        const GoSurface&     names    = ctx_.names();
+        const std::string&   key      = site.facts().key();
+        const std::string&   typeName = names.typeName(key, section);
+        SourceWriter&        w        = site.writer();
+        w.open("func " + names.function(made.symbol, SurfaceDeclKind::Entry) + "() " + typeName + " {");
+        w.line("var obj " + typeName);
+        for (const auto& field : site.facts().section(section).fields)
         {
-            return init.takeError();
-        }
-        const auto nestedIsZero = [&](const std::string& callee) -> llvm::Expected<bool> {
-            auto body = module.lookupSymbol<mlir::func::FuncOp>(callee);
-            if (!body)
+            if (field.isPadding)
             {
-                return llvm::
-                    createStringError(llvm::inconvertibleErrorCode(),
-                                      "the initialise body of %s calls %s, which the lowered module does not hold",
-                                      metadata.fullName.c_str(),
-                                      callee.c_str());
+                continue;
             }
-            auto nested = readInitializer(body);
-            if (!nested)
+            for (const auto& entry : made.shape.members)
             {
-                return nested.takeError();
-            }
-            return goInitializerIsZero(*nested, module);
-        };
-        auto allZero = goInitializerIsZero(*init, module);
-        if (!allZero)
-        {
-            return allZero.takeError();
-        }
-        if (!*allZero)
-        {
-            w.open("func " + names.function(symbolOf(bodies.initialize), SurfaceDeclKind::Entry) + "() " + typeName +
-                   " {");
-            w.line("var obj " + typeName);
-            for (const auto& field : section.fields)
-            {
-                if (field.isPadding)
+                if (entry.member != field.name)
                 {
                     continue;
                 }
-                for (const auto& entry : init->members)
+                const auto member = "obj." + names.member(key, section, field.name);
+                const auto stored = goStoredLiteral(entry.value, field.resolvedType);
+                switch (entry.kind)
                 {
-                    if (entry.member != field.name)
+                case MemberDefault::Kind::Scalar:
+                    if (!goStoredValueIsZero(entry.value))
                     {
-                        continue;
+                        w.line(goAssignment(member, " = ", stored));
                     }
-                    const auto member = "obj." + dataMember(field.name);
-                    const auto stored = goStoredLiteral(entry.value, field.resolvedType);
-                    switch (entry.kind)
+                    break;
+                case MemberDefault::Kind::FixedScalarArray:
+                    if (!goStoredValueIsZero(entry.value))
                     {
-                    case MemberDefault::Kind::Scalar:
-                        if (!goStoredValueIsZero(entry.value))
-                        {
-                            w.line(goAssignment(member, " = ", stored));
-                        }
-                        break;
-                    case MemberDefault::Kind::FixedScalarArray:
-                        if (!goStoredValueIsZero(entry.value))
-                        {
-                            w.open("for i := range " + member + " {");
-                            w.line(goAssignment(member, "[i] = ", stored));
-                            w.close("}");
-                        }
-                        break;
-                    case MemberDefault::Kind::Composite:
-                    case MemberDefault::Kind::FixedCompositeArray: {
-                        auto zero = nestedIsZero(entry.callee);
-                        if (!zero)
-                        {
-                            return zero.takeError();
-                        }
-                        if (*zero)
-                        {
-                            break;
-                        }
-                        const auto made = goConstructorOf(*field.resolvedType.compositeType, file, names);
-                        if (entry.kind == MemberDefault::Kind::Composite)
-                        {
-                            w.line(goAssignment(member, " = ", made));
-                        }
-                        else
-                        {
-                            w.open("for i := range " + member + " {");
-                            w.line(goAssignment(member, "[i] = ", made));
-                            w.close("}");
-                        }
+                        w.open("for i := range " + member + " {");
+                        w.line(goAssignment(member, "[i] = ", stored));
+                        w.close("}");
+                    }
+                    break;
+                case MemberDefault::Kind::Composite:
+                case MemberDefault::Kind::FixedCompositeArray: {
+                    if (made.nestedZero.at(entry.callee))
+                    {
                         break;
                     }
-                    case MemberDefault::Kind::VariableArrayEmpty:
-                    case MemberDefault::Kind::BoolArray:
-                    case MemberDefault::Kind::View:
-                        break;
+                    const auto value = goConstructorOf(*field.resolvedType.compositeType, file_, names);
+                    if (entry.kind == MemberDefault::Kind::Composite)
+                    {
+                        w.line(goAssignment(member, " = ", value));
                     }
+                    else
+                    {
+                        w.open("for i := range " + member + " {");
+                        w.line(goAssignment(member, "[i] = ", value));
+                        w.close("}");
+                    }
+                    break;
+                }
+                case MemberDefault::Kind::VariableArrayEmpty:
+                case MemberDefault::Kind::BoolArray:
+                case MemberDefault::Kind::View:
+                    break;
                 }
             }
-            if (init->isUnion && init->unionTag != 0)
-            {
-                w.line("obj." + names.member(key, sectionName, {}, GeneratedFact::UnionTag) + " = " +
-                       std::to_string(init->unionTag));
-            }
-            w.line("return obj");
-            w.close("}");
-            w.blank();
         }
-        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        if (made.shape.isUnion && made.shape.unionTag != 0)
         {
-            return err;
+            w.line("obj." + names.member(key, section, {}, GeneratedFact::UnionTag) + " = " +
+                   std::to_string(made.shape.unionTag));
         }
-        w.blank();
-        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-        {
-            return err;
-        }
-        // The encoding package's interfaces, each a body the lowering built over the pair above.
-        if (!bodies.appendWireImage || !bodies.wireImage || !bodies.readWireImage)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no wire image bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
-        }
-        const std::string receiver = goReceiverName(typeName);
-        const auto        name     = [&](mlir::func::FuncOp body) {
-            return names.function(symbolOf(body), SurfaceDeclKind::Entry);
-        };
-        for (const auto& [body, doc] :
-             {std::pair{bodies.appendWireImage,
-                        " appends the wire image of " + receiver + " to buffer, as encoding.BinaryAppender asks."},
-              std::pair{bodies.wireImage,
-                        " answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks."},
-              std::pair{bodies.readWireImage,
-                        " reads " + receiver + " from its wire image, as encoding.BinaryUnmarshaler asks."}})
-        {
-            w.blank();
-            w.line("// " + name(body) + doc);
-            if (auto err = translateFunction(body, spelling, w, lookups))
-            {
-                return err;
-            }
-        }
+        w.line("return obj");
+        w.close("}");
     }
-    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
-    for (const mlir::func::FuncOp accessor : bodies.accessors)
+
+    /// @brief A service's alias, the name the service is known by, and the constants it states
+    ///        through it. An accessors-only run declares no alias.
+    void alias(DeclarationSite& site) const
     {
-        w.separate();
-        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        const SemanticDefinition& def = site.facts().definition();
+        if (!def.isService)
         {
-            return err;
+            return;
+        }
+        const GoSurface&   names = ctx_.names();
+        const std::string& key   = site.facts().key();
+        SourceWriter&      w     = site.writer();
+        if (!ctx_.accessorsOnly())
+        {
+            w.line("type " + names.definitionTypeName(key) + " = " + names.typeName(key, "request"));
+        }
+        // gofmt separates top-level declarations of different kinds, so the alias and the
+        // constants that follow it do not sit together.
+        site.separate();
+        const auto service = [&](const GeneratedFact fact) {
+            return names.declared(key, SurfaceDeclKind::Constant, {}, {}, fact);
+        };
+        w.line("const " + service(GeneratedFact::HasFixedPortId) + " = " +
+               std::string(def.info.fixedPortId ? "true" : "false"));
+        if (def.info.fixedPortId)
+        {
+            w.line("const " + service(GeneratedFact::FixedPortId) + " = " + std::to_string(*def.info.fixedPortId));
         }
     }
-    return llvm::Error::success();
-}
+
+    const EmitterContext&                       ctx_;
+    const GoFileNames&                          file_;
+    const ImportSet&                            imports_;
+    const GoSpelling&                           types_;
+    const std::map<std::string, GoConstructor>& constructors_;
+};
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
@@ -2320,163 +2492,41 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // The declarations and bodies first, naming what they take from other packages as they write
     // it; the import declaration is written after, from what was named.
-    const GoSurface&                names = ctx.names();
-    const std::string               key   = keyOf(def.info);
-    ImportSet                       imports;
-    const GoFileNames               file(ctx, imports, moduleName, names.packageDirectory(key), names.imports(key));
-    const GoSpelling                spelling(schema, names, file);
-    std::vector<mlir::func::FuncOp> helpers;
-    std::map<std::string, SectionBodies> bodies;
+    const GoSurface&  names = ctx.names();
+    const std::string key   = keyOf(def.info);
+    ImportSet         imports;
+    const GoFileNames file(ctx, imports, moduleName, names.packageDirectory(key), names.imports(key));
+    const GoSpelling  spelling(schema, names, file);
+    // The functions the file translates: every one but a helper nothing calls, which an
+    // accessors-only run has many of, and an initialiser, which is Go's zero value or a constructor
+    // the declarations write.
+    FunctionBodies                       bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    std::map<std::string, GoConstructor> constructors;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
-        const auto direction = planBodyDirection(fn);
-        if (!direction)
+        if (fn->hasAttr("llvmdsdl.unreferenced"))
         {
-            // A helper nothing calls is left out; an accessors-only run has many.
-            if (fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            helpers.push_back(fn);
             continue;
         }
-        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
-        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        if (*direction == "serialize")
+        if (planBodyDirection(fn) == "initialize")
         {
-            entry.serialize = fn;
-        }
-        else if (*direction == "deserialize")
-        {
-            entry.deserialize = fn;
-        }
-        else if (*direction == "initialize")
-        {
-            entry.initialize = fn;
-        }
-        else if (*direction == "append_wire_image")
-        {
-            entry.appendWireImage = fn;
-        }
-        else if (*direction == "wire_image")
-        {
-            entry.wireImage = fn;
-        }
-        else if (*direction == "read_wire_image")
-        {
-            entry.readWireImage = fn;
-        }
-        else if (*direction == "get" || *direction == "set")
-        {
-            entry.accessors.push_back(fn);
-        }
-        else
-        {
-            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
-        }
-    }
-
-    std::ostringstream body;
-    SourceWriter       w = makeGoWriter(body);
-    for (const mlir::func::FuncOp helper : helpers)
-    {
-        if (auto err = translateFunction(helper, spelling, w, lookups))
-        {
-            return std::move(err);
-        }
-        w.blank();
-    }
-    if (!def.isService)
-    {
-        if (auto err = emitSectionType(w,
-                                       ctx,
-                                       key,
-                                       {},
-                                       sectionMetadata(def.info, def.request, schema, ""),
-                                       def.request,
-                                       def.doc,
-                                       def.info.fullName,
-                                       file,
-                                       sectionPlan(schema, ""),
-                                       spelling,
-                                       bodies[""],
-                                       module,
-                                       lookups))
-        {
-            return std::move(err);
-        }
-    }
-    else
-    {
-        if (auto err = emitSectionType(w,
-                                       ctx,
-                                       key,
-                                       "request",
-                                       sectionMetadata(def.info, def.request, schema, "request"),
-                                       def.request,
-                                       def.doc,
-                                       def.info.fullName,
-                                       file,
-                                       sectionPlan(schema, "request"),
-                                       spelling,
-                                       bodies["request"],
-                                       module,
-                                       lookups))
-        {
-            return std::move(err);
-        }
-        w.blank();
-        if (def.response)
-        {
-            if (auto err = emitSectionType(w,
-                                           ctx,
-                                           key,
-                                           "response",
-                                           sectionMetadata(def.info, *def.response, schema, "response"),
-                                           *def.response,
-                                           def.doc,
-                                           def.info.fullName,
-                                           file,
-                                           sectionPlan(schema, "response"),
-                                           spelling,
-                                           bodies["response"],
-                                           module,
-                                           lookups))
+            auto made = readGoConstructor(fn, def.info.fullName);
+            if (!made)
             {
-                return std::move(err);
+                return made.takeError();
             }
-            w.blank();
+            if (*made)
+            {
+                const auto section = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+                constructors.emplace(section ? section.getValue().str() : std::string{}, std::move(**made));
+            }
+            continue;
         }
-        if (!ctx.accessorsOnly())
-        {
-            w.line("type " + names.definitionTypeName(key) + " = " + names.typeName(key, "request"));
-        }
-        // gofmt separates top-level declarations of different kinds, so the alias and the
-        // constants that follow it do not sit together.
-        w.separate();
-        // The service-ID belongs to the service, and this alias is how the service is named.
-        const auto service = [&](const GeneratedFact fact) {
-            return names.declared(key, SurfaceDeclKind::Constant, {}, {}, fact);
-        };
-        w.line("const " + service(GeneratedFact::HasFixedPortId) + " = " +
-               std::string(def.info.fixedPortId ? "true" : "false"));
-        if (def.info.fixedPortId)
-        {
-            w.line("const " + service(GeneratedFact::FixedPortId) + " = " + std::to_string(*def.info.fixedPortId));
-        }
+        bodies.functions.push_back(fn);
     }
-
-    std::ostringstream out;
-    SourceWriter       head = makeGoWriter(out);
-    head.line(generatedCommentLine("Go backend"));
-    head.line("// Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-              std::to_string(def.info.minorVersion));
-    head.blank();
-    head.line("package " + names.packageName(key));
-    head.blank();
-    writeGoImports(head, imports);
-    out << body.str();
-    return out.str();
+    const GoDeclarations declarations(ctx, file, imports, spelling, constructors);
+    return DeclarationRenderer(names.tree(), goLayout(), declarations)
+        .render(names.file(key), 0, DefinitionFacts(def, schema), &bodies);
 }
 
 llvm::Expected<std::string> loadGoRuntime()

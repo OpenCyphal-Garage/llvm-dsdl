@@ -175,7 +175,8 @@ public:
 /// @brief The lowered functions a file defines, and what spells their bodies.
 struct FunctionBodies final
 {
-    /// @brief The functions, in the order the file defines them.
+    /// @brief The functions, in the order the file defines them. A section's declaration of a
+    ///        function left out is the spelling's to write, as Go's constructor is.
     std::vector<mlir::func::FuncOp> functions;
 
     const BodySpelling& spelling;
