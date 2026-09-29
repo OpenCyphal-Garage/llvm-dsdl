@@ -77,7 +77,7 @@
 
 # TS:      export function getPaddedB(buffer: Uint8Array): number {
 # TS:      return Number(
-# TS:      export function setPaddedB(buffer: Uint8Array, memberValue: number): number {
+# TS:      export function setPaddedB(buffer: Uint8Array, memberValue: number): void {
 # TS-NEXT: const value: bigint = BigInt(memberValue);
 
 # PY:      @staticmethod
@@ -100,6 +100,6 @@
 # GO_ELEMENT:   func ArrGetHead(buffer []byte, elementIndex int) uint8 {
 # GO_ELEMENT:   func ArrSetHead(buffer []byte, elementIndex int, memberValue uint8) error {
 # TS_ELEMENT:   export function getArrHead(buffer: Uint8Array, elementIndex: number): number {
-# TS_ELEMENT:   export function setArrHead(buffer: Uint8Array, elementIndex: number, memberValue: number): number {
+# TS_ELEMENT:   export function setArrHead(buffer: Uint8Array, elementIndex: number, memberValue: number): void {
 # PY_ELEMENT:   def get_head(buffer: memoryview, index: int) -> int:
 # PY_ELEMENT:   def set_head(buffer: memoryview, index: int, value: int) -> None:

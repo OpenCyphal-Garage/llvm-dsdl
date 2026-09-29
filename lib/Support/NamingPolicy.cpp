@@ -1002,11 +1002,14 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
                         .beside   = false},
          EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .suffix = "", .beside = false},
          EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .suffix = "", .beside = false}};
-    // TypeScript's bodies, and the factory its initialiser is read into, are functions of the module.
-    static constexpr std::array<EntryPointName, 3> kTypeScript =
+    // TypeScript's bodies, the factory its initialiser is read into, and the wire image's bodies are
+    // functions of the module.
+    static constexpr std::array<EntryPointName, 5> kTypeScript =
         {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "Into", .beside = true},
          EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "From", .beside = true},
-         EntryPointName{.function = PlanFunction::Initialize, .name = "make", .suffix = "", .beside = true}};
+         EntryPointName{.function = PlanFunction::Initialize, .name = "make", .suffix = "", .beside = true},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .suffix = "", .beside = true},
+         EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .suffix = "", .beside = true}};
     switch (language)
     {
     case Language::Rust:
@@ -1027,28 +1030,19 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
 {
     // C++'s methods call the free functions the bodies are.
-    static constexpr std::array<WrapperName, 2> kCpp        = {WrapperName{.fact   = GeneratedFact::Serialize,
-                                                                           .wraps  = PlanFunction::Serialize,
-                                                                           .name   = "serialize",
-                                                                           .beside = false},
-                                                               WrapperName{.fact   = GeneratedFact::Deserialize,
-                                                                           .wraps  = PlanFunction::Deserialize,
-                                                                           .name   = "deserialize",
-                                                                           .beside = false}};
-    static constexpr std::array<WrapperName, 2> kTypeScript = {WrapperName{.fact   = GeneratedFact::WireImage,
-                                                                           .wraps  = PlanFunction::Serialize,
-                                                                           .name   = "serialize",
-                                                                           .beside = true},
-                                                               WrapperName{.fact   = GeneratedFact::FromWireImage,
-                                                                           .wraps  = PlanFunction::Deserialize,
-                                                                           .name   = "deserialize",
-                                                                           .beside = true}};
+    static constexpr std::array<WrapperName, 2> kCpp = {WrapperName{.fact   = GeneratedFact::Serialize,
+                                                                    .wraps  = PlanFunction::Serialize,
+                                                                    .name   = "serialize",
+                                                                    .beside = false},
+                                                        WrapperName{.fact   = GeneratedFact::Deserialize,
+                                                                    .wraps  = PlanFunction::Deserialize,
+                                                                    .name   = "deserialize",
+                                                                    .beside = false}};
     switch (language)
     {
-    case Language::TypeScript:
-        return kTypeScript;
     case Language::Cpp:
         return kCpp;
+    case Language::TypeScript:
     case Language::Rust:
     case Language::Go:
     case Language::Python:

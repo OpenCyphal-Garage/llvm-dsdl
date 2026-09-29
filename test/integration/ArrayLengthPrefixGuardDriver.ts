@@ -11,12 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+import * as dsdlRuntime from "./dsdl_runtime";
 import * as prefix32 from "./prefixguard/prefix32_1_0";
 import * as prefix64 from "./prefixguard/prefix64_1_0";
 
 declare const process: { exit(code: number): never };
 
-// The code a body answers with for an array length outside the declared capacity.
+// The code a body throws the text of for an array length outside the declared capacity.
 const BAD_ARRAY_LENGTH = -10;
 
 let passed = 0;
@@ -50,19 +51,19 @@ function withPrefix(prefix: bigint, prefixBytes: number, payloadBytes: number): 
   return buffer;
 }
 
-// A decode that has to fail with a bad array length and leave the array empty. A body that throws
-// instead of answering a code is a failure with the exception's text.
+// A decode that has to fail with a bad array length and leave the array empty: the body throws the
+// runtime's text for the code.
 function expectRejected(name: string, prefix: bigint, decode: () => number, lengthAfter: () => number): void {
-  let rc: number;
+  const want = dsdlRuntime.errorMessage(BAD_ARRAY_LENGTH);
   try {
-    rc = decode();
+    const rc = decode();
+    outcome("FAIL", name, prefix, `answered ${rc}, want a rejection`);
+    return;
   } catch (error) {
-    outcome("FAIL", name, prefix, `threw ${String(error)}`);
-    return;
-  }
-  if (rc !== BAD_ARRAY_LENGTH) {
-    outcome("FAIL", name, prefix, `rc = ${rc}, want ${BAD_ARRAY_LENGTH}`);
-    return;
+    if (!(error instanceof Error) || error.message !== want) {
+      outcome("FAIL", name, prefix, `threw ${String(error)}, want ${want}`);
+      return;
+    }
   }
   if (lengthAfter() !== 0) {
     outcome("FAIL", name, prefix, `array holds ${lengthAfter()} elements after rejection`);

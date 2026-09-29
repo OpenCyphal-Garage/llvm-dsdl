@@ -281,11 +281,13 @@ spells the plan's `i64` as `bigint`, so a 64-bit field and the plan's arithmetic
 an index and an error code are `number`. A constant is the value it stands for, since a bigint's
 bitwise operators read a negative value as its two's complement, and an unsigned comparison
 against a negative literal reads both sides as unsigned 64-bit values. A body is an exported
-function of the object and the buffer that answers the size it used or the error code, and the
-`serialize` and `deserialize` entry points a consumer calls wrap it: the one with a buffer of the
-type's largest size, the other with an empty object, and each throws on a code. A deserialise body
-is handed that empty object, so the storage a member address names is created where it is first
-addressed; a union is one of its option objects, reached through the object cast to the option's
+function of the object and the buffer that answers the size it used and throws an `Error` with the
+text of an error code, and a setter throws the same way. The `serialize` and `deserialize` functions
+a consumer calls translate the bodies `dsdl-build-wire-image-bodies` builds over the pair: the one
+writes into a `Uint8Array` of the type's largest size, and the other reads into the object the
+type's factory makes, which `dsdl.make_object` names, and answers it with the bytes it read. A
+deserialise body is handed that empty object, so the storage a member address names is created
+where it is first addressed; a union is one of its option objects, reached through the object cast to the option's
 shape. A buffer is a `Uint8Array`, and a pointer into it is a subarray clamped to the buffer's
 end. The runtime's write functions answer the plan's code. Both runtime specialisations are one
 spelling. The C↔TypeScript parity lanes and their variants, the decoder fuzz lane, the runtime

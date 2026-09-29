@@ -82,9 +82,12 @@
 # TS-NEXT: imports/ns.Msg.1.0/initialize = makeMsg
 # TS-NEXT: imports/ns.Msg.1.0/serialize = serializeMsgInto
 # TS-NEXT: imports/ns.Msg.1.0/type = Msg
-# TS:      message/entry_points/initialize = makeHold
+# TS:      message/entry_points/from_wire_image = deserializeHold
+# TS-NEXT: message/entry_points/initialize = makeHold
+# TS-NEXT: message/entry_points/serialize = serializeHoldInto
+# TS-NEXT: message/entry_points/wire_image = serializeHold
 # TS:      message/generated/generator_version = LLVMDSDL_GENERATOR_VERSION
-# TS:      message/wrappers/wire_image = serializeHold
+# TS-NOT:  wrappers
 #
 # PY:      file = dsdl_gen/ns/old_1_0.py
 # PY:      message/accessors/a/get = get_a
