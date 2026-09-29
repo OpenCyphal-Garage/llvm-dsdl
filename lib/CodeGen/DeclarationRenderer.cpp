@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -405,11 +406,17 @@ llvm::Error DeclarationRenderer::defineHelpers(DeclarationSite& site, const Func
 
 llvm::Error DeclarationRenderer::defineSectionFunctions(DeclarationSite& site, const FunctionBodies& bodies) const
 {
+    // A declaration whose function the file does not translate is the spelling's to write.
     for (const SurfaceDeclKind kind : {SurfaceDeclKind::Entry, SurfaceDeclKind::Accessor})
     {
         for (const SurfaceDecl* const decl : site.declarations(kind))
         {
-            if (auto err = define(site, *decl, site.facts().function(*decl), bodies))
+            const mlir::func::FuncOp fn = site.facts().function(*decl);
+            if (!llvm::is_contained(bodies.functions, fn))
+            {
+                continue;
+            }
+            if (auto err = define(site, *decl, fn, bodies))
             {
                 return err;
             }

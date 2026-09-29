@@ -1064,6 +1064,14 @@ method. A definition too long for its line takes its parameters on a line of the
 `ruff format` writes it, and Ruff's findings fall from 1,160 to 1,155. Rust and TypeScript take the
 bodies in their output changes.
 
+Go's renderer change moves Go's declaration half onto `DeclarationRenderer`. Go's layout names a
+file's helpers, then each section's constants, struct, layout checks, constructor and functions,
+then a service's alias and constants. Go's signatures, a method's receiver among them, are the
+declaration spelling's, and `GoSpelling::openFunction` binds only what a body reads. A section's
+declaration whose function the caller leaves out of the functions it hands the renderer is the
+spelling's to write: Go's constructor, which is Go's zero value or is written from the initialise
+body's facts. Go's declaration count falls from 77 to 70, and its body count from 59 to 53.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.
