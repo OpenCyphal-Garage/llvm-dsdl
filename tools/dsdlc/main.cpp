@@ -75,6 +75,7 @@
 #include "llvmdsdl/Support/Language.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
+#include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -2042,39 +2043,57 @@ int runDsdlc(int argc, char** argv)
 
     // Two DSDL names can project onto one identifier -- `break` and `break_` both reach `break_` in
     // C, C++ and Rust once the keyword strop runs -- and the scope repairs that by suffixing the
-    // second. The repair is correct and deterministic, but it changes a name the author wrote, so it
-    // is said out loud rather than discovered in the generated header.
+    // second, and a member named as its type is escaped where the language puts the type's name among
+    // the type's members. Each repair is correct and deterministic, but it changes a name the author
+    // wrote, so it is said out loud rather than discovered in the generated header.
     if (!outputLanguages.empty())
     {
-        const auto repairSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        const auto                             repairSemantic = filterSemanticModule(localSemantic, selectedKeys);
+        std::vector<llvmdsdl::DefinitionParts> repairParts;
+        repairParts.reserve(repairSemantic.definitions.size());
         for (const auto& def : repairSemantic.definitions)
         {
-            for (const auto& language : outputLanguages)
+            repairParts.push_back(llvmdsdl::definitionParts(def));
+        }
+        // Each section's type name, and the name its type is declared under, come from the allocation
+        // the emitters read, so a scope built here is the one the emitter wrote.
+        std::vector<llvmdsdl::SurfacePlan> repairPlans;
+        repairPlans.reserve(outputLanguages.size());
+        for (const auto& language : outputLanguages)
+        {
+            repairPlans.push_back(
+                llvmdsdl::allocateSurface(language,
+                                          repairParts,
+                                          llvmdsdl::SurfaceOptions{.packageName   = {},
+                                                                   .versioning    = options.typeNameVersioning,
+                                                                   .accessorsOnly = false,
+                                                                   .profile       = {}}));
+        }
+        for (std::size_t index = 0; index < repairSemantic.definitions.size(); ++index)
+        {
+            const auto& def = repairSemantic.definitions[index];
+            for (std::size_t row = 0; row < outputLanguages.size(); ++row)
             {
-                // The same prefix the emitter puts in front of this section's constants, which is
-                // what decides whether they are in reach of the module's own names. Built here from
-                // the same renderer the emitter uses; a scope built without it would report the name
-                // a constant would have had rather than the one written.
-                const std::string typeName = llvmdsdl::renderDefinitionTypeName(language.language,
-                                                                                def.info.namespaceComponents,
-                                                                                def.info.shortName,
-                                                                                def.info.majorVersion,
-                                                                                def.info.minorVersion,
-                                                                                options.typeNameVersioning);
+                const auto&                  language = outputLanguages[row];
+                const llvmdsdl::SurfacePlan& plan     = repairPlans[row];
 
                 const auto reportRepairs = [&](const llvmdsdl::SemanticSection& section,
-                                               const llvm::StringRef            sectionName) {
+                                               const llvmdsdl::SectionNames&    held) {
+                    const std::string&          declaredTypeName = plan.scopes[held.typeScope].name;
                     const llvmdsdl::NamingScope fieldScope =
-                        llvmdsdl::makeSectionFieldScope(language.language, section);
-                    const std::string sectionTypeName =
-                        llvmdsdl::renderSectionTypeName(language.language, typeName, sectionName);
+                        llvmdsdl::makeSectionFieldScope(language.language, section, declaredTypeName);
+                    // The same prefix the emitter puts in front of this section's constants, which is
+                    // what decides whether they are in reach of the module's own names. A scope built
+                    // without it would report the name a constant would have had rather than the one
+                    // written.
                     const llvmdsdl::NamingScope constScope =
                         llvmdsdl::makeSectionConstantScope(language.language,
                                                            section,
                                                            llvmdsdl::codegenProjectIdentifier(language.language,
                                                                                               llvmdsdl::IdentifierRole::
                                                                                                   ConstantName,
-                                                                                              sectionTypeName));
+                                                                                              held.typeName),
+                                                           declaredTypeName);
 
                     const auto reportOne = [&](const llvmdsdl::NamingScope&   scope,
                                                const char* const              what,
@@ -2094,7 +2113,8 @@ int runDsdlc(int argc, char** argv)
                             .append(assigned)
                             .append("' for target language '")
                             .append(language.name.str())
-                            .append("'; another name in the same scope already projects to '")
+                            .append(scope.claims(projected) ? "'; the type that holds it is named '"
+                                                            : "'; another name in the same scope already takes '")
                             .append(projected)
                             .append("'");
                         diagnostics.note({def.info.filePath, 1, 1}, note);
@@ -2112,10 +2132,9 @@ int runDsdlc(int argc, char** argv)
                         reportOne(constScope, "constant", constant.name, llvmdsdl::IdentifierRole::ConstantName);
                     }
                 };
-                reportRepairs(def.request, def.isService ? "request" : "");
-                if (def.isService && def.response.has_value())
+                for (const llvmdsdl::SectionNames& held : plan.definitions[index].sections)
                 {
-                    reportRepairs(*def.response, "response");
+                    reportRepairs((held.section == "response") ? *def.response : def.request, held);
                 }
             }
         }

@@ -207,6 +207,24 @@ def emit_members(root: pathlib.Path) -> None:
     write(base / "CaseFold.1.0.dsdl", f"uint8 fooBar\nuint8 foo_bar\nuint8 FooBar\nuint8 FOO_BAR\n{SEALED}")
 
 
+def emit_type_named_members(root: pathlib.Path) -> None:
+    """Members named as the type that holds them, which a C++ class's members may not be.
+
+    Each kind of member a DSDL name reaches: a field, a constant, a union option's tag, an array's
+    capacity, an accessor, a service section's field, and the field of a deprecated type, which is
+    declared under a name of its own. `Member` and `Retired` also hold a field spelled as the
+    escape of the first.
+    """
+    base = root / "adv" / "selfname"
+    write(base / "Member.1.0.dsdl", f"uint8 Member\nuint8 Member_\n{SEALED}")
+    write(base / "LIMIT.1.0.dsdl", f"uint8 LIMIT = 7\nuint8 value\n{SEALED}")
+    write(base / "A_OPTION_TAG.1.0.dsdl", f"@union\nuint8 a\nuint16 b\n{SEALED}")
+    write(base / "A_ARRAY_CAPACITY.1.0.dsdl", f"uint8[<=4] a\n{SEALED}")
+    write(base / "get_x.1.0.dsdl", f"uint8 x\n{SEALED}")
+    write(base / "Pair.1.0.dsdl", f"uint8 Request\n{SEALED}---\nuint8 Response\n{SEALED}")
+    write(base / "Retired.1.0.dsdl", f"@deprecated\nuint8 Retired\nuint8 Retired_\n{SEALED}")
+
+
 def emit_sections(root: pathlib.Path) -> None:
     """Services named after their own sections, and after the alias that stands for one."""
     base = root / "adv" / "sections"
@@ -278,6 +296,7 @@ def main() -> int:
     emit_claimed_namespaces(root)
     emit_self_shadow(root)
     emit_members(root)
+    emit_type_named_members(root)
     emit_sections(root)
     emit_deprecated(root)
     emit_folded_names(root)

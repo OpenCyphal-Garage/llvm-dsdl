@@ -47,6 +47,17 @@ bool constantsShareTheFieldScope(const Language language)
     return (traits.composition.constants == ConstantsScope::Type) && !traits.classification.nameClasses.fieldsApart;
 }
 
+/// @brief The names a scope of a type's members claims in @p language: the type's own, where the
+///        language puts it among its members' names.
+std::vector<llvm::StringRef> typeMemberClaims(const Language language, const llvm::StringRef declaredTypeName)
+{
+    if (languageTraits(language).classification.nameClasses.typeNameAmongMembers)
+    {
+        return {declaredTypeName};
+    }
+    return {};
+}
+
 /// @brief Declares @p section's non-padding fields into @p scope, in DSDL order.
 void declareFields(NamingScope& scope, const SectionParts& section)
 {
@@ -294,9 +305,11 @@ std::string unionOptionTagName(const Language language, const llvm::StringRef fi
     return fieldName.str() + "_OPTION_TAG" + languageTraits(language).composition.generatedConstantSuffix.str();
 }
 
-NamingScope makeSectionFieldScope(const Language language, const SectionParts& section)
+NamingScope makeSectionFieldScope(const Language        language,
+                                  const SectionParts&   section,
+                                  const llvm::StringRef declaredTypeName)
 {
-    NamingScope scope(language);
+    NamingScope scope(language, {}, typeMemberClaims(language, declaredTypeName));
     declareFields(scope, section);
     if (constantsShareTheFieldScope(language))
     {
@@ -337,17 +350,21 @@ std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const La
 
 NamingScope makeSectionConstantScope(const Language        language,
                                      const SectionParts&   section,
-                                     const llvm::StringRef typeConstantPrefix)
+                                     const llvm::StringRef typeConstantPrefix,
+                                     const llvm::StringRef declaredTypeName)
 {
     if (constantsShareTheFieldScope(language))
     {
-        return makeSectionFieldScope(language, section);
+        return makeSectionFieldScope(language, section, declaredTypeName);
     }
     // The module's own names are reserved before anything is declared, so a DSDL constant that
     // reaches one is escaped past it rather than redefining it.
     const std::vector<std::string>     reserved = reachableModuleMetadata(language, typeConstantPrefix);
     const std::vector<llvm::StringRef> reservedRefs(reserved.begin(), reserved.end());
-    NamingScope                        scope(language, reservedRefs);
+    const bool                         inType = languageTraits(language).composition.constants == ConstantsScope::Type;
+    NamingScope scope(language,
+                      reservedRefs,
+                      inType ? typeMemberClaims(language, declaredTypeName) : std::vector<llvm::StringRef>{});
     declareConstantRegion(scope, section, language);
     return scope;
 }

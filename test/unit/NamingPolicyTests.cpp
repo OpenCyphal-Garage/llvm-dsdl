@@ -499,6 +499,21 @@ bool runNamingScopeTests()
         ok = false;
     }
 
+    // A name the scope's owner claims is escaped with a trailing `_`, and a name spelled as that escape
+    // takes an ordinal. A claimed name already ending in `_` takes an ordinal too: `Bar__` is reserved
+    // in C++.
+    static constexpr std::array<llvm::StringRef, 2> kClaimed = {"Foo", "Bar_"};
+    NamingScope                                     claimedScope(Language::Cpp, {}, kClaimed);
+    const std::string                               escaped   = claimedScope.declare(IdentifierRole::FieldName, "Foo");
+    const std::string                               displaced = claimedScope.declare(IdentifierRole::FieldName, "Foo_");
+    const std::string                               trailing  = claimedScope.declare(IdentifierRole::FieldName, "Bar_");
+    if ((escaped != "Foo_") || (displaced != "Foo_2") || (trailing != "Bar_2") || !claimedScope.claims("Foo") ||
+        claimedScope.claims("Foo_"))
+    {
+        std::cerr << "claimed-name escape mismatch: " << escaped << ", " << displaced << ", " << trailing << "\n";
+        ok = false;
+    }
+
     // Two roles in one scope share the pool: a Go field and a Go method cannot both be `Value`.
     NamingScope sharedScope(Language::Go);
     if (sharedScope.declare(IdentifierRole::FieldName, "value") != "Value" ||

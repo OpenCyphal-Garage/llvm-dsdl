@@ -3,5 +3,6 @@ config.test_source_root = r"@LLVMDSDL_LIT_TEST_SOURCE_ROOT@"
 config.test_exec_root = r"@LLVMDSDL_LIT_TEST_EXEC_ROOT@"
 config.dsdlc = r"@LLVMDSDL_LIT_DSDLC@"
 config.dsdl_opt = r"@LLVMDSDL_LIT_DSDLOPT@"
+config.cxx = r"@LLVMDSDL_LIT_CXX@"
 
 lit_config.load_config(config, os.path.join(config.test_source_root, "lit.cfg.py"))

@@ -429,13 +429,21 @@ struct AccessorVerbs final
 /// scope hands back the identifier each one gets, appending `_2`, `_3`, ... when a projection is
 /// many-to-one. Roles share one pool because they share one C++/Go/TypeScript scope: a Go field and
 /// a Go method on the same struct cannot both be `Serialize`.
+///
+/// A name the scope's owner claims -- a type's own name, where the language puts it among the
+/// type's members -- is escaped with a trailing `_`, as the projection escapes a name the generated
+/// code claims for every type.
 class NamingScope final
 {
 public:
     /// @brief Opens a scope for @p language.
     /// @param[in] language Naming language.
     /// @param[in] reserved Identifiers already claimed in this scope by generated code.
-    explicit NamingScope(Language language, llvm::ArrayRef<llvm::StringRef> reserved = {});
+    /// @param[in] claimed Identifiers the scope's owner claims, which a name declared here is
+    ///            escaped from.
+    explicit NamingScope(Language                        language,
+                         llvm::ArrayRef<llvm::StringRef> reserved = {},
+                         llvm::ArrayRef<llvm::StringRef> claimed  = {});
 
     /// @brief Claims an identifier for @p sourceName in @p role.
     ///
@@ -467,12 +475,18 @@ public:
     /// @return The identifiers, sorted.
     [[nodiscard]] std::vector<std::string> assigned() const;
 
+    /// @brief Whether the scope's owner claims @p identifier.
+    /// @param[in] identifier An identifier, already projected.
+    /// @return True when a name that projects onto it is escaped from it.
+    [[nodiscard]] bool claims(llvm::StringRef identifier) const;
+
 private:
     /// @brief Key for the assignment map: one source name may appear in two roles.
     [[nodiscard]] static std::string keyOf(IdentifierRole role, llvm::StringRef sourceName);
 
     Language                     language_;
     llvm::StringSet<>            used_;
+    llvm::StringSet<>            claimed_;
     llvm::StringMap<std::string> assigned_;
 };
 

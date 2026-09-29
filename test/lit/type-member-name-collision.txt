@@ -1,0 +1,44 @@
+# A C++ class's members may not take the class's name, which the language row states as
+# `typeNameAmongMembers`. A DSDL member named as its type is escaped there as the naming policy
+# escapes a name the generated code claims: a field `Foo` of `ns.Foo.1.0` is `Foo_`, and the field
+# `Foo_` beside it takes the next ordinal. The other five languages keep the name.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# The void keeps the bodies field-wise: a host image folds to one move and names no member.
+# RUN: printf 'uint8 Foo\nvoid8\nuint8 Foo_\n@sealed\n' > %t/dsdl/ns/Foo.1.0.dsdl
+# RUN: printf 'uint8 LIMIT = 7\nuint8 value\n@sealed\n' > %t/dsdl/ns/LIMIT.1.0.dsdl
+# RUN: printf 'uint8 Request\n@sealed\n---\nuint8 Response\n@sealed\n' > %t/dsdl/ns/Pair.1.0.dsdl
+
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=NOTES
+# NOTES-DAG: note: field 'Foo' is emitted as 'Foo_' for target language 'cpp'; the type that holds it is named 'Foo'
+# NOTES-DAG: note: field 'Foo_' is emitted as 'Foo_2' for target language 'cpp'; another name in the same scope already takes 'Foo_'
+# NOTES-DAG: note: constant 'LIMIT' is emitted as 'LIMIT_' for target language 'cpp'; the type that holds it is named 'LIMIT'
+# NOTES-DAG: note: field 'Request' is emitted as 'Request_' for target language 'cpp'; the type that holds it is named 'Request'
+# NOTES-DAG: note: field 'Response' is emitted as 'Response_' for target language 'cpp'; the type that holds it is named 'Response'
+
+# RUN: FileCheck %s --check-prefix=CPP < %t/cpp/dsdl/ns/Foo_1_0.hpp
+# CPP:      struct Foo {
+# CPP-NEXT:   std::uint8_t Foo_{};
+# CPP-NEXT:   std::uint8_t Foo_2{};
+# CPP-DAG:  this->Foo_
+# CPP-DAG:  this->Foo_2
+
+# RUN: FileCheck %s --check-prefix=CPP_CONSTANT < %t/cpp/dsdl/ns/LIMIT_1_0.hpp
+# CPP_CONSTANT: struct LIMIT {
+# CPP_CONSTANT: static constexpr auto LIMIT_ = 7;
+
+# A service's sections are nested in the service's struct and named alone, so a section's field
+# meets the section's name.
+# RUN: FileCheck %s --check-prefix=CPP_SERVICE < %t/cpp/dsdl/ns/Pair_1_0.hpp
+# CPP_SERVICE-DAG: struct Request {
+# CPP_SERVICE-DAG: std::uint8_t Request_{};
+# CPP_SERVICE-DAG: struct Response {
+# CPP_SERVICE-DAG: std::uint8_t Response_{};
+
+# RUN: printf '#include "dsdl/ns/Foo_1_0.hpp"\n#include "dsdl/ns/LIMIT_1_0.hpp"\n#include "dsdl/ns/Pair_1_0.hpp"\n' > %t/probe.cpp
+# RUN: %cxx -std=c++20 -Wall -Wextra -Werror -fsyntax-only -I %t/cpp %t/probe.cpp
+
+# Go keeps the name.
+# RUN: %dsdlc --target-language go %t/dsdl --go-module demo/self --outdir %t/go
+# RUN: FileCheck %s --check-prefix=GO < %t/go/dsdl/ns/foo_1_0.go
+# GO: Foo uint8

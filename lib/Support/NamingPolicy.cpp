@@ -1254,12 +1254,19 @@ std::string codegenToUpperSnakeCaseIdentifier(const Language language, const llv
     return runPipeline(language, std::nullopt, RolePolicy{CaseStyle::Snake, true, true, true}, name).identifier;
 }
 
-NamingScope::NamingScope(const Language language, const llvm::ArrayRef<llvm::StringRef> reserved)
+NamingScope::NamingScope(const Language                        language,
+                         const llvm::ArrayRef<llvm::StringRef> reserved,
+                         const llvm::ArrayRef<llvm::StringRef> claimed)
     : language_(language)
 {
     for (const auto& name : reserved)
     {
         used_.insert(name);
+    }
+    for (const auto& name : claimed)
+    {
+        used_.insert(name);
+        claimed_.insert(name);
     }
 }
 
@@ -1284,7 +1291,13 @@ std::string NamingScope::declare(const IdentifierRole  role,
         return it->second;
     }
 
-    const std::string base = candidate.str();
+    std::string base = candidate.str();
+    // A name the owner claims is escaped as the projection escapes one the generated code claims. A
+    // candidate already ending in `_` takes an ordinal instead, for the reason the join below gives.
+    if (!base.empty() && claimed_.contains(base) && (base.back() != '_'))
+    {
+        base += "_";
+    }
     // `_` joins the ordinal to the base, except where the base already ends in one. Doubling it
     // would put the result in a namespace C and C++ reserve -- `break_` is what the keyword strop
     // makes of `break`, and `break__2` is an identifier the standard says is not the program's to
@@ -1328,6 +1341,11 @@ std::vector<std::string> NamingScope::assigned() const
     }
     std::ranges::sort(out);
     return out;
+}
+
+bool NamingScope::claims(const llvm::StringRef identifier) const
+{
+    return claimed_.contains(identifier);
 }
 
 }  // namespace llvmdsdl

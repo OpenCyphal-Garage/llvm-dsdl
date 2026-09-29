@@ -17,6 +17,7 @@ if not getattr(config, "test_exec_root", None):
 
 config.substitutions.append(("%dsdlc", config.dsdlc))
 config.substitutions.append(("%dsdl-opt", config.dsdl_opt))
+config.substitutions.append(("%cxx", config.cxx))
 config.substitutions.append(("%{python}", sys.executable or "python3"))
 
 # lit hands a test a filtered environment, so the switch that rewrites the codegen snapshot

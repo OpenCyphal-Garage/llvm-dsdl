@@ -84,16 +84,19 @@ DefinitionParts definitionParts(const SemanticDefinition& definition)
                            .bodies      = {}};
 }
 
-NamingScope makeSectionFieldScope(const Language language, const SemanticSection& section)
+NamingScope makeSectionFieldScope(const Language         language,
+                                  const SemanticSection& section,
+                                  const llvm::StringRef  declaredTypeName)
 {
-    return makeSectionFieldScope(language, sectionParts(section));
+    return makeSectionFieldScope(language, sectionParts(section), declaredTypeName);
 }
 
 NamingScope makeSectionConstantScope(const Language         language,
                                      const SemanticSection& section,
-                                     const llvm::StringRef  typeConstantPrefix)
+                                     const llvm::StringRef  typeConstantPrefix,
+                                     const llvm::StringRef  declaredTypeName)
 {
-    return makeSectionConstantScope(language, sectionParts(section), typeConstantPrefix);
+    return makeSectionConstantScope(language, sectionParts(section), typeConstantPrefix, declaredTypeName);
 }
 
 NamingScope makeGoConstantScope(const SemanticSection& section, const llvm::StringRef typeName)
