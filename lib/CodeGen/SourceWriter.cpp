@@ -89,6 +89,7 @@ void SourceWriter::open(const std::string& text)
 
 void SourceWriter::close(const std::string& text)
 {
+    separating_ = false;
     dedent();
     line(text);
 }

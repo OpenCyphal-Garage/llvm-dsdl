@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
+#include "llvmdsdl/CodeGen/DeclarationRenderer.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -550,6 +551,8 @@ public:
 
     // Functions.
 
+    /// @brief Opens a body under the signature `RustDeclarations` wrote, binding what the body reads
+    ///        in the plan's types where the signature speaks the member's.
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
@@ -558,78 +561,111 @@ public:
         if (!direction)
         {
             std::vector<std::string> parameters;
-            std::string              list;
             for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
             {
                 parameters.push_back("p" + std::to_string(index));
-                list += (list.empty() ? "" : ", ") + parameters.back() + ": " + typeName(argument.getType());
             }
-            w.open("fn " + functionName(fn.getSymName()) + "(" + list + ") -> " +
-                   typeName(fn.getResultTypes().front()) + " {");
             return parameters;
         }
         if (*direction == "get" || *direction == "set")
         {
             return openAccessor(w, fn, *direction == "get");
         }
-        const std::string& entry = tree_.nameOf(fn.getSymName(), SurfaceDeclKind::Entry);
         if (*direction == "wire_image")
         {
-            w.open("pub fn " + entry + "(&self) -> " + RustFileNames::core("result::Result") + "<" +
-                   RustFileNames::runtime("DsdlVec") + "<u8>, " + RustFileNames::runtime("Error") + "> {");
             return {"self"};
+        }
+        if (*direction == "from_wire_image")
+        {
+            return {"buffer"};
+        }
+        return {"self", bufferParameter(fn)};
+    }
+
+    /// @brief The signature of @p fn, declared as @p name.
+    [[nodiscard]] std::string signature(mlir::func::FuncOp fn, const std::string& name) const
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            std::string list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                list +=
+                    (list.empty() ? "" : ", ") + ("p" + std::to_string(index)) + ": " + typeName(argument.getType());
+            }
+            return "fn " + name + "(" + list + ") -> " + typeName(fn.getResultTypes().front());
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return accessorSignature(fn, name, *direction == "get");
+        }
+        const std::string error  = RustFileNames::runtime("Error");
+        const std::string result = RustFileNames::core("result::Result");
+        if (*direction == "wire_image")
+        {
+            return "pub fn " + name + "(&self) -> " + result + "<" + RustFileNames::runtime("DsdlVec") + "<u8>, " +
+                   error + ">";
         }
         if (*direction == "from_wire_image")
         {
             // A type holding a view borrows what it reads for its own lifetime.
             const bool lifetime = planOf(fn.getResultTypes().front()).lifetime;
             const bool used     = fn.getNumResults() == 3;
-            w.open("pub fn " + entry + "(buffer: &" + (lifetime ? "'a " : "") + "[u8]) -> " +
-                   RustFileNames::core("result::Result") + "<" + (used ? "(Self, usize)" : "Self") + ", " +
-                   RustFileNames::runtime("Error") + "> {");
-            return {"buffer"};
+            return "pub fn " + name + "(buffer: &" + (lifetime ? "'a " : "") + "[u8]) -> " + result + "<" +
+                   (used ? "(Self, usize)" : "Self") + ", " + error + ">";
         }
-        const bool serialize = *direction == "serialize";
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
-        const bool lifetime = planOf(fn.getArgument(0).getType()).lifetime;
-
-        // A body of a definition with no fields reads nothing of its buffer, and Rust names an
-        // argument a body ignores with a leading underscore.
-        const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
-
-        const std::string& name = entry;
-        w.open(serialize
-                   ? "pub fn " + name + "(&self, " + buffer + ": &mut [u8]) -> " +
-                         RustFileNames::core("result::Result") + "<usize, " + RustFileNames::runtime("Error") + "> {"
+        const bool        lifetime = planOf(fn.getArgument(0).getType()).lifetime;
+        const std::string buffer   = bufferParameter(fn);
+        return (*direction == "serialize")
+                   ? "pub fn " + name + "(&self, " + buffer + ": &mut [u8]) -> " + result + "<usize, " + error + ">"
                    : "pub fn " + name + "(&mut self, " + buffer + ": &" + (lifetime ? "'a " : "") + "[u8]) -> " +
-                         RustFileNames::core("result::Result") + "<usize, " + RustFileNames::runtime("Error") + "> {");
-        return {"self", buffer};
+                         result + "<usize, " + error + ">";
     }
 
-    /// @brief Opens a getter or a setter: an associated function of the type, taking the buffer as
-    ///        a slice and speaking the member's own storage type. The plan holds the size, an index
-    ///        and the value in a `u64`: the size is the slice's own length, bound under a name the
-    ///        compiler does not expect to be read, since a slice read needs no size beside it; an
-    ///        index and a value are rebound at entry.
-    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    /// @brief The name of an entry point's buffer: a body of a definition with no fields reads
+    ///        nothing of its buffer, and Rust names an argument a body ignores with a leading underscore.
+    [[nodiscard]] static std::string bufferParameter(mlir::func::FuncOp fn)
     {
-        const Member&      member    = accessorMember(fn);
-        const std::string& name      = tree_.nameOf(fn.getSymName(), SurfaceDeclKind::Accessor);
-        const std::string  storage   = scalarType(member.io);
-        const mlir::Type   answer    = fn.getResultTypes().front();
-        const bool         composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool         indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type   held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool         integer   = mlir::isa<mlir::IntegerType>(held);
-        const std::string  index     = indexed ? ", index: usize" : "";
-        accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_.clear();
-        if (composite)
+        return readsArgument(fn, 1) ? "buffer" : "_buffer";
+    }
+
+    /// @brief A getter's or a setter's signature: an associated function of the type, taking the
+    ///        buffer as a slice and speaking the member's own storage type.
+    [[nodiscard]] std::string accessorSignature(mlir::func::FuncOp fn, const std::string& name, const bool getter) const
+    {
+        const std::string storage = scalarType(accessorMember(fn).io);
+        const mlir::Type  answer  = fn.getResultTypes().front();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string index   = indexed ? ", index: usize" : "";
+        if (getter && mlir::isa<mlir::dsdl::PtrType>(answer))
         {
             // The nested type's buffer, as a slice, which carries its own length.
-            w.open("pub fn " + name + "(buffer: &[u8]" + index + ") -> &[u8] {");
+            return "pub fn " + name + "(buffer: &[u8]" + index + ") -> &[u8]";
         }
-        else if (getter)
+        if (getter)
+        {
+            return "pub fn " + name + "(buffer: &[u8]" + index + ") -> " + storage;
+        }
+        return "pub fn " + name + "(buffer: &mut [u8]" + index + ", value: " + storage + ") -> " +
+               RustFileNames::core("result::Result") + "<(), " + RustFileNames::runtime("Error") + ">";
+    }
+
+    /// @brief Opens a getter or a setter. The plan holds the size, an index and the value in a
+    ///        `u64`: the size is the slice's own length, bound under a name the compiler does not
+    ///        expect to be read, since a slice read needs no size beside it; an index and a value are
+    ///        rebound at entry.
+    std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
+    {
+        const std::string storage = scalarType(accessorMember(fn).io);
+        const mlir::Type  answer  = fn.getResultTypes().front();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type  held    = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_.clear();
+        if (getter && !mlir::isa<mlir::dsdl::PtrType>(answer))
         {
             if (storage == "bool")
             {
@@ -639,12 +675,6 @@ public:
             {
                 returnCast_ = " as " + storage;
             }
-            w.open("pub fn " + name + "(buffer: &[u8]" + index + ") -> " + storage + " {");
-        }
-        else
-        {
-            w.open("pub fn " + name + "(buffer: &mut [u8]" + index + ", value: " + storage + ") -> " +
-                   RustFileNames::core("result::Result") + "<(), " + RustFileNames::runtime("Error") + "> {");
         }
         // The buffer's size as the plan speaks it, bound where the plan uses it at all. A composite
         // getter does not, once the length it wrote back is erased. A scalar accessor does, but only
@@ -1755,186 +1785,280 @@ std::string rustConstType(const TypeExprAST& type, const Value& value)
     return rustConstType(type);
 }
 
-/// @brief The three bodies `lower-dsdl-bodies` built for one section.
-struct SectionBodies final
+/// @brief Rust's layout: a module per definition, holding its helpers, then each section's struct,
+///        layout checks and `Default`, then the `impl` that opens with the section's constants and
+///        holds its functions, then a service's alias and constants.
+const DeclarationLayout& rustLayout()
 {
-    mlir::func::FuncOp serialize;
-    mlir::func::FuncOp deserialize;
-    mlir::func::FuncOp initialize;
-    /// @brief The wire image over the pair: into new bytes, and a new value read from them.
-    mlir::func::FuncOp wireImage;
-    mlir::func::FuncOp fromWireImage;
-    /// @brief The section's field accessors, getters and setters, in the module's order.
-    std::vector<mlir::func::FuncOp> accessors;
-};
+    static const DeclarationLayout layout{
+        .files   = {{LayoutPart::Prelude,
+                     LayoutPart::Imports,
+                     LayoutPart::HelperDefinitions,
+                     LayoutPart::Sections,
+                     LayoutPart::Alias}},
+        .section = {LayoutPart::Type,
+                    LayoutPart::LayoutChecks,
+                    LayoutPart::Methods,
+                    LayoutPart::SectionConstants,
+                    LayoutPart::SectionDefinitions,
+                    LayoutPart::TypeEnd},
+        .indent  = IndentPolicy::spaces(4),
+    };
+    return layout;
+}
 
-llvm::Error emitSectionType(SourceWriter&                         w,
-                            const SectionSurface&                 names,
-                            const SemanticSection&                section,
-                            const RustFileNames&                  file,
-                            const Options&                        options,
-                            const SectionMetadata&                metadata,
-                            const AttachedDoc&                    typeDoc,
-                            const std::string&                    definitionFullName,
-                            const mlir::dsdl::SerializationPlanOp plan,
-                            const RustSpelling&                   spelling,
-                            const SectionBodies&                  bodies,
-                            PlanBodyLookups&                      lookups)
+/// @brief Spells Rust's declarations: a module per definition, holding each section's struct, its
+///        `Default`, and the `impl` that holds its constants, bodies and accessors.
+class RustDeclarations final : public DeclarationSpelling
 {
-    const EmitterContext& ctx = file.context();
-    // An accessors-only run has no bodies: a unit struct carries the constants and the accessors.
-    InitializerShape init;
-    if (!options.accessorsOnly)
+public:
+    /// @param[in] file How the module names what it takes from other modules.
+    /// @param[in] imports What the module named, which @p file records.
+    /// @param[in] types The Rust spelling of the IR's types and signatures.
+    /// @param[in] options The run's options.
+    /// @param[in] initializers Each section's initialiser, by section; none in an accessors-only run.
+    RustDeclarations(const RustFileNames&                           file,
+                     const ImportSet&                               imports,
+                     const RustSpelling&                            types,
+                     const Options&                                 options,
+                     const std::map<std::string, InitializerShape>& initializers)
+        : file_(file)
+        , imports_(imports)
+        , types_(types)
+        , options_(options)
+        , initializers_(initializers)
     {
-        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no plan bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
-        }
-        auto initRead = readInitializer(bodies.initialize);
-        if (!initRead)
-        {
-            return initRead.takeError();
-        }
-        init = std::move(*initRead);
     }
-    // Each variable-length array's allocation class, numbered from one in field order.
-    std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
-    for (const auto& field : section.fields)
-    {
-        if (!field.isPadding && isVariableArray(field.resolvedType.arrayKind))
-        {
-            poolClassConstants.emplace_back(names.poolClass(field.name),
-                                            static_cast<std::uint32_t>(poolClassConstants.size() + 1U));
-        }
-    }
-    const std::string unionTag    = names.dataMemberNamed(GeneratedFact::UnionTag);
-    const std::string placeholder = names.dataMemberNamed(GeneratedFact::Placeholder);
 
-    const std::string& declaredName = names.declaredName();
-    // A view borrows the buffer, so the struct and every impl of it carry the lifetime, and the
-    // entry points that read a buffer take it for that lifetime.
-    const bool        holdsView = ctx.holdsView(section);
-    const std::string generics  = holdsView ? "<'a>" : "";
-    const std::string implHead  = holdsView ? "impl<'a> " : "impl ";
-    emitAttachedDocRust(w,
-                        docWithDeprecationNotice(typeDoc,
-                                                 section.deprecated,
-                                                 definitionFullName,
-                                                 metadata.majorVersion,
-                                                 metadata.minorVersion));
-    if (options.accessorsOnly)
+    void write(DeclarationSite& site, const LayoutPart part) const override
     {
-        w.line("#[derive(Clone, Debug, PartialEq)]");
-        w.line("pub struct " + declaredName + ";");
-        w.blank();
-    }
-    else
-    {
-        // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict was
-        // decided under: fields in order, each at its natural alignment. Only such types get it -- the
-        // default representation may reorder a non-image type's fields to pack it, and that is worth
-        // keeping there.
-        if (metadata.hostImage.holds)
+        switch (part)
         {
-            w.line("#[repr(C)]");
+        case LayoutPart::Prelude: {
+            const DiscoveredDefinition& info = site.facts().definition().info;
+            site.writer().line(generatedCommentLine("Rust backend"));
+            site.writer().line("// Source: " + info.fullName + "." + std::to_string(info.majorVersion) + "." +
+                               std::to_string(info.minorVersion));
+            return;
         }
-        w.line("#[derive(Clone, Debug, PartialEq)]");
-        w.open("pub struct " + declaredName + generics + " {");
+        case LayoutPart::Type:
+            type(site);
+            return;
+        case LayoutPart::LayoutChecks:
+            layoutChecks(site);
+            return;
+        case LayoutPart::Methods:
+            defaults(site);
+            return;
+        case LayoutPart::SectionConstants:
+            constants(site);
+            return;
+        case LayoutPart::TypeEnd:
+            site.writer().close("}");
+            return;
+        case LayoutPart::Alias:
+            alias(site);
+            return;
+        default:
+            return;
+        }
+    }
 
-        for (const auto& field : section.fields)
+    [[nodiscard]] std::string imports(const DeclarationSite& /*site*/) const override
+    {
+        return renderRustUses(imports_);
+    }
+
+    [[nodiscard]] std::string signature(const SurfaceDecl& decl, mlir::func::FuncOp fn) const override
+    {
+        return types_.signature(fn, decl.name);
+    }
+
+    void prototype(SourceWriter& /*w*/, const std::string& /*signature*/) const override
+    {
+        llvm::report_fatal_error("Rust declares no function ahead of its definition");
+    }
+
+    void openDefinition(SourceWriter& w, const SurfaceDecl& /*decl*/, const std::string& signature) const override
+    {
+        w.open(signature + " {");
+    }
+
+    void forward(SourceWriter& /*w*/,
+                 const SurfaceDecl& /*published*/,
+                 llvm::StringRef /*callee*/,
+                 mlir::func::FuncOp /*fn*/) const override
+    {
+        llvm::report_fatal_error("Rust publishes no function over another");
+    }
+
+private:
+    /// @brief What a section's declarations share: its names, its parts, and the lifetime a type that
+    ///        holds a view carries.
+    struct Section final
+    {
+        SectionSurface         names;
+        const SemanticSection& parts;
+        const SectionMetadata& metadata;
+        std::string            generics;
+        std::string            implHead;
+    };
+
+    [[nodiscard]] Section sectionOf(const DeclarationSite& site) const
+    {
+        const std::string&     key     = site.facts().key();
+        const std::string&     section = *site.section();
+        const SemanticSection& parts   = site.facts().section(section);
+        // A view borrows the buffer, so the struct and every impl of it carry the lifetime.
+        const bool holdsView = file_.context().holdsView(parts);
+        return Section{SectionSurface(file_.context().tree(), key, section),
+                       parts,
+                       site.facts().metadata(section),
+                       holdsView ? "<'a>" : "",
+                       holdsView ? "impl<'a> " : "impl "};
+    }
+
+    /// @brief The section's struct, a unit struct in an accessors-only run, and the name a deprecated
+    ///        type is published under.
+    void type(DeclarationSite& site) const
+    {
+        const Section             s    = sectionOf(site);
+        const SemanticDefinition& def  = site.facts().definition();
+        SourceWriter&             w    = site.writer();
+        const std::string&        name = s.names.declaredName();
+        emitAttachedDocRust(w,
+                            docWithDeprecationNotice(def.doc,
+                                                     s.parts.deprecated,
+                                                     def.info.fullName,
+                                                     s.metadata.majorVersion,
+                                                     s.metadata.minorVersion));
+        if (options_.accessorsOnly)
         {
-            if (field.isPadding)
+            w.line("#[derive(Clone, Debug, PartialEq)]");
+            w.line("pub struct " + name + ";");
+        }
+        else
+        {
+            // A byte image needs a layout the language defines, and `repr(C)` is the one the verdict
+            // was decided under: fields in order, each at its natural alignment. Only such types get
+            // it -- the default representation may reorder a non-image type's fields to pack it, and
+            // that is worth keeping there.
+            if (s.metadata.hostImage.holds)
             {
-                continue;
+                w.line("#[repr(C)]");
             }
-            emitAttachedDocRust(w, field.doc);
-            w.line("pub " + names.field(field.name) + ": " + rustMemberType(field, file) + ",");
+            w.line("#[derive(Clone, Debug, PartialEq)]");
+            w.open("pub struct " + name + s.generics + " {");
+            for (const auto& field : s.parts.fields)
+            {
+                if (field.isPadding)
+                {
+                    continue;
+                }
+                emitAttachedDocRust(w, field.doc);
+                w.line("pub " + s.names.field(field.name) + ": " + rustMemberType(field, file_) + ",");
+            }
+            const std::string unionTag = s.names.dataMemberNamed(GeneratedFact::UnionTag);
+            if (!unionTag.empty())
+            {
+                // The tag storage must match the wire tag width (8 bits for <=256 options,
+                // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
+                w.line("pub " + unionTag + ": " +
+                       unsignedStorageType(unionTagBits(site.facts().plan(*site.section()))) + ",");
+            }
+            const std::string placeholder = s.names.dataMemberNamed(GeneratedFact::Placeholder);
+            if (!placeholder.empty())
+            {
+                w.line("pub " + placeholder + ": u8,");
+            }
+            w.close("}");
         }
-
-        if (!unionTag.empty())
+        if (s.parts.deprecated)
         {
-            // The tag storage must match the wire tag width (8 bits for <=256 options,
-            // 16 for 257..65536, etc.); a hardcoded u8 truncates a wide tag and mis-dispatches.
-            w.line("pub " + unionTag + ": " + unsignedStorageType(unionTagBits(plan)) + ",");
+            site.separate();
+            if (options_.emitDeprecationAttributes)
+            {
+                w.line(rustDeprecatedAttribute(def.info.fullName, s.metadata.majorVersion, s.metadata.minorVersion));
+            }
+            w.line("pub type " + s.names.publicName() + s.generics + " = " + name + s.generics + ";");
         }
-
-        if (!placeholder.empty())
-        {
-            w.line("pub " + placeholder + ": u8,");
-        }
-        w.close("}");
-        w.blank();
     }
-    if (section.deprecated)
-    {
-        if (options.emitDeprecationAttributes)
-        {
-            w.line(rustDeprecatedAttribute(definitionFullName, metadata.majorVersion, metadata.minorVersion));
-        }
-        w.line("pub type " + names.publicName() + generics + " = " + declaredName + generics + ";");
-        w.blank();
-    }
 
-    // The verdict was decided under natural alignment, which `repr(C)` follows; this pins the
-    // layout on the target the crate is compiled for.
-    if (!options.accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
+    /// @brief The layout the structure's host image was decided under, which `repr(C)` follows,
+    ///        pinned on the target the crate is compiled for.
+    void layoutChecks(DeclarationSite& site) const
     {
+        const Section s = sectionOf(site);
+        if (options_.accessorsOnly || !s.metadata.hostImage.holds || s.metadata.hostImageMembers.empty())
+        {
+            return;
+        }
+        SourceWriter&      w    = site.writer();
+        const std::string& name = s.names.declaredName();
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("const _: () = assert!(" + RustFileNames::core("mem::size_of") + "::<" + declaredName +
-               ">() == " + std::to_string(metadata.serializationBufferSizeBytes) + "usize, \"" + declaredName +
+        w.line("const _: () = assert!(" + RustFileNames::core("mem::size_of") + "::<" + name +
+               ">() == " + std::to_string(s.metadata.serializationBufferSizeBytes) + "usize, \"" + name +
                ": the structure is not the byte image its serialisation assumes\");");
-        for (const auto& member : metadata.hostImageMembers)
+        for (const auto& member : s.metadata.hostImageMembers)
         {
-            const std::string& rustMember = names.field(member.fieldName);
-            w.line("const _: () = assert!(" + RustFileNames::core("mem::offset_of") + "!(" + declaredName + ", " +
-                   rustMember + ") == " + std::to_string(member.offsetBytes) + "usize, \"" + declaredName + "." +
-                   rustMember + ": not at the offset its serialisation assumes\");");
+            const std::string& rustMember = s.names.field(member.fieldName);
+            w.line("const _: () = assert!(" + RustFileNames::core("mem::offset_of") + "!(" + name + ", " + rustMember +
+                   ") == " + std::to_string(member.offsetBytes) + "usize, \"" + name + "." + rustMember +
+                   ": not at the offset its serialisation assumes\");");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
-        w.blank();
     }
 
-    if (!options.accessorsOnly)
+    /// @brief The section's `Default`: every member's default is what the initialise body stores.
+    void defaults(DeclarationSite& site) const
     {
-        // Every member's default is what the initialise body stores for it.
-        llvm::StringMap<const MemberDefault*> defaults;
+        const auto found = initializers_.find(*site.section());
+        if (found == initializers_.end())
+        {
+            return;
+        }
+        const Section                         s    = sectionOf(site);
+        const InitializerShape&               init = found->second;
+        SourceWriter&                         w    = site.writer();
+        const std::string&                    name = s.names.declaredName();
+        llvm::StringMap<const MemberDefault*> members;
         for (const auto& entry : init.members)
         {
-            defaults[entry.member] = &entry;
+            members[entry.member] = &entry;
         }
-        w.open(implHead + "Default for " + declaredName + generics + " {");
+        w.open(s.implHead + "Default for " + name + s.generics + " {");
         w.open("fn default() -> Self {");
         w.open("Self {");
-        for (const auto& field : section.fields)
+        for (const auto& field : s.parts.fields)
         {
             if (field.isPadding)
             {
                 continue;
             }
-            const auto found = defaults.find(field.name);
-            if (found == defaults.end())
+            const auto member = members.find(field.name);
+            if (member == members.end())
             {
-                llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + declaredName +
-                                         " does not set '" + field.name + "'");
+                llvm::report_fatal_error(llvm::Twine("Rust: the initialise body of ") + name + " does not set '" +
+                                         field.name + "'");
             }
             if (isVariableArray(field.resolvedType.arrayKind))
             {
-                w.line(names.field(field.name) + ": " + RustFileNames::runtime("DsdlVec::with_contract") + "(" +
+                w.line(s.names.field(field.name) + ": " + RustFileNames::runtime("DsdlVec::with_contract") + "(" +
                        RustFileNames::runtime("VarArrayMemoryContract::new") +
-                       "(Self::" + names.generated(GeneratedFact::MemoryMode) +
-                       ", Self::" + names.generated(GeneratedFact::InlineThresholdBytes) +
-                       ", Self::" + names.poolClass(field.name) + ")),");
+                       "(Self::" + s.names.generated(GeneratedFact::MemoryMode) +
+                       ", Self::" + s.names.generated(GeneratedFact::InlineThresholdBytes) +
+                       ", Self::" + s.names.poolClass(field.name) + ")),");
                 continue;
             }
-            w.line(names.field(field.name) + ": " + rustDefaultFromBody(field.resolvedType, *found->second, file) +
+            w.line(s.names.field(field.name) + ": " + rustDefaultFromBody(field.resolvedType, *member->second, file_) +
                    ",");
         }
+        const std::string unionTag = s.names.dataMemberNamed(GeneratedFact::UnionTag);
         if (!unionTag.empty())
         {
             w.line(unionTag + ": " + std::to_string(init.unionTag) + ",");
         }
+        const std::string placeholder = s.names.dataMemberNamed(GeneratedFact::Placeholder);
         if (!placeholder.empty())
         {
             w.line(placeholder + ": 0,");
@@ -1942,90 +2066,130 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.close("}");
         w.close("}");
         w.close("}");
-        w.blank();
     }
-    w.open(implHead + declaredName + generics + " {");
-    const auto constant = [&](const GeneratedFact fact) { return "pub const " + names.generated(fact) + ": "; };
-    w.line(constant(GeneratedFact::FullName) + "&'static str = \"" + metadata.fullName + "\";");
-    w.line(constant(GeneratedFact::IsDeprecated) + "bool = " + (metadata.deprecated ? "true;" : "false;"));
-    w.line(constant(GeneratedFact::FullNameAndVersion) + "&'static str = \"" + metadata.fullName + "." +
-           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
-    w.line(constant(GeneratedFact::ExtentBytes) + "usize = " + std::to_string(metadata.extentBytes) + ";");
-    w.line(constant(GeneratedFact::SerializationBufferSizeBytes) +
-           "usize = " + std::to_string(metadata.serializationBufferSizeBytes) + ";");
-    w.line(constant(GeneratedFact::WireFlat) + "bool = " + (metadata.wireFlat.holds ? "true;" : "false;"));
-    w.line(constant(GeneratedFact::WireFlatReason) + "&'static str = \"" + metadata.wireFlat.reason + "\";");
-    w.line(constant(GeneratedFact::HostImage) + "bool = " + (metadata.hostImage.holds ? "true;" : "false;"));
-    // A folded body moves the object as the wire's bytes, which holds only where the host orders
-    // them as the wire does. This source is compiled for a target the generator did not see.
-    if (options.hostImageFolded && metadata.hostImage.holds && !options.accessorsOnly)
+
+    /// @brief Opens the section's `impl` with the constants it states of itself: its facts, the
+    ///        memory contract, each variable-length array's allocation class, a union's option tags
+    ///        and its DSDL constants.
+    void constants(DeclarationSite& site) const
     {
-        w.line("#[cfg(target_endian = \"big\")]");
-        w.line("compile_error!(\"" + declaredName +
-               ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
-               "host. Regenerate with --target-triple naming this target.\");");
-    }
-    w.line(constant(GeneratedFact::HostImageReason) + "&'static str = \"" + metadata.hostImage.reason + "\";");
-    w.line(constant(GeneratedFact::MemoryMode) + RustFileNames::runtime("DsdlMemoryMode") + " = " +
-           rustMemoryModeVariantPath(options) + ";");
-    w.line(constant(GeneratedFact::InlineThresholdBytes) + "usize = " + std::to_string(options.inlineThresholdBytes) +
-           "usize;");
-    for (const auto& [constName, classId] : poolClassConstants)
-    {
-        w.line("pub const " + constName + ": " + RustFileNames::runtime("AllocationClassId") + " = " +
-               RustFileNames::runtime("AllocationClassId") + "(" + std::to_string(classId) + "u32);");
-    }
-    if (metadata.declaresPortId)
-    {
-        w.line(constant(GeneratedFact::HasFixedPortId) + "bool = " + (metadata.fixedPortId ? "true;" : "false;"));
-        if (metadata.fixedPortId)
+        const Section          s        = sectionOf(site);
+        const SectionMetadata& metadata = s.metadata;
+        SourceWriter&          w        = site.writer();
+        const std::string&     name     = s.names.declaredName();
+        w.open(s.implHead + name + s.generics + " {");
+        const auto constant = [&](const GeneratedFact fact) { return "pub const " + s.names.generated(fact) + ": "; };
+        w.line(constant(GeneratedFact::FullName) + "&'static str = \"" + metadata.fullName + "\";");
+        w.line(constant(GeneratedFact::IsDeprecated) + "bool = " + (metadata.deprecated ? "true;" : "false;"));
+        w.line(constant(GeneratedFact::FullNameAndVersion) + "&'static str = \"" + metadata.fullName + "." +
+               std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
+        w.line(constant(GeneratedFact::ExtentBytes) + "usize = " + std::to_string(metadata.extentBytes) + ";");
+        w.line(constant(GeneratedFact::SerializationBufferSizeBytes) +
+               "usize = " + std::to_string(metadata.serializationBufferSizeBytes) + ";");
+        w.line(constant(GeneratedFact::WireFlat) + "bool = " + (metadata.wireFlat.holds ? "true;" : "false;"));
+        w.line(constant(GeneratedFact::WireFlatReason) + "&'static str = \"" + metadata.wireFlat.reason + "\";");
+        w.line(constant(GeneratedFact::HostImage) + "bool = " + (metadata.hostImage.holds ? "true;" : "false;"));
+        // A folded body moves the object as the wire's bytes, which holds only where the host orders
+        // them as the wire does. This source is compiled for a target the generator did not see.
+        if (options_.hostImageFolded && metadata.hostImage.holds && !options_.accessorsOnly)
         {
-            w.line(constant(GeneratedFact::FixedPortId) + "u16 = " + std::to_string(*metadata.fixedPortId) + ";");
+            w.line("#[cfg(target_endian = \"big\")]");
+            w.line("compile_error!(\"" + name +
+                   ": its serialisation moves the object as the wire's bytes, which holds only on a little-endian "
+                   "host. Regenerate with --target-triple naming this target.\");");
         }
-    }
-    if (metadata.isUnion)
-    {
-        w.line(constant(GeneratedFact::UnionOptionCount) + "usize = " + std::to_string(metadata.unionOptions.size()) +
-               ";");
-        for (const auto& option : metadata.unionOptions)
+        w.line(constant(GeneratedFact::HostImageReason) + "&'static str = \"" + metadata.hostImage.reason + "\";");
+        w.line(constant(GeneratedFact::MemoryMode) + RustFileNames::runtime("DsdlMemoryMode") + " = " +
+               rustMemoryModeVariantPath(options_) + ";");
+        w.line(constant(GeneratedFact::InlineThresholdBytes) +
+               "usize = " + std::to_string(options_.inlineThresholdBytes) + "usize;");
+        // Each variable-length array's allocation class, numbered from one in field order.
+        std::uint32_t poolClass = 0;
+        for (const auto& field : s.parts.fields)
         {
-            w.line("pub const " + names.option(option.name) + ": " + unsignedStorageType(metadata.unionTagBits) +
-                   " = " + std::to_string(option.tag) + ";");
+            if (!field.isPadding && isVariableArray(field.resolvedType.arrayKind))
+            {
+                w.line("pub const " + s.names.poolClass(field.name) + ": " +
+                       RustFileNames::runtime("AllocationClassId") + " = " +
+                       RustFileNames::runtime("AllocationClassId") + "(" + std::to_string(++poolClass) + "u32);");
+            }
+        }
+        if (metadata.declaresPortId)
+        {
+            w.line(constant(GeneratedFact::HasFixedPortId) + "bool = " + (metadata.fixedPortId ? "true;" : "false;"));
+            if (metadata.fixedPortId)
+            {
+                w.line(constant(GeneratedFact::FixedPortId) + "u16 = " + std::to_string(*metadata.fixedPortId) + ";");
+            }
+        }
+        if (metadata.isUnion)
+        {
+            w.line(constant(GeneratedFact::UnionOptionCount) +
+                   "usize = " + std::to_string(metadata.unionOptions.size()) + ";");
+            for (const auto& option : metadata.unionOptions)
+            {
+                w.line("pub const " + s.names.option(option.name) + ": " + unsignedStorageType(metadata.unionTagBits) +
+                       " = " + std::to_string(option.tag) + ";");
+            }
+        }
+        for (const auto& c : s.parts.constants)
+        {
+            emitAttachedDocRust(w, c.doc);
+            w.line("pub const " + s.names.constant(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
+                   rustConstValue(c.type, c.value) + ";");
         }
     }
 
-    for (const auto& c : section.constants)
+    /// @brief A service's alias, which says that a service reached by its own name means its request,
+    ///        and the constants the service states of itself, declared beside it since a Rust type
+    ///        alias carries no associated constants.
+    void alias(DeclarationSite& site) const
     {
-        emitAttachedDocRust(w, c.doc);
-        w.line("pub const " + names.constant(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
-               rustConstValue(c.type, c.value) + ";");
+        const SemanticDefinition& def = site.facts().definition();
+        if (!def.isService)
+        {
+            return;
+        }
+        const EmitterContext&    ctx = file_.context();
+        const std::string&       key = site.facts().key();
+        SourceWriter&            w   = site.writer();
+        const SurfaceDecl* const alias =
+            ctx.tree().find(ctx.tree().definitionScope(key), SurfaceDeclKind::Alias, SurfaceEntity{key, {}, {}, {}});
+        if (alias != nullptr)
+        {
+            if (def.request.deprecated && options_.emitDeprecationAttributes)
+            {
+                w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+            }
+            // The alias names the request, so it carries the request's lifetime when the request holds
+            // a view.
+            const std::string generics = ctx.holdsView(def.request) ? "<'a>" : "";
+            w.line("pub type " + alias->name + generics + " = " +
+                   SectionSurface(ctx.tree(), key, "request").declaredName() + generics + ";");
+        }
+        const auto serviceConstant = [&](const GeneratedFact fact) {
+            return "pub const " +
+                   ctx.tree().nameOf(ctx.tree().definitionScope(key),
+                                     SurfaceDeclKind::Constant,
+                                     SurfaceEntity{key, {}, {}, {}},
+                                     fact) +
+                   ": ";
+        };
+        w.line(serviceConstant(GeneratedFact::HasFixedPortId) +
+               "bool = " + (def.info.fixedPortId ? "true;" : "false;"));
+        if (def.info.fixedPortId)
+        {
+            w.line(serviceConstant(GeneratedFact::FixedPortId) + "u16 = " + std::to_string(*def.info.fixedPortId) +
+                   ";");
+        }
     }
 
-    // The serdes and the wire image over them, then a wire-flat section's field accessors: each is
-    // one read or one write at the field's offset.
-    std::vector<mlir::func::FuncOp> functions;
-    if (!options.accessorsOnly)
-    {
-        if (!bodies.wireImage || !bodies.fromWireImage)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no wire image bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
-        }
-        functions = {bodies.serialize, bodies.deserialize, bodies.wireImage, bodies.fromWireImage};
-    }
-    functions.insert(functions.end(), bodies.accessors.begin(), bodies.accessors.end());
-    for (const mlir::func::FuncOp function : functions)
-    {
-        w.separate();
-        if (auto err = translateFunction(function, spelling, w, lookups))
-        {
-            return err;
-        }
-    }
-    w.close("}");
-    return llvm::Error::success();
-}
+    const RustFileNames&                           file_;
+    const ImportSet&                               imports_;
+    const RustSpelling&                            types_;
+    const Options&                                 options_;
+    const std::map<std::string, InitializerShape>& initializers_;
+};
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
@@ -2051,169 +2215,37 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
     // The declarations and bodies first, naming what they take from other modules as they write
     // it; the `use` declarations are written after, from what was named.
-    const std::string                    key = schema.getSymName().str();
-    ImportSet                            imports;
-    const RustFileNames                  file(ctx, imports, key);
-    const RustSpelling                   spelling(module, schema, ctx.tree(), lifetimeSections);
-    std::vector<mlir::func::FuncOp>      helpers;
-    std::map<std::string, SectionBodies> bodies;
+    const std::string   key = schema.getSymName().str();
+    ImportSet           imports;
+    const RustFileNames file(ctx, imports, key);
+    const RustSpelling  spelling(module, schema, ctx.tree(), lifetimeSections);
+    // The functions the module translates: every one but a helper the fold left nothing calling,
+    // which would be an unused private function the compiler refuses under warnings-as-errors, and
+    // an initialiser, which is the section's `Default`.
+    FunctionBodies                          bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    std::map<std::string, InitializerShape> initializers;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
-        const auto direction = planBodyDirection(fn);
-        if (!direction)
+        if (fn->hasAttr("llvmdsdl.unreferenced"))
         {
-            // A helper the fold left nothing calling would be an unused private function, which the
-            // compiler refuses under warnings-as-errors.
-            if (fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            helpers.push_back(fn);
             continue;
         }
-        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
-        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        if (*direction == "serialize")
+        if (planBodyDirection(fn) == "initialize")
         {
-            entry.serialize = fn;
+            auto init = readInitializer(fn);
+            if (!init)
+            {
+                return init.takeError();
+            }
+            const auto section = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+            initializers.emplace(section ? section.getValue().str() : std::string{}, std::move(*init));
+            continue;
         }
-        else if (*direction == "deserialize")
-        {
-            entry.deserialize = fn;
-        }
-        else if (*direction == "initialize")
-        {
-            entry.initialize = fn;
-        }
-        else if (*direction == "wire_image")
-        {
-            entry.wireImage = fn;
-        }
-        else if (*direction == "from_wire_image")
-        {
-            entry.fromWireImage = fn;
-        }
-        else if (*direction == "get" || *direction == "set")
-        {
-            entry.accessors.push_back(fn);
-        }
-        else
-        {
-            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
-        }
+        bodies.functions.push_back(fn);
     }
-
-    std::ostringstream head;
-    head << generatedCommentLine("Rust backend") << "\n";
-    head << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion
-         << "\n\n";
-    std::ostringstream out;
-    SourceWriter       w        = makeRustWriter(out);
-    const auto         assemble = [&]() {
-        const std::string uses = renderRustUses(imports);
-        return head.str() + (uses.empty() ? "" : uses + "\n") + out.str();
-    };
-
-    // The helpers the plans call, ahead of the types whose bodies call them.
-    for (const mlir::func::FuncOp helper : helpers)
-    {
-        if (auto err = translateFunction(helper, spelling, w, lookups))
-        {
-            return std::move(err);
-        }
-        w.separate();
-    }
-
-    if (!def.isService)
-    {
-        if (auto err = emitSectionType(w,
-                                       SectionSurface(ctx.tree(), key, {}),
-                                       def.request,
-                                       file,
-                                       options,
-                                       sectionMetadata(def.info, def.request, schema, ""),
-                                       def.doc,
-                                       def.info.fullName,
-                                       sectionPlan(schema, ""),
-                                       spelling,
-                                       bodies[""],
-                                       lookups))
-        {
-            return std::move(err);
-        }
-        return assemble();
-    }
-
-    const SectionSurface request(ctx.tree(), key, "request");
-    if (auto err = emitSectionType(w,
-                                   request,
-                                   def.request,
-                                   file,
-                                   options,
-                                   sectionMetadata(def.info, def.request, schema, "request"),
-                                   def.doc,
-                                   def.info.fullName,
-                                   sectionPlan(schema, "request"),
-                                   spelling,
-                                   bodies["request"],
-                                   lookups))
-    {
-        return std::move(err);
-    }
-
-    if (def.response)
-    {
-        w.separate();
-        if (auto err = emitSectionType(w,
-                                       SectionSurface(ctx.tree(), key, "response"),
-                                       *def.response,
-                                       file,
-                                       options,
-                                       sectionMetadata(def.info, *def.response, schema, "response"),
-                                       def.doc,
-                                       def.info.fullName,
-                                       sectionPlan(schema, "response"),
-                                       spelling,
-                                       bodies["response"],
-                                       lookups))
-        {
-            return std::move(err);
-        }
-    }
-
-    w.separate();
-    // The alias says that a service reached by its own name means its request. The constants below
-    // are the service's own and are declared either way.
-    const SurfaceDecl* const alias =
-        ctx.tree().find(ctx.tree().definitionScope(key), SurfaceDeclKind::Alias, SurfaceEntity{key, {}, {}, {}});
-    if (alias != nullptr)
-    {
-        if (def.request.deprecated && options.emitDeprecationAttributes)
-        {
-            w.line(rustDeprecatedAttribute(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
-        }
-        // The alias names the request, so it carries the request's lifetime when the request holds
-        // a view.
-        const std::string baseGenerics = ctx.holdsView(def.request) ? "<'a>" : "";
-        w.line("pub type " + alias->name + baseGenerics + " = " + request.declaredName() + baseGenerics + ";");
-    }
-    // The service-ID belongs to the service, and this alias is how the service is named. A Rust type
-    // alias carries no associated constants, so the pair is declared beside it.
-    const auto serviceConstant = [&](const GeneratedFact fact) {
-        return "pub const " +
-               ctx.tree().nameOf(ctx.tree().definitionScope(key),
-                                 SurfaceDeclKind::Constant,
-                                 SurfaceEntity{key, {}, {}, {}},
-                                 fact) +
-               ": ";
-    };
-    w.line(serviceConstant(GeneratedFact::HasFixedPortId) + "bool = " + (def.info.fixedPortId ? "true;" : "false;"));
-    if (def.info.fixedPortId)
-    {
-        w.line(serviceConstant(GeneratedFact::FixedPortId) + "u16 = " + std::to_string(*def.info.fixedPortId) + ";");
-    }
-
-    return assemble();
+    const RustDeclarations declarations(file, imports, spelling, options, initializers);
+    return DeclarationRenderer(ctx.tree(), rustLayout(), declarations)
+        .render(ctx.tree().definitionScope(key), 0, DefinitionFacts(def, schema), &bodies);
 }
 
 llvm::Expected<std::string> loadRustRuntimeFile(const std::string& fileName)

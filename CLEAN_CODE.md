@@ -1080,6 +1080,15 @@ that ended every message's file. Rust's declaration count falls from 89 to 68; i
 from 60 to 66, since the spelling now writes the wire image's signatures and returns. Clippy holds
 at 641.
 
+Rust's renderer change moves Rust's declaration half onto `DeclarationRenderer`. Rust's layout names a
+module's helpers, then each section's struct, layout checks and `Default`, then the `impl` that
+opens with the section's constants and holds its functions, then a service's alias and constants.
+Rust's signatures are the declaration spelling's, and `RustSpelling::openFunction` binds only what a
+body reads. The `Default` is the spelling's, read from the initialise body the caller keeps out of
+the functions it hands the renderer. A block's closing line follows its last unit directly, which
+`SourceWriter::close` states. Rust's declaration count falls from 68 to 59, and its body count from
+66 to 59.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.

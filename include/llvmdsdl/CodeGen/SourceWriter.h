@@ -87,7 +87,8 @@ public:
     /// @param[in] text The block-opening line.
     void open(const std::string& text);
 
-    /// @brief Ascends one level, then emits @p text at the resulting depth.
+    /// @brief Ascends one level, then emits @p text at the resulting depth. A block's last unit is
+    ///        followed by its closing line directly, so a separation still pending is dropped.
     /// @param[in] text The block-closing line.
     void close(const std::string& text);
 
