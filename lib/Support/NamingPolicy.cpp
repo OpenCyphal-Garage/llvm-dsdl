@@ -1010,6 +1010,11 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
          EntryPointName{.function = PlanFunction::Initialize, .name = "make", .suffix = "", .beside = true},
          EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .suffix = "", .beside = true},
          EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .suffix = "", .beside = true}};
+    // C++'s bodies are the structure's own members; its initialiser is read into the member
+    // initialisers.
+    static constexpr std::array<EntryPointName, 2> kCpp =
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false}};
     switch (language)
     {
     case Language::Rust:
@@ -1020,32 +1025,8 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
         return kPython;
     case Language::TypeScript:
         return kTypeScript;
-    case Language::C:
-    case Language::Cpp:
-        break;
-    }
-    return {};
-}
-
-llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
-{
-    // C++'s methods call the free functions the bodies are.
-    static constexpr std::array<WrapperName, 2> kCpp = {WrapperName{.fact   = GeneratedFact::Serialize,
-                                                                    .wraps  = PlanFunction::Serialize,
-                                                                    .name   = "serialize",
-                                                                    .beside = false},
-                                                        WrapperName{.fact   = GeneratedFact::Deserialize,
-                                                                    .wraps  = PlanFunction::Deserialize,
-                                                                    .name   = "deserialize",
-                                                                    .beside = false}};
-    switch (language)
-    {
     case Language::Cpp:
         return kCpp;
-    case Language::TypeScript:
-    case Language::Rust:
-    case Language::Go:
-    case Language::Python:
     case Language::C:
         break;
     }

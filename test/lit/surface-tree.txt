@@ -7,9 +7,8 @@
 # definition's module imports each definition its fields hold, TypeScript's with the functions
 # named after it. A type holds the members the generator adds, each generated constant and data
 # member naming the fact it states, and an accessors-only run declares no data member. A TypeScript
-# or Python module declares the definition's facts at its top, TypeScript's and C++'s bodies are
-# functions beside the type, and a C++ `pmr` structure that is not its wire image holds its memory
-# resource.
+# or Python module declares the definition's facts at its top, TypeScript's bodies are functions
+# beside the type, and a C++ `pmr` structure that is not its wire image holds its memory resource.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
@@ -61,13 +60,11 @@
 # CPP:                dsdl.decl "_tag_" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"
 # CPP-NEXT:           dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0 section = "request"
 # CPP:                dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
-# CPP:                dsdl.decl "serialize" kind = wrapper origin = generated fact = serialize of = @ns.Ask.1.0.request.serialize
+# CPP:                dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
 # CPP:                dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
 # CPP:            dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0
 # CPP-NEXT:       dsdl.decl "Ask_FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0
-# CPP:            dsdl.decl "Ask_Request_serialize_" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
-# CPP:            dsdl.decl "Ask_serialize_" kind = wrapper origin = generated fact = serialize of = @ns.Ask.1.0
-# CPP-NEXT:       dsdl.decl "Ask_deserialize_" kind = wrapper origin = generated fact = deserialize of = @ns.Ask.1.0
+# CPP:            dsdl.decl "Ask_HAS_FIXED_PORT_ID" kind = constant origin = generated fact = has_fixed_port_id of = @ns.Ask.1.0
 # CPP-NEXT:       dsdl.decl "mlir_llvmdsdl_plan_capacity_check_ns_Ask_1_0_request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # CPP:            dsdl.scope type "Msg" of = @ns.Msg.1.0 {
 # CPP:              dsdl.decl "ITEMS_ARRAY_CAPACITY" kind = constant origin = generated fact = array_capacity of = @ns.Msg.1.0 member = "items"

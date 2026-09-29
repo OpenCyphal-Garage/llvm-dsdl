@@ -361,7 +361,7 @@ bool runLanguageTraitsTests()
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
          "reserved=leading-and-interior classes=01010 lookup='::','::',11,bare,'','','' | "
-         "nullable=110 views=1 images=1 "
+         "nullable=010 views=1 images=1 "
          "answers-size=0 "
          "bool-arrays=packed-when-fixed "
          "| "
@@ -373,7 +373,7 @@ bool runLanguageTraitsTests()
          "constants=type service-constants=enclosing "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=1 "
-         "deprecated-apart=1 free-entry-join='_' free-init=0 free-accessors=none free-union-options=0 "
+         "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "lowered-body-suffix=''"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "

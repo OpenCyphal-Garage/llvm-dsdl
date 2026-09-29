@@ -124,10 +124,11 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
             },
-        // Serialise and deserialise take pointers; a field accessor takes a span.
+        // Serialise and deserialise are members, handed their buffer and its size by pointer; a
+        // field accessor takes a span.
         .body =
             {
-                .nullability              = {.objectPointer = true, .rawPointer = true, .accessorBuffer = false},
+                .nullability              = {.objectPointer = false, .rawPointer = true, .accessorBuffer = false},
                 .accessorsReturnViews     = true,
                 .accessorsTakeMemberTypes = false,
                 .objectsAreByteImages     = true,
@@ -159,11 +160,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .generatedConstantSuffix        = "",
                 .arrayMetadataConstants         = true,
                 .deprecatedTypeDeclaredApart    = true,
-                .freeFunctions                  = {.entryPointJoin       = "_",
-                                                   .initializer          = false,
-                                                   .accessors            = AccessorNaming::None,
-                                                   .unionOptionFunctions = false,
-                                                   .loweredBodySuffix    = ""},
+                .freeFunctions                  = {},
             },
     },
     {

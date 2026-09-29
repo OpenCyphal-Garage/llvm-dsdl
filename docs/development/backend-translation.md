@@ -218,14 +218,16 @@ same change.
 **C++** went first because its object model is C's. `CppSpelling`, in
 [`lib/CodeGen/emitter/Cpp.cpp`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/lib/CodeGen/emitter/Cpp.cpp),
 names members from the scope the struct declaration names them in, built from the schema's own
-fields and constants; names a nested type from the schema its callee belongs to; and emits the
-helpers as inline functions ahead of the sections that call them. The plan's `i64` is spelled
+fields and constants; calls a nested object's own member, or the static member of its type where
+the callee reads no object; and emits the helpers as inline functions ahead of the sections that
+call them. The plan's `i64` is spelled
 unsigned, which is what the wire arithmetic and the runtime primitives take, and the few signed
 comparisons cast for the comparison alone. A fixed bool array is packed bytes and copies as a
 run; a variable-length one is the profile's container of `bool` and copies an element at a time.
 A variable-length array is sized within its capacity before the plan validates the count, so a
-malformed count never sizes a container past it. A serialise and a deserialise take the buffer as
-a pointer beside its size. A field accessor takes it as a span, and a pointer into it is a subspan:
+malformed count never sizes a container past it. A serialise and a deserialise are members of the
+section's struct, over `this`, and take the buffer as a pointer beside its size; one that reads no
+object, as a section with no fields does, is static. A field accessor takes it as a span, and a pointer into it is a subspan:
 the plan clamps the offset to the span's size. A read hands the runtime the span's bytes through
 `readable_bytes`, which stands a byte in for a span that holds no pointer. The span's type, and any
 operation on it the library spells its own way, come from the
