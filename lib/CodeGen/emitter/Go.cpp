@@ -1505,8 +1505,8 @@ public:
         // the runtime's code.
         const std::string buffer = names(op.getBuffer());
         const std::string slice  = op.getAvailable() ? buffer + "[:" + file_.runtime() + ".ChooseMin(" +
-                                                          asInt(names(op.getAvailable())) + ", len(" + buffer + "))]"
-                                                    : buffer;
+                                                           asInt(names(op.getAvailable())) + ", len(" + buffer + "))]"
+                                                     : buffer;
         const std::string call =
             names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice + ")";
         const std::string used   = consumed.empty() ? std::string{"_"} : consumed.str();
@@ -2273,7 +2273,8 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         for (const auto& [body, doc] :
              {std::pair{bodies.appendWireImage,
                         " appends the wire image of " + receiver + " to buffer, as encoding.BinaryAppender asks."},
-              std::pair{bodies.wireImage, " answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks."},
+              std::pair{bodies.wireImage,
+                        " answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks."},
               std::pair{bodies.readWireImage,
                         " reads " + receiver + " from its wire image, as encoding.BinaryUnmarshaler asks."}})
         {

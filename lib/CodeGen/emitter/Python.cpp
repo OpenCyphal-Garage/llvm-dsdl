@@ -1474,7 +1474,7 @@ public:
         // the answer as it came, and the code is read off it.
         const std::string bound = op.getAvailable() ? "[:" + names(op.getAvailable()) + "]" : std::string{};
         const std::string call  = names(op.getObject()) + "." + nestedEntry(op.getObject(), op.getDirection()) + "(" +
-                                 names(op.getBuffer()) + bound + ")";
+                                  names(op.getBuffer()) + bound + ")";
         if (consumed.empty() && error.empty())
         {
             discard(w, call);

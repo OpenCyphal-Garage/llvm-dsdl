@@ -593,10 +593,10 @@ private:
         if (images == nullptr)
         {
             outcome = llvm::joinErrors(std::move(outcome),
-                                        llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                                                "no spelling for '%s': the target publishes no wire "
-                                                                "image",
-                                                                op->getName().getStringRef().str().c_str()));
+                                       llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                                               "no spelling for '%s': the target publishes no wire "
+                                                               "image",
+                                                               op->getName().getStringRef().str().c_str()));
         }
         return images;
     }

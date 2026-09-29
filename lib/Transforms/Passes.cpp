@@ -2383,10 +2383,8 @@ private:
         const mlir::Type         i64    = builder.getIntegerType(64);
         const mlir::FunctionType type   = append ? builder.getFunctionType({object, bytes}, {bytes, i8})
                                                  : builder.getFunctionType({object}, {bytes, i8});
-        mlir::func::FuncOp fn = declare(builder,
-                                        section,
-                                        append ? PlanFunction::AppendWireImage : PlanFunction::WireImage,
-                                        type);
+        mlir::func::FuncOp       fn =
+            declare(builder, section, append ? PlanFunction::AppendWireImage : PlanFunction::WireImage, type);
         mlir::OpBuilder::InsertionGuard const guard(builder);
         mlir::Block* const                    entry = fn.addEntryBlock();
         builder.setInsertionPointToStart(entry);
@@ -2406,22 +2404,20 @@ private:
             image  = mlir::dsdl::BytesZeroedOp::create(builder, loc, bytes, room);
             buffer = mlir::dsdl::BytesAtOp::create(builder, loc, writable, image, mlir::Value{});
         }
-        auto call = mlir::dsdl::CallSerdesSizedOp::create(builder,
-                                                          loc,
-                                                          i8,
-                                                          builder.getIndexType(),
-                                                          mlir::FlatSymbolRefAttr::get(section.serialize.getSymNameAttr()),
-                                                          builder.getStringAttr(""),
-                                                          builder.getStringAttr("serialize"),
-                                                          entry->getArgument(0),
-                                                          buffer,
-                                                          mlir::Value{});
-        const mlir::Value zero      = mlir::arith::ConstantOp::create(builder, loc, builder.getIntegerAttr(i8, 0));
-        const mlir::Value succeeded = mlir::arith::CmpIOp::create(builder,
-                                                                  loc,
-                                                                  mlir::arith::CmpIPredicate::eq,
-                                                                  call.getError(),
-                                                                  zero);
+        auto call =
+            mlir::dsdl::CallSerdesSizedOp::create(builder,
+                                                  loc,
+                                                  i8,
+                                                  builder.getIndexType(),
+                                                  mlir::FlatSymbolRefAttr::get(section.serialize.getSymNameAttr()),
+                                                  builder.getStringAttr(""),
+                                                  builder.getStringAttr("serialize"),
+                                                  entry->getArgument(0),
+                                                  buffer,
+                                                  mlir::Value{});
+        const mlir::Value zero = mlir::arith::ConstantOp::create(builder, loc, builder.getIntegerAttr(i8, 0));
+        const mlir::Value succeeded =
+            mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, call.getError(), zero);
         auto kept = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{bytes}, succeeded, true);
         {
             mlir::OpBuilder::InsertionGuard const arm(builder);
@@ -2433,12 +2429,15 @@ private:
             }
             mlir::scf::YieldOp::create(builder,
                                        loc,
-                                       mlir::ValueRange{mlir::dsdl::BytesTruncateOp::create(builder, loc, bytes, image, used)});
+                                       mlir::ValueRange{
+                                           mlir::dsdl::BytesTruncateOp::create(builder, loc, bytes, image, used)});
             builder.setInsertionPointToStart(kept.elseBlock());
             mlir::scf::YieldOp::create(builder,
                                        loc,
-                                       mlir::ValueRange{append ? mlir::Value{entry->getArgument(1)}
-                                                               : mlir::Value{mlir::dsdl::BytesEmptyOp::create(builder, loc, bytes)}});
+                                       mlir::ValueRange{
+                                           append
+                                               ? mlir::Value{entry->getArgument(1)}
+                                               : mlir::Value{mlir::dsdl::BytesEmptyOp::create(builder, loc, bytes)}});
         }
         mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{kept.getResult(0), call.getError()});
     }
@@ -2447,12 +2446,12 @@ private:
     ///        of them where @p copies.
     static void buildReader(mlir::OpBuilder& builder, Section& section, const bool copies)
     {
-        const mlir::Location     loc    = section.deserialize.getLoc();
-        const mlir::Type         object = section.deserialize.getArgumentTypes()[0];
-        const mlir::Type         data   = section.deserialize.getArgumentTypes()[1];
-        const mlir::Type         i8     = builder.getIntegerType(8);
-        const mlir::FunctionType type   = builder.getFunctionType({object, data}, {i8});
-        mlir::func::FuncOp       fn     = declare(builder, section, PlanFunction::ReadWireImage, type);
+        const mlir::Location                  loc    = section.deserialize.getLoc();
+        const mlir::Type                      object = section.deserialize.getArgumentTypes()[0];
+        const mlir::Type                      data   = section.deserialize.getArgumentTypes()[1];
+        const mlir::Type                      i8     = builder.getIntegerType(8);
+        const mlir::FunctionType              type   = builder.getFunctionType({object, data}, {i8});
+        mlir::func::FuncOp                    fn     = declare(builder, section, PlanFunction::ReadWireImage, type);
         mlir::OpBuilder::InsertionGuard const guard(builder);
         mlir::Block* const                    entry = fn.addEntryBlock();
         builder.setInsertionPointToStart(entry);
@@ -2461,16 +2460,17 @@ private:
         {
             buffer = mlir::dsdl::CopyBufferOp::create(builder, loc, data, buffer);
         }
-        auto call = mlir::dsdl::CallSerdesSizedOp::create(builder,
-                                                          loc,
-                                                          i8,
-                                                          builder.getIndexType(),
-                                                          mlir::FlatSymbolRefAttr::get(section.deserialize.getSymNameAttr()),
-                                                          builder.getStringAttr(""),
-                                                          builder.getStringAttr("deserialize"),
-                                                          entry->getArgument(0),
-                                                          buffer,
-                                                          mlir::Value{});
+        auto call =
+            mlir::dsdl::CallSerdesSizedOp::create(builder,
+                                                  loc,
+                                                  i8,
+                                                  builder.getIndexType(),
+                                                  mlir::FlatSymbolRefAttr::get(section.deserialize.getSymNameAttr()),
+                                                  builder.getStringAttr(""),
+                                                  builder.getStringAttr("deserialize"),
+                                                  entry->getArgument(0),
+                                                  buffer,
+                                                  mlir::Value{});
         mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{call.getError()});
     }
 

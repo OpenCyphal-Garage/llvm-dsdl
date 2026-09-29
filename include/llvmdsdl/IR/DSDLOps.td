@@ -582,7 +582,8 @@ def DSDL_BytesAtOp : DSDL_Op<"bytes_at", [Pure]> {
   }];
   let arguments = (ins DSDL_BytesType:$bytes, Optional<I64>:$offset);
   let results = (outs DSDL_PtrType:$buffer);
-  let assemblyFormat = "$bytes (`[` $offset^ `]`)? attr-dict `->` type($buffer)";
+  let assemblyFormat =
+      "$bytes (`[` $offset^ `]`)? attr-dict `->` type($buffer)";
 }
 
 def DSDL_BytesTruncateOp : DSDL_Op<"bytes_truncate", [Pure]> {
@@ -592,7 +593,8 @@ def DSDL_BytesTruncateOp : DSDL_Op<"bytes_truncate", [Pure]> {
   let assemblyFormat = "$bytes `to` $length attr-dict";
 }
 
-def DSDL_CopyBufferOp : DSDL_Op<"copy_buffer", [AllTypesMatch<["buffer", "copy"]>]> {
+def DSDL_CopyBufferOp
+    : DSDL_Op<"copy_buffer", [AllTypesMatch<["buffer", "copy"]>]> {
   let summary = "A buffer holding its own copy of the bytes another holds";
   let description = [{
     An object that holds a view keeps the buffer it was read from. A published interface that may

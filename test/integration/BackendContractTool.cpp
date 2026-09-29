@@ -611,10 +611,10 @@ std::vector<BodyRow> wireImageRows()
                 }
                 const auto      integer = mlir::cast<mlir::IntegerAttr>(constant.getValue());
                 mlir::OpBuilder builder(op);
-                auto            more    = mlir::arith::ConstantOp::create(builder,
-                                                                constant.getLoc(),
-                                                                builder.getIntegerAttr(integer.getType(),
-                                                                                       integer.getInt() + 1));
+                auto            more =
+                    mlir::arith::ConstantOp::create(builder,
+                                                    constant.getLoc(),
+                                                    builder.getIntegerAttr(integer.getType(), integer.getInt() + 1));
                 op->replaceUsesOfWith(constant.getResult(), more.getResult());
                 changed = true;
             });
@@ -636,9 +636,9 @@ std::vector<BodyRow> wireImageRows()
              reader->walk([&](mlir::dsdl::CallSerdesSizedOp call) {
                  mlir::OpBuilder builder(call);
                  auto            copy = mlir::dsdl::CopyBufferOp::create(builder,
-                                                              call.getLoc(),
-                                                              call.getBuffer().getType(),
-                                                              call.getBuffer());
+                                                                         call.getLoc(),
+                                                                         call.getBuffer().getType(),
+                                                                         call.getBuffer());
                  call.getBufferMutable().assign(copy.getCopy());
                  changed = true;
              });
@@ -890,8 +890,8 @@ struct Session final
         // one.
         const llvmdsdl::LanguageTraits* const traits =
             llvmdsdl::languageTraitsNamed(args.backend == "obj" ? llvm::StringRef{"c"} : llvm::StringRef{args.backend});
-        for (const auto& row : ((traits != nullptr) && traits->body.wireImage.any()) ? wireImageRows()
-                                                                                       : std::vector<BodyRow>{})
+        for (const auto& row :
+             ((traits != nullptr) && traits->body.wireImage.any()) ? wireImageRows() : std::vector<BodyRow>{})
         {
             auto module = lower(*semantic);
             if (!module || !lowerBodies(*module))

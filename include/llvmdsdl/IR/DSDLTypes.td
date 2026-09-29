@@ -56,7 +56,8 @@ def DSDL_SizeType : TypeDef<DSDL_Dialect, "Size"> {
 
 def DSDL_BytesType : TypeDef<DSDL_Dialect, "Bytes"> {
   let mnemonic = "bytes";
-  let summary = "Bytes a caller owns, which carry their length and can be lengthened";
+  let summary =
+      "Bytes a caller owns, which carry their length and can be lengthened";
   let description = [{
     Holds a whole wire image where a published interface hands one to a caller or takes one from
     it. A buffer is storage a body is handed; bytes are a value a body can make room in, so an
