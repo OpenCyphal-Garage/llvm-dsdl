@@ -1918,8 +1918,8 @@ private:
                        holdsView ? "impl<'a> " : "impl "};
     }
 
-    /// @brief The section's struct, a unit struct in an accessors-only run, and the name a deprecated
-    ///        type is published under.
+    /// @brief The section's struct, a unit struct in an accessors-only run, and the name a type
+    ///        declared apart is published under.
     void type(DeclarationSite& site) const
     {
         const Section             s    = sectionOf(site);
@@ -1973,10 +1973,10 @@ private:
             }
             w.close("}");
         }
-        if (s.parts.deprecated)
+        if (s.names.publicName() != name)
         {
             site.separate();
-            if (options_.emitDeprecationAttributes)
+            if (s.parts.deprecated && options_.emitDeprecationAttributes)
             {
                 w.line(rustDeprecatedAttribute(def.info.fullName, s.metadata.majorVersion, s.metadata.minorVersion));
             }

@@ -279,9 +279,9 @@ std::string renderCTagSpelling(const llvm::StringRef typeName)
     return "struct " + typeName.str();
 }
 
-std::string renderDeclaredTypeName(const llvm::StringRef typeName, const bool deprecated)
+std::string renderDeclaredTypeName(const llvm::StringRef typeName, const bool declaredApart)
 {
-    return deprecated ? typeName.str() + "_" : typeName.str();
+    return declaredApart ? typeName.str() + "_" : typeName.str();
 }
 
 }  // namespace llvmdsdl

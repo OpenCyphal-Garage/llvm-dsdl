@@ -225,6 +225,24 @@ def emit_type_named_members(root: pathlib.Path) -> None:
     write(base / "Retired.1.0.dsdl", f"@deprecated\nuint8 Retired\nuint8 Retired_\n{SEALED}")
 
 
+def emit_types_named_as_members(root: pathlib.Path) -> None:
+    """Types named as a member the backend declares in every type, which is the side that moves.
+
+    A message, a union, a service, a deprecated message, one whose field takes the same name, and a
+    member the `pmr` profile declares; the holder names each through its field's type.
+    """
+    base = root / "adv" / "typeclaim"
+    write(base / "FULL_NAME.1.0.dsdl", f"uint8 value\n{SEALED}")
+    write(base / "UNION_OPTION_COUNT.1.0.dsdl", f"@union\nuint8 a\nuint16 b\n{SEALED}")
+    write(base / "FIXED_PORT_ID.1.0.dsdl", f"uint8 a\n{SEALED}---\nuint8 b\n{SEALED}")
+    write(base / "deserialize.1.0.dsdl", f"@deprecated\nuint8 value\n{SEALED}")
+    write(base / "serialize.1.0.dsdl", f"uint8 serialize\nuint8 value\n{SEALED}")
+    write(base / "set_memory_resource.1.0.dsdl", f"uint8[<=2] value\n{SEALED}")
+    held = ("FULL_NAME", "UNION_OPTION_COUNT", "serialize", "set_memory_resource")
+    fields = "\n".join(f"adv.typeclaim.{name}.1.0 f{index}" for index, name in enumerate(held))
+    write(base / "Holder.1.0.dsdl", f"{fields}\n{SEALED}")
+
+
 def emit_sections(root: pathlib.Path) -> None:
     """Services named after their own sections, and after the alias that stands for one."""
     base = root / "adv" / "sections"
@@ -297,6 +315,7 @@ def main() -> int:
     emit_self_shadow(root)
     emit_members(root)
     emit_type_named_members(root)
+    emit_types_named_as_members(root)
     emit_sections(root)
     emit_deprecated(root)
     emit_folded_names(root)

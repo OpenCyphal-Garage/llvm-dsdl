@@ -2424,20 +2424,20 @@ private:
         // NOLINTEND(performance-inefficient-string-concatenation)
     }
 
-    /// @brief The name a struct declared apart is published under: a section's where it is
-    ///        deprecated, and outside a section a service's.
+    /// @brief The name a struct declared apart is published under: a section's, and outside a
+    ///        section a service's. The alias is deprecated where the definition is.
     void alias(DeclarationSite& site) const
     {
-        const SemanticDefinition& def      = site.facts().definition();
-        const std::string         key      = site.facts().key();
-        const std::string         section  = site.section() ? *site.section() : std::string{};
-        const SurfaceDecl* const  decl     = names().beside(key, SurfaceDeclKind::Alias, section);
-        const bool                declares = site.section() ? site.facts().section(section).deprecated : def.isService;
-        if (!declares || (decl == nullptr))
+        const SemanticDefinition& def     = site.facts().definition();
+        const std::string         key     = site.facts().key();
+        const std::string         section = site.section() ? *site.section() : std::string{};
+        const SurfaceDecl* const  decl    = names().beside(key, SurfaceDeclKind::Alias, section);
+        // Outside a section, a message's alias is its section's.
+        if ((!site.section() && !def.isService) || (decl == nullptr))
         {
             return;
         }
-        const bool deprecated = site.section() || def.request.deprecated;
+        const bool deprecated = site.section() ? site.facts().section(section).deprecated : def.request.deprecated;
         site.writer().line("using " + decl->name +
                            ((deprecated && file_.context().emitDeprecationAttributes()) ? " [[deprecated]]" : "") +
                            " = " + names().declaredName(key, section) + ";");

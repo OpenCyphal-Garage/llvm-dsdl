@@ -275,6 +275,11 @@ same escape: a field `Foo` of `ns.Foo.1.0` is `Foo_`, as are a constant, a union
 array's capacity and an accessor that reach the name. A member already ending in `_` takes an
 ordinal, since a doubled `_` is reserved in C++.
 
+A generated member's name is fixed, so a type named as one of the claimed names is the side that
+moves: the allocator declares it apart, as `<name>_` published under the alias `<name>`, as it
+declares a deprecated type. The claimed names are read for every type, whatever its shape or profile,
+so a message named `UNION_OPTION_COUNT` is declared apart whether or not it is a union.
+
 There is no `predeclared` field for the shadowable-but-legal names — Go's `len` and `cap`, Python's
 `str` and `list`. Shadowing them becomes problematic only where the name is later used unqualified, 
 as in a local or a function name, and no DSDL name reaches either: `FunctionName` has no call site, 

@@ -57,9 +57,9 @@ public:
 
     /// @brief Claims a local name for the definition @p ref, which it exports as @p exported, and
     ///        answers it. A definition claims one name however often it is asked.
-    /// @param[in] deprecated Whether the definition is deprecated, which a composed name carries
-    ///            as the exported name does.
-    std::string claim(const DefinitionRef& ref, const std::string& exported, bool deprecated);
+    /// @param[in] declaredApart Whether the definition's type is declared apart, whose marker a
+    ///            composed name carries as the exported name does.
+    std::string claim(const DefinitionRef& ref, const std::string& exported, bool declaredApart);
 
     /// @brief The local name claimed for @p ref, or @p exported where none was.
     [[nodiscard]] std::string localName(const DefinitionRef& ref, const std::string& exported) const;
