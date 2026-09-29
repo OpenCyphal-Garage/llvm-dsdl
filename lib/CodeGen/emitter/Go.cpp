@@ -2445,7 +2445,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
-        w.blank();
+        w.separate();
         // The service-ID belongs to the service, and this alias is how the service is named.
         const auto service = [&](const GeneratedFact fact) {
             return names.declared(key, SurfaceDeclKind::Constant, {}, {}, fact);
