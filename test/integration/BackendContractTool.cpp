@@ -582,8 +582,9 @@ std::vector<BodyRow> bodyRows()
     };
 }
 
-/// @brief The perturbations of the bodies that move a whole wire image, for a row that publishes one.
-std::vector<BodyRow> wireImageRows()
+/// @brief The perturbations of the bodies that move a whole wire image, one for each body @p target
+///        publishes.
+std::vector<BodyRow> wireImageRows(const llvmdsdl::WireImageInterface& target)
 {
     // The room an encoder makes for the image: its count grows by one.
     const auto room = [](const llvm::StringRef body) {
@@ -621,30 +622,45 @@ std::vector<BodyRow> wireImageRows()
             return changed;
         };
     };
-    return {
-        {"wire-image-new-room", room("wire_image")},
-        {"wire-image-appended-room", room("append_wire_image")},
-        // The reader reads from a copy of what it is handed.
-        {"wire-image-reader-copies",
-         [](mlir::ModuleOp module) {
-             auto reader = fixtureBody(module, "read_wire_image");
-             if (!reader)
-             {
-                 return false;
-             }
-             bool changed = false;
-             reader->walk([&](mlir::dsdl::CallSerdesSizedOp call) {
-                 mlir::OpBuilder builder(call);
-                 auto            copy = mlir::dsdl::CopyBufferOp::create(builder,
-                                                                         call.getLoc(),
-                                                                         call.getBuffer().getType(),
-                                                                         call.getBuffer());
-                 call.getBufferMutable().assign(copy.getCopy());
-                 changed = true;
-             });
-             return changed;
-         }},
+    // A reader reads from a copy of what it is handed.
+    const auto copies = [](const llvm::StringRef body) {
+        return [body](mlir::ModuleOp module) {
+            auto reader = fixtureBody(module, body);
+            if (!reader)
+            {
+                return false;
+            }
+            bool changed = false;
+            reader->walk([&](mlir::dsdl::CallSerdesSizedOp call) {
+                mlir::OpBuilder builder(call);
+                auto            copy = mlir::dsdl::CopyBufferOp::create(builder,
+                                                                        call.getLoc(),
+                                                                        call.getBuffer().getType(),
+                                                                        call.getBuffer());
+                call.getBufferMutable().assign(copy.getCopy());
+                changed = true;
+            });
+            return changed;
+        };
     };
+    std::vector<BodyRow> rows;
+    if (target.answersNew)
+    {
+        rows.push_back({"wire-image-new-room", room("wire_image")});
+    }
+    if (target.appends)
+    {
+        rows.push_back({"wire-image-appended-room", room("append_wire_image")});
+    }
+    if (target.reads)
+    {
+        rows.push_back({"wire-image-reader-copies", copies("read_wire_image")});
+    }
+    if (target.makes)
+    {
+        rows.push_back({"wire-image-maker-copies", copies("from_wire_image")});
+    }
+    return rows;
 }
 
 using ModelPerturbation = std::function<bool(llvmdsdl::SemanticModule&)>;
@@ -890,8 +906,7 @@ struct Session final
         // one.
         const llvmdsdl::LanguageTraits* const traits =
             llvmdsdl::languageTraitsNamed(args.backend == "obj" ? llvm::StringRef{"c"} : llvm::StringRef{args.backend});
-        for (const auto& row :
-             ((traits != nullptr) && traits->body.wireImage.any()) ? wireImageRows() : std::vector<BodyRow>{})
+        for (const auto& row : (traits != nullptr) ? wireImageRows(traits->body.wireImage) : std::vector<BodyRow>{})
         {
             auto module = lower(*semantic);
             if (!module || !lowerBodies(*module))

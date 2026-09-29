@@ -1052,8 +1052,17 @@ row's reader may keep none of what it is handed. The IR holds the caller's bytes
 which carry their length and can be lengthened. Go's `AppendBinary`, `MarshalBinary` and
 `UnmarshalBinary` are those bodies, and none of them allocates to read or append through a buffer
 on the caller's stack. The accessors-only output loses its doubled blank line. Go's declaration
-count falls from 98 to 77. Python's classes take the same bodies in place of `CompositeObject`'s
-methods, and Rust and TypeScript take them in their output changes.
+count falls from 98 to 77.
+
+Python's classes then took the same bodies in place of `CompositeObject`'s methods. `serialize`
+answers new bytes, and `deserialize` is a class method that reads into an object it makes with
+`dsdl.make_object`: the reader the row's `makes` names, beside Go's, which reads into the receiver
+it is handed. Both readers take the caller's bytes as `!dsdl.bytes`. An encoder selects the length
+it keeps, which Python spells as a conditional expression where a branch assigning one variable
+twice is a `ruff` finding. `CompositeObject` keeps `SERIALIZATION_BUFFER_SIZE_BYTES` and declares no
+method. A definition too long for its line takes its parameters on a line of their own, as
+`ruff format` writes it, and Ruff's findings fall from 1,160 to 1,155. Rust and TypeScript take the
+bodies in their output changes.
 
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
@@ -1266,9 +1275,8 @@ hardest short of nesting: two files per definition, prototypes, guards, macros, 
 typedef. Python is the simplest class-member shape, and C++ comes last with its nesting.
 
 **Python's classes derive from `CompositeObject`.** The name is the one PyCyphal gives the base of
-every class generated from DSDL. The size `serialize` writes into is a public class attribute,
-`SERIALIZATION_BUFFER_SIZE_BYTES`, where Python's target puts every fact of the type, rather than a
-private one held apart until Python's phase names them.
+every class generated from DSDL. The size of a class's largest image is a public class attribute,
+`SERIALIZATION_BUFFER_SIZE_BYTES`, where Python's target puts every fact of the type.
 
 **The count measures exactly what the renderer replaces.** It scans every file of a language's
 declaration half and counts each line built as a string, since C's header text in

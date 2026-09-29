@@ -960,6 +960,14 @@ private:
                     }
                     return;
                 }
+                if ((ret.getNumOperands() == 2) && mlir::isa<mlir::dsdl::PtrType>(ret.getOperand(0).getType()))
+                {
+                    if (const WireImageSpelling* const images = wireImages(op, outcome))
+                    {
+                        images->returnObject(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
+                    }
+                    return;
+                }
                 if (ret.getNumOperands() == 2)
                 {
                     spelling_.returnWithSize(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
@@ -1119,12 +1127,6 @@ private:
             .Case<mlir::dsdl::ImageReadOp>(
                 [&](mlir::dsdl::ImageReadOp read) -> void { spelling_.imageRead(w_, read, *this); })
             // The dialect: a whole wire image.
-            .Case<mlir::dsdl::BytesEmptyOp>([&](mlir::dsdl::BytesEmptyOp bytes) -> void {
-                if (const WireImageSpelling* const images = wireImages(op, outcome))
-                {
-                    define(bytes.getBytes(), images->bytesEmpty(bytes, *this), true);
-                }
-            })
             .Case<mlir::dsdl::BytesZeroedOp>([&](mlir::dsdl::BytesZeroedOp bytes) -> void {
                 if (const WireImageSpelling* const images = wireImages(op, outcome))
                 {
@@ -1159,6 +1161,12 @@ private:
                 if (const WireImageSpelling* const images = wireImages(op, outcome))
                 {
                     define(copy.getCopy(), images->copyBuffer(copy, *this), true);
+                }
+            })
+            .Case<mlir::dsdl::MakeObjectOp>([&](mlir::dsdl::MakeObjectOp make) -> void {
+                if (const WireImageSpelling* const images = wireImages(op, outcome))
+                {
+                    define(make.getObject(), images->makeObject(make, *this), false);
                 }
             })
             .Case<mlir::dsdl::ImageWriteOp>(

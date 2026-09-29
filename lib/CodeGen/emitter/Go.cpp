@@ -1201,7 +1201,6 @@ public:
                          mlir::dsdl::BufferOrEmptyOp,
                          mlir::dsdl::MemberAddrOp,
                          mlir::dsdl::ElementAddrOp,
-                         mlir::dsdl::BytesEmptyOp,
                          mlir::dsdl::BytesAtOp,
                          mlir::dsdl::BytesTruncateOp,
                          mlir::dsdl::CopyBufferOp>(op);
@@ -1522,11 +1521,6 @@ public:
 
     // A whole wire image, in a byte slice.
 
-    [[nodiscard]] std::string bytesEmpty(mlir::dsdl::BytesEmptyOp /*op*/, const ValueNames& /*names*/) const override
-    {
-        return "nil";
-    }
-
     [[nodiscard]] std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const override
     {
         return "make([]byte, " + names(op.getLength()) + ")";
@@ -1562,6 +1556,19 @@ public:
     void returnImage(SourceWriter& w, const llvm::StringRef bytes, const llvm::StringRef error) const override
     {
         w.line("return " + bytes.str() + ", " + file_.runtime() + ".ErrorOf(" + error.str() + ")");
+    }
+
+    [[nodiscard]] std::string makeObject(mlir::dsdl::MakeObjectOp op, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error(llvm::Twine("Go spelling: Go's row makes no object from a wire image; '") +
+                                 op.getInitializer() + "' reached one");
+    }
+
+    void returnObject(SourceWriter& /*w*/,
+                      const llvm::StringRef /*object*/,
+                      const llvm::StringRef /*error*/) const override
+    {
+        llvm::report_fatal_error("Go spelling: Go's row answers no object read from a wire image");
     }
 
 private:

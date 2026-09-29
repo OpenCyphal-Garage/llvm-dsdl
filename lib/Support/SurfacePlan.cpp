@@ -161,6 +161,8 @@ EntryPoint entryPointOf(const PlanFunction function)
         return EntryPoint::WireImage;
     case PlanFunction::ReadWireImage:
         return EntryPoint::ReadWireImage;
+    case PlanFunction::FromWireImage:
+        return EntryPoint::FromWireImage;
     case PlanFunction::Serialize:
     case PlanFunction::Get:
     case PlanFunction::Set:
@@ -849,6 +851,7 @@ private:
             case PlanFunction::AppendWireImage:
             case PlanFunction::WireImage:
             case PlanFunction::ReadWireImage:
+            case PlanFunction::FromWireImage:
                 name = renderEntryPointName(language, section.typeName, entryPointOf(body.plan.function));
                 break;
             case PlanFunction::Get:
@@ -1362,6 +1365,7 @@ SurfaceDeclKind loweredFunctionKind(const PlanFunction function)
     case PlanFunction::AppendWireImage:
     case PlanFunction::WireImage:
     case PlanFunction::ReadWireImage:
+    case PlanFunction::FromWireImage:
         return SurfaceDeclKind::Entry;
     case PlanFunction::Get:
     case PlanFunction::Set:

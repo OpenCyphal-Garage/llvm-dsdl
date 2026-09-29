@@ -267,7 +267,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .objectsAreByteImages     = true,
                 .bodiesAnswerSize         = true,
                 .boolArrays               = BoolArrayStorage::PerElement,
-                .wireImage = {.appends = true, .answersNew = true, .reads = true, .readerKeepsNothing = true},
+                .wireImage =
+                    {.appends = true, .answersNew = true, .reads = true, .makes = false, .readerKeepsNothing = true},
             },
         // A package holds a whole DSDL namespace, so a constant's name carries its type's.
         .composition =
@@ -395,7 +396,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfInstance               = "self",
                                         .selfClass                  = "cls"},
             },
-        // Handed an object a caller may still omit, beside a `memoryview`; an object has no layout.
+        // Handed an object a caller may still omit, beside a `memoryview`; an object has no layout. A
+        // class serialises itself into new bytes, and deserialises a new instance of itself.
         .body =
             {
                 .nullability              = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
@@ -404,6 +406,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .objectsAreByteImages     = false,
                 .bodiesAnswerSize         = true,
                 .boolArrays               = BoolArrayStorage::PerElement,
+                .wireImage =
+                    {.appends = false, .answersNew = true, .reads = false, .makes = true, .readerKeepsNothing = false},
             },
         // A type's constants are the module's, where the classification puts them on the class.
         .composition =

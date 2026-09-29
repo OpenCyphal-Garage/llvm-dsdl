@@ -2181,9 +2181,10 @@ private:
 /// is built from the pair as `dsdl-fold-body-sizes` leaves them, so each calls its section's own
 /// entry point through `dsdl.call_serdes_sized`, offering the whole buffer. An encoder makes room
 /// for the largest image the section can have, has the entry point write into it, and keeps what
-/// it used; where the entry point fails, it answers the bytes it was handed. A reader that may keep
-/// none of its bytes reads an object that holds a view, directly or through a composite it holds,
-/// from a copy of them.
+/// it used; where the entry point fails, it keeps none of the room. A reader reads into the
+/// object it is handed, or into a new one it makes with `dsdl.make_object` and answers. A reader
+/// that may keep none of its bytes reads an object that holds a view, directly or through a
+/// composite it holds, from a copy of them.
 struct BuildDSDLWireImageBodiesPass final
     : public mlir::PassWrapper<BuildDSDLWireImageBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -2201,6 +2202,7 @@ struct BuildDSDLWireImageBodiesPass final
         appends_.setValue(target.appends);
         answersNew_.setValue(target.answersNew);
         reads_.setValue(target.reads);
+        makes_.setValue(target.makes);
         readerKeepsNothing_.setValue(target.readerKeepsNothing);
     }
 
@@ -2263,9 +2265,14 @@ struct BuildDSDLWireImageBodiesPass final
             }
             mlir::OpBuilder builder(module.getContext());
             builder.setInsertionPointAfter(section.deserialize);
+            const bool copies = readerKeepsNothing_ && holdsView(symbols, section.deserialize);
             if (reads_)
             {
-                buildReader(builder, section, readerKeepsNothing_ && holdsView(symbols, section.deserialize));
+                buildReader(builder, section, copies, false);
+            }
+            if (makes_)
+            {
+                buildReader(builder, section, copies, true);
             }
             if (answersNew_)
             {
@@ -2415,47 +2422,63 @@ private:
                                                   entry->getArgument(0),
                                                   buffer,
                                                   mlir::Value{});
+        // What the entry point used, after the bytes an appended image follows; where it fails,
+        // none of the room.
         const mlir::Value zero = mlir::arith::ConstantOp::create(builder, loc, builder.getIntegerAttr(i8, 0));
         const mlir::Value succeeded =
             mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, call.getError(), zero);
-        auto kept = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{bytes}, succeeded, true);
+        mlir::Value       used = mlir::arith::IndexCastUIOp::create(builder, loc, i64, call.getConsumed());
+        const mlir::Value before =
+            append ? start : mlir::Value{mlir::arith::ConstantOp::create(builder, loc, builder.getIntegerAttr(i64, 0))};
+        if (append)
         {
-            mlir::OpBuilder::InsertionGuard const arm(builder);
-            builder.setInsertionPointToStart(kept.thenBlock());
-            mlir::Value used = mlir::arith::IndexCastUIOp::create(builder, loc, i64, call.getConsumed());
-            if (append)
-            {
-                used = mlir::arith::AddIOp::create(builder, loc, start, used);
-            }
-            mlir::scf::YieldOp::create(builder,
-                                       loc,
-                                       mlir::ValueRange{
-                                           mlir::dsdl::BytesTruncateOp::create(builder, loc, bytes, image, used)});
-            builder.setInsertionPointToStart(kept.elseBlock());
-            mlir::scf::YieldOp::create(builder,
-                                       loc,
-                                       mlir::ValueRange{
-                                           append
-                                               ? mlir::Value{entry->getArgument(1)}
-                                               : mlir::Value{mlir::dsdl::BytesEmptyOp::create(builder, loc, bytes)}});
+            used = mlir::arith::AddIOp::create(builder, loc, start, used);
         }
-        mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{kept.getResult(0), call.getError()});
+        const mlir::Value kept = mlir::arith::SelectOp::create(builder, loc, succeeded, used, before);
+        mlir::func::ReturnOp::create(builder,
+                                     loc,
+                                     mlir::ValueRange{mlir::dsdl::BytesTruncateOp::create(builder,
+                                                                                          loc,
+                                                                                          bytes,
+                                                                                          image,
+                                                                                          kept),
+                                                      call.getError()});
     }
 
     /// @brief Builds a reader: an object read from bytes that hold its whole image, or from a copy
-    ///        of them where @p copies.
-    static void buildReader(mlir::OpBuilder& builder, Section& section, const bool copies)
+    ///        of them where @p copies. Where @p makes, the reader makes the object and answers it;
+    ///        otherwise it is handed the object.
+    static void buildReader(mlir::OpBuilder& builder, Section& section, const bool copies, const bool makes)
     {
-        const mlir::Location                  loc    = section.deserialize.getLoc();
-        const mlir::Type                      object = section.deserialize.getArgumentTypes()[0];
-        const mlir::Type                      data   = section.deserialize.getArgumentTypes()[1];
-        const mlir::Type                      i8     = builder.getIntegerType(8);
-        const mlir::FunctionType              type   = builder.getFunctionType({object, data}, {i8});
-        mlir::func::FuncOp                    fn     = declare(builder, section, PlanFunction::ReadWireImage, type);
+        mlir::MLIRContext* const ctx    = builder.getContext();
+        const mlir::Location     loc    = section.deserialize.getLoc();
+        const mlir::Type         object = section.deserialize.getArgumentTypes()[0];
+        const mlir::Type         data   = section.deserialize.getArgumentTypes()[1];
+        const mlir::Type         bytes  = mlir::dsdl::BytesType::get(ctx);
+        const mlir::Type         i8     = builder.getIntegerType(8);
+        const mlir::FunctionType type =
+            makes ? builder.getFunctionType({bytes}, {object, i8}) : builder.getFunctionType({object, bytes}, {i8});
+        mlir::func::FuncOp fn =
+            declare(builder, section, makes ? PlanFunction::FromWireImage : PlanFunction::ReadWireImage, type);
         mlir::OpBuilder::InsertionGuard const guard(builder);
         mlir::Block* const                    entry = fn.addEntryBlock();
         builder.setInsertionPointToStart(entry);
-        mlir::Value buffer = entry->getArgument(1);
+        mlir::Value target;
+        if (makes)
+        {
+            PlanSymbol initializer = section.symbol;
+            initializer.function   = PlanFunction::Initialize;
+            target = mlir::dsdl::MakeObjectOp::create(builder,
+                                                      loc,
+                                                      object,
+                                                      mlir::FlatSymbolRefAttr::get(ctx, renderPlanSymbol(initializer)));
+        }
+        else
+        {
+            target = entry->getArgument(0);
+        }
+        mlir::Value buffer =
+            mlir::dsdl::BytesAtOp::create(builder, loc, data, entry->getArgument(makes ? 0 : 1), mlir::Value{});
         if (copies)
         {
             buffer = mlir::dsdl::CopyBufferOp::create(builder, loc, data, buffer);
@@ -2468,10 +2491,17 @@ private:
                                                   mlir::FlatSymbolRefAttr::get(section.deserialize.getSymNameAttr()),
                                                   builder.getStringAttr(""),
                                                   builder.getStringAttr("deserialize"),
-                                                  entry->getArgument(0),
+                                                  target,
                                                   buffer,
                                                   mlir::Value{});
-        mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{call.getError()});
+        if (makes)
+        {
+            mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{target, call.getError()});
+        }
+        else
+        {
+            mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{call.getError()});
+        }
     }
 
     Option<bool> appends_{*this,
@@ -2486,6 +2516,11 @@ private:
                         "reads",
                         llvm::cl::desc("Whether the target reads an object from bytes holding its whole image"),
                         llvm::cl::init(true)};
+    Option<bool> makes_{*this,
+                        "makes",
+                        llvm::cl::desc(
+                            "Whether the target answers a new object read from bytes holding its whole image"),
+                        llvm::cl::init(false)};
     Option<bool> readerKeepsNothing_{*this,
                                      "reader-keeps-nothing",
                                      llvm::cl::desc("Whether the reader may keep none of the bytes it is handed"),

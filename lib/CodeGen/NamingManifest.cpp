@@ -177,6 +177,8 @@ llvm::StringRef functionKey(const PlanFunction function)
         return "wire_image";
     case PlanFunction::ReadWireImage:
         return "read_wire_image";
+    case PlanFunction::FromWireImage:
+        return "from_wire_image";
     case PlanFunction::Get:
         return "get";
     case PlanFunction::Set:

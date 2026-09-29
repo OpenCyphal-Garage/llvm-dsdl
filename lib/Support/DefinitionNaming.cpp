@@ -157,6 +157,8 @@ llvm::StringRef entryPointVerb(const EntryPoint entryPoint)
         return "wire_image";
     case EntryPoint::ReadWireImage:
         return "read_wire_image";
+    case EntryPoint::FromWireImage:
+        return "from_wire_image";
     }
     return "";
 }
