@@ -40,11 +40,14 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Support/BodyInterface.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/CodeGen/emitter/C.h"
@@ -518,14 +521,16 @@ struct BodyRow final
     BodyPerturbation apply;
 };
 
-/// @brief The fixture's initialise body, as `build-dsdl-plan-bodies` names it.
-mlir::func::FuncOp fixtureInitializeBody(mlir::ModuleOp module, const llvm::StringRef fullName = kFixtureType)
+/// @brief The fixture's body doing @p body, as its `llvmdsdl.plan_body` names it.
+mlir::func::FuncOp fixtureBody(mlir::ModuleOp        module,
+                               const llvm::StringRef body,
+                               const llvm::StringRef fullName = kFixtureType)
 {
     mlir::func::FuncOp found;
     module->walk([&](mlir::func::FuncOp fn) {
         const auto direction = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
         const auto owner     = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
-        if (found || !direction || direction.getValue() != "initialize" || !owner)
+        if (found || !direction || direction.getValue() != body || !owner)
         {
             return;
         }
@@ -543,7 +548,7 @@ std::vector<BodyRow> bodyRows()
     return {
         {"initialise-stored-value",
          [](mlir::ModuleOp module) {
-             auto body = fixtureInitializeBody(module);
+             auto body = fixtureBody(module, "initialize");
              if (!body)
              {
                  return false;
@@ -570,6 +575,71 @@ std::vector<BodyRow> bodyRows()
                                                                          constant.getLoc(),
                                                                          builder.getIntegerAttr(integer.getType(), 7));
                  store.getValueMutable().assign(seven);
+                 changed = true;
+             });
+             return changed;
+         }},
+    };
+}
+
+/// @brief The perturbations of the bodies that move a whole wire image, for a row that publishes one.
+std::vector<BodyRow> wireImageRows()
+{
+    // The room an encoder makes for the image: its count grows by one.
+    const auto room = [](const llvm::StringRef body) {
+        return [body](mlir::ModuleOp module) {
+            auto encoder = fixtureBody(module, body);
+            if (!encoder)
+            {
+                return false;
+            }
+            bool changed = false;
+            encoder->walk([&](mlir::Operation* op) {
+                mlir::Value count;
+                if (auto zeroed = mlir::dyn_cast<mlir::dsdl::BytesZeroedOp>(op))
+                {
+                    count = zeroed.getLength();
+                }
+                else if (auto grow = mlir::dyn_cast<mlir::dsdl::BytesGrowOp>(op))
+                {
+                    count = grow.getCount();
+                }
+                auto constant = count ? count.getDefiningOp<mlir::arith::ConstantOp>() : mlir::arith::ConstantOp{};
+                if (changed || !constant)
+                {
+                    return;
+                }
+                const auto      integer = mlir::cast<mlir::IntegerAttr>(constant.getValue());
+                mlir::OpBuilder builder(op);
+                auto            more =
+                    mlir::arith::ConstantOp::create(builder,
+                                                    constant.getLoc(),
+                                                    builder.getIntegerAttr(integer.getType(), integer.getInt() + 1));
+                op->replaceUsesOfWith(constant.getResult(), more.getResult());
+                changed = true;
+            });
+            return changed;
+        };
+    };
+    return {
+        {"wire-image-new-room", room("wire_image")},
+        {"wire-image-appended-room", room("append_wire_image")},
+        // The reader reads from a copy of what it is handed.
+        {"wire-image-reader-copies",
+         [](mlir::ModuleOp module) {
+             auto reader = fixtureBody(module, "read_wire_image");
+             if (!reader)
+             {
+                 return false;
+             }
+             bool changed = false;
+             reader->walk([&](mlir::dsdl::CallSerdesSizedOp call) {
+                 mlir::OpBuilder builder(call);
+                 auto            copy = mlir::dsdl::CopyBufferOp::create(builder,
+                                                                         call.getLoc(),
+                                                                         call.getBuffer().getType(),
+                                                                         call.getBuffer());
+                 call.getBufferMutable().assign(copy.getCopy());
                  changed = true;
              });
              return changed;
@@ -815,6 +885,36 @@ struct Session final
                    row.name,
                    diff.empty() ? Verdict::Gap : Verdict::Pass,
                    diff.empty() ? "initialiser identical to baseline" : "initialiser changed: " + diff.front());
+        }
+        // Wire-image reflection: perturb a body that moves a whole wire image, where the row publishes
+        // one.
+        const llvmdsdl::LanguageTraits* const traits =
+            llvmdsdl::languageTraitsNamed(args.backend == "obj" ? llvm::StringRef{"c"} : llvm::StringRef{args.backend});
+        for (const auto& row :
+             ((traits != nullptr) && traits->body.wireImage.any()) ? wireImageRows() : std::vector<BodyRow>{})
+        {
+            auto module = lower(*semantic);
+            if (!module || !lowerBodies(*module))
+            {
+                record("wire-image-reflection", row.name, Verdict::Error, "lowering failed");
+                continue;
+            }
+            if (!row.apply(*module))
+            {
+                record("wire-image-reflection", row.name, Verdict::Error, "fixture does not fit the row");
+                continue;
+            }
+            const auto generated = generate("image-" + row.name, *semantic, *module);
+            if (!generated)
+            {
+                record("wire-image-reflection", row.name, Verdict::Error, "generation failed on perturbed body");
+                continue;
+            }
+            const auto diff = differingFiles(*baseline, *generated);
+            record("wire-image-reflection",
+                   row.name,
+                   diff.empty() ? Verdict::Gap : Verdict::Pass,
+                   diff.empty() ? "wire image identical to baseline" : "wire image changed: " + diff.front());
         }
         for (const auto& row : modelRows())
         {

@@ -514,11 +514,6 @@ public:
         return index_.find(ref);
     }
 
-    bool holdsView(const SemanticSection& section) const
-    {
-        return index_.holdsView(section);
-    }
-
 private:
     DefinitionIndex  index_;
     const GoSurface& names_;
@@ -692,7 +687,7 @@ std::string goFieldType(const SemanticFieldType& type, const GoFileNames& file)
 ///
 /// The generation lane holds the output to gofmt, so every operation is its own statement and no
 /// operator sits inside a call argument or an index: those are the places gofmt respaces.
-class GoSpelling final : public BodySpelling
+class GoSpelling final : public BodySpelling, public WireImageSpelling
 {
 public:
     GoSpelling(mlir::dsdl::SchemaOp schema, const GoSurface& names, const GoFileNames& file)
@@ -738,6 +733,7 @@ public:
     {
         const auto direction = planBodyDirection(fn);
         accessor_            = Accessor::None;
+        answersError_        = false;
         cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
         if (!direction)
         {
@@ -755,6 +751,10 @@ public:
         if (*direction == "get" || *direction == "set")
         {
             return openAccessor(w, fn, *direction == "get");
+        }
+        if ((*direction == "append_wire_image") || (*direction == "wire_image") || (*direction == "read_wire_image"))
+        {
+            return openWireImage(w, fn, *direction == "read_wire_image");
         }
         const Plan&       plan     = planOf(fn.getArgument(0));
         const std::string receiver = goReceiverName(plan.typeName);
@@ -924,6 +924,31 @@ public:
         return parameters;
     }
 
+    /// @brief Opens a method of the encoding package's interfaces: the receiver, then the bytes an
+    ///        encoder appends to or a reader reads, and the bytes and the runtime's error it answers.
+    std::vector<std::string> openWireImage(SourceWriter& w, mlir::func::FuncOp fn, const bool reader) const
+    {
+        const Plan&              plan     = planOf(fn.getArgument(0));
+        const std::string        receiver = goReceiverName(plan.typeName);
+        std::vector<std::string> parameters{receiver};
+        std::string              list;
+        for (const mlir::Type type : fn.getArgumentTypes().drop_front())
+        {
+            parameters.emplace_back(reader ? "data" : "buffer");
+            list += (list.empty() ? "" : ", ") + parameters.back() + " " + typeName(type);
+        }
+        std::vector<std::string> results;
+        for (const mlir::Type type : fn.getResultTypes())
+        {
+            results.push_back(type.isInteger(8) ? std::string{"error"} : typeName(type));
+        }
+        const std::string answer = (results.size() == 1) ? results.front() : "(" + llvm::join(results, ", ") + ")";
+        answersError_            = reader;
+        w.open("func (" + receiver + " *" + plan.typeName + ") " +
+               names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(" + list + ") " + answer + " {");
+        return parameters;
+    }
+
     void returnValue(SourceWriter& w, const llvm::StringRef expr) const override
     {
         // A getter answers the value in the member's own type; a setter answers the code alone.
@@ -943,8 +968,8 @@ public:
             }
             return;
         }
-        // A setter answers the runtime's error, and nothing where it is marked unable to fail.
-        if (accessor_ == Accessor::Setter)
+        // A setter and a reader answer the runtime's error, and nothing where marked unable to fail.
+        if ((accessor_ == Accessor::Setter) || answersError_)
         {
             w.line(cannotFail_ ? std::string{"return nil"}
                                : "return " + file_.runtime() + ".ErrorOf(" + expr.str() + ")");
@@ -1172,9 +1197,14 @@ public:
 
     [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
-        return mlir::
-            isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp, mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(
-                op);
+        return mlir::isa<mlir::dsdl::IsNullOp,
+                         mlir::dsdl::BufferOrEmptyOp,
+                         mlir::dsdl::MemberAddrOp,
+                         mlir::dsdl::ElementAddrOp,
+                         mlir::dsdl::BytesEmptyOp,
+                         mlir::dsdl::BytesAtOp,
+                         mlir::dsdl::BytesTruncateOp,
+                         mlir::dsdl::CopyBufferOp>(op);
     }
 
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
@@ -1474,14 +1504,64 @@ public:
         // space the plan offers, and answers what it used and its error, which the plan carries as
         // the runtime's code.
         const std::string buffer = names(op.getBuffer());
-        const std::string slice  = buffer + "[:" + file_.runtime() + ".ChooseMin(" + asInt(names(op.getAvailable())) +
-                                   ", len(" + buffer + "))]";
+        const std::string slice  = op.getAvailable() ? buffer + "[:" + file_.runtime() + ".ChooseMin(" +
+                                                           asInt(names(op.getAvailable())) + ", len(" + buffer + "))]"
+                                                     : buffer;
         const std::string call =
             names(op.getObject()) + (op.getDirection() == "serialize" ? ".Serialize(" : ".Deserialize(") + slice + ")";
         const std::string used   = consumed.empty() ? std::string{"_"} : consumed.str();
         const std::string bound  = error.empty() ? used + ", _" : error.str() + ", " + used;
         const std::string answer = error.empty() ? call : file_.runtime() + ".Coded(" + call + ")";
         w.line(bound + ((error.empty() && consumed.empty()) ? " = " : " := ") + answer);
+    }
+
+    [[nodiscard]] const WireImageSpelling* wireImages() const override
+    {
+        return this;
+    }
+
+    // A whole wire image, in a byte slice.
+
+    [[nodiscard]] std::string bytesEmpty(mlir::dsdl::BytesEmptyOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return "nil";
+    }
+
+    [[nodiscard]] std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const override
+    {
+        return "make([]byte, " + names(op.getLength()) + ")";
+    }
+
+    [[nodiscard]] std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const override
+    {
+        return "uint64(len(" + names(op.getBytes()) + "))";
+    }
+
+    [[nodiscard]] std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& names) const override
+    {
+        // Appending a made slice extends in place where the capacity allows, and allocates no
+        // temporary.
+        return "append(" + names(op.getBytes()) + ", make([]byte, " + names(op.getCount()) + ")...)";
+    }
+
+    [[nodiscard]] std::string bytesAt(mlir::dsdl::BytesAtOp op, const ValueNames& names) const override
+    {
+        return op.getOffset() ? names(op.getBytes()) + "[" + names(op.getOffset()) + ":]" : names(op.getBytes());
+    }
+
+    [[nodiscard]] std::string bytesTruncate(mlir::dsdl::BytesTruncateOp op, const ValueNames& names) const override
+    {
+        return names(op.getBytes()) + "[:" + names(op.getLength()) + "]";
+    }
+
+    [[nodiscard]] std::string copyBuffer(mlir::dsdl::CopyBufferOp op, const ValueNames& names) const override
+    {
+        return file_.standard("bytes") + ".Clone(" + names(op.getBuffer()) + ")";
+    }
+
+    void returnImage(SourceWriter& w, const llvm::StringRef bytes, const llvm::StringRef error) const override
+    {
+        w.line("return " + bytes.str() + ", " + file_.runtime() + ".ErrorOf(" + error.str() + ")");
     }
 
 private:
@@ -1669,6 +1749,10 @@ private:
             return isSignedSpelt(type) ? signedStorageType(integer.getWidth())
                                        : unsignedStorageType(integer.getWidth());
         }
+        if (mlir::isa<mlir::dsdl::BytesType>(type))
+        {
+            return "[]byte";
+        }
         if (const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(type))
         {
             if (mlir::isa<mlir::dsdl::ByteType>(pointer.getPointee()))
@@ -1791,6 +1875,9 @@ private:
     mutable Accessor    accessor_{Accessor::None};
     mutable std::string returnCast_;
 
+    /// @brief Whether the function being opened answers the runtime's error alone, as a reader does.
+    mutable bool answersError_{false};
+
     /// @brief How the file names what it takes from other packages.
     const GoFileNames& file_;
 
@@ -1805,6 +1892,11 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The encoding package's interfaces over the pair: BinaryAppender, BinaryMarshaler and
+    ///        BinaryUnmarshaler.
+    mlir::func::FuncOp appendWireImage;
+    mlir::func::FuncOp wireImage;
+    mlir::func::FuncOp readWireImage;
     /// @brief The section's field accessors, getters and setters, in the module's order.
     std::vector<mlir::func::FuncOp> accessors;
 };
@@ -2167,52 +2259,37 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         {
             return err;
         }
-        // The encoding package's interfaces, over the pair above. An object holding a view keeps the
-        // bytes it reads, and encoding.BinaryUnmarshaler asks that the data not be kept, so such an
-        // object reads a copy.
-        const bool        keepsBuffer = ctx.holdsView(section);
-        const std::string receiver    = goReceiverName(typeName);
-        const std::string largest     = meta(GeneratedFact::SerializationBufferSizeBytes);
-        const auto        wrapper     = [&](const mlir::func::FuncOp body, const GeneratedFact fact) {
-            return names.function(symbolOf(body), SurfaceDeclKind::Wrapper, fact);
+        // The encoding package's interfaces, each a body the lowering built over the pair above.
+        if (!bodies.appendWireImage || !bodies.wireImage || !bodies.readWireImage)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no wire image bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
+        }
+        const std::string receiver = goReceiverName(typeName);
+        const auto        name     = [&](mlir::func::FuncOp body) {
+            return names.function(symbolOf(body), SurfaceDeclKind::Entry);
         };
-        const std::string& serialize   = names.function(symbolOf(bodies.serialize), SurfaceDeclKind::Entry);
-        const std::string& deserialize = names.function(symbolOf(bodies.deserialize), SurfaceDeclKind::Entry);
-        const std::string& append      = wrapper(bodies.serialize, GeneratedFact::AppendWireImage);
-        const std::string& marshal     = wrapper(bodies.serialize, GeneratedFact::WireImage);
-        const std::string& unmarshal   = wrapper(bodies.deserialize, GeneratedFact::FromWireImage);
-        w.blank();
-        w.line("// " + append + " appends the wire image of " + receiver +
-               " to buffer, as encoding.BinaryAppender asks.");
-        w.open("func (" + receiver + " *" + typeName + ") " + append + "(buffer []byte) ([]byte, error) {");
-        w.line("start := len(buffer)");
-        w.line("grown := " + file.standard("slices") + ".Grow(buffer, " + largest + ")");
-        w.line("used, err := " + receiver + "." + serialize + "(grown[start : start+" + largest + "])");
-        w.open("if err != nil {");
-        w.line("return buffer, err");
-        w.close("}");
-        w.line("return grown[:start+used], nil");
-        w.close("}");
-        w.blank();
-        w.line("// " + marshal + " answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks.");
-        w.open("func (" + receiver + " *" + typeName + ") " + marshal + "() ([]byte, error) {");
-        w.line("return " + receiver + "." + append + "(nil)");
-        w.close("}");
-        w.blank();
-        w.line(keepsBuffer ? "// " + unmarshal + " reads " + receiver + " from a copy of its wire image, which " +
-                                 receiver + "'s views would keep."
-                           : "// " + unmarshal + " reads " + receiver +
-                                 " from its wire image, as encoding.BinaryUnmarshaler asks.");
-        w.open("func (" + receiver + " *" + typeName + ") " + unmarshal + "(data []byte) error {");
-        w.line("_, err := " + receiver + "." + deserialize + "(" +
-               (keepsBuffer ? file.standard("bytes") + ".Clone(data)" : "data") + ")");
-        w.line("return err");
-        w.close("}");
+        for (const auto& [body, doc] :
+             {std::pair{bodies.appendWireImage,
+                        " appends the wire image of " + receiver + " to buffer, as encoding.BinaryAppender asks."},
+              std::pair{bodies.wireImage,
+                        " answers the wire image of " + receiver + ", as encoding.BinaryMarshaler asks."},
+              std::pair{bodies.readWireImage,
+                        " reads " + receiver + " from its wire image, as encoding.BinaryUnmarshaler asks."}})
+        {
+            w.blank();
+            w.line("// " + name(body) + doc);
+            if (auto err = translateFunction(body, spelling, w, lookups))
+            {
+                return err;
+            }
+        }
     }
     // A wire-flat section's field accessors: each is one read or one write at the field's offset.
     for (const mlir::func::FuncOp accessor : bodies.accessors)
     {
-        w.blank();
+        w.separate();
         if (auto err = translateFunction(accessor, spelling, w, lookups))
         {
             return err;
@@ -2269,6 +2346,18 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         else if (*direction == "initialize")
         {
             entry.initialize = fn;
+        }
+        else if (*direction == "append_wire_image")
+        {
+            entry.appendWireImage = fn;
+        }
+        else if (*direction == "wire_image")
+        {
+            entry.wireImage = fn;
+        }
+        else if (*direction == "read_wire_image")
+        {
+            entry.readWireImage = fn;
         }
         else if (*direction == "get" || *direction == "set")
         {
@@ -2357,7 +2446,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
         // gofmt separates top-level declarations of different kinds, so the alias and the
         // constants that follow it do not sit together.
-        w.blank();
+        w.separate();
         // The service-ID belongs to the service, and this alias is how the service is named.
         const auto service = [&](const GeneratedFact fact) {
             return names.declared(key, SurfaceDeclKind::Constant, {}, {}, fact);

@@ -33,26 +33,6 @@ namespace
 
 constexpr llvm::StringLiteral kHelperMarker{"plan"};
 
-llvm::StringRef functionWord(const PlanFunction function)
-{
-    switch (function)
-    {
-    case PlanFunction::Serialize:
-        return "serialize";
-    case PlanFunction::Deserialize:
-        return "deserialize";
-    case PlanFunction::Initialize:
-        return "initialize";
-    case PlanFunction::Get:
-        return "get";
-    case PlanFunction::Set:
-        return "set";
-    case PlanFunction::Helper:
-        return kHelperMarker;
-    }
-    return "";
-}
-
 llvm::StringRef directionWord(const PlanHelperDirection direction)
 {
     switch (direction)
@@ -116,6 +96,32 @@ std::optional<SchemaSymbol> splitSchema(const llvm::StringRef symbol, llvm::Smal
 
 }  // namespace
 
+llvm::StringRef planFunctionWord(const PlanFunction function)
+{
+    switch (function)
+    {
+    case PlanFunction::Serialize:
+        return "serialize";
+    case PlanFunction::Deserialize:
+        return "deserialize";
+    case PlanFunction::Initialize:
+        return "initialize";
+    case PlanFunction::AppendWireImage:
+        return "append_wire_image";
+    case PlanFunction::WireImage:
+        return "wire_image";
+    case PlanFunction::ReadWireImage:
+        return "read_wire_image";
+    case PlanFunction::Get:
+        return "get";
+    case PlanFunction::Set:
+        return "set";
+    case PlanFunction::Helper:
+        return kHelperMarker;
+    }
+    return "";
+}
+
 std::string renderSchemaSymbol(const SchemaSymbol& schema)
 {
     return schema.fullName + "." + std::to_string(schema.major) + "." + std::to_string(schema.minor);
@@ -128,7 +134,7 @@ std::string renderPlanSymbol(const PlanSymbol& symbol)
     {
         out += "." + symbol.section;
     }
-    out += "." + functionWord(symbol.function).str();
+    out += "." + planFunctionWord(symbol.function).str();
     switch (symbol.function)
     {
     case PlanFunction::Get:
@@ -149,6 +155,9 @@ std::string renderPlanSymbol(const PlanSymbol& symbol)
     case PlanFunction::Serialize:
     case PlanFunction::Deserialize:
     case PlanFunction::Initialize:
+    case PlanFunction::AppendWireImage:
+    case PlanFunction::WireImage:
+    case PlanFunction::ReadWireImage:
         break;
     }
     return out;
@@ -188,22 +197,22 @@ std::optional<PlanSymbol> parsePlanSymbol(const llvm::StringRef symbol)
     }
     const llvm::StringRef word      = rest[at++];
     const std::size_t     remaining = rest.size() - at;
-    if ((word == "serialize") || (word == "deserialize") || (word == "initialize"))
+    for (const PlanFunction function : {PlanFunction::Serialize,
+                                        PlanFunction::Deserialize,
+                                        PlanFunction::Initialize,
+                                        PlanFunction::AppendWireImage,
+                                        PlanFunction::WireImage,
+                                        PlanFunction::ReadWireImage})
     {
-        if (remaining != 0)
+        if (word == planFunctionWord(function))
         {
-            return std::nullopt;
+            if (remaining != 0)
+            {
+                return std::nullopt;
+            }
+            out.function = function;
+            return out;
         }
-        out.function = PlanFunction::Initialize;
-        if (word == "serialize")
-        {
-            out.function = PlanFunction::Serialize;
-        }
-        else if (word == "deserialize")
-        {
-            out.function = PlanFunction::Deserialize;
-        }
-        return out;
     }
     if ((word == "get") || (word == "set"))
     {

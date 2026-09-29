@@ -110,9 +110,6 @@ enum class GeneratedFact : std::uint8_t
     /// @brief Initialises an object; a service's initialisation is its request's.
     Initialize,
 
-    /// @brief Appends an object's wire image to a buffer the caller owns.
-    AppendWireImage,
-
     /// @brief Answers an object's wire image.
     WireImage,
 

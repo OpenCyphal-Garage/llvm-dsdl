@@ -156,6 +156,9 @@ enum class EntryPoint : std::uint8_t
     Serialize,
     Deserialize,
     Initialize,
+    AppendWireImage,
+    WireImage,
+    ReadWireImage,
 };
 
 /// @brief What a free function beside a section's type does with one of its members.

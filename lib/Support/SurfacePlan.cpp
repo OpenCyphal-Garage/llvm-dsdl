@@ -135,7 +135,6 @@ bool states(const GeneratedFact                fact,
     case GeneratedFact::Serialize:
     case GeneratedFact::Deserialize:
     case GeneratedFact::Initialize:
-    case GeneratedFact::AppendWireImage:
     case GeneratedFact::WireImage:
     case GeneratedFact::FromWireImage:
     case GeneratedFact::GeneratorVersion:
@@ -156,6 +155,12 @@ EntryPoint entryPointOf(const PlanFunction function)
         return EntryPoint::Deserialize;
     case PlanFunction::Initialize:
         return EntryPoint::Initialize;
+    case PlanFunction::AppendWireImage:
+        return EntryPoint::AppendWireImage;
+    case PlanFunction::WireImage:
+        return EntryPoint::WireImage;
+    case PlanFunction::ReadWireImage:
+        return EntryPoint::ReadWireImage;
     case PlanFunction::Serialize:
     case PlanFunction::Get:
     case PlanFunction::Set:
@@ -841,6 +846,11 @@ private:
                     name = renderEntryPointName(language, section.typeName, EntryPoint::Initialize);
                 }
                 break;
+            case PlanFunction::AppendWireImage:
+            case PlanFunction::WireImage:
+            case PlanFunction::ReadWireImage:
+                name = renderEntryPointName(language, section.typeName, entryPointOf(body.plan.function));
+                break;
             case PlanFunction::Get:
             case PlanFunction::Set:
                 if (free.accessors != AccessorNaming::None)
@@ -1349,6 +1359,9 @@ SurfaceDeclKind loweredFunctionKind(const PlanFunction function)
     case PlanFunction::Serialize:
     case PlanFunction::Deserialize:
     case PlanFunction::Initialize:
+    case PlanFunction::AppendWireImage:
+    case PlanFunction::WireImage:
+    case PlanFunction::ReadWireImage:
         return SurfaceDeclKind::Entry;
     case PlanFunction::Get:
     case PlanFunction::Set:

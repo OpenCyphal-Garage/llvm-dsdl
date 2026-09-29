@@ -46,7 +46,14 @@ error and what was used out. `dsdl-fold-body-sizes` does the same for the body: 
 size pointer becomes `dsdl.buffer_length`, and what it writes back becomes a second result. For a
 target that stores a bool array a bool per element, `dsdl-expand-bool-runs` turns each
 `dsdl.bit_write` and `dsdl.bit_read` of it into a loop moving one element and one bit per turn,
-through `dsdl.write_bit` and `dsdl.read_bit`.
+through `dsdl.write_bit` and `dsdl.read_bit`. For a target whose row publishes a wire image,
+`dsdl-build-wire-image-bodies` builds the bodies that move one whole over each section's serialise
+and deserialise: an encoder that appends to bytes the caller hands it, one that answers new bytes,
+and a reader, as the row's `wireImage` names them. Each calls its section's own entry point through
+`dsdl.call_serdes_sized` with no bound, so the entry point is offered the whole buffer. The caller's
+bytes are `!dsdl.bytes`, which carry their length and can be lengthened. A reader that may keep
+none of its bytes reads an object holding a view, which the pass finds in the deserialise body and
+the bodies it calls, from `dsdl.copy_buffer`. `test/lit/wire-image-bodies.txt` holds it.
 Last, `dsdl-mark-infallible-bodies` marks each plan body or setter whose every return answers an
 error of zero as `llvmdsdl.infallible`, which a backend whose idiom reports an error apart from the result reads
 rather than derives; `test/lit/mark-infallible-bodies.mlir` holds it. `dsdl-mark-unread-arguments`
@@ -252,9 +259,10 @@ through the runtime's `BoolToUint64`; a variable-length array is sized within it
 runtime's `Resize`, which names no element type. A buffer is a slice, and a pointer into it is a
 sub-slice clamped to the buffer's end. A method's receiver is the initial of its type's head noun,
 the name's last word. Each type implements `encoding.BinaryAppender`,
-`encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler` over `Serialize` and `Deserialize`,
-and `MarshalBinary` is `AppendBinary(nil)`; one holding a view, which
-`DefinitionIndex::holdsView` decides as it decides Rust's lifetime, unmarshals a copy of its data.
+`encoding.BinaryMarshaler` and `encoding.BinaryUnmarshaler` by translating the three bodies
+`dsdl-build-wire-image-bodies` builds over `Serialize` and `Deserialize`: a byte slice holds the
+bytes, grown by appending a made slice, and one holding a view unmarshals `bytes.Clone` of its
+data.
 The helpers are functions of the package. The C↔Go parity
 lanes, the decoder fuzz and forward-compatibility lanes, the go-build lane and the generation
 lane, which runs gofmt, accept it.

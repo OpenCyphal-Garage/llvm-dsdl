@@ -1472,8 +1472,9 @@ public:
         // where the space the plan offers does or the buffer does, and answers what it used or a
         // negative code. What it used means something only where the code is zero, so it holds
         // the answer as it came, and the code is read off it.
-        const std::string call = names(op.getObject()) + "." + nestedEntry(op.getObject(), op.getDirection()) + "(" +
-                                 names(op.getBuffer()) + "[:" + names(op.getAvailable()) + "])";
+        const std::string bound = op.getAvailable() ? "[:" + names(op.getAvailable()) + "]" : std::string{};
+        const std::string call  = names(op.getObject()) + "." + nestedEntry(op.getObject(), op.getDirection()) + "(" +
+                                  names(op.getBuffer()) + bound + ")";
         if (consumed.empty() && error.empty())
         {
             discard(w, call);

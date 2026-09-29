@@ -256,7 +256,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
             },
-        // Handed an object a caller may still omit, beside a slice.
+        // Handed an object a caller may still omit, beside a slice. The encoding package's
+        // BinaryAppender, BinaryMarshaler and BinaryUnmarshaler move the wire image, and the last may
+        // keep none of the data it is handed.
         .body =
             {
                 .nullability              = {.objectPointer = true, .rawPointer = false, .accessorBuffer = false},
@@ -265,6 +267,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .objectsAreByteImages     = true,
                 .bodiesAnswerSize         = true,
                 .boolArrays               = BoolArrayStorage::PerElement,
+                .wireImage = {.appends = true, .answersNew = true, .reads = true, .readerKeepsNothing = true},
             },
         // A package holds a whole DSDL namespace, so a constant's name carries its type's.
         .composition =

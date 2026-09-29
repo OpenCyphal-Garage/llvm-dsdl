@@ -17,6 +17,7 @@
 /// |---|---|
 /// | `ns.Msg.1.0` | the schema |
 /// | `ns.Msg.1.0.serialize` | a body: `serialize`, `deserialize` or `initialize` |
+/// | `ns.Msg.1.0.wire_image` | a body over the pair: `append_wire_image`, `wire_image` or `read_wire_image` |
 /// | `ns.Svc.1.0.request.serialize` | a service section's body |
 /// | `ns.Msg.1.0.get.speed` | an accessor of a member: `get` or `set` |
 /// | `ns.Msg.1.0.plan.scalar_unsigned.2.ser` | a helper: its kind, then the plan step and the direction it serves,
@@ -53,6 +54,15 @@ enum class PlanFunction : std::uint8_t
 
     /// @brief Initialises an object.
     Initialize,
+
+    /// @brief Appends an object's wire image to bytes the caller hands it.
+    AppendWireImage,
+
+    /// @brief Answers new bytes holding an object's wire image.
+    WireImage,
+
+    /// @brief Reads an object from bytes that hold its whole wire image.
+    ReadWireImage,
 
     /// @brief Reads one member from a buffer.
     Get,
@@ -114,6 +124,11 @@ struct PlanSymbol final
     /// @brief For a helper that serves one direction, that direction.
     PlanHelperDirection direction{};
 };
+
+/// @brief The word a function's symbol names what it does by, and its body's `llvmdsdl.plan_body`.
+/// @param[in] function What the function does.
+/// @return The word: `serialize`, `wire_image`, `get` and so on.
+[[nodiscard]] llvm::StringRef planFunctionWord(PlanFunction function);
 
 /// @brief Renders a definition's symbol: `ns.Msg.1.0`.
 /// @param[in] schema The definition.

@@ -1,0 +1,19 @@
+# An accessors-only Go file separates its declarations by one empty line, as gofmt does: the
+# constants from the first accessor, and a service's last accessor from its constants.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf '@aliasable\nuint8 speed\n@sealed\n' > %t/dsdl/ns/Flat.1.0.dsdl
+# RUN: printf '@aliasable\nuint8 a\n@sealed\n---\n@aliasable\nuint8 b\n@sealed\n' > %t/dsdl/ns/Svc.1.0.dsdl
+# RUN: %dsdlc --target-language go %t/dsdl/ns --aliasable-only --go-module m --outdir %t/go
+# RUN: cat %t/go/ns/flat_1_0.go | FileCheck %s --check-prefix=MSG
+# RUN: cat %t/go/ns/svc_1_0.go | FileCheck %s --check-prefix=SVC
+#
+# MSG:      const FlatHasFixedPortID = false
+# MSG-EMPTY:
+# MSG-NEXT: func FlatGetSpeed(
+#
+# SVC:      func SvcResponseSetB(
+# SVC:      return dsdlruntime.ErrorOf(err)
+# SVC-NEXT: }
+# SVC-EMPTY:
+# SVC-NEXT: const SvcHasFixedPortID = false

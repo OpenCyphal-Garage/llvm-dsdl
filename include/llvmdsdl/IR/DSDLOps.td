@@ -542,6 +542,70 @@ def DSDL_BufferLengthOp : DSDL_Op<"buffer_length", [Pure]> {
   let assemblyFormat = "$buffer attr-dict `:` type($buffer)";
 }
 
+def DSDL_BytesEmptyOp : DSDL_Op<"bytes_empty", [Pure]> {
+  let summary = "Bytes holding nothing";
+  let results = (outs DSDL_BytesType:$bytes);
+  let assemblyFormat = "attr-dict";
+}
+
+def DSDL_BytesZeroedOp : DSDL_Op<"bytes_zeroed", [Pure]> {
+  let summary = "New bytes holding `length` zeros";
+  let arguments = (ins I64:$length);
+  let results = (outs DSDL_BytesType:$bytes);
+  let assemblyFormat = "$length attr-dict";
+}
+
+def DSDL_BytesLengthOp : DSDL_Op<"bytes_length", [Pure]> {
+  let summary = "How many bytes a run of bytes holds";
+  let arguments = (ins DSDL_BytesType:$bytes);
+  let results = (outs I64:$length);
+  let assemblyFormat = "$bytes attr-dict";
+}
+
+def DSDL_BytesGrowOp : DSDL_Op<"bytes_grow", [Pure]> {
+  let summary = "Bytes with `count` zeros after them";
+  let description = [{
+    The result holds what `bytes` holds, then `count` zeros. `bytes` itself is unchanged, so a body
+    that makes room for an image and then fails can answer the bytes it was handed.
+  }];
+  let arguments = (ins DSDL_BytesType:$bytes, I64:$count);
+  let results = (outs DSDL_BytesType:$grown);
+  let assemblyFormat = "$bytes `by` $count attr-dict";
+}
+
+def DSDL_BytesAtOp : DSDL_Op<"bytes_at", [Pure]> {
+  let summary = "Bytes from an offset on, as a buffer";
+  let description = [{
+    The buffer a body is handed to write an image into or read one from: the bytes from `offset` to
+    their end, or all of them without an offset. The buffer carries its length, as a body folded by
+    `dsdl-fold-body-sizes` takes one.
+  }];
+  let arguments = (ins DSDL_BytesType:$bytes, Optional<I64>:$offset);
+  let results = (outs DSDL_PtrType:$buffer);
+  let assemblyFormat =
+      "$bytes (`[` $offset^ `]`)? attr-dict `->` type($buffer)";
+}
+
+def DSDL_BytesTruncateOp : DSDL_Op<"bytes_truncate", [Pure]> {
+  let summary = "The first `length` of a run of bytes";
+  let arguments = (ins DSDL_BytesType:$bytes, I64:$length);
+  let results = (outs DSDL_BytesType:$truncated);
+  let assemblyFormat = "$bytes `to` $length attr-dict";
+}
+
+def DSDL_CopyBufferOp
+    : DSDL_Op<"copy_buffer", [AllTypesMatch<["buffer", "copy"]>]> {
+  let summary = "A buffer holding its own copy of the bytes another holds";
+  let description = [{
+    An object that holds a view keeps the buffer it was read from. A published interface that may
+    keep none of what it is handed reads such an object from this copy. The buffer carries its
+    length, as a body folded by `dsdl-fold-body-sizes` takes one.
+  }];
+  let arguments = (ins DSDL_PtrType:$buffer);
+  let results = (outs DSDL_PtrType:$copy);
+  let assemblyFormat = "$buffer attr-dict `:` type($buffer)";
+}
+
 def DSDL_LocalOp : DSDL_Op<"local"> {
   let summary = "A local holding an initial value, addressed";
   let description = [{
@@ -579,16 +643,18 @@ def DSDL_CallSerdesSizedOp : DSDL_Op<"call_serdes_sized"> {
     What `dsdl.call_serdes` becomes for a target whose nested entry point takes the bytes
     available as the length of the buffer it is handed, and answers the bytes it consumed
     beside its error, rather than reading and writing a size through a pointer. `available`
-    is what the plan offers. `consumed` is what the callee used, counted as the target counts
-    a length, and means something only where `error` is zero.
-    `dsdl-fold-nested-call-sizes` builds it; the plan builder does not.
+    is what the plan offers, and without it the callee is offered the whole buffer. `consumed`
+    is what the callee used, counted as the target counts a length, and means something only
+    where `error` is zero. `dsdl-fold-nested-call-sizes` builds it, and so does
+    `dsdl-build-wire-image-bodies`, for the section's own entry point; the plan builder does
+    not.
   }];
   let arguments = (ins FlatSymbolRefAttr:$callee, StrAttr:$member,
       StrAttr:$direction, DSDL_PtrType:$object, DSDL_PtrType:$buffer,
-      I64:$available);
+      Optional<I64>:$available);
   let results = (outs I8:$error, Index:$consumed);
   let assemblyFormat = [{
-    $callee `(` $object `,` $buffer `,` $available `)` attr-dict `:`
+    $callee `(` $object `,` $buffer (`,` $available^)? `)` attr-dict `:`
     type($object) `,` type($buffer)
   }];
 }

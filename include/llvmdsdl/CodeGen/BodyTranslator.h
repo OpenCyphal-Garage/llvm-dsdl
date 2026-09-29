@@ -127,6 +127,33 @@ public:
     [[nodiscard]] virtual std::string operator()(mlir::Value value) const = 0;
 };
 
+/// @brief How a language spells the operations of a body that moves a whole wire image: the bytes
+///        a caller owns, and a copy of a buffer.
+///
+/// `dsdl-build-wire-image-bodies` builds such bodies for a target whose row publishes them, and
+/// that target's spelling answers one from @ref BodySpelling::wireImages.
+class WireImageSpelling
+{
+public:
+    WireImageSpelling()                                    = default;
+    WireImageSpelling(const WireImageSpelling&)            = delete;
+    WireImageSpelling& operator=(const WireImageSpelling&) = delete;
+    WireImageSpelling(WireImageSpelling&&)                 = delete;
+    WireImageSpelling& operator=(WireImageSpelling&&)      = delete;
+    virtual ~WireImageSpelling()                           = default;
+
+    [[nodiscard]] virtual std::string bytesEmpty(mlir::dsdl::BytesEmptyOp op, const ValueNames& names) const       = 0;
+    [[nodiscard]] virtual std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const     = 0;
+    [[nodiscard]] virtual std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const     = 0;
+    [[nodiscard]] virtual std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& names) const         = 0;
+    [[nodiscard]] virtual std::string bytesAt(mlir::dsdl::BytesAtOp op, const ValueNames& names) const             = 0;
+    [[nodiscard]] virtual std::string bytesTruncate(mlir::dsdl::BytesTruncateOp op, const ValueNames& names) const = 0;
+    [[nodiscard]] virtual std::string copyBuffer(mlir::dsdl::CopyBufferOp op, const ValueNames& names) const       = 0;
+
+    /// @brief Returns @p bytes, holding an image, and @p error, the code of the body that wrote it.
+    virtual void returnImage(SourceWriter& w, llvm::StringRef bytes, llvm::StringRef error) const = 0;
+};
+
 /// @brief One language's spelling of the plan-body vocabulary.
 ///
 /// Expressions come back as strings; statements are written to the writer. A method receives
@@ -384,6 +411,13 @@ public:
                                        llvm::StringRef              name,
                                        mlir::dsdl::CallInitializeOp op,
                                        const ValueNames&            names) const;
+
+    /// @brief How the language spells a body that moves a whole wire image; null for a language
+    ///        whose row publishes none, which the translator reports should it meet one.
+    [[nodiscard]] virtual const WireImageSpelling* wireImages() const
+    {
+        return nullptr;
+    }
 };
 
 /// @brief Renders @p role as `member_role`, `role` when @p member is empty, and appends

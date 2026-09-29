@@ -7,7 +7,6 @@
 # RUN: cat %t/go/ns/quiet_1_0.go | FileCheck %s
 #
 # CHECK:      import (
-# CHECK-NEXT:   "slices"
 # CHECK-NEXT:   "unsafe"
 # CHECK-EMPTY:
 # CHECK-NEXT:   dsdlruntime "m/dsdlruntime"

@@ -146,6 +146,12 @@ std::string renderLoweredLinkName(const Language language, const PlanSymbol& sym
         return renderLoweredEntryPointName(language, type, EntryPoint::Deserialize);
     case PlanFunction::Initialize:
         return renderLoweredEntryPointName(language, type, EntryPoint::Initialize);
+    case PlanFunction::AppendWireImage:
+        return renderLoweredEntryPointName(language, type, EntryPoint::AppendWireImage);
+    case PlanFunction::WireImage:
+        return renderLoweredEntryPointName(language, type, EntryPoint::WireImage);
+    case PlanFunction::ReadWireImage:
+        return renderLoweredEntryPointName(language, type, EntryPoint::ReadWireImage);
     case PlanFunction::Get:
         return renderLoweredAccessorName(language, type, AccessorVerb::Get, symbol.member);
     case PlanFunction::Set:

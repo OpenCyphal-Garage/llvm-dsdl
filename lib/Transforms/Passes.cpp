@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <iterator>
 #include <set>
 #include <optional>
 #include <string>
@@ -2173,6 +2174,324 @@ private:
                                   clEnumValN(BoolArrayStorage::PerElement, "per-element", "a bool per element"))};
 };
 
+/// @brief Builds the bodies a target publishes over each section's serialise and deserialise that
+///        move a whole wire image.
+///
+/// Each is a body like the pair it calls, translated by every backend whose row publishes it. It
+/// is built from the pair as `dsdl-fold-body-sizes` leaves them, so each calls its section's own
+/// entry point through `dsdl.call_serdes_sized`, offering the whole buffer. An encoder makes room
+/// for the largest image the section can have, has the entry point write into it, and keeps what
+/// it used; where the entry point fails, it answers the bytes it was handed. A reader that may keep
+/// none of its bytes reads an object that holds a view, directly or through a composite it holds,
+/// from a copy of them.
+struct BuildDSDLWireImageBodiesPass final
+    : public mlir::PassWrapper<BuildDSDLWireImageBodiesPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    BuildDSDLWireImageBodiesPass() = default;
+    BuildDSDLWireImageBodiesPass(const BuildDSDLWireImageBodiesPass& other)
+        : PassWrapper(other)
+    {
+    }
+    BuildDSDLWireImageBodiesPass(BuildDSDLWireImageBodiesPass&&)                 = delete;
+    BuildDSDLWireImageBodiesPass& operator=(const BuildDSDLWireImageBodiesPass&) = delete;
+    BuildDSDLWireImageBodiesPass& operator=(BuildDSDLWireImageBodiesPass&&)      = delete;
+    ~BuildDSDLWireImageBodiesPass() override                                     = default;
+    explicit BuildDSDLWireImageBodiesPass(const WireImageInterface& target)
+    {
+        appends_.setValue(target.appends);
+        answersNew_.setValue(target.answersNew);
+        reads_.setValue(target.reads);
+        readerKeepsNothing_.setValue(target.readerKeepsNothing);
+    }
+
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-build-wire-image-bodies";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Build the bodies a target publishes over serialise and deserialise that move a whole wire image";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::scf::SCFDialect, mlir::func::FuncDialect>();
+    }
+
+    // NOLINTNEXTLINE(misc-override-with-different-visibility) -- MLIR declares passes this way.
+    void runOnOperation() override
+    {
+        mlir::ModuleOp          module = getOperation();
+        const mlir::SymbolTable symbols(module);
+        // A section's pair, in the order the module holds them.
+        std::vector<Section> sections;
+        for (mlir::func::FuncOp fn : module.getOps<mlir::func::FuncOp>())
+        {
+            const std::optional<PlanSymbol> symbol = parsePlanSymbol(fn.getSymName());
+            if (!symbol ||
+                ((symbol->function != PlanFunction::Serialize) && (symbol->function != PlanFunction::Deserialize)))
+            {
+                continue;
+            }
+            const std::string key   = renderSchemaSymbol(symbol->schema) + "." + symbol->section;
+            auto              found = std::ranges::find(sections, key, &Section::key);
+            if (found == sections.end())
+            {
+                sections.push_back(Section{key, *symbol, {}, {}});
+                found = std::prev(sections.end());
+            }
+            (symbol->function == PlanFunction::Serialize ? found->serialize : found->deserialize) = fn;
+        }
+        for (Section& section : sections)
+        {
+            if (!section.serialize || !section.deserialize)
+            {
+                continue;
+            }
+            if (!answersSize(section.serialize) || !answersSize(section.deserialize))
+            {
+                section.serialize.emitError("a target that publishes a wire image takes bodies that answer "
+                                            "their size; run dsdl-fold-body-sizes first");
+                signalPassFailure();
+                return;
+            }
+            const std::optional<std::int64_t> largest = largestImage(symbols, section);
+            if (!largest)
+            {
+                section.serialize.emitError("names no serialisation plan to size its image by");
+                signalPassFailure();
+                return;
+            }
+            mlir::OpBuilder builder(module.getContext());
+            builder.setInsertionPointAfter(section.deserialize);
+            if (reads_)
+            {
+                buildReader(builder, section, readerKeepsNothing_ && holdsView(symbols, section.deserialize));
+            }
+            if (answersNew_)
+            {
+                buildEncoder(builder, section, *largest, false);
+            }
+            if (appends_)
+            {
+                buildEncoder(builder, section, *largest, true);
+            }
+        }
+    }
+
+private:
+    /// @brief One section's serialise and deserialise bodies.
+    struct Section final
+    {
+        std::string        key;
+        PlanSymbol         symbol;
+        mlir::func::FuncOp serialize;
+        mlir::func::FuncOp deserialize;
+    };
+
+    /// @brief Whether @p fn takes its buffer alone and answers its error and the size it used.
+    static bool answersSize(mlir::func::FuncOp fn)
+    {
+        const mlir::FunctionType type = fn.getFunctionType();
+        return (type.getNumInputs() == 2) && (type.getNumResults() == 2) && type.getResult(0).isInteger(8) &&
+               mlir::isa<mlir::IndexType>(type.getResult(1));
+    }
+
+    /// @brief The bytes of the largest image @p section's plan can write.
+    static std::optional<std::int64_t> largestImage(const mlir::SymbolTable& symbols, Section& section)
+    {
+        const auto name   = section.serialize->getAttrOfType<mlir::StringAttr>("llvmdsdl.schema_sym");
+        auto       schema = name ? symbols.lookup<mlir::dsdl::SchemaOp>(name.getValue()) : mlir::dsdl::SchemaOp{};
+        if (!schema || schema.getBody().empty())
+        {
+            return std::nullopt;
+        }
+        for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
+        {
+            if (plan.getSection().value_or(llvm::StringRef{}) == section.symbol.section)
+            {
+                return (plan.getMaxBits() + 7) / 8;
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// @brief Whether an object @p deserialize reads holds a view, directly or through a composite
+    ///        it holds.
+    static bool holdsView(const mlir::SymbolTable& symbols, mlir::func::FuncOp deserialize)
+    {
+        std::set<mlir::Operation*>      seen;
+        std::vector<mlir::func::FuncOp> pending{deserialize};
+        while (!pending.empty())
+        {
+            mlir::func::FuncOp fn = pending.back();
+            pending.pop_back();
+            if (!seen.insert(fn.getOperation()).second)
+            {
+                continue;
+            }
+            bool view = false;
+            fn.walk([&](mlir::Operation* op) {
+                if (mlir::isa<mlir::dsdl::StoreViewOp>(op))
+                {
+                    view = true;
+                }
+                else if (auto call = mlir::dyn_cast<mlir::dsdl::CallSerdesSizedOp>(op))
+                {
+                    if (auto callee = symbols.lookup<mlir::func::FuncOp>(call.getCallee()))
+                    {
+                        pending.push_back(callee);
+                    }
+                }
+            });
+            if (view)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// @brief Declares the body doing @p function for @p section, and opens its entry block.
+    static mlir::func::FuncOp declare(mlir::OpBuilder&         builder,
+                                      Section&                 section,
+                                      const PlanFunction       function,
+                                      const mlir::FunctionType type)
+    {
+        PlanSymbol symbol = section.symbol;
+        symbol.function   = function;
+        auto fn = mlir::func::FuncOp::create(builder, section.serialize.getLoc(), renderPlanSymbol(symbol), type);
+        for (const llvm::StringRef attribute : {"llvmdsdl.schema_sym", "llvmdsdl.section"})
+        {
+            if (const mlir::Attribute value = section.serialize->getAttr(attribute))
+            {
+                fn->setAttr(attribute, value);
+            }
+        }
+        fn->setAttr("llvmdsdl.plan_body", builder.getStringAttr(planFunctionWord(function)));
+        builder.setInsertionPointAfter(fn);
+        return fn;
+    }
+
+    /// @brief Builds an encoder: into new bytes, or appended to the bytes the caller hands it.
+    static void buildEncoder(mlir::OpBuilder& builder, Section& section, const std::int64_t largest, const bool append)
+    {
+        mlir::MLIRContext* const ctx    = builder.getContext();
+        const mlir::Location     loc    = section.serialize.getLoc();
+        const mlir::Type         object = section.serialize.getArgumentTypes().front();
+        const mlir::Type         bytes  = mlir::dsdl::BytesType::get(ctx);
+        const mlir::Type         i8     = builder.getIntegerType(8);
+        const mlir::Type         i64    = builder.getIntegerType(64);
+        const mlir::FunctionType type   = append ? builder.getFunctionType({object, bytes}, {bytes, i8})
+                                                 : builder.getFunctionType({object}, {bytes, i8});
+        mlir::func::FuncOp       fn =
+            declare(builder, section, append ? PlanFunction::AppendWireImage : PlanFunction::WireImage, type);
+        mlir::OpBuilder::InsertionGuard const guard(builder);
+        mlir::Block* const                    entry = fn.addEntryBlock();
+        builder.setInsertionPointToStart(entry);
+        const mlir::Value room = mlir::arith::ConstantOp::create(builder, loc, builder.getIntegerAttr(i64, largest));
+        mlir::Value       start;
+        mlir::Value       image;
+        mlir::Value       buffer;
+        const auto        writable = mlir::dsdl::PtrType::get(ctx, mlir::dsdl::ByteType::get(ctx));
+        if (append)
+        {
+            start  = mlir::dsdl::BytesLengthOp::create(builder, loc, i64, entry->getArgument(1));
+            image  = mlir::dsdl::BytesGrowOp::create(builder, loc, bytes, entry->getArgument(1), room);
+            buffer = mlir::dsdl::BytesAtOp::create(builder, loc, writable, image, start);
+        }
+        else
+        {
+            image  = mlir::dsdl::BytesZeroedOp::create(builder, loc, bytes, room);
+            buffer = mlir::dsdl::BytesAtOp::create(builder, loc, writable, image, mlir::Value{});
+        }
+        auto call =
+            mlir::dsdl::CallSerdesSizedOp::create(builder,
+                                                  loc,
+                                                  i8,
+                                                  builder.getIndexType(),
+                                                  mlir::FlatSymbolRefAttr::get(section.serialize.getSymNameAttr()),
+                                                  builder.getStringAttr(""),
+                                                  builder.getStringAttr("serialize"),
+                                                  entry->getArgument(0),
+                                                  buffer,
+                                                  mlir::Value{});
+        const mlir::Value zero = mlir::arith::ConstantOp::create(builder, loc, builder.getIntegerAttr(i8, 0));
+        const mlir::Value succeeded =
+            mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::eq, call.getError(), zero);
+        auto kept = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{bytes}, succeeded, true);
+        {
+            mlir::OpBuilder::InsertionGuard const arm(builder);
+            builder.setInsertionPointToStart(kept.thenBlock());
+            mlir::Value used = mlir::arith::IndexCastUIOp::create(builder, loc, i64, call.getConsumed());
+            if (append)
+            {
+                used = mlir::arith::AddIOp::create(builder, loc, start, used);
+            }
+            mlir::scf::YieldOp::create(builder,
+                                       loc,
+                                       mlir::ValueRange{
+                                           mlir::dsdl::BytesTruncateOp::create(builder, loc, bytes, image, used)});
+            builder.setInsertionPointToStart(kept.elseBlock());
+            mlir::scf::YieldOp::create(builder,
+                                       loc,
+                                       mlir::ValueRange{
+                                           append
+                                               ? mlir::Value{entry->getArgument(1)}
+                                               : mlir::Value{mlir::dsdl::BytesEmptyOp::create(builder, loc, bytes)}});
+        }
+        mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{kept.getResult(0), call.getError()});
+    }
+
+    /// @brief Builds a reader: an object read from bytes that hold its whole image, or from a copy
+    ///        of them where @p copies.
+    static void buildReader(mlir::OpBuilder& builder, Section& section, const bool copies)
+    {
+        const mlir::Location                  loc    = section.deserialize.getLoc();
+        const mlir::Type                      object = section.deserialize.getArgumentTypes()[0];
+        const mlir::Type                      data   = section.deserialize.getArgumentTypes()[1];
+        const mlir::Type                      i8     = builder.getIntegerType(8);
+        const mlir::FunctionType              type   = builder.getFunctionType({object, data}, {i8});
+        mlir::func::FuncOp                    fn     = declare(builder, section, PlanFunction::ReadWireImage, type);
+        mlir::OpBuilder::InsertionGuard const guard(builder);
+        mlir::Block* const                    entry = fn.addEntryBlock();
+        builder.setInsertionPointToStart(entry);
+        mlir::Value buffer = entry->getArgument(1);
+        if (copies)
+        {
+            buffer = mlir::dsdl::CopyBufferOp::create(builder, loc, data, buffer);
+        }
+        auto call =
+            mlir::dsdl::CallSerdesSizedOp::create(builder,
+                                                  loc,
+                                                  i8,
+                                                  builder.getIndexType(),
+                                                  mlir::FlatSymbolRefAttr::get(section.deserialize.getSymNameAttr()),
+                                                  builder.getStringAttr(""),
+                                                  builder.getStringAttr("deserialize"),
+                                                  entry->getArgument(0),
+                                                  buffer,
+                                                  mlir::Value{});
+        mlir::func::ReturnOp::create(builder, loc, mlir::ValueRange{call.getError()});
+    }
+
+    Option<bool> appends_{*this,
+                          "appends",
+                          llvm::cl::desc("Whether the target appends an image to bytes the caller hands it"),
+                          llvm::cl::init(true)};
+    Option<bool> answersNew_{*this,
+                             "answers-new",
+                             llvm::cl::desc("Whether the target answers new bytes holding an image"),
+                             llvm::cl::init(true)};
+    Option<bool> reads_{*this,
+                        "reads",
+                        llvm::cl::desc("Whether the target reads an object from bytes holding its whole image"),
+                        llvm::cl::init(true)};
+    Option<bool> readerKeepsNothing_{*this,
+                                     "reader-keeps-nothing",
+                                     llvm::cl::desc("Whether the reader may keep none of the bytes it is handed"),
+                                     llvm::cl::init(true)};
+};
+
 /// @brief Whether @p fn answers an error code: a plan body, or a setter. A getter answers a value,
 ///        which may be an `i8` that is zero without meaning success.
 bool answersAnError(mlir::func::FuncOp fn)
@@ -3025,6 +3344,11 @@ std::unique_ptr<mlir::Pass> createExpandDSDLBoolRunsPass(const BoolArrayStorage 
     return std::make_unique<ExpandDSDLBoolRunsPass>(storage);
 }
 
+std::unique_ptr<mlir::Pass> createBuildDSDLWireImageBodiesPass(const WireImageInterface& target)
+{
+    return std::make_unique<BuildDSDLWireImageBodiesPass>(target);
+}
+
 std::unique_ptr<mlir::Pass> createTypeDSDLAccessorsPass()
 {
     return std::make_unique<TypeDSDLAccessorsPass>();
@@ -3112,6 +3436,12 @@ void addLowerDSDLBodiesPipeline(mlir::OpPassManager&           pm,
     {
         pm.addPass(createExpandDSDLBoolRunsPass(target.boolArrays));
     }
+    // After the size folds, whose bodies these call; its own stage, under the target's capability,
+    // since whether a target publishes a wire image is a question about its interface.
+    if (target.wireImage.any())
+    {
+        pm.addPass(createBuildDSDLWireImageBodiesPass(target.wireImage));
+    }
     // After the bodies: what is simplified here is what every backend translates.
     if (optimizeLoweredSerDes)
     {
@@ -3196,6 +3526,7 @@ void registerDSDLPasses()
     static mlir::PassRegistration<FoldDSDLNestedCallSizesPass> const         regNestedSizes;
     static mlir::PassRegistration<FoldDSDLBodySizesPass> const               regBodySizes;
     static mlir::PassRegistration<ExpandDSDLBoolRunsPass> const              regBoolRuns;
+    static mlir::PassRegistration<BuildDSDLWireImageBodiesPass> const        regWireImages;
     static mlir::PassPipelineRegistration<> const
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalisation and CSE to lowered DSDL SerDes IR",
