@@ -70,5 +70,16 @@ bool runSourceWriterTests()
         ok = holds(out, "a\n\nb\n", "after an empty line") && ok;
     }
 
+    // A block's closing line follows its last unit directly.
+    {
+        std::ostringstream     out;
+        llvmdsdl::SourceWriter w(out, llvmdsdl::IndentPolicy::spaces(2));
+        w.open("a {");
+        w.line("b");
+        w.separate();
+        w.close("}");
+        ok = holds(out, "a {\n  b\n}\n", "a block's close") && ok;
+    }
+
     return ok;
 }
