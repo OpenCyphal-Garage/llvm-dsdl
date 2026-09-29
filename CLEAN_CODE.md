@@ -1100,6 +1100,13 @@ imports another definition ran its imports into its declarations. Eslint holds a
 declaration count falls from 68 to 43; its body count rises from 41 to 44, since the spelling now
 writes the throw and the wire image's signatures.
 
+TypeScript's renderer change moves TypeScript's declaration half onto `DeclarationRenderer`.
+TypeScript's layout names a module's facts and helpers, then each section's interface, factory,
+constants and functions, then a service's alias. TypeScript's signatures are the declaration
+spelling's, and `TsSpelling::openFunction` binds only what a body reads. The factory is the
+spelling's, read from the initialise body the caller keeps out of the functions it hands the
+renderer. TypeScript's declaration count falls from 43 to 39, and its body count from 44 to 37.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.
