@@ -237,18 +237,6 @@ public:
                             GeneratedFact::PoolClass);
     }
 
-    /// @brief The name of the function that wraps the entry point @p entry to state @p fact.
-    [[nodiscard]] const std::string& wrapperOf(mlir::func::FuncOp entry, const GeneratedFact fact) const
-    {
-        return tree_.nameOf(entry.getSymName(), SurfaceDeclKind::Wrapper, fact);
-    }
-
-    /// @brief The name of the entry point @p entry.
-    [[nodiscard]] const std::string& entryOf(mlir::func::FuncOp entry) const
-    {
-        return tree_.nameOf(entry.getSymName(), SurfaceDeclKind::Entry);
-    }
-
 private:
     const SurfaceTree& tree_;
     std::string        key_;
@@ -502,7 +490,7 @@ std::string rustDeprecatedAttribute(const std::string&  fullName,
 /// pointer is a local `usize`, which is also what a nested call's size becomes. The runtime
 /// primitives take slices, so a buffer is a slice and a pointer into it is a sub-slice clamped
 /// to the buffer's end.
-class RustSpelling final : public BodySpelling
+class RustSpelling final : public BodySpelling, public WireImageSpelling
 {
     struct Member;
 
@@ -584,15 +572,32 @@ public:
         {
             return openAccessor(w, fn, *direction == "get");
         }
+        const std::string& entry = tree_.nameOf(fn.getSymName(), SurfaceDeclKind::Entry);
+        if (*direction == "wire_image")
+        {
+            w.open("pub fn " + entry + "(&self) -> " + RustFileNames::core("result::Result") + "<" +
+                   RustFileNames::runtime("DsdlVec") + "<u8>, " + RustFileNames::runtime("Error") + "> {");
+            return {"self"};
+        }
+        if (*direction == "from_wire_image")
+        {
+            // A type holding a view borrows what it reads for its own lifetime.
+            const bool lifetime = planOf(fn.getResultTypes().front()).lifetime;
+            const bool used     = fn.getNumResults() == 3;
+            w.open("pub fn " + entry + "(buffer: &" + (lifetime ? "'a " : "") + "[u8]) -> " +
+                   RustFileNames::core("result::Result") + "<" + (used ? "(Self, usize)" : "Self") + ", " +
+                   RustFileNames::runtime("Error") + "> {");
+            return {"buffer"};
+        }
         const bool serialize = *direction == "serialize";
         // A type holding a view borrows the buffer it deserialises from, for its own lifetime.
-        const bool lifetime = planOf(fn.getArgument(0)).lifetime;
+        const bool lifetime = planOf(fn.getArgument(0).getType()).lifetime;
 
         // A body of a definition with no fields reads nothing of its buffer, and Rust names an
         // argument a body ignores with a leading underscore.
         const std::string buffer = readsArgument(fn, 1) ? "buffer" : "_buffer";
 
-        const std::string& name = tree_.nameOf(fn.getSymName(), SurfaceDeclKind::Entry);
+        const std::string& name = entry;
         w.open(serialize
                    ? "pub fn " + name + "(&self, " + buffer + ": &mut [u8]) -> " +
                          RustFileNames::core("result::Result") + "<usize, " + RustFileNames::runtime("Error") + "> {"
@@ -726,6 +731,18 @@ public:
                  const llvm::StringRef name,
                  const llvm::StringRef expr) const override
     {
+        // The bytes an image is written into and the value one is read into are borrowed mutably.
+        if (mlir::isa<mlir::dsdl::BytesType>(type))
+        {
+            w.line("let mut " + name.str() + ": " + typeName(type) + " = " + expr.str() + ";");
+            return;
+        }
+        if (const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(type);
+            pointer && mlir::isa<mlir::dsdl::ObjectType>(pointer.getPointee()))
+        {
+            w.line("let mut " + name.str() + " = " + expr.str() + ";");
+            return;
+        }
         w.line("let " + name.str() + ": " + typeName(type) + " = " + expr.str() + ";");
     }
 
@@ -1033,9 +1050,13 @@ public:
 
     [[nodiscard]] bool spellsInline(mlir::Operation* op) const override
     {
-        return mlir::
-            isa<mlir::dsdl::IsNullOp, mlir::dsdl::BufferOrEmptyOp, mlir::dsdl::MemberAddrOp, mlir::dsdl::ElementAddrOp>(
-                op);
+        return mlir::isa<mlir::dsdl::IsNullOp,
+                         mlir::dsdl::BufferOrEmptyOp,
+                         mlir::dsdl::MemberAddrOp,
+                         mlir::dsdl::ElementAddrOp,
+                         mlir::dsdl::BytesAtOp,
+                         mlir::dsdl::BytesTruncateOp,
+                         mlir::dsdl::CopyBufferOp>(op);
     }
 
     [[nodiscard]] std::string isNull(mlir::dsdl::IsNullOp /*op*/, const ValueNames& /*names*/) const override
@@ -1355,7 +1376,8 @@ public:
                                                 asSize(names(op.getAvailable())) + ", " + buffer + ".len()); " +
                                                 (serialize ? "&mut " : "&") + buffer + "[.._len] }"
                                           : buffer;
-        const std::string call = names(op.getObject()) + (serialize ? ".serialize(" : ".deserialize(") + slice + ")";
+        const std::string call =
+            names(op.getObject()) + "." + tree_.nameOf(op.getCallee(), SurfaceDeclKind::Entry) + "(" + slice + ")";
         if (consumed.empty() && error.empty())
         {
             discard(w, call);
@@ -1373,6 +1395,79 @@ public:
         }
         w.line("let (" + error.str() + ", " + consumed.str() + ") = match " + call +
                " { Ok(used) => (0i8, used), Err(e) => (e.code(), 0) };");
+    }
+
+    [[nodiscard]] const WireImageSpelling* wireImages() const override
+    {
+        return this;
+    }
+
+    // A whole wire image, in the runtime's vector; the bytes a caller hands in are a slice.
+
+    [[nodiscard]] std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const override
+    {
+        const std::string length = names(op.getLength()) + " as usize";
+        return "{ let mut bytes = " + RustFileNames::runtime("DsdlVec") + "::<u8>::with_capacity(" + length +
+               "); bytes.resize(" + length + ", 0u8); bytes }";
+    }
+
+    [[nodiscard]] std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const override
+    {
+        return names(op.getBytes()) + ".len() as u64";
+    }
+
+    [[nodiscard]] std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error(llvm::Twine("Rust spelling: Rust's row appends no image to bytes it is handed; '") +
+                                 op->getName().getStringRef() + "' reached it");
+    }
+
+    [[nodiscard]] std::string bytesAt(mlir::dsdl::BytesAtOp op, const ValueNames& names) const override
+    {
+        // A slice handed in is the buffer as it is; the vector an image is written into lends its own.
+        const std::string bytes = names(op.getBytes());
+        const bool        slice = mlir::isa<mlir::BlockArgument>(op.getBytes());
+        const bool        write = !mlir::cast<mlir::dsdl::PtrType>(op.getBuffer().getType()).getIsConst();
+        if (!op.getOffset())
+        {
+            return slice ? bytes : bytes + (write ? ".as_mut_slice()" : ".as_slice()");
+        }
+        return std::string(write ? "&mut " : "&") + bytes + "[" + names(op.getOffset()) + " as usize..]";
+    }
+
+    [[nodiscard]] std::string bytesTruncate(mlir::dsdl::BytesTruncateOp op, const ValueNames& names) const override
+    {
+        const std::string bytes = names(op.getBytes());
+        return "{ " + bytes + ".truncate(" + names(op.getLength()) + " as usize); " + bytes + " }";
+    }
+
+    [[nodiscard]] std::string copyBuffer(mlir::dsdl::CopyBufferOp op, const ValueNames& /*names*/) const override
+    {
+        llvm::report_fatal_error(llvm::Twine("Rust spelling: a Rust value borrows what it reads for its lifetime; '") +
+                                 op->getName().getStringRef() + "' reached it");
+    }
+
+    [[nodiscard]] std::string makeObject(mlir::dsdl::MakeObjectOp /*op*/, const ValueNames& /*names*/) const override
+    {
+        return "Self::default()";
+    }
+
+    void returnImage(SourceWriter& w, const llvm::StringRef bytes, const llvm::StringRef error) const override
+    {
+        w.line(cannotFail_
+                   ? "Ok(" + bytes.str() + ")"
+                   : "if " + error.str() + " == 0i8 { Ok(" + bytes.str() + ") } else { Err(" + errorOf(error) + ") }");
+    }
+
+    void returnObject(SourceWriter&         w,
+                      const llvm::StringRef object,
+                      const llvm::StringRef used,
+                      const llvm::StringRef error) const override
+    {
+        const std::string answer = used.empty() ? object.str() : "(" + object.str() + ", " + used.str() + ")";
+        w.line(cannotFail_
+                   ? "Ok(" + answer + ")"
+                   : "if " + error.str() + " == 0i8 { Ok(" + answer + ") } else { Err(" + errorOf(error) + ") }");
     }
 
 private:
@@ -1398,7 +1493,12 @@ private:
     /// @brief The plan the object a pointer names belongs to.
     const Plan& planOf(const mlir::Value object) const
     {
-        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object.getType());
+        return planOf(object.getType());
+    }
+
+    const Plan& planOf(const mlir::Type object) const
+    {
+        const auto pointer = mlir::dyn_cast<mlir::dsdl::PtrType>(object);
         const auto identity =
             pointer ? mlir::dyn_cast<mlir::dsdl::ObjectType>(pointer.getPointee()) : mlir::dsdl::ObjectType{};
         const auto found = identity ? plans_.find(identity.getIdentity()) : plans_.end();
@@ -1530,6 +1630,10 @@ private:
         {
             return "usize";
         }
+        if (mlir::isa<mlir::dsdl::BytesType>(type))
+        {
+            return RustFileNames::runtime("DsdlVec") + "<u8>";
+        }
         if (type.isF32())
         {
             return "f32";
@@ -1657,6 +1761,9 @@ struct SectionBodies final
     mlir::func::FuncOp serialize;
     mlir::func::FuncOp deserialize;
     mlir::func::FuncOp initialize;
+    /// @brief The wire image over the pair: into new bytes, and a new value read from them.
+    mlir::func::FuncOp wireImage;
+    mlir::func::FuncOp fromWireImage;
     /// @brief The section's field accessors, getters and setters, in the module's order.
     std::vector<mlir::func::FuncOp> accessors;
 };
@@ -1711,7 +1818,6 @@ llvm::Error emitSectionType(SourceWriter&                         w,
     const bool        holdsView = ctx.holdsView(section);
     const std::string generics  = holdsView ? "<'a>" : "";
     const std::string implHead  = holdsView ? "impl<'a> " : "impl ";
-    const std::string borrowed  = holdsView ? "&'a [u8]" : "&[u8]";
     emitAttachedDocRust(w,
                         docWithDeprecationNotice(typeDoc,
                                                  section.deprecated,
@@ -1894,52 +2000,30 @@ llvm::Error emitSectionType(SourceWriter&                         w,
         w.line("pub const " + names.constant(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
                rustConstValue(c.type, c.value) + ";");
     }
-    w.blank();
 
+    // The serdes and the wire image over them, then a wire-flat section's field accessors: each is
+    // one read or one write at the field's offset.
+    std::vector<mlir::func::FuncOp> functions;
     if (!options.accessorsOnly)
     {
-        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
+        if (!bodies.wireImage || !bodies.fromWireImage)
         {
-            return err;
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no wire image bodies for %s in the lowered module",
+                                           metadata.fullName.c_str());
         }
-        w.blank();
-        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-        {
-            return err;
-        }
-        w.blank();
-        const std::string& bufferSize = names.generated(GeneratedFact::SerializationBufferSizeBytes);
-        w.open("pub fn " + names.wrapperOf(bodies.serialize, GeneratedFact::WireImage) + "(&self) -> " +
-               RustFileNames::core("result::Result") + "<" + RustFileNames::runtime("DsdlVec") + "<u8>, " +
-               RustFileNames::runtime("Error") + "> {");
-        w.line("let mut buffer = " + RustFileNames::runtime("DsdlVec") + "::<u8>::with_capacity(Self::" + bufferSize +
-               ");");
-        w.line("buffer.resize(Self::" + bufferSize + ", 0u8);");
-        w.line("let used = self." + names.entryOf(bodies.serialize) + "(&mut buffer)?;");
-        w.line("buffer.truncate(used);");
-        w.line("Ok(buffer)");
-        w.close("}");
-        w.blank();
-
-        w.open("pub fn " + names.wrapperOf(bodies.deserialize, GeneratedFact::FromWireImage) + "(buffer: " + borrowed +
-               ") -> " + RustFileNames::core("result::Result") + "<(Self, usize), " + RustFileNames::runtime("Error") +
-               "> {");
-        w.line("let mut out = Self::default();");
-        w.line("let used = out." + names.entryOf(bodies.deserialize) + "(buffer)?;");
-        w.line("Ok((out, used))");
-        w.close("}");
+        functions = {bodies.serialize, bodies.deserialize, bodies.wireImage, bodies.fromWireImage};
     }
-    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
-    for (const mlir::func::FuncOp accessor : bodies.accessors)
+    functions.insert(functions.end(), bodies.accessors.begin(), bodies.accessors.end());
+    for (const mlir::func::FuncOp function : functions)
     {
-        w.blank();
-        if (auto err = translateFunction(accessor, spelling, w, lookups))
+        w.separate();
+        if (auto err = translateFunction(function, spelling, w, lookups))
         {
             return err;
         }
     }
     w.close("}");
-    w.blank();
     return llvm::Error::success();
 }
 
@@ -2001,6 +2085,14 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             entry.initialize = fn;
         }
+        else if (*direction == "wire_image")
+        {
+            entry.wireImage = fn;
+        }
+        else if (*direction == "from_wire_image")
+        {
+            entry.fromWireImage = fn;
+        }
         else if (*direction == "get" || *direction == "set")
         {
             entry.accessors.push_back(fn);
@@ -2029,7 +2121,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             return std::move(err);
         }
-        w.blank();
+        w.separate();
     }
 
     if (!def.isService)
@@ -2071,7 +2163,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
 
     if (def.response)
     {
-        out << "\n";
+        w.separate();
         if (auto err = emitSectionType(w,
                                        SectionSurface(ctx.tree(), key, "response"),
                                        *def.response,
@@ -2089,7 +2181,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         }
     }
 
-    out << "\n";
+    w.separate();
     // The alias says that a service reached by its own name means its request. The constants below
     // are the service's own and are declared either way.
     const SurfaceDecl* const alias =

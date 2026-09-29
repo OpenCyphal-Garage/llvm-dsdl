@@ -10,8 +10,8 @@
     "support": 0
   },
   "Rust": {
-    "body": 60,
-    "declaration": 89,
+    "body": 66,
+    "declaration": 68,
     "support": 19
   },
   "Go": {

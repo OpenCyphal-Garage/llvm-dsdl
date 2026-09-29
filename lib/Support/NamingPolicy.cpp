@@ -972,9 +972,11 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
 llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 {
     // Rust initialises through `Default`, a trait's method, which the type's own items do not hold.
-    static constexpr std::array<EntryPointName, 2> kRust =
+    static constexpr std::array<EntryPointName, 4> kRust =
         {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false}};
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "to_bytes", .suffix = "", .beside = false},
+         EntryPointName{.function = PlanFunction::FromWireImage, .name = "from_bytes", .suffix = "", .beside = false}};
     // Go's zero value is its type's; a type whose initialiser stores anything else has a constructor.
     // The wire image's bodies are the encoding package's BinaryAppender, BinaryMarshaler and
     // BinaryUnmarshaler.
@@ -1024,14 +1026,6 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 
 llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
 {
-    static constexpr std::array<WrapperName, 2> kRust = {WrapperName{.fact   = GeneratedFact::WireImage,
-                                                                     .wraps  = PlanFunction::Serialize,
-                                                                     .name   = "to_bytes",
-                                                                     .beside = false},
-                                                         WrapperName{.fact   = GeneratedFact::FromWireImage,
-                                                                     .wraps  = PlanFunction::Deserialize,
-                                                                     .name   = "from_bytes",
-                                                                     .beside = false}};
     // C++'s methods call the free functions the bodies are.
     static constexpr std::array<WrapperName, 2> kCpp        = {WrapperName{.fact   = GeneratedFact::Serialize,
                                                                            .wraps  = PlanFunction::Serialize,
@@ -1051,12 +1045,11 @@ llvm::ArrayRef<WrapperName> generatedWrappers(const Language language)
                                                                            .beside = true}};
     switch (language)
     {
-    case Language::Rust:
-        return kRust;
     case Language::TypeScript:
         return kTypeScript;
     case Language::Cpp:
         return kCpp;
+    case Language::Rust:
     case Language::Go:
     case Language::Python:
     case Language::C:

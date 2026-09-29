@@ -192,7 +192,9 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
             },
-        // Handed a reference, a slice and a local, none of which can be null.
+        // Handed a reference, a slice and a local, none of which can be null. A type encodes itself
+        // into new bytes, and reads a new value of itself and the bytes it read; a view borrows what
+        // it reads for the value's lifetime.
         .body =
             {
                 .nullability              = {.objectPointer = false, .rawPointer = false, .accessorBuffer = false},
@@ -201,6 +203,12 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .objectsAreByteImages     = true,
                 .bodiesAnswerSize         = true,
                 .boolArrays               = BoolArrayStorage::PerElement,
+                .wireImage                = {.appends            = false,
+                                             .answersNew         = true,
+                                             .reads              = false,
+                                             .makes              = true,
+                                             .makesAnswerUsed    = true,
+                                             .readerKeepsNothing = false},
             },
         // Each definition and version is a module, which is what encloses a service's sections.
         .composition =

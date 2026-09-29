@@ -1558,7 +1558,10 @@ public:
         line(w, "return bytes(" + bytes.str() + ")");
     }
 
-    void returnObject(SourceWriter& w, const llvm::StringRef object, const llvm::StringRef error) const override
+    void returnObject(SourceWriter&         w,
+                      const llvm::StringRef object,
+                      const llvm::StringRef /*used*/,
+                      const llvm::StringRef error) const override
     {
         raiseOn(w, error);
         line(w, "return " + object.str());

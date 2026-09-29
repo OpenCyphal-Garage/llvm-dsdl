@@ -96,7 +96,8 @@
 # RUST:              dsdl.decl "UNION_OPTION_COUNT" kind = constant origin = generated fact = union_option_count of = @ns.Ask.1.0 section = "request"
 # RUST-NEXT:           dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # RUST:              dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
-# RUST:              dsdl.decl "to_bytes" kind = wrapper origin = generated fact = wire_image of = @ns.Ask.1.0.request.serialize
+# RUST:              dsdl.decl "to_bytes" kind = entry origin = generated of = @ns.Ask.1.0.request.wire_image
+# RUST-NEXT:         dsdl.decl "from_bytes" kind = entry origin = generated of = @ns.Ask.1.0.request.from_wire_image
 # RUST:            dsdl.scope type "Response" of = @ns.Ask.1.0 section = "response" {
 # RUST:              dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
 # RUST:            dsdl.decl "Ask" kind = alias origin = generated of = @ns.Ask.1.0

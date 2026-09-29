@@ -153,8 +153,12 @@ public:
     /// @brief Returns @p bytes, holding an image, and @p error, the code of the body that wrote it.
     virtual void returnImage(SourceWriter& w, llvm::StringRef bytes, llvm::StringRef error) const = 0;
 
-    /// @brief Returns @p object, read from an image, and @p error, the code of the body that read it.
-    virtual void returnObject(SourceWriter& w, llvm::StringRef object, llvm::StringRef error) const = 0;
+    /// @brief Returns @p object, read from an image, @p used, the bytes it read where the reader
+    ///        answers them and empty otherwise, and @p error, the code of the body that read it.
+    virtual void returnObject(SourceWriter&   w,
+                              llvm::StringRef object,
+                              llvm::StringRef used,
+                              llvm::StringRef error) const = 0;
 };
 
 /// @brief One language's spelling of the plan-body vocabulary.

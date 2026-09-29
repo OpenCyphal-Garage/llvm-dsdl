@@ -960,11 +960,15 @@ private:
                     }
                     return;
                 }
-                if ((ret.getNumOperands() == 2) && mlir::isa<mlir::dsdl::PtrType>(ret.getOperand(0).getType()))
+                if ((ret.getNumOperands() >= 2) && mlir::isa<mlir::dsdl::PtrType>(ret.getOperand(0).getType()))
                 {
                     if (const WireImageSpelling* const images = wireImages(op, outcome))
                     {
-                        images->returnObject(w_, (*this)(ret.getOperand(0)), (*this)(ret.getOperand(1)));
+                        const bool used = ret.getNumOperands() == 3;
+                        images->returnObject(w_,
+                                             (*this)(ret.getOperand(0)),
+                                             used ? (*this)(ret.getOperand(1)) : std::string{},
+                                             (*this)(ret.getOperand(used ? 2 : 1)));
                     }
                     return;
                 }
