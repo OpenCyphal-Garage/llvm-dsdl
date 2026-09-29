@@ -1235,8 +1235,8 @@ struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::Ope
 /// @brief Marks every helper no function of the module calls with `llvmdsdl.unreferenced`.
 ///
 /// A helper stays in the module whatever calls it: the plan's steps name it, and the lowered
-/// contract requires a named helper to exist. The translating backends leave a marked one out, as a
-/// compiler that refuses an unused private function would; the C lowering keeps it, for the contract.
+/// contract requires a named helper to exist. Every backend leaves a marked one out, as a compiler
+/// that refuses an unused private function would, and the object lowering erases it.
 void markUnreferencedHelpers(mlir::ModuleOp module)
 {
     mlir::OpBuilder builder(module.getContext());

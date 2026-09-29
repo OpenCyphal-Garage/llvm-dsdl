@@ -130,10 +130,6 @@ bool runHelperBodyPlanTests();
 /// @return True when every case in the suite passed.
 bool runBodyValueNamingTests();
 
-/// @brief Runs the HelperBindingNamingTests suite.
-/// @return True when every case in the suite passed.
-bool runHelperBindingNamingTests();
-
 /// @brief Runs the NamingPolicyTests suite.
 /// @return True when every case in the suite passed.
 bool runNamingPolicyTests();

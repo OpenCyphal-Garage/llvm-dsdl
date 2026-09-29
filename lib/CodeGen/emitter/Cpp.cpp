@@ -641,7 +641,6 @@ public:
         : flavor_(flavor)
         , names_(names)
         , file_(file)
-        , helperSite_(names.file(schema.getSymName()))
     {
         if (schema.getBody().empty())
         {
@@ -728,8 +727,9 @@ public:
         return {"this", "buffer", "inout_buffer_size_bytes"};
     }
 
-    /// @brief The signature of @p fn, declared as @p name: a helper is an inline function of the
-    ///        namespace, and a serialise, deserialise or accessor a member of the section's struct.
+    /// @brief The signature of @p fn, declared as @p name: a helper is a static member of the type
+    ///        it is declared in, or an inline function of the namespace, and a serialise, deserialise
+    ///        or accessor a member of the section's struct.
     [[nodiscard]] std::string signature(mlir::func::FuncOp fn, const std::string& name) const
     {
         const auto direction = planBodyDirection(fn);
@@ -741,7 +741,9 @@ public:
                 list += (list.empty() ? "" : ", ") + std::string("const ") + typeName(argument.getType()) + " p" +
                         std::to_string(index);
             }
-            return "inline " + typeName(fn.getResultTypes().front()) + " " + name + "(" + list + ")";
+            const bool member = names_.tree().scope(helperScope(fn)).kind == SurfaceScopeKind::Type;
+            return (member ? "static " : "inline ") + typeName(fn.getResultTypes().front()) + " " + name + "(" + list +
+                   ")";
         }
         if (*direction == "get" || *direction == "set")
         {
@@ -775,10 +777,9 @@ public:
     [[nodiscard]] llvm::ArrayRef<llvm::StringRef> reservedLocals() const override
     {
         // A body qualifies the standard library with `std::` and a nested type with its own
-        // namespace, but it does reach two things by bare name: the runtime, whose functions
-        // carry `dsdl_runtime_`, and a synthesised helper, which carries `mlir_llvmdsdl_`. A
-        // local of either name would capture the call. None can be: a role name is a role word,
-        // or a member and a role word joined, so it carries no prefix at all.
+        // namespace, but it does reach the runtime by bare name, whose functions carry
+        // `dsdl_runtime_`. A local of that name would capture the call. None can be: a role name
+        // is a role word, or a member and a role word joined, so it carries no prefix at all.
         //
         // The pmr flavour opens with two names of its own: a memory resource parameter, which has
         // no argument of the translated function to be reported against, and the local resolving
@@ -1474,8 +1475,19 @@ private:
         {
             parameters.push_back("p" + std::to_string(index));
         }
-        site_ = helperSite_;
+        site_ = helperScope(fn);
         return parameters;
+    }
+
+    /// @brief The scope the helper @p fn is declared in.
+    [[nodiscard]] std::size_t helperScope(mlir::func::FuncOp fn) const
+    {
+        const SurfaceDecl* const decl = names_.tree().declarationOf(fn.getSymName(), SurfaceDeclKind::Helper);
+        if (decl == nullptr)
+        {
+            llvm::report_fatal_error(llvm::Twine("C++ backend: the surface declares no helper ") + fn.getSymName());
+        }
+        return decl->scope;
     }
 
     /// @brief The plan the object a pointer names belongs to.
@@ -1820,8 +1832,6 @@ private:
     mutable Accessor accessor_{Accessor::None};
     /// @brief The scope the function being written is in, which the references it makes are spelt from.
     mutable std::size_t site_{};
-    /// @brief The file scope the schema's helpers are declared in.
-    std::size_t         helperSite_{};
     mutable std::string returnCast_;
     mutable std::size_t counter_{0};
 };
@@ -1951,7 +1961,6 @@ const DeclarationLayout& cppLayout()
                      LayoutPart::Guards,
                      LayoutPart::Imports,
                      LayoutPart::Opening,
-                     LayoutPart::HelperDefinitions,
                      LayoutPart::DefinitionConstants,
                      LayoutPart::Sections,
                      LayoutPart::TypeEnd,
@@ -1959,6 +1968,7 @@ const DeclarationLayout& cppLayout()
                      LayoutPart::Epilogue}},
         .section = {LayoutPart::Type,
                     LayoutPart::SectionDefinitions,
+                    LayoutPart::HelperDefinitions,
                     LayoutPart::TypeEnd,
                     LayoutPart::LayoutChecks,
                     LayoutPart::Alias},
@@ -1967,9 +1977,9 @@ const DeclarationLayout& cppLayout()
     return layout;
 }
 
-/// @brief Spells C++'s declarations: a header per definition, whose namespaces hold the helpers and
-///        each section's struct, which holds its members and its facts and defines its functions.
-///        A service is the struct that holds its own facts and encloses its sections.
+/// @brief Spells C++'s declarations: a header per definition, whose namespaces hold each section's
+///        struct, which holds its members and its facts and defines its functions, its helpers
+///        privately. A service is the struct that holds its own facts and encloses its sections.
 class CppDeclarations final : public DeclarationSpelling
 {
 public:
@@ -2061,6 +2071,11 @@ public:
     {
         w.line(signature);
         w.open("{");
+    }
+
+    void openMembers(SourceWriter& w, const SurfaceVisibility visibility) const override
+    {
+        w.midway((visibility == SurfaceVisibility::Private) ? "private:" : "public:");
     }
 
     void forward(SourceWriter& /*w*/,

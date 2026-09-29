@@ -21,35 +21,35 @@ from pathlib import Path
 # operation builder produces it, and the edit that should make it fail.
 CASES = {
     "capacity_call_pos": {
-        "builder": "  int8_t v27 = llvmdsdl_plan_capacity_check__demo_T_1_0(v26);",
+        "builder": "  int8_t v27 = capacity_check(v26);",
         "broken": "  int8_t v27 = 0;",
     },
     "scalar_call_match": {
-        "builder": "  int64_t v32 = llvmdsdl_plan_scalar_unsigned__demo_T_1_0__0__ser(v31);",
+        "builder": "  int64_t v32 = scalar_unsigned_0_ser(v31);",
         "broken": "  int64_t v32 = v31;",
     },
     "scalar_signed_call_match": {
-        "builder": "  int64_t v32 = llvmdsdl_plan_scalar_signed__demo_T_1_0__0__ser(v31);",
+        "builder": "  int64_t v32 = scalar_signed_0_ser(v31);",
         "broken": "  int64_t v32 = v31;",
     },
     "array_lenchk_call_pos": {
-        "builder": "  int8_t v101 = llvmdsdl_plan_validate_array_length__demo_T_1_0__0(v100);",
-        "broken": "  int8_t llvmdsdl_plan_validate_array_length__demo_T_1_0__0(int64_t);",
+        "builder": "  int8_t v101 = validate_array_length_0(v100);",
+        "broken": "static int8_t validate_array_length_0(int64_t);",
     },
     "union_tag_io_call_match": {
-        "builder": "  int64_t v31 = llvmdsdl_plan_union_tag__demo_T_1_0__ser(v30);",
+        "builder": "  int64_t v31 = union_tag_ser(v30);",
         "broken": "  int64_t v31 = v30;",
     },
     "union_tag_call_pos": {
-        "builder": "  int8_t v32 = llvmdsdl_plan_validate_union_tag__demo_T_1_0(v31);",
-        "broken": "  int8_t llvmdsdl_plan_validate_union_tag__demo_T_1_0(int64_t);",
+        "builder": "  int8_t v32 = validate_union_tag(v31);",
+        "broken": "static int8_t validate_union_tag(int64_t);",
     },
     "delimiter_chk_call_pos": {
-        "builder": "  int8_t v45 = llvmdsdl_plan_validate_delimiter_header__demo_T_1_0__1(v33, v41);",
-        "broken": "  int8_t llvmdsdl_plan_validate_delimiter_header__demo_T_1_0__1(int64_t, int64_t);",
+        "builder": "  int8_t v45 = validate_delimiter_header_1(v33, v41);",
+        "broken": "static int8_t validate_delimiter_header_1(int64_t, int64_t);",
     },
     "scalar_float_call_pos": {
-        "builder": "  float v32 = llvmdsdl_plan_scalar_float__demo_T_1_0__0__ser(v31);",
+        "builder": "  float v32 = scalar_float_0_ser(v31);",
         "broken": "  float v32 = v31;",
     },
 }

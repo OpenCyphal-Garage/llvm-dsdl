@@ -34,6 +34,7 @@
 #include <llvm/Support/FormatVariadic.h>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -193,7 +194,8 @@ llvm::StringRef functionKey(const PlanFunction function)
 ///
 /// A section's names go in its object, and a service's own in the definition's; a message has one
 /// section, so its names are the message's. A generated declaration is keyed by the fact it states,
-/// and a lowered function's by what it does.
+/// and a lowered function's by what it does. A helper declared in a section's type is the section's,
+/// and one declared in the file the definition's.
 /// @param[in] service Whether the definition is a service.
 void renderTree(llvm::json::Object& entry, const SurfacePlan& plan, const std::string& key, const bool service)
 {
@@ -218,7 +220,8 @@ void renderTree(llvm::json::Object& entry, const SurfacePlan& plan, const std::s
             }
         }
     }
-    llvm::json::Array helpers;
+    llvm::json::Array                        helpers;
+    std::map<std::string, llvm::json::Array> sectionHelpers;
     for (const SurfaceDecl& decl : plan.decls)
     {
         const bool imported = file && (decl.scope == *file) && (decl.kind == SurfaceDeclKind::Import);
@@ -281,7 +284,14 @@ void renderTree(llvm::json::Object& entry, const SurfacePlan& plan, const std::s
             }
             break;
         case SurfaceDeclKind::Helper:
-            helpers.push_back(decl.name);
+            if (plan.scopes[decl.scope].kind == SurfaceScopeKind::Type)
+            {
+                sectionHelpers[decl.of->section].push_back(decl.name);
+            }
+            else
+            {
+                helpers.push_back(decl.name);
+            }
             break;
         case SurfaceDeclKind::Alias:
             into["alias"] = decl.name;
@@ -317,6 +327,10 @@ void renderTree(llvm::json::Object& entry, const SurfacePlan& plan, const std::s
     if (!helpers.empty())
     {
         entry["helpers"] = std::move(helpers);
+    }
+    for (auto& [section, names] : sectionHelpers)
+    {
+        owner(section)["helpers"] = std::move(names);
     }
 }
 

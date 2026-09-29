@@ -5,8 +5,9 @@
 // one. Each tree declares one name in two classes its language keeps apart: a C structure's tag
 // and its typedef, a TypeScript interface and a constant, a Rust module and a function, a Rust
 // field and an accessor, and a Go package's two files importing one package under one name. Two versions of one C definition
-// declare one type name, as the unversioned scheme generates them, and a TypeScript namespace's
-// directory and a definition's module of one name are two paths.
+// declare one type name, as the unversioned scheme generates them, and each keeps a private name
+// of the same spelling to its file. A TypeScript namespace's directory and a definition's module of
+// one name are two paths.
 
 module {
   dsdl.schema @uavcan.file.Path.2.0 attributes {full_name = "uavcan.file.Path", major = 2 : i32, minor = 0 : i32, sealed} {
@@ -84,6 +85,8 @@ module {
   // CHECK-NEXT:          dsdl.decl "path" kind = field of = @uavcan.file.Path.2.0 member = "path"
   // CHECK-NEXT:        }
   // CHECK-NEXT:        dsdl.decl "uavcan_file_Path_2_0_FULL_NAME_" kind = constant class = macro origin = generated
+  // CHECK:           dsdl.scope file "Multi_2_0" path = "ns/Multi_2_0.h" {
+  // CHECK:             dsdl.decl "capacity_check" kind = helper visibility = private origin = generated
   dsdl.surface target = "c" {
     dsdl.scope root "dsdl_out" {
       dsdl.scope file "Path_2_0" path = "uavcan/file/Path_2_0.h" {
@@ -97,10 +100,12 @@ module {
       dsdl.scope file "Multi_1_0" path = "ns/Multi_1_0.h" {
         dsdl.scope type "ns__Multi" of = @ns.Multi.1.0 {
         }
+        dsdl.decl "capacity_check" kind = helper visibility = private origin = generated
       }
       dsdl.scope file "Multi_2_0" path = "ns/Multi_2_0.h" {
         dsdl.scope type "ns__Multi" of = @ns.Multi.2.0 {
         }
+        dsdl.decl "capacity_check" kind = helper visibility = private origin = generated
       }
       dsdl.scope file "List_0_2" path = "uavcan/file/List_0_2.h" {
         dsdl.decl "UAVCAN_FILE_LIST_0_2_INCLUDED_" kind = guard origin = generated

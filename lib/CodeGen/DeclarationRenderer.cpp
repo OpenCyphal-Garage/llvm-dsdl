@@ -391,14 +391,27 @@ llvm::Error DeclarationRenderer::defineFunctions(DeclarationSite& site, const Fu
 
 llvm::Error DeclarationRenderer::defineHelpers(DeclarationSite& site, const FunctionBodies& bodies) const
 {
+    // A helper is defined where it is declared: in the file's scope, or in a section's type.
+    const std::size_t scope  = site.section() ? site.typeScope() : site.file();
+    bool              opened = !site.section();
     for (mlir::func::FuncOp fn : bodies.functions)
     {
-        if (const SurfaceDecl* const decl = tree_.declarationOf(fn.getSymName(), SurfaceDeclKind::Helper))
+        const SurfaceDecl* const decl = tree_.declarationOf(fn.getSymName(), SurfaceDeclKind::Helper);
+        if ((decl == nullptr) || (decl->scope != scope))
         {
-            if (auto err = define(site, *decl, fn, bodies))
-            {
-                return err;
-            }
+            continue;
+        }
+        // The first of a type's helpers follows the line that opens them directly.
+        const bool first = !opened;
+        if (first)
+        {
+            site.separate();
+            spelling_.openMembers(site.writer(), decl->visibility);
+            opened = true;
+        }
+        if (auto err = define(site, *decl, fn, bodies, /*separated=*/!first))
+        {
+            return err;
         }
     }
     return llvm::Error::success();
@@ -428,9 +441,13 @@ llvm::Error DeclarationRenderer::defineSectionFunctions(DeclarationSite& site, c
 llvm::Error DeclarationRenderer::define(DeclarationSite&      site,
                                         const SurfaceDecl&    decl,
                                         mlir::func::FuncOp    fn,
-                                        const FunctionBodies& bodies) const
+                                        const FunctionBodies& bodies,
+                                        const bool            separated) const
 {
-    site.separate();
+    if (separated)
+    {
+        site.separate();
+    }
     spelling_.openDefinition(site.writer(), decl, spelling_.signature(decl, fn));
     return translateFunction(fn, bodies.spelling, site.writer(), bodies.lookups);
 }

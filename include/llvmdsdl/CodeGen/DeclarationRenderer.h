@@ -102,7 +102,7 @@ enum class LayoutPart : std::uint8_t
     Alias,                ///< The name a service is known by, and what it states through it.
     DefinitionWrappers,   ///< The functions a service publishes over its request's.
     HelperPrototypes,     ///< A declaration of each helper, ahead of the definitions.
-    HelperDefinitions,    ///< Each helper the file defines, with its body.
+    HelperDefinitions,    ///< Each helper declared in the file's scope, or in a section's type, with its body.
     Definitions,          ///< Each lowered function the file defines, with its body.
     Epilogue,             ///< What closes the file.
     SectionConstants,     ///< The generated constants a section states of itself.
@@ -164,6 +164,11 @@ public:
     /// @brief Writes what opens the definition of @p decl's function, whose signature is
     ///        @p signature, ahead of the body `translateFunction` writes.
     virtual void openDefinition(SourceWriter& w, const SurfaceDecl& decl, const std::string& signature) const = 0;
+
+    /// @brief Writes what opens a run of a type's members that @p visibility applies to, where the
+    ///        language marks one, as C++'s `private:`. The renderer calls it before a type's
+    ///        helpers.
+    virtual void openMembers(SourceWriter& /*w*/, SurfaceVisibility /*visibility*/) const {}
 
     /// @brief Writes @p published, a function published over the one named @p callee, whose
     ///        lowered function is @p fn.
@@ -273,7 +278,8 @@ private:
     [[nodiscard]] llvm::Error define(DeclarationSite&      site,
                                      const SurfaceDecl&    decl,
                                      mlir::func::FuncOp    fn,
-                                     const FunctionBodies& bodies) const;
+                                     const FunctionBodies& bodies,
+                                     bool                  separated = true) const;
 
     const SurfaceTree&         tree_;
     const DeclarationLayout&   layout_;

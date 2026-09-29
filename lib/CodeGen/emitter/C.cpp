@@ -80,6 +80,7 @@
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -204,12 +205,13 @@ public:
     /// @brief The name the lowered function @p symbol is linked under.
     [[nodiscard]] const std::string& linkName(const llvm::StringRef symbol) const
     {
-        const std::optional<PlanSymbol> plan = parsePlanSymbol(symbol);
-        if (!plan)
-        {
-            llvm::report_fatal_error(llvm::Twine("C: a function the plan grammar does not name: ") + symbol);
-        }
-        return tree_.nameOf(symbol, loweredFunctionKind(plan->function));
+        return declarationOf(symbol).name;
+    }
+
+    /// @brief Whether the lowered function @p symbol is declared private to its file.
+    [[nodiscard]] bool isPrivate(const llvm::StringRef symbol) const
+    {
+        return declarationOf(symbol).visibility == SurfaceVisibility::Private;
     }
 
     /// @brief The name of the function that wraps the lowered function @p symbol.
@@ -219,15 +221,40 @@ public:
     }
 
 private:
+    /// @brief The declaration of the lowered function @p symbol.
+    [[nodiscard]] const SurfaceDecl& declarationOf(const llvm::StringRef symbol) const
+    {
+        const std::optional<PlanSymbol> plan = parsePlanSymbol(symbol);
+        if (!plan)
+        {
+            llvm::report_fatal_error(llvm::Twine("C: a function the plan grammar does not name: ") + symbol);
+        }
+        const SurfaceDecl* const decl = tree_.declarationOf(symbol, loweredFunctionKind(plan->function));
+        if (decl == nullptr)
+        {
+            llvm::report_fatal_error(llvm::Twine("C: the surface declares no function for ") + symbol);
+        }
+        return *decl;
+    }
+
     const SurfaceTree& tree_;
 };
 
 /// @brief Renames every lowered function in @p module, and every reference to one, to its C link name.
 ///
 /// An object is linked against the header's declarations, which name the functions as C spells
-/// them; a nested body the object calls is declared under the same name its own object defines.
+/// them; a nested body the object calls is declared under the same name its own object defines. A
+/// function the surface declares private is private to the object, as it is to the C file, and a
+/// helper nothing calls is erased, as the C file leaves it out.
 void renameToCLinkNames(mlir::ModuleOp module, const CSurface& names)
 {
+    for (mlir::func::FuncOp fn : llvm::to_vector(module.getOps<mlir::func::FuncOp>()))
+    {
+        if (fn->hasAttr("llvmdsdl.unreferenced"))
+        {
+            fn.erase();
+        }
+    }
     std::map<std::string, std::string> renames;
     const auto                         consider = [&](const llvm::StringRef name) {
         if (parsePlanSymbol(name))
@@ -254,6 +281,10 @@ void renameToCLinkNames(mlir::ModuleOp module, const CSurface& names)
         (void) mlir::SymbolTable::replaceAllSymbolUses(fromName, toName, module);
         if (auto fn = module.lookupSymbol<mlir::func::FuncOp>(fromName))
         {
+            if (names.isPrivate(from))
+            {
+                fn->setAttr("llvm.linkage", mlir::LLVM::LinkageAttr::get(context, mlir::LLVM::Linkage::Internal));
+            }
             mlir::SymbolTable::setSymbolName(fn, toName);
         }
     }
@@ -2000,7 +2031,8 @@ public:
         {
             rendered += (rendered.empty() ? "" : ", ") + parameterType(fn, argument) + " " + name;
         }
-        return answerType(fn) + " " + decl.name + "(" + (rendered.empty() ? "void" : rendered) + ")";
+        return std::string((decl.visibility == SurfaceVisibility::Private) ? "static " : "") + answerType(fn) + " " +
+               decl.name + "(" + (rendered.empty() ? "void" : rendered) + ")";
     }
 
     void prototype(SourceWriter& w, const std::string& signature) const override
@@ -2506,14 +2538,22 @@ llvm::Error emit(const SemanticModule& semantic,
                         names.header(keyOf(*dep));
             }
         }
-        ImportSet            includes;
-        const CFileNames     file(includes, names.header(keyOf(def)));
-        const CSpelling      spelling(schema, names, std::move(dependencyHeaders), file);
-        const CDeclarations  declarations(ctx, file, includes, spelling);
-        PlanBodyLookups      lookups(perDefModule);
-        const FunctionBodies bodies{.functions = schemaFunctions(perDefModule, schema.getSymName()),
-                                    .spelling  = spelling,
-                                    .lookups   = lookups};
+        ImportSet           includes;
+        const CFileNames    file(includes, names.header(keyOf(def)));
+        const CSpelling     spelling(schema, names, std::move(dependencyHeaders), file);
+        const CDeclarations declarations(ctx, file, includes, spelling);
+        PlanBodyLookups     lookups(perDefModule);
+        // A helper nothing calls is left out: it is private to the file, where the compiler reports
+        // one that is unused.
+        std::vector<mlir::func::FuncOp> functions;
+        for (const mlir::func::FuncOp fn : schemaFunctions(perDefModule, schema.getSymName()))
+        {
+            if (!fn->hasAttr("llvmdsdl.unreferenced"))
+            {
+                functions.push_back(fn);
+            }
+        }
+        const FunctionBodies bodies{.functions = std::move(functions), .spelling = spelling, .lookups = lookups};
         auto source = DeclarationRenderer(*tree, cLayout(), declarations)
                           .render(names.file(keyOf(def)), kSourceFile, DefinitionFacts(def, schema), &bodies);
         if (!source)

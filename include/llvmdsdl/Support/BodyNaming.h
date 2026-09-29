@@ -44,30 +44,13 @@ struct BodyParts final
     bool unreferenced{};
 };
 
-/// @brief Renders one language-safe helper-binding identifier from a composed name.
-/// @param[in] language Target naming policy language.
-/// @param[in] name The composed name.
-/// @return Emitted helper-binding identifier.
-[[nodiscard]] std::string renderHelperBindingIdentifier(Language language, llvm::StringRef name);
-
-/// @brief Names a helper where the scope holding it is the definition's namespace.
-///
-/// C++ declares a helper in the definition's namespace, beside the definitions sharing it, so the
-/// name carries the helper's kind, the definition's full name and version, and the section, step
-/// and direction that tell it from its siblings: `mlir_llvmdsdl_plan_capacity_check_ns_Msg_1_0`.
-/// The full name's dots become underscores. Within one namespace that reaches no name twice: the
-/// definitions differ in their short names, and a version is two numbers after them.
-/// @param[in] language Target naming policy language.
-/// @param[in] helper The helper, as its symbol reads.
-/// @return Emitted helper-binding identifier.
-[[nodiscard]] std::string renderHelperBindingIdentifier(Language language, const PlanSymbol& helper);
-
 /// @brief Renders a helper's name for a scope that already names the definition.
 ///
 /// Where a language puts the definition in a scope of its own -- a module, a namespace, a class --
 /// the definition is what the scope already says, and a helper is named by its kind and the
 /// section, step and direction that tell it from its siblings, projected under
-/// @ref IdentifierRole::InternalFunctionName.
+/// @ref IdentifierRole::InternalFunctionName. Where the scope is the section's own type, the type
+/// says the section too, and the name leaves it out.
 ///
 /// The result is unique among one definition's helpers only up to the projection. Callers allocate
 /// it from a @ref NamingScope covering the target scope, which is what keeps two helpers that
@@ -77,20 +60,22 @@ struct BodyParts final
 /// @param[in] qualifier A name every helper is prefixed with, for a language whose helpers share a
 ///                      scope with another definition's. Empty where the definition has a scope of
 ///                      its own.
+/// @param[in] sectionScope Whether the scope is the section's own type.
 /// @return The scope-local helper name.
 [[nodiscard]] std::string renderScopeLocalHelperName(Language          language,
                                                      const PlanSymbol& helper,
-                                                     llvm::StringRef   qualifier = {});
+                                                     llvm::StringRef   qualifier,
+                                                     bool              sectionScope);
 
-/// @brief Names the lowered function @p symbol names as a language that compiles the bodies apart
-///        from their entry points links it.
+/// @brief Names the lowered body @p symbol names as a language that compiles the bodies apart from
+///        their entry points links it.
 ///
 /// The IR names a function by its definition's DSDL identity, which such a language cannot
 /// declare. It spells the name from the section's type name with its version, which its one global
-/// scope keeps unique: `ns__Msg_1_0__serialize_ir_`, `ns__Msg_1_0__get_speed_ir_`, and for a helper
-/// `llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__2__ser`.
+/// scope keeps unique: `ns__Msg_1_0__serialize_ir_`, `ns__Msg_1_0__get_speed_ir_`. A helper is not
+/// linked: it is declared where the row places it.
 /// @param[in] language A language whose row names a lowered body's suffix.
-/// @param[in] symbol The function.
+/// @param[in] symbol The function, which is not a helper.
 /// @return The link name.
 [[nodiscard]] std::string renderLoweredLinkName(Language language, const PlanSymbol& symbol);
 
@@ -113,11 +98,14 @@ struct BodyParts final
 /// @param[in] bodies The definition's lowered functions.
 /// @param[in,out] scope The declaring scope, owned by the caller.
 /// @param[in] qualifier A name every helper is prefixed with, or empty.
+/// @param[in] sectionScope Whether @p scope is the section's own type, which every one of
+///            @p bodies belongs to.
 /// @return Each helper's lowered symbol, under the name the scope declared it as.
 [[nodiscard]] llvm::StringMap<std::string> declareHelperNames(Language                  language,
                                                               llvm::ArrayRef<BodyParts> bodies,
                                                               NamingScope&              scope,
-                                                              llvm::StringRef           qualifier = {});
+                                                              llvm::StringRef           qualifier,
+                                                              bool                      sectionScope);
 
 }  // namespace llvmdsdl
 

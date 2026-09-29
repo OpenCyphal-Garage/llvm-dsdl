@@ -9,7 +9,8 @@
 # named after it. A type holds the members the generator adds, each generated constant and data
 # member naming the fact it states, and an accessors-only run declares no data member. A TypeScript
 # or Python module declares the definition's facts at its top, TypeScript's bodies are functions
-# beside the type, and a C++ `pmr` structure that is not its wire image holds its memory resource.
+# beside the type, and a C++ `pmr` structure that is not its wire image holds its memory resource. A
+# helper is private to its file in C, and a private member of its section's type in C++.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
@@ -45,8 +46,8 @@
 # C:          dsdl.decl "ns__Ask__Request__is_small_" kind = method origin = generated fact = option_test of = @ns.Ask.1.0 section = "request" member = "small"
 # C:          dsdl.decl "ns__Ask__Response__get_ok_" kind = wrapper origin = generated of = @ns.Ask.1.0.response.get.ok
 # C:          dsdl.decl "ns__Ask__serialize_" kind = wrapper origin = generated fact = serialize of = @ns.Ask.1.0
-# C:          dsdl.decl "llvmdsdl_plan_capacity_check__ns__Ask_1_0__Request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # C:          dsdl.decl "ns__Ask_1_0__Request__serialize_ir_" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
+# C:          dsdl.decl "capacity_check_request" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # C:        dsdl.scope file "Msg_1_0" path = "ns/Msg_1_0.h" {
 # C:          dsdl.decl "ns__Msg_ITEMS_ARRAY_CAPACITY_" kind = constant class = macro origin = generated fact = array_capacity of = @ns.Msg.1.0 member = "items"
 # C:          dsdl.decl "ns__Msg_LIMIT" kind = constant class = macro of = @ns.Msg.1.0 member = "LIMIT"
@@ -66,10 +67,11 @@
 # CPP-NEXT:             dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0 section = "request"
 # CPP:                  dsdl.decl "SMALL_OPTION_TAG" kind = option origin = generated of = @ns.Ask.1.0 section = "request" member = "small"
 # CPP:                  dsdl.decl "serialize" kind = entry origin = generated of = @ns.Ask.1.0.request.serialize
+# CPP:                  dsdl.decl "capacity_check" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # CPP:                dsdl.scope type "Response" of = @ns.Ask.1.0 section = "response" {
 # CPP:                  dsdl.decl "get_ok" kind = accessor origin = generated of = @ns.Ask.1.0.response.get.ok
+# CPP:                  dsdl.decl "capacity_check" kind = helper visibility = private origin = generated of = @ns.Ask.1.0.response.plan.capacity_check
 # CPP-NOT:          kind = alias
-# CPP:              dsdl.decl "mlir_llvmdsdl_plan_capacity_check_ns_Ask_1_0_request" kind = helper origin = generated of = @ns.Ask.1.0.request.plan.capacity_check
 # CPP:            dsdl.scope type "Msg" of = @ns.Msg.1.0 {
 # CPP:              dsdl.decl "ITEMS_ARRAY_CAPACITY" kind = constant origin = generated fact = array_capacity of = @ns.Msg.1.0 member = "items"
 # CPP:              dsdl.decl "LIMIT" kind = constant of = @ns.Msg.1.0 member = "LIMIT"

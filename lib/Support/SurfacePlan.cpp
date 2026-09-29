@@ -18,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <set>
@@ -850,16 +851,7 @@ private:
             }
             // An accessor is claimed among the values its file declares, after every one of them,
             // so a DSDL constant `GET_SPEED` keeps its name and the getter of `speed` moves.
-            const std::optional<NamePartition> values =
-                namePartition(row_.classification.nameClasses, NameClass::Value);
-            std::vector<std::string> declared;
-            for (const SurfaceItem& item : plan_.scopes[file].items)
-            {
-                if (namePartition(row_.classification.nameClasses, classOf(item)) == values)
-                {
-                    declared.push_back(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
-                }
-            }
+            const std::vector<std::string>     declared = declaredValues(file);
             const std::vector<llvm::StringRef> reserved(declared.begin(), declared.end());
             NamingScope                        pool(language, reserved);
             for (const BodyParts& body : bodies)
@@ -1113,73 +1105,98 @@ private:
         });
     }
 
-    /// @brief Declares the names the definition's lowered functions take.
+    /// @brief The names @p scope already holds in the class of names a value is declared in.
+    [[nodiscard]] std::vector<std::string> declaredValues(const std::size_t scope) const
+    {
+        const std::optional<NamePartition> values = namePartition(row_.classification.nameClasses, NameClass::Value);
+        std::vector<std::string>           declared;
+        for (const SurfaceItem& item : plan_.scopes[scope].items)
+        {
+            if (namePartition(row_.classification.nameClasses, classOf(item)) == values)
+            {
+                declared.push_back(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
+            }
+        }
+        return declared;
+    }
+
+    /// @brief Declares the names the definition's lowered functions take: each body compiled apart
+    ///        from its entry point under its link name, and each helper where the row places it.
     void allocateBodies(const DefinitionNames&        names,
                         const std::size_t             space,
                         const std::size_t             file,
                         const std::vector<BodyParts>& bodies)
     {
         const Language language = row_.language;
-        const auto     of       = [&](const BodyParts& body) {
-            return SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol};
-        };
-        switch (row_.composition.helpers)
+        if (!row_.composition.freeFunctions.loweredBodySuffix.empty())
         {
-        case HelperNaming::LinkName:
-            // Every lowered function is linked, a helper nothing calls included.
             for (const BodyParts& body : bodies)
             {
-                (void) declare(file,
-                               renderLoweredLinkName(language, body.plan),
-                               loweredFunctionKind(body.plan.function),
-                               NameClass::Value,
-                               NameOrigin::Generated,
-                               of(body));
-            }
-            return;
-        case HelperNaming::Binding:
-            for (const BodyParts& body : bodies)
-            {
-                if ((body.plan.function == PlanFunction::Helper) && !body.unreferenced)
+                if (body.plan.function != PlanFunction::Helper)
                 {
                     (void) declare(file,
-                                   renderHelperBindingIdentifier(language, body.plan),
-                                   SurfaceDeclKind::Helper,
+                                   renderLoweredLinkName(language, body.plan),
+                                   loweredFunctionKind(body.plan.function),
                                    NameClass::Value,
                                    NameOrigin::Generated,
-                                   of(body));
+                                   SurfaceEntity{names.key, body.plan.section, body.plan.member, body.symbol});
                 }
             }
+        }
+        switch (row_.composition.helpers)
+        {
+        case HelperPlacement::Module: {
+            NamingScope pool(language);
+            declareHelpers(names, file, bodies, pool, {}, /*sectionScope=*/false);
             return;
-        case HelperNaming::Package:
+        }
+        case HelperPlacement::Package:
             declareHelpers(names,
                            file,
                            bodies,
                            packagePools_.try_emplace(space, language).first->second,
-                           names.typeName);
+                           names.typeName,
+                           /*sectionScope=*/false);
             return;
-        case HelperNaming::Module: {
-            NamingScope pool(language);
-            declareHelpers(names, file, bodies, pool, {});
+        case HelperPlacement::Type:
+            // Each section's helpers are members of its type, claimed after every other member, so a
+            // DSDL field keeps its name and a helper moves. The type's own name is among them where
+            // the language says so.
+            for (const SectionNames& section : names.sections)
+            {
+                std::vector<BodyParts> held;
+                std::ranges::copy_if(bodies, std::back_inserter(held), [&](const BodyParts& body) {
+                    return body.plan.section == section.section;
+                });
+                const std::vector<std::string>     declared = declaredValues(section.typeScope);
+                const std::vector<llvm::StringRef> reserved(declared.begin(), declared.end());
+                const std::string&                 typeName = plan_.scopes[section.typeScope].name;
+                const std::vector<llvm::StringRef> claimed  = row_.classification.nameClasses.typeNameAmongMembers
+                                                                  ? std::vector<llvm::StringRef>{typeName}
+                                                                  : std::vector<llvm::StringRef>{};
+                NamingScope                        pool(language, reserved, claimed);
+                declareHelpers(names, section.typeScope, held, pool, {}, /*sectionScope=*/true);
+            }
             return;
-        }
         }
     }
 
-    /// @brief Declares each helper among @p bodies under the name @p pool allocates it.
+    /// @brief Declares each helper among @p bodies in @p scope, under the name @p pool allocates it.
     void declareHelpers(const DefinitionNames&        names,
-                        const std::size_t             file,
+                        const std::size_t             scope,
                         const std::vector<BodyParts>& bodies,
                         NamingScope&                  pool,
-                        const llvm::StringRef         qualifier)
+                        const llvm::StringRef         qualifier,
+                        const bool                    sectionScope)
     {
-        const llvm::StringMap<std::string> helpers = declareHelperNames(row_.language, bodies, pool, qualifier);
+        const llvm::StringMap<std::string> helpers =
+            declareHelperNames(row_.language, bodies, pool, qualifier, sectionScope);
         for (const BodyParts& body : bodies)
         {
             const auto found = helpers.find(body.symbol);
             if (found != helpers.end())
             {
-                (void) declare(file,
+                (void) declare(scope,
                                found->second,
                                SurfaceDeclKind::Helper,
                                NameClass::Value,

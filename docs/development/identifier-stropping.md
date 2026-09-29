@@ -330,8 +330,8 @@ Splitting it this way keeps the mode out of the pipeline: emitters never learn w
 no projection call site needs an options parameter.
 
 The encoding applies only where a role is given. A token this generator constructed — a `--ts-module`
-alias, a symbol assembled from already-projected parts, an MLIR helper binding — carries whatever
-shape its emitter gave it, and encoding it would mangle a symbol that has to match something else.
+alias, a symbol assembled from already-projected parts — carries whatever shape its emitter gave it,
+and encoding it would mangle a symbol that has to match something else.
 
 **The generated code observes the same rule.** Five of its own spellings did not, and were changed:
 the C++ `Type__serialize_` separator, the MLIR helper binding names, the C++ `Type__Request` service
@@ -571,10 +571,10 @@ is worse than no switch.
   name.
 
   A run that generates a language adds, for that language, everything its lowering declares: each
-  definition's `file`, `helpers`, `imports` and `guards`, and on each section its `declared_type`,
-  `entry_points`, the `wrappers` over them, `accessors`, `methods`, and under `generated` each
-  member and constant the generator adds, keyed by the fact it states. A service's own names are
-  the definition's. A C++ run of several profiles reports each profile's under `profiles`. The
+  definition's `file`, `imports` and `guards` and the `helpers` its file declares, and on each
+  section its `declared_type`, `entry_points`, the `wrappers` over them, `accessors`, `methods`, the
+  `helpers` its type declares, and under `generated` each member and constant the generator adds,
+  keyed by the fact it states. A service's own names are the definition's. A C++ run of several profiles reports each profile's under `profiles`. The
   names an analysis run reports, a generation run reports unchanged.
 
 - **Hover** groups languages by the identifier they produce — ``emits as `count` (c, cpp, rust, ts,

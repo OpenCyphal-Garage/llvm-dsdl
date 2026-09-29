@@ -442,9 +442,9 @@ bool runSurfacePlanTests()
                                   ok;
     }
 
-    // Band 4, the lowered functions. A language that compiles the bodies apart links every one, a
-    // helper nothing calls included; the others name each helper a body calls, in the pool the
-    // language allocates helpers in.
+    // Band 4, the lowered functions. A language that compiles the bodies apart links each body under
+    // its link name. Every language names each helper a body calls where its row places it: private
+    // to the file in C, a private member of the section's type in C++.
     {
         DefinitionParts owner = message("Msg", SectionParts{.fields = {}, .constants = {}});
         owner.bodies          = {body("ns.Msg.1.0.plan.capacity_check"),
@@ -459,11 +459,10 @@ bool runSurfacePlanTests()
                                        "    ns__Msg : tag\n"
                                        "    ns__Msg__serialize_ : value\n"
                                        "    ns__Msg__get_speed_ : value\n"
-                                       "    llvmdsdl_plan_capacity_check__ns__Msg_1_0 : value\n"
-                                       "    llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__0__ser : value\n"
                                        "    ns__Msg_1_0__serialize_ir_ : value\n"
                                        "    ns__Msg_1_0__get_speed_ir_ : value\n"
-                                       "    llvmdsdl_plan_scalar_unsigned__ns__Msg_1_0__1__ser : value\n",
+                                       "    capacity_check : value private\n"
+                                       "    scalar_unsigned_0_ser : value private\n",
                                        "C's lowered functions") &&
                                 ok;
         ok                    = expect(outline(allocate(Language::Cpp, {owner})),
@@ -471,8 +470,8 @@ bool runSurfacePlanTests()
                                        "  namespace ns\n"
                                        "    file Msg_1_0\n"
                                        "      type Msg\n"
-                                       "      mlir_llvmdsdl_plan_capacity_check_ns_Msg_1_0 : value\n"
-                                       "      mlir_llvmdsdl_plan_scalar_unsigned_ns_Msg_1_0_0_ser : value\n",
+                                       "        capacity_check : value private\n"
+                                       "        scalar_unsigned_0_ser : value private\n",
                                        "C++'s helpers") &&
                                 ok;
         ok                    = expect(outline(allocate(Language::Rust, {owner})),

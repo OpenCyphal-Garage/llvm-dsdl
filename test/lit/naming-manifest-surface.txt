@@ -1,9 +1,9 @@
 # A generation run's naming manifest reports the whole surface its lowering wrote for its target:
-# each definition's file, helpers, imports and guards, and each section's declared type, entry
-# points, the functions that wrap them, accessors, methods, and the members and constants the
-# generator adds, keyed by the fact each states. A service's own names are the definition's. C++
-# reports each profile's surface apart where the run writes several. Every name an analysis run
-# reports, a generation run reports unchanged.
+# each definition's file, imports and guards and the helpers its file declares, and each section's
+# declared type, entry points, the functions that wrap them, accessors, methods, the helpers its type
+# declares, and the members and constants the generator adds, keyed by the fact each states. A
+# service's own names are the definition's. C++ reports each profile's surface apart where the run
+# writes several. Every name an analysis run reports, a generation run reports unchanged.
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 LIMIT = 3\nuint8 speed\nuint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
@@ -38,7 +38,7 @@
 # C-NEXT: file = ns/Ask_1_0.h
 # C:      generated/full_name = ns__Ask_FULL_NAME_
 # C:      guards/include_guard = LLVMDSDL_NS__ASK_1_0_H
-# C:      helpers/0 = llvmdsdl_plan_capacity_check__ns__Ask_1_0__Request
+# C:      helpers/0 = capacity_check_request
 # C:      request/declared_type = ns__Ask__Request
 # C-NEXT: request/entry_points/deserialize = ns__Ask_1_0__Request__deserialize_ir_
 # C:      request/methods/option_test/small = ns__Ask__Request__is_small_
@@ -55,6 +55,7 @@
 # CPP-NEXT: profiles/pmr/message/entry_points/serialize = serialize
 # CPP-NEXT: profiles/pmr/message/generated/array_capacity/items = ITEMS_ARRAY_CAPACITY
 # CPP:      profiles/pmr/message/generated/memory_resource = _memory_resource
+# CPP:      profiles/pmr/message/helpers/0 = capacity_check
 # CPP:      profiles/std/file = std/ns/Msg_1_0.hpp
 # CPP-NOT:  memory_resource
 #

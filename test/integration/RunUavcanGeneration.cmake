@@ -121,88 +121,88 @@ foreach(c_file IN LISTS generated_impls)
   # Matched as an assignment from the call rather than by the variable's name. Keeping the `= `
   # anchors this to the call, so the helper's own declaration cannot satisfy it.
   if(constrains_capacity)
-    string(FIND "${impl_text}" "= llvmdsdl_plan_capacity_check__"
+    string(FIND "${impl_text}" "= capacity_check"
            capacity_call_pos)
     if(capacity_call_pos EQUAL -1)
       list(APPEND missing_capacity_call_hits "${c_file}")
     endif()
-    string(FIND "${impl_text}" "int8_t llvmdsdl_plan_capacity_check__"
+    string(FIND "${impl_text}" "static int8_t capacity_check"
            capacity_helper_pos)
     if(capacity_helper_pos EQUAL -1)
       list(APPEND missing_capacity_helper_hits "${c_file}")
     endif()
   else()
-    string(FIND "${impl_text}" "llvmdsdl_plan_capacity_check__" capacity_present_pos)
+    string(FIND "${impl_text}" "static int8_t capacity_check" capacity_present_pos)
     if(NOT capacity_present_pos EQUAL -1)
       list(APPEND unexpected_capacity_hits "${c_file}")
     endif()
   endif()
-  string(FIND "${impl_text}" "= llvmdsdl_plan_validate_union_tag__"
+  string(FIND "${impl_text}" "= validate_union_tag"
          union_tag_call_pos)
   if(NOT union_tag_call_pos EQUAL -1)
     set(found_union_tag_call 1)
   endif()
-  string(FIND "${impl_text}" "int8_t llvmdsdl_plan_validate_union_tag__"
+  string(FIND "${impl_text}" "static int8_t validate_union_tag"
          union_tag_helper_pos)
   if(NOT union_tag_helper_pos EQUAL -1)
     set(found_union_tag_helper 1)
   endif()
-  string(REGEX MATCH "= [(a-z0-9_)]*llvmdsdl_plan_union_tag__"
+  string(REGEX MATCH "= [(a-z0-9_)]*union_tag_[a-z0-9_]*ser[(]"
          union_tag_io_call_match "${impl_text}")
   if(NOT union_tag_io_call_match STREQUAL "")
     set(found_union_tag_io_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_union_tag__"
+  string(FIND "${impl_text}" "int64_t union_tag_"
          union_tag_io_helper_pos)
   if(NOT union_tag_io_helper_pos EQUAL -1)
     set(found_union_tag_io_helper 1)
   endif()
-  string(REGEX MATCH "= [(a-z0-9_)]*llvmdsdl_plan_scalar_unsigned__"
+  string(REGEX MATCH "= [(a-z0-9_)]*scalar_unsigned_"
          scalar_call_match "${impl_text}")
   if(NOT scalar_call_match STREQUAL "")
     set(found_scalar_unsigned_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_scalar_unsigned__"
+  string(FIND "${impl_text}" "int64_t scalar_unsigned_"
          scalar_helper_pos)
   if(NOT scalar_helper_pos EQUAL -1)
     set(found_scalar_unsigned_helper 1)
   endif()
-  string(REGEX MATCH "= [(a-z0-9_)]*llvmdsdl_plan_scalar_signed__"
+  string(REGEX MATCH "= [(a-z0-9_)]*scalar_signed_"
          scalar_signed_call_match "${impl_text}")
   if(NOT scalar_signed_call_match STREQUAL "")
     set(found_scalar_signed_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_scalar_signed__"
+  string(FIND "${impl_text}" "int64_t scalar_signed_"
          scalar_signed_helper_pos)
   if(NOT scalar_signed_helper_pos EQUAL -1)
     set(found_scalar_signed_helper 1)
   endif()
-  string(FIND "${impl_text}" "= llvmdsdl_plan_scalar_float__"
+  string(FIND "${impl_text}" "= scalar_float_"
          scalar_float_call_pos)
   if(NOT scalar_float_call_pos EQUAL -1)
     set(found_scalar_float_call 1)
   endif()
-  string(FIND "${impl_text}" "double llvmdsdl_plan_scalar_float__"
+  string(FIND "${impl_text}" "double scalar_float_"
          scalar_float_helper_pos)
   if(NOT scalar_float_helper_pos EQUAL -1)
     set(found_scalar_float_helper 1)
   endif()
-  string(FIND "${impl_text}" "llvmdsdl_plan_array_length_prefix__"
+  string(FIND "${impl_text}" "array_length_prefix_"
          array_len_prefix_call_pos)
   if(NOT array_len_prefix_call_pos EQUAL -1)
     set(found_array_len_prefix_call 1)
   endif()
-  string(FIND "${impl_text}" "int64_t llvmdsdl_plan_array_length_prefix__"
+  string(FIND "${impl_text}" "int64_t array_length_prefix_"
          array_len_prefix_helper_pos)
   if(NOT array_len_prefix_helper_pos EQUAL -1)
     set(found_array_len_prefix_helper 1)
   endif()
-  string(FIND "${impl_text}" "= llvmdsdl_plan_validate_array_length__"
+  string(FIND "${impl_text}" "= validate_array_length_"
          array_lenchk_call_pos)
   if(NOT array_lenchk_call_pos EQUAL -1)
     set(found_array_len_validate_call 1)
   endif()
-  string(FIND "${impl_text}" "int8_t llvmdsdl_plan_validate_array_length__"
+  string(FIND "${impl_text}" "int8_t validate_array_length_"
          array_lenchk_helper_pos)
   if(NOT array_lenchk_helper_pos EQUAL -1)
     set(found_array_len_validate_helper 1)
@@ -213,7 +213,7 @@ foreach(c_file IN LISTS generated_impls)
   # length, reject a malformed one -- is held by llvmdsdl-forward-compat and the delimited
   # parity suites, not by these.
   string(FIND "${impl_text}"
-         "= llvmdsdl_plan_validate_delimiter_header__"
+         "= validate_delimiter_header_"
          delimiter_chk_call_pos)
   if(NOT delimiter_chk_call_pos EQUAL -1)
     set(found_delimiter_validate_call 1)
@@ -227,7 +227,7 @@ foreach(c_file IN LISTS generated_impls)
     endif()
   endif()
   string(FIND "${impl_text}"
-         "int8_t llvmdsdl_plan_validate_delimiter_header__"
+         "int8_t validate_delimiter_header_"
          delimiter_helper_pos)
   if(NOT delimiter_helper_pos EQUAL -1)
     set(found_delimiter_validate_helper 1)

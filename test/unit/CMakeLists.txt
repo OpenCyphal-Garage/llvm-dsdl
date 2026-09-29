@@ -28,7 +28,6 @@ add_executable(llvmdsdl-unit-tests
   ImportNameScopeTests.cpp
   ImportSetTests.cpp
   BodyValueNamingTests.cpp
-  HelperBindingNamingTests.cpp
   HelperBodyPlanTests.cpp
   InitializerRenderTests.cpp
   NamingPolicyTests.cpp

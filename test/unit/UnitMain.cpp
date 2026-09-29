@@ -41,7 +41,6 @@ int main()
     ok      = runImportSetTests() && ok;
     ok      = runHelperBodyPlanTests() && ok;
     ok      = runBodyValueNamingTests() && ok;
-    ok      = runHelperBindingNamingTests() && ok;
     ok      = runNamingPolicyTests() && ok;
     ok      = runNamingGoldenTests() && ok;
     ok      = runTypeStorageTests() && ok;
