@@ -681,6 +681,14 @@ const SurfaceDecl* SurfaceTree::declarationOf(const llvm::StringRef             
     return (found == functions_.end()) ? nullptr : &plan_.decls[found->second];
 }
 
+std::optional<std::size_t> SurfaceTree::declarationIndex(const llvm::StringRef              symbol,
+                                                         const SurfaceDeclKind              kind,
+                                                         const std::optional<GeneratedFact> fact) const
+{
+    const auto found = functions_.find({symbol.str(), kind, fact});
+    return (found == functions_.end()) ? std::nullopt : std::optional<std::size_t>(found->second);
+}
+
 std::vector<std::size_t> SurfaceTree::pathTo(const std::size_t scope) const
 {
     std::vector<std::size_t> path;

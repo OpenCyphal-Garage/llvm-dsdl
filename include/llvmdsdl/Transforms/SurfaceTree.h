@@ -117,6 +117,13 @@ public:
                                                    SurfaceDeclKind              kind,
                                                    std::optional<GeneratedFact> fact = std::nullopt) const;
 
+    /// @brief The index in the plan of the declaration of @p kind that stands for the lowered
+    ///        function @p symbol, stating @p fact.
+    /// @return The index, or none where the surface makes no such declaration.
+    [[nodiscard]] std::optional<std::size_t> declarationIndex(llvm::StringRef              symbol,
+                                                              SurfaceDeclKind              kind,
+                                                              std::optional<GeneratedFact> fact = std::nullopt) const;
+
     /// @brief The scopes from the root's child to @p scope, outermost first.
     [[nodiscard]] std::vector<std::size_t> pathTo(std::size_t scope) const;
 

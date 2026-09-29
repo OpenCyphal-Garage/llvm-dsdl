@@ -312,10 +312,7 @@ resolves; a field named `Path` of type `Path` is declared `uavcan::file::Path Pa
 A resolver per language, `spell(site, declaration)`, answers each spelling from the tree, where a site
 is a scope together with what the enclosing function is to its type. Nothing stores a spelling per
 reference. The lookup model is a `Lookup` part of the `LanguageTraits` row, which
-`llvmdsdl-language-classification` holds to naming no language. C++ writes rooted names today, such as
-`::uavcan::file::Path` inside its own namespace, so phase 4 reproduces them through a `Composition`
-column, `qualification = rooted`, which C++'s output change in phase 5 sets to `shortest` as it nests
-its types.
+`llvmdsdl-language-classification` holds to naming no language.
 
 ## One renderer, one declaration spelling per language
 
@@ -1131,6 +1128,13 @@ apart as `Request_` and published under the alias `Request`, as a deprecated one
 service's sections are declared apart too: Clang diagnoses no deprecated alias that only qualifies a
 name, as `Read::Request` does. `readability-identifier-naming` falls from 773 to 661: the 658
 helpers, and three structs declared apart.
+
+The third part spells C++'s references. A field's type, a nested type in a body and a helper a body
+calls are each written as `spellReference` answers from the scope the reference is written in:
+`Version` within `uavcan::node`, `uavcan::time::SynchronizedTimestamp` from another namespace, and
+`::uavcan::...` only where a member shadows the root's name. With C++ on the shortest spelling, no
+row asked for `qualification`, and the column is gone. A `pmr` body names a nested type by its
+declared name, as the field it sizes does.
 
 **6 to 11 — One phase per language**, each flipping its row from *as today* to the target above and
 turning its judge from phase 1 green. Phase 5 gives each language's bodies their public shape and
