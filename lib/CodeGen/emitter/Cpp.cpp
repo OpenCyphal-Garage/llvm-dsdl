@@ -20,6 +20,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/BodyTranslator.h"
+#include "llvmdsdl/CodeGen/DeclarationRenderer.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/SectionNaming.h"
@@ -73,6 +74,7 @@
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -395,32 +397,6 @@ private:
     std::string       section_;
 };
 
-void emitNamespaceOpen(SourceWriter& w, const std::vector<std::string>& namespaces)
-{
-    if (namespaces.empty())
-    {
-        return;
-    }
-    for (const auto& name : namespaces)
-    {
-        w.line("namespace " + name + " {");
-    }
-    w.blank();
-}
-
-void emitNamespaceClose(SourceWriter& w, const std::vector<std::string>& namespaces)
-{
-    if (namespaces.empty())
-    {
-        return;
-    }
-    w.separate();
-    for (const auto& name : std::views::reverse(namespaces))
-    {
-        w.line("} // namespace " + name);
-    }
-}
-
 class EmitterContext final
 {
 public:
@@ -473,11 +449,6 @@ private:
     bool              hostImageFolded_{false};
     bool              accessorsOnly_{false};
 };
-
-SourceWriter makeCppWriter(std::ostringstream& out)
-{
-    return SourceWriter{out, IndentPolicy::spaces(2)};
-}
 
 enum class CppFlavor
 {
@@ -722,25 +693,17 @@ public:
         accessor_            = Accessor::None;
         if (!direction)
         {
-            return openHelper(w, fn);
+            return openHelper(fn);
         }
         if (*direction == "get" || *direction == "set")
         {
             return openAccessor(w, fn, *direction == "get");
         }
-        const Plan& plan      = planOf(fn.getArgument(0));
-        const bool  serialize = *direction == "serialize";
-        site_                 = plan.typeScope;
-        // A member that reads no object, as a section with no fields has, is static.
-        const bool        onObject = readsArgument(fn, 0);
-        const std::string resource = file_.cppRuntime("::llvmdsdl::cpp::MemoryResource");
-        w.line(file_.cppRuntime("LLVMDSDL_NODISCARD") + (onObject ? " " : " static ") + file_.standard("std::int8_t") +
-               " " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(" + (serialize ? "" : "const ") +
-               file_.standard("std::uint8_t") + "* const buffer, " + file_.standard("std::size_t") +
-               "* const inout_buffer_size_bytes" +
-               (isPmrFlavor(flavor_) ? ", " + resource + "* const memory_resource = nullptr" : "") + ")" +
-               ((serialize && onObject) ? " const" : ""));
-        w.open("{");
+        const Plan&       plan      = planOf(fn.getArgument(0));
+        const bool        serialize = *direction == "serialize";
+        const bool        onObject  = readsArgument(fn, 0);
+        const std::string resource  = file_.cppRuntime("::llvmdsdl::cpp::MemoryResource");
+        site_                       = plan.typeScope;
         if (isPmrFlavor(flavor_) && (plan.hostImage || !onObject))
         {
             // A host image holds no resource of its own, and a static member reaches none; the one
@@ -763,6 +726,37 @@ public:
             }
         }
         return {"this", "buffer", "inout_buffer_size_bytes"};
+    }
+
+    /// @brief The signature of @p fn, declared as @p name: a helper is an inline function of the
+    ///        namespace, and a serialise, deserialise or accessor a member of the section's struct.
+    [[nodiscard]] std::string signature(mlir::func::FuncOp fn, const std::string& name) const
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            std::string list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                list += (list.empty() ? "" : ", ") + std::string("const ") + typeName(argument.getType()) + " p" +
+                        std::to_string(index);
+            }
+            return "inline " + typeName(fn.getResultTypes().front()) + " " + name + "(" + list + ")";
+        }
+        if (*direction == "get" || *direction == "set")
+        {
+            return accessorSignature(fn, name, *direction == "get");
+        }
+        const bool serialize = *direction == "serialize";
+        // A member that reads no object, as a section with no fields has, is static.
+        const bool onObject = readsArgument(fn, 0);
+        return file_.cppRuntime("LLVMDSDL_NODISCARD") + (onObject ? " " : " static ") + file_.standard("std::int8_t") +
+               " " + name + "(" + (serialize ? "" : "const ") + file_.standard("std::uint8_t") + "* const buffer, " +
+               file_.standard("std::size_t") + "* const inout_buffer_size_bytes" +
+               (isPmrFlavor(flavor_)
+                    ? ", " + file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* const memory_resource = nullptr"
+                    : "") +
+               ")" + ((serialize && onObject) ? " const" : "");
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
@@ -845,48 +839,51 @@ public:
         w.line("return " + expr.str() + ";");
     }
 
-    /// @brief Opens a getter or a setter: a static member defined inside the struct, since it
-    ///        reads the wire and not an object, taking the buffer as a span and speaking the
-    ///        member's own type. The plan holds the size, an integer and an index in a
+    /// @brief A getter's or a setter's signature: a static member of the section's struct, since it
+    ///        reads the wire and not an object, taking the buffer as a span and speaking the member's
+    ///        own type. A composite getter answers the nested type's bytes, as a span, which carries
+    ///        their count.
+    [[nodiscard]] std::string accessorSignature(mlir::func::FuncOp fn, const std::string& name, const bool getter) const
+    {
+        const Accessed    a       = accessed(fn);
+        const mlir::Type  answer  = fn.getResultTypes().front();
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type  held    = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool        integer = mlir::isa<mlir::IntegerType>(held);
+        const std::string index   = indexed ? ", const " + file_.standard("std::size_t") + " element_index" : "";
+        if (getter && mlir::isa<mlir::dsdl::PtrType>(answer))
+        {
+            const std::string readable = spanOf(/*isConst=*/true);
+            return "static " + readable + " " + name + "(const " + readable + " buffer" + index + ")";
+        }
+        if (getter)
+        {
+            return "static " + scalarType(a.member->io) + " " + name + "(const " + spanOf(/*isConst=*/true) +
+                   " buffer" + index + ")";
+        }
+        return "static " + file_.standard("std::int8_t") + " " + name + "(const " + spanOf(/*isConst=*/false) +
+               " buffer" + index + ", const " + scalarType(a.member->io) + (integer ? " member_value)" : " value)");
+    }
+
+    /// @brief Opens a getter or a setter. The plan holds the size, an integer and an index in a
     ///        `std::uint64_t`: the size is the span's own, bound where the plan reads it; a setter
     ///        rebinds its value at entry, an element accessor its index, and a getter casts at its
     ///        return.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed     a         = accessed(fn);
-        const std::string& name      = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
-        const mlir::Type   answer    = fn.getResultTypes().front();
-        const bool         composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
-        const bool         indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const mlir::Type   held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
-        const bool         integer   = mlir::isa<mlir::IntegerType>(held);
-        const std::string  index     = indexed ? ", const " + file_.standard("std::size_t") + " element_index" : "";
-        accessor_                    = getter ? Accessor::Getter : Accessor::Setter;
-        site_                        = a.plan->typeScope;
+        const Accessed   a         = accessed(fn);
+        const mlir::Type answer    = fn.getResultTypes().front();
+        const bool       composite = getter && mlir::isa<mlir::dsdl::PtrType>(answer);
+        const bool       indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
+        const mlir::Type held      = getter ? answer : fn.getArgument(indexed ? 3 : 2).getType();
+        const bool       integer   = mlir::isa<mlir::IntegerType>(held);
+        accessor_                  = getter ? Accessor::Getter : Accessor::Setter;
+        site_                      = a.plan->typeScope;
         returnCast_.clear();
-        // The member's type is named where it is written: a composite getter answers bytes.
-        if (composite)
+        if (getter && !composite && integer)
         {
-            // The nested type's bytes, as a span, which carries their count.
-            const std::string readable = spanOf(/*isConst=*/true);
-            w.line("static " + readable + " " + name + "(const " + readable + " buffer" + index + ")");
+            returnCast_ = scalarType(a.member->io);
         }
-        else if (getter)
-        {
-            const std::string storage = scalarType(a.member->io);
-            if (integer)
-            {
-                returnCast_ = storage;
-            }
-            w.line("static " + storage + " " + name + "(const " + spanOf(/*isConst=*/true) + " buffer" + index + ")");
-        }
-        else
-        {
-            w.line("static " + file_.standard("std::int8_t") + " " + name + "(const " + spanOf(/*isConst=*/false) +
-                   " buffer" + index + ", const " + scalarType(a.member->io) +
-                   (integer ? " member_value)" : " value)"));
-        }
-        w.open("{");
         if (readsArgument(fn, 1))
         {
             w.line("const " + file_.standard("std::size_t") + " buffer_size_bytes = " +
@@ -1469,20 +1466,15 @@ private:
         llvm::StringMap<Member> members;
     };
 
-    std::vector<std::string> openHelper(SourceWriter& w, mlir::func::FuncOp fn) const
+    /// @brief Binds a helper's parameters, which its signature names by position.
+    std::vector<std::string> openHelper(mlir::func::FuncOp fn) const
     {
         std::vector<std::string> parameters;
-        std::string              list;
-        for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+        for (const std::size_t index : llvm::seq<std::size_t>(0, fn.getNumArguments()))
         {
             parameters.push_back("p" + std::to_string(index));
-            list += (list.empty() ? "" : ", ") + std::string("const ") + typeName(argument.getType()) + " " +
-                    parameters.back();
         }
         site_ = helperSite_;
-        w.line("inline " + typeName(fn.getResultTypes().front()) + " " +
-               names_.function(fn.getSymName(), SurfaceDeclKind::Helper) + "(" + list + ")");
-        w.open("{");
         return parameters;
     }
 
@@ -1890,16 +1882,6 @@ void emitArrayMetadata(SourceWriter&          w,
     }
 }
 
-/// @brief The three bodies `lower-dsdl-bodies` built for one section.
-struct SectionBodies final
-{
-    mlir::func::FuncOp serialize;
-    mlir::func::FuncOp deserialize;
-    mlir::func::FuncOp initialize;
-    /// @brief The section's field accessors, getters and setters, in the module's order.
-    std::vector<mlir::func::FuncOp> accessors;
-};
-
 /// @brief The member initialiser a field's default renders to: `{}` for the type's zero, the
 ///        value otherwise.
 ///
@@ -1961,361 +1943,512 @@ std::string cppMemberInitialiser(const SemanticFieldType& type, const MemberDefa
     return "{}";
 }
 
-llvm::Error emitSectionStruct(SourceWriter&                         w,
-                              const CppSection&                     names,
-                              const SectionMetadata&                metadata,
-                              const InitializerShape&               init,
-                              const SemanticSection&                section,
-                              const CppFileNames&                   file,
-                              const CppFlavor                       flavor,
-                              const AttachedDoc&                    typeDoc,
-                              const mlir::dsdl::SerializationPlanOp plan,
-                              const CppSpelling&                    spelling,
-                              const SectionBodies&                  bodies,
-                              PlanBodyLookups&                      lookups,
-                              const bool                            accessorsOnly)
+/// @brief The parts of C++'s header and of a section, in the order C++ writes them.
+const DeclarationLayout& cppLayout()
 {
-    const EmitterContext& ctx          = file.context();
-    const std::string&    typeName     = names.publicName();
-    const std::string&    declaredName = names.declaredName();
-    // Every member's default is what the initialise body stores for it. A field the body does not
-    // set has no default this backend may invent.
-    llvm::StringMap<const MemberDefault*> defaults;
-    for (const auto& entry : init.members)
-    {
-        defaults[entry.member] = &entry;
-    }
-    const auto defaultOf = [&](const SemanticField& field) -> const MemberDefault& {
-        const auto found = defaults.find(field.name);
-        if (found == defaults.end())
-        {
-            llvm::report_fatal_error(llvm::Twine("C++: the initialise body of ") + typeName + " does not set '" +
-                                     field.name + "'");
-        }
-        return *found->second;
+    static const DeclarationLayout layout{
+        .files   = {{LayoutPart::Prelude,
+                     LayoutPart::Guards,
+                     LayoutPart::Imports,
+                     LayoutPart::Opening,
+                     LayoutPart::HelperDefinitions,
+                     LayoutPart::DefinitionConstants,
+                     LayoutPart::Sections,
+                     LayoutPart::TypeEnd,
+                     LayoutPart::Alias,
+                     LayoutPart::Epilogue}},
+        .section = {LayoutPart::Type,
+                    LayoutPart::SectionDefinitions,
+                    LayoutPart::TypeEnd,
+                    LayoutPart::LayoutChecks,
+                    LayoutPart::Alias},
+        .indent  = IndentPolicy::spaces(2),
     };
-    emitAttachedDocCpp(w, typeDoc);
-    w.open("struct " + declaredName + " {");
+    return layout;
+}
 
-    if (!accessorsOnly)
+/// @brief Spells C++'s declarations: a header per definition, whose namespaces hold the helpers and
+///        each section's struct, which holds its members and its facts and defines its functions.
+///        A service is the struct that holds its own facts and encloses its sections.
+class CppDeclarations final : public DeclarationSpelling
+{
+public:
+    /// @param[in] file How the header names what it takes from other headers.
+    /// @param[in] includes What the header named, which @p file records.
+    /// @param[in] types The C++ spelling of the IR's types and signatures.
+    /// @param[in] flavor The profile.
+    /// @param[in] initializers Each section's initialiser, by section; none in an accessors-only run.
+    CppDeclarations(const CppFileNames&                            file,
+                    const ImportSet&                               includes,
+                    const CppSpelling&                             types,
+                    const CppFlavor                                flavor,
+                    const std::map<std::string, InitializerShape>& initializers)
+        : file_(file)
+        , includes_(includes)
+        , types_(types)
+        , flavor_(flavor)
+        , initializers_(initializers)
     {
-        std::size_t              emitted = 0;
-        std::vector<std::string> variableArrayMembers;
-        std::vector<std::string> compositeScalarMembers;
-        std::vector<std::string> compositeFixedArrayMembers;
-        std::vector<std::string> compositeVariableArrayMembers;
+    }
 
-        for (const auto& field : section.fields)
+    void write(DeclarationSite& site, const LayoutPart part) const override
+    {
+        SourceWriter& w = site.writer();
+        switch (part)
         {
-            if (field.isPadding)
+        case LayoutPart::Prelude: {
+            const DiscoveredDefinition& info = site.facts().definition().info;
+            w.line(generatedCommentLine("C++ backend"));
+            w.line("// Source: " + info.fullName + "." + std::to_string(info.majorVersion) + "." +
+                   std::to_string(info.minorVersion));
+            return;
+        }
+        case LayoutPart::Guards:
+            w.line("#pragma once");
+            return;
+        case LayoutPart::Opening:
+            for (const std::string& name : names().namespaces(site.facts().key()))
             {
-                continue;
+                w.line("namespace " + name + " {");
             }
-
-            const auto member = names.field(field.name);
-            // A view is a span over the field's bytes in the buffer the object was deserialised
-            // from; it allocates nothing and takes no memory resource.
-            const auto baseType = field.heldAsView ? spelling.viewType()
-                                                   : cppTypeFromFieldType(field.resolvedType, file, names.typeScope());
-            emitAttachedDocCpp(w, field.doc);
-
-            const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
-            if (field.resolvedType.arrayKind == ArrayKind::None)
+            return;
+        case LayoutPart::DefinitionConstants:
+            service(site);
+            return;
+        case LayoutPart::Type:
+            type(site);
+            return;
+        case LayoutPart::TypeEnd:
+            // A section's struct, and outside a section the service's that encloses them.
+            if (site.section() || site.facts().definition().isService)
             {
-                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-                w.line(baseType + " " + member + init_ + ";");
-                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
-                    !field.heldAsView)
+                w.close("};");
+            }
+            return;
+        case LayoutPart::LayoutChecks:
+            layoutChecks(site);
+            return;
+        case LayoutPart::Alias:
+            alias(site);
+            return;
+        case LayoutPart::Epilogue:
+            for (const std::string& name : std::views::reverse(names().namespaces(site.facts().key())))
+            {
+                w.line("} // namespace " + name);
+            }
+            return;
+        default:
+            return;
+        }
+    }
+
+    [[nodiscard]] std::string imports(const DeclarationSite& /*site*/) const override
+    {
+        return llvmdsdl::emitter::c::renderIncludeLines(includes_);
+    }
+
+    [[nodiscard]] std::string signature(const SurfaceDecl& decl, mlir::func::FuncOp fn) const override
+    {
+        return types_.signature(fn, decl.name);
+    }
+
+    void prototype(SourceWriter& /*w*/, const std::string& /*signature*/) const override
+    {
+        llvm::report_fatal_error("C++ declares no function ahead of its definition");
+    }
+
+    void openDefinition(SourceWriter& w, const SurfaceDecl& /*decl*/, const std::string& signature) const override
+    {
+        w.line(signature);
+        w.open("{");
+    }
+
+    void forward(SourceWriter& /*w*/,
+                 const SurfaceDecl& /*published*/,
+                 llvm::StringRef /*callee*/,
+                 mlir::func::FuncOp /*fn*/) const override
+    {
+        llvm::report_fatal_error("C++ publishes no function over another");
+    }
+
+private:
+    [[nodiscard]] const CppSurface& names() const
+    {
+        return file_.context().names();
+    }
+
+    [[nodiscard]] bool accessorsOnly() const
+    {
+        return file_.context().accessorsOnly();
+    }
+
+    /// @brief The definition's doc, with the notice of its deprecation, which its outermost type
+    ///        carries.
+    [[nodiscard]] static AttachedDoc docOf(const DeclarationSite& site)
+    {
+        const SemanticDefinition& def = site.facts().definition();
+        return docWithDeprecationNotice(def.doc,
+                                        def.request.deprecated,
+                                        def.info.fullName,
+                                        def.info.majorVersion,
+                                        def.info.minorVersion);
+    }
+
+    /// @brief Opens a service's struct, with the service's own facts.
+    void service(DeclarationSite& site) const
+    {
+        const SemanticDefinition& def = site.facts().definition();
+        if (!def.isService)
+        {
+            return;
+        }
+        SourceWriter&     w    = site.writer();
+        const std::string key  = site.facts().key();
+        const auto        fact = [&](const GeneratedFact stated) -> const std::string& {
+            return names().member(key, {}, SurfaceDeclKind::Constant, {}, stated);
+        };
+        emitAttachedDocCpp(w, docOf(site));
+        w.open("struct " + names().declaredName(key, {}) + " {");
+        w.line("static constexpr const char* " + fact(GeneratedFact::FullName) + " = \"" + def.info.fullName + "\";");
+        w.line("static constexpr const char* " + fact(GeneratedFact::FullNameAndVersion) + " = \"" + def.info.fullName +
+               "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + "\";");
+        w.line("static constexpr bool " + fact(GeneratedFact::HasFixedPortId) + " = " +
+               (def.info.fixedPortId ? "true;" : "false;"));
+        if (def.info.fixedPortId)
+        {
+            w.line("static constexpr " + file_.standard("std::uint16_t") + " " + fact(GeneratedFact::FixedPortId) +
+                   " = " + std::to_string(*def.info.fixedPortId) + "U;");
+        }
+    }
+
+    /// @brief A section's struct: its data members, the members a profile adds, its facts and
+    ///        constants, open for the section's functions.
+    void type(DeclarationSite& site) const
+    {
+        SourceWriter&                         w    = site.writer();
+        const std::string&                    name = *site.section();
+        const CppSection                      section(names(), site.facts().key(), name);
+        const SectionMetadata&                metadata = site.facts().metadata(name);
+        const SemanticSection&                fields   = site.facts().section(name);
+        const mlir::dsdl::SerializationPlanOp plan     = site.facts().plan(name);
+        const std::string&                    declared = section.declaredName();
+        static const InitializerShape         none;
+        const auto                            found = initializers_.find(name);
+        const InitializerShape&               init  = (found == initializers_.end()) ? none : found->second;
+        // Every member's default is what the initialise body stores for it. A field the body does not
+        // set has no default this backend may invent.
+        llvm::StringMap<const MemberDefault*> defaults;
+        for (const auto& entry : init.members)
+        {
+            defaults[entry.member] = &entry;
+        }
+        const auto defaultOf = [&](const SemanticField& field) -> const MemberDefault& {
+            const auto at = defaults.find(field.name);
+            if (at == defaults.end())
+            {
+                llvm::report_fatal_error(llvm::Twine("C++: the initialise body of ") + section.publicName() +
+                                         " does not set '" + field.name + "'");
+            }
+            return *at->second;
+        };
+        // A service's sections are enclosed in the struct that carries the definition's doc.
+        if (!site.facts().definition().isService)
+        {
+            emitAttachedDocCpp(w, docOf(site));
+        }
+        w.open("struct " + declared + " {");
+
+        if (!accessorsOnly())
+        {
+            std::size_t              emitted = 0;
+            std::vector<std::string> variableArrayMembers;
+            std::vector<std::string> compositeScalarMembers;
+            std::vector<std::string> compositeFixedArrayMembers;
+            std::vector<std::string> compositeVariableArrayMembers;
+
+            for (const auto& field : fields.fields)
+            {
+                if (field.isPadding)
                 {
-                    compositeScalarMembers.push_back(member);
+                    continue;
                 }
-                ++emitted;
-                continue;
-            }
 
-            if (field.resolvedType.arrayKind == ArrayKind::Fixed)
-            {
-                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+                const auto member = section.field(field.name);
+                // A view is a span over the field's bytes in the buffer the object was deserialised
+                // from; it allocates nothing and takes no memory resource.
+                const auto baseType = field.heldAsView
+                                          ? types_.viewType()
+                                          : cppTypeFromFieldType(field.resolvedType, file_, section.typeScope());
+                emitAttachedDocCpp(w, field.doc);
+
+                const std::string init_ = cppMemberInitialiser(field.resolvedType, defaultOf(field));
+                if (field.resolvedType.arrayKind == ArrayKind::None)
                 {
-                    w.line(file.standard("std::array") + "<" + file.standard("std::uint8_t") + ", (" +
-                           std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U> " + member + "{};");
+                    // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+                    w.line(baseType + " " + member + init_ + ";");
+                    if (isPmrFlavor(flavor_) &&
+                        field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
+                    {
+                        compositeScalarMembers.push_back(member);
+                    }
+                    ++emitted;
+                    continue;
+                }
+
+                if (field.resolvedType.arrayKind == ArrayKind::Fixed)
+                {
+                    if (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool)
+                    {
+                        w.line(file_.standard("std::array") + "<" + file_.standard("std::uint8_t") + ", (" +
+                               std::to_string(field.resolvedType.arrayCapacity) + "U + 7U) / 8U> " + member + "{};");
+                    }
+                    else
+                    {
+                        // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                        w.line(file_.standard("std::array") + "<" + baseType + ", " +
+                               std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + init_ + ";");
+                        // NOLINTEND(performance-inefficient-string-concatenation)
+                    }
+                    if (isPmrFlavor(flavor_) &&
+                        field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
+                    {
+                        compositeFixedArrayMembers.push_back(member);
+                    }
+                    ++emitted;
+                    continue;
+                }
+
+                const std::string element =
+                    (field.resolvedType.scalarCategory == SemanticScalarCategory::Bool) ? "bool" : baseType;
+                // NOLINTBEGIN(performance-inefficient-string-concatenation)
+                if (isPmrFlavor(flavor_))
+                {
+                    w.line(file_.standard("std::pmr::vector") + "<" + element + "> " + member + "{};");
+                    variableArrayMembers.push_back(member);
+                    if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
+                    {
+                        compositeVariableArrayMembers.push_back(member);
+                    }
+                }
+                else if (isAutosarFlavor(flavor_))
+                {
+                    w.line(file_.cppRuntime("::llvmdsdl::cpp::autosar::BoundedVector") + "<" + element + ", " +
+                           std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
                 }
                 else
                 {
-                    // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                    w.line(file.standard("std::array") + "<" + baseType + ", " +
-                           std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + init_ + ";");
-                    // NOLINTEND(performance-inefficient-string-concatenation)
+                    w.line(file_.standard("std::vector") + "<" + element + "> " + member + "{};");
                 }
-                if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite &&
-                    !field.heldAsView)
-                {
-                    compositeFixedArrayMembers.push_back(member);
-                }
+                // NOLINTEND(performance-inefficient-string-concatenation)
                 ++emitted;
-                continue;
             }
 
-            if (isPmrFlavor(flavor))
+            if (fields.isUnion)
             {
-                w.line(
-                    file.standard("std::pmr::vector") + "<" +
-                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                    "> " + member + "{};");
-                variableArrayMembers.push_back(member);
-                if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
-                {
-                    compositeVariableArrayMembers.push_back(member);
-                }
+                // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
+                // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
+                w.line(unsignedStorageType(unionTagBits(plan), file_) + " " +
+                       section.dataMember(GeneratedFact::UnionTag) + "{" + std::to_string(init.unionTag) + "U};");
+                ++emitted;
             }
-            else if (isAutosarFlavor(flavor))
-            {
-                w.line(
-                    file.cppRuntime("::llvmdsdl::cpp::autosar::BoundedVector") + "<" +
-                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                    ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
-            }
-            else
-            {
-                w.line(
-                    file.standard("std::vector") + "<" +
-                    std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool" : baseType) +
-                    "> " + member + "{};");
-            }
-            ++emitted;
-        }
 
-        if (section.isUnion)
-        {
-            // Tag storage must match the wire tag width (uint8 for <=256 options, uint16 for
-            // 257..65536, etc.); a hardcoded uint8 truncates a wide tag and mis-dispatches.
-            w.line(unsignedStorageType(unionTagBits(plan), file) + " " + names.dataMember(GeneratedFact::UnionTag) +
-                   "{" + std::to_string(init.unionTag) + "U};");
-            ++emitted;
-        }
+            if (isPmrFlavor(flavor_) && metadata.hostImage.holds)
+            {
+                // A host image allocates nothing, so it carries no resource: the pointer would widen the
+                // structure past the image and, inside a nested image, move every field after it. The
+                // resource-taking constructor and the setter stay, so a parent treats every member alike.
+                w.line(declared + "() = default;");
+                w.line("explicit " + declared + "(" + file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "*) {}");
+                w.line("void set_memory_resource(" + file_.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "*) {}");
+            }
+            else if (isPmrFlavor(flavor_))
+            {
+                memoryResourceMembers(w,
+                                      section,
+                                      variableArrayMembers,
+                                      compositeScalarMembers,
+                                      compositeFixedArrayMembers,
+                                      compositeVariableArrayMembers);
+                ++emitted;
+            }
 
-        if (isPmrFlavor(flavor) && metadata.hostImage.holds)
-        {
-            // A host image allocates nothing, so it carries no resource: the pointer would widen the
-            // structure past the image and, inside a nested image, move every field after it. The
-            // resource-taking constructor and the setter stay, so a parent treats every member alike.
-            w.line(declaredName + "() = default;");
-            w.line("explicit " + declaredName + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "*) {}");
-            w.line("void set_memory_resource(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "*) {}");
+            if (emitted == 0)
+            {
+                w.line(file_.standard("std::uint8_t") + " " + section.dataMember(GeneratedFact::Placeholder) + "{0U};");
+            }
         }
-        else if (isPmrFlavor(flavor))
+        facts(w, section, metadata, fields);
+    }
+
+    /// @brief The members through which a `pmr` struct that is not its wire image takes a memory
+    ///        resource and hands it to each member that allocates.
+    void memoryResourceMembers(SourceWriter&                   w,
+                               const CppSection&               section,
+                               const std::vector<std::string>& variableArrayMembers,
+                               const std::vector<std::string>& compositeScalarMembers,
+                               const std::vector<std::string>& compositeFixedArrayMembers,
+                               const std::vector<std::string>& compositeVariableArrayMembers) const
+    {
+        const std::string& declared = section.declaredName();
+        const std::string  resource = section.dataMember(GeneratedFact::MemoryResource);
+        const std::string  type     = file_.cppRuntime("::llvmdsdl::cpp::MemoryResource");
+        const std::string  fallback = file_.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "()";
+        // The surface does not declare the setter: an accessor of a field `_memory_resource`
+        // overloads it.
+        const std::string setter = "set_memory_resource";
+        w.line(type + "* " + resource + "{" + fallback + "};");
+        w.line(declared + "() = default;");
+        w.line("explicit " + declared + "(" + type + "* memory_resource) { " + setter + "(memory_resource); }");
+        w.open("void " + setter + "(" + type + "* memory_resource) {");
+        w.line(resource + " = (memory_resource != nullptr) ? memory_resource : " + fallback + ";");
+        for (const auto& member : variableArrayMembers)
         {
-            const std::string resource = names.dataMember(GeneratedFact::MemoryResource);
-            // The surface does not declare the setter: an accessor of a field `_memory_resource`
-            // overloads it.
-            const std::string setter = "set_memory_resource";
-            w.line(file.cppRuntime("::llvmdsdl::cpp::MemoryResource") + "* " + resource + "{" +
-                   file.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "()};");
-            w.line(declaredName + "() = default;");
-            w.line("explicit " + declaredName + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
-                   "* memory_resource) { " + setter + "(memory_resource); }");
-            w.open("void " + setter + "(" + file.cppRuntime("::llvmdsdl::cpp::MemoryResource") +
-                   "* memory_resource) {");
-            w.line(resource + " = (memory_resource != nullptr) ? memory_resource : " +
-                   file.cppRuntime("::llvmdsdl::cpp::default_memory_resource") + "();");
-            for (const auto& member : variableArrayMembers)
-            {
-                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-                w.line(member + " = decltype(" + member + ")(" + resource + ");");
-            }
-            for (const auto& member : compositeScalarMembers)
-            {
-                // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-                w.line(member + "." + setter + "(" + resource + ");");
-            }
-            for (const auto& member : compositeFixedArrayMembers)
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+            w.line(member + " = decltype(" + member + ")(" + resource + ");");
+        }
+        for (const auto& member : compositeScalarMembers)
+        {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+            w.line(member + "." + setter + "(" + resource + ");");
+        }
+        for (const std::vector<std::string>* const arrays :
+             {&compositeFixedArrayMembers, &compositeVariableArrayMembers})
+        {
+            for (const auto& member : *arrays)
             {
                 const auto i = codegenProjectIdentifier(Language::Cpp, IdentifierRole::LocalName, member + "_index");
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                w.open("for (" + file.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
+                w.open("for (" + file_.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
                        ".size(); ++" + i + ") {");
                 w.line(member + "[" + i + "]." + setter + "(" + resource + ");");
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 w.close("}");
             }
-            for (const auto& member : compositeVariableArrayMembers)
+        }
+        w.close("}");
+    }
+
+    /// @brief A section's facts and constants, each a static member of its struct.
+    void facts(SourceWriter&          w,
+               const CppSection&      section,
+               const SectionMetadata& metadata,
+               const SemanticSection& fields) const
+    {
+        const auto fact = [&section](const GeneratedFact stated) { return " " + section.constant(stated) + " = "; };
+        w.line("static constexpr const char*" + fact(GeneratedFact::FullName) + "\"" + metadata.fullName + "\";");
+        w.line("static constexpr bool" + fact(GeneratedFact::IsDeprecated) + (metadata.deprecated ? "true" : "false") +
+               ";");
+        w.line("static constexpr const char*" + fact(GeneratedFact::FullNameAndVersion) + "\"" + metadata.fullName +
+               "." + std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
+        w.line("static constexpr " + file_.standard("std::size_t") + fact(GeneratedFact::ExtentBytes) +
+               std::to_string(metadata.extentBytes) + "U;");
+        w.line("static constexpr " + file_.standard("std::size_t") + fact(GeneratedFact::SerializationBufferSizeBytes) +
+               std::to_string(metadata.serializationBufferSizeBytes) + "U;");
+        w.line("static constexpr bool" + fact(GeneratedFact::WireFlat) +
+               (metadata.wireFlat.holds ? "true;" : "false;"));
+        w.line("static constexpr const char*" + fact(GeneratedFact::WireFlatReason) + "\"" + metadata.wireFlat.reason +
+               "\";");
+        w.line("static constexpr bool" + fact(GeneratedFact::HostImage) +
+               (metadata.hostImage.holds ? "true;" : "false;"));
+        w.line("static constexpr const char*" + fact(GeneratedFact::HostImageReason) + "\"" +
+               metadata.hostImage.reason + "\";");
+        // A folded body moves the object as the wire's bytes, which holds only where the host orders
+        // them as the wire does. This source is compiled for a target the generator did not see.
+        if (file_.context().hostImageFolded() && metadata.hostImage.holds && !accessorsOnly())
+        {
+            // The same guard C carries, rendered once: generated C++ already includes the C runtime.
+            for (const auto& line : llvmdsdl::emitter::c::renderLittleEndianGuardLines(section.path(false)))
             {
-                const auto i = codegenProjectIdentifier(Language::Cpp, IdentifierRole::LocalName, member + "_index");
-                // NOLINTBEGIN(performance-inefficient-string-concatenation)
-                w.open("for (" + file.standard("std::size_t") + " " + i + " = 0U; " + i + " < " + member +
-                       ".size(); ++" + i + ") {");
-                w.line(member + "[" + i + "]." + setter + "(" + resource + ");");
-                // NOLINTEND(performance-inefficient-string-concatenation)
-                w.close("}");
+                w.line(line);
             }
-            w.close("}");
-            ++emitted;
         }
-
-        if (emitted == 0)
+        if (metadata.declaresPortId)
         {
-            w.line(file.standard("std::uint8_t") + " " + names.dataMember(GeneratedFact::Placeholder) + "{0U};");
+            w.line("static constexpr bool" + fact(GeneratedFact::HasFixedPortId) +
+                   (metadata.fixedPortId ? "true;" : "false;"));
+            if (metadata.fixedPortId)
+            {
+                w.line("static constexpr " + file_.standard("std::uint16_t") + fact(GeneratedFact::FixedPortId) +
+                       std::to_string(*metadata.fixedPortId) + "U;");
+            }
         }
-    }
-
-    const auto fact = [&names](const GeneratedFact stated) { return " " + names.constant(stated) + " = "; };
-    w.line("static constexpr const char*" + fact(GeneratedFact::FullName) + "\"" + metadata.fullName + "\";");
-    w.line("static constexpr bool" + fact(GeneratedFact::IsDeprecated) + (metadata.deprecated ? "true" : "false") +
-           ";");
-    w.line("static constexpr const char*" + fact(GeneratedFact::FullNameAndVersion) + "\"" + metadata.fullName + "." +
-           std::to_string(metadata.majorVersion) + "." + std::to_string(metadata.minorVersion) + "\";");
-    w.line("static constexpr " + file.standard("std::size_t") + fact(GeneratedFact::ExtentBytes) +
-           std::to_string(metadata.extentBytes) + "U;");
-    w.line("static constexpr " + file.standard("std::size_t") + fact(GeneratedFact::SerializationBufferSizeBytes) +
-           std::to_string(metadata.serializationBufferSizeBytes) + "U;");
-    w.line("static constexpr bool" + fact(GeneratedFact::WireFlat) + (metadata.wireFlat.holds ? "true;" : "false;"));
-    w.line("static constexpr const char*" + fact(GeneratedFact::WireFlatReason) + "\"" + metadata.wireFlat.reason +
-           "\";");
-    w.line("static constexpr bool" + fact(GeneratedFact::HostImage) + (metadata.hostImage.holds ? "true;" : "false;"));
-    w.line("static constexpr const char*" + fact(GeneratedFact::HostImageReason) + "\"" + metadata.hostImage.reason +
-           "\";");
-    // A folded body moves the object as the wire's bytes, which holds only where the host orders
-    // them as the wire does. This source is compiled for a target the generator did not see.
-    if (ctx.hostImageFolded() && metadata.hostImage.holds && !ctx.accessorsOnly())
-    {
-        // The same guard C carries, rendered once: generated C++ already includes the C runtime.
-        for (const auto& line : llvmdsdl::emitter::c::renderLittleEndianGuardLines(names.path(false)))
+        if (metadata.isUnion)
         {
-            w.line(line);
+            w.line("static constexpr " + file_.standard("std::size_t") + fact(GeneratedFact::UnionOptionCount) +
+                   std::to_string(metadata.unionOptions.size()) + "U;");
+            for (const auto& option : metadata.unionOptions)
+            {
+                w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits, file_) + " " +
+                       section.option(option.name) + " = " + std::to_string(option.tag) + "U;");
+            }
         }
-    }
-    if (metadata.declaresPortId)
-    {
-        w.line("static constexpr bool" + fact(GeneratedFact::HasFixedPortId) +
-               (metadata.fixedPortId ? "true;" : "false;"));
-        if (metadata.fixedPortId)
+        for (const auto& c : fields.constants)
         {
-            w.line("static constexpr " + file.standard("std::uint16_t") + fact(GeneratedFact::FixedPortId) +
-                   std::to_string(*metadata.fixedPortId) + "U;");
+            emitAttachedDocCpp(w, c.doc);
+            w.line("static constexpr auto " + section.dsdlConstant(c.name) + " = " + valueToCppExpr(c.type, c.value) +
+                   ";");
         }
-    }
-    if (metadata.isUnion)
-    {
-        w.line("static constexpr " + file.standard("std::size_t") + fact(GeneratedFact::UnionOptionCount) +
-               std::to_string(metadata.unionOptions.size()) + "U;");
-        for (const auto& option : metadata.unionOptions)
+        if (!accessorsOnly())
         {
-            w.line("static constexpr " + unsignedStorageType(metadata.unionTagBits, file) + " " +
-                   names.option(option.name) + " = " + std::to_string(option.tag) + "U;");
+            emitArrayMetadata(w, section, fields, file_);
         }
     }
 
-    for (const auto& c : section.constants)
+    /// @brief What a section's struct must be for its image to be its serialisation: the verdict was
+    ///        decided under natural alignment, and this pins the layout on the target the header is
+    ///        compiled for.
+    void layoutChecks(DeclarationSite& site) const
     {
-        emitAttachedDocCpp(w, c.doc);
-        w.line("static constexpr auto " + names.dsdlConstant(c.name) + " = " + valueToCppExpr(c.type, c.value) + ";");
-    }
-
-    if (!accessorsOnly)
-    {
-        emitArrayMetadata(w, names, section, file);
-    }
-    // The section's serialise and deserialise, then a wire-flat section's field accessors, defined
-    // here as static members: each is one read or one write at the field's offset, and reads the
-    // wire rather than an object.
-    std::vector<mlir::func::FuncOp> members;
-    if (!accessorsOnly)
-    {
-        members = {bodies.serialize, bodies.deserialize};
-    }
-    members.insert(members.end(), bodies.accessors.begin(), bodies.accessors.end());
-    w.separate();
-    for (const mlir::func::FuncOp member : members)
-    {
-        if (auto err = translateFunction(member, spelling, w, lookups))
+        const std::string&     name     = *site.section();
+        const SectionMetadata& metadata = site.facts().metadata(name);
+        if (accessorsOnly() || !metadata.hostImage.holds || metadata.hostImageMembers.empty())
         {
-            return err;
+            return;
         }
-    }
-
-    w.close("};");
-    w.separate();
-
-    // The verdict was decided under natural alignment; this pins the layout on the target the
-    // header is compiled for.
-    if (!accessorsOnly && metadata.hostImage.holds && !metadata.hostImageMembers.empty())
-    {
-        const std::string path = names.path(true);
+        SourceWriter&      w = site.writer();
+        const CppSection   section(names(), site.facts().key(), name);
+        const std::string& declared = section.declaredName();
+        const std::string  path     = section.path(true);
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("static_assert(" + file.standard("std::is_standard_layout") + "<" + declaredName + ">::value, \"" +
-               path + ": the structure is not the byte image its serialisation assumes\");");
-        w.line("static_assert(sizeof(" + declaredName +
-               ") == " + std::to_string(metadata.serializationBufferSizeBytes) + "U, \"" + path +
+        w.line("static_assert(" + file_.standard("std::is_standard_layout") + "<" + declared + ">::value, \"" + path +
                ": the structure is not the byte image its serialisation assumes\");");
+        w.line("static_assert(sizeof(" + declared + ") == " + std::to_string(metadata.serializationBufferSizeBytes) +
+               "U, \"" + path + ": the structure is not the byte image its serialisation assumes\");");
         for (const auto& member : metadata.hostImageMembers)
         {
-            const std::string cppMember = names.field(member.fieldName);
-            w.line("static_assert(" + file.standard("offsetof") + "(" + declaredName + ", " + cppMember +
+            const std::string cppMember = section.field(member.fieldName);
+            w.line("static_assert(" + file_.standard("offsetof") + "(" + declared + ", " + cppMember +
                    ") == " + std::to_string(member.offsetBytes) + "U, \"" + path + "." + cppMember +
                    ": not at the offset its serialisation assumes\");");
         }
         // NOLINTEND(performance-inefficient-string-concatenation)
-        w.separate();
     }
 
-    if (const SurfaceDecl* const alias = names.alias(); section.deprecated && (alias != nullptr))
+    /// @brief The name a struct declared apart is published under: a section's where it is
+    ///        deprecated, and outside a section a service's.
+    void alias(DeclarationSite& site) const
     {
-        w.line("using " + alias->name + (ctx.emitDeprecationAttributes() ? " [[deprecated]]" : "") + " = " +
-               declaredName + ";");
-        w.separate();
+        const SemanticDefinition& def      = site.facts().definition();
+        const std::string         key      = site.facts().key();
+        const std::string         section  = site.section() ? *site.section() : std::string{};
+        const SurfaceDecl* const  decl     = names().beside(key, SurfaceDeclKind::Alias, section);
+        const bool                declares = site.section() ? site.facts().section(section).deprecated : def.isService;
+        if (!declares || (decl == nullptr))
+        {
+            return;
+        }
+        const bool deprecated = site.section() || def.request.deprecated;
+        site.writer().line("using " + decl->name +
+                           ((deprecated && file_.context().emitDeprecationAttributes()) ? " [[deprecated]]" : "") +
+                           " = " + names().declaredName(key, section) + ";");
     }
-    return llvm::Error::success();
-}
 
-llvm::Error emitSection(SourceWriter&                         w,
-                        const CppFileNames&                   file,
-                        const CppSection&                     names,
-                        const SectionMetadata&                metadata,
-                        const SemanticSection&                section,
-                        const CppFlavor                       flavor,
-                        const AttachedDoc&                    doc,
-                        const mlir::dsdl::SerializationPlanOp plan,
-                        const CppSpelling&                    spelling,
-                        const SectionBodies&                  bodies,
-                        PlanBodyLookups&                      lookups)
-{
-    const EmitterContext& ctx = file.context();
-    // An accessors-only run has no bodies to declare or read: the struct holds the constants and
-    // the accessors, and nothing else.
-    InitializerShape init;
-    if (!ctx.accessorsOnly())
-    {
-        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
-        {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no plan bodies for %s in the lowered module",
-                                           metadata.fullName.c_str());
-        }
-        auto read = readInitializer(bodies.initialize);
-        if (!read)
-        {
-            return read.takeError();
-        }
-        init = std::move(*read);
-    }
-    if (auto err = emitSectionStruct(w,
-                                     names,
-                                     metadata,
-                                     init,
-                                     section,
-                                     file,
-                                     flavor,
-                                     doc,
-                                     plan,
-                                     spelling,
-                                     bodies,
-                                     lookups,
-                                     ctx.accessorsOnly()))
-    {
-        return err;
-    }
-    return llvm::Error::success();
-}
+    const CppFileNames&                            file_;
+    const ImportSet&                               includes_;
+    const CppSpelling&                             types_;
+    CppFlavor                                      flavor_;
+    const std::map<std::string, InitializerShape>& initializers_;
+};
 
 llvm::Expected<std::string> loadCRuntimeHeader()
 {
@@ -2355,162 +2488,47 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     }
     // The declarations and bodies first, naming what they take from other headers as they write it;
     // the includes are written after, from what was named.
-    const CppSurface&                    names = ctx.names();
-    const std::string                    key   = keyOf(def.info);
-    ImportSet                            includes;
-    const CppFileNames                   file(ctx, includes, vocabulary, names.header(key));
-    const CppSpelling                    spelling(schema, flavor, names, file);
-    std::vector<mlir::func::FuncOp>      helpers;
-    std::map<std::string, SectionBodies> bodies;
+    const CppSurface&     names = ctx.names();
+    const std::string     key   = keyOf(def.info);
+    ImportSet             includes;
+    const CppFileNames    file(ctx, includes, vocabulary, names.header(key));
+    const CppSpelling     spelling(schema, flavor, names, file);
+    const DefinitionFacts facts(def, schema);
+    // The functions the header defines: every one but a helper nothing calls, which an accessors-only
+    // run has many of, and an initialiser, which is read into the member initialisers.
+    FunctionBodies                          bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    std::map<std::string, InitializerShape> initializers;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
-        const auto direction = planBodyDirection(fn);
-        if (!direction)
+        if (fn->hasAttr("llvmdsdl.unreferenced"))
         {
-            // A helper nothing calls is left out; an accessors-only run has many.
-            if (fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            helpers.push_back(fn);
             continue;
         }
-        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
-        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        if (*direction == "serialize")
+        if (planBodyDirection(fn) == "initialize")
         {
-            entry.serialize = fn;
-        }
-        else if (*direction == "deserialize")
-        {
-            entry.deserialize = fn;
-        }
-        else if (*direction == "initialize")
-        {
-            entry.initialize = fn;
-        }
-        else if (*direction == "get" || *direction == "set")
-        {
-            entry.accessors.push_back(fn);
-        }
-        else
-        {
-            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
-        }
-    }
-
-    std::ostringstream out;
-    std::ostringstream body;
-    SourceWriter       w = makeCppWriter(body);
-
-    out << generatedCommentLine("C++ backend") << "\n";
-    out << "// Source: " << def.info.fullName << "." << def.info.majorVersion << "." << def.info.minorVersion << "\n\n";
-    out << "#pragma once\n\n";
-
-    const std::vector<std::string> namespaces = names.namespaces(key);
-    emitNamespaceOpen(w, namespaces);
-
-    // The helpers the plans call, ahead of the sections that call them.
-    for (const mlir::func::FuncOp helper : helpers)
-    {
-        if (auto err = translateFunction(helper, spelling, w, lookups))
-        {
-            return std::move(err);
-        }
-    }
-
-    // The definition's doc, with the notice of its deprecation, is its outermost type's.
-    const AttachedDoc doc = docWithDeprecationNotice(def.doc,
-                                                     def.request.deprecated,
-                                                     def.info.fullName,
-                                                     def.info.majorVersion,
-                                                     def.info.minorVersion);
-    if (def.isService)
-    {
-        // The service is the struct that encloses its sections and states its own facts. One
-        // declared apart is published under an alias, deprecated where the service is.
-        const auto fact = [&names, &key](const GeneratedFact stated) -> const std::string& {
-            return names.member(key, {}, SurfaceDeclKind::Constant, {}, stated);
-        };
-        emitAttachedDocCpp(w, doc);
-        w.open("struct " + names.declaredName(key, {}) + " {");
-        w.line("static constexpr const char* " + fact(GeneratedFact::FullName) + " = \"" + def.info.fullName + "\";");
-        w.line("static constexpr const char* " + fact(GeneratedFact::FullNameAndVersion) + " = \"" + def.info.fullName +
-               "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + "\";");
-        w.line("static constexpr bool " + fact(GeneratedFact::HasFixedPortId) + " = " +
-               (def.info.fixedPortId ? "true;" : "false;"));
-        if (def.info.fixedPortId)
-        {
-            w.line("static constexpr " + file.standard("std::uint16_t") + " " + fact(GeneratedFact::FixedPortId) +
-                   " = " + std::to_string(*def.info.fixedPortId) + "U;");
-        }
-        w.separate();
-        if (auto err = emitSection(w,
-                                   file,
-                                   CppSection(names, key, "request"),
-                                   sectionMetadata(def.info, def.request, schema, "request"),
-                                   def.request,
-                                   flavor,
-                                   {},
-                                   sectionPlan(schema, "request"),
-                                   spelling,
-                                   bodies["request"],
-                                   lookups))
-        {
-            return std::move(err);
-        }
-        if (def.response)
-        {
-            if (auto err = emitSection(w,
-                                       file,
-                                       CppSection(names, key, "response"),
-                                       sectionMetadata(def.info, *def.response, schema, "response"),
-                                       *def.response,
-                                       flavor,
-                                       {},
-                                       sectionPlan(schema, "response"),
-                                       spelling,
-                                       bodies["response"],
-                                       lookups))
+            auto init = readInitializer(fn);
+            if (!init)
             {
-                return std::move(err);
+                return init.takeError();
             }
+            const auto section = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+            initializers.emplace(section ? section.getValue().str() : std::string{}, std::move(*init));
+            continue;
         }
-        w.close("};");
-        w.separate();
-        if (const SurfaceDecl* const alias = names.beside(key, SurfaceDeclKind::Alias, {}))
-        {
-            w.line("using " + alias->name +
-                   ((def.request.deprecated && ctx.emitDeprecationAttributes()) ? " [[deprecated]]" : "") + " = " +
-                   names.declaredName(key, {}) + ";");
-            w.separate();
-        }
+        bodies.functions.push_back(fn);
     }
-    else
+    // An accessors-only run declares no data member, so it reads no initialiser.
+    for (const std::string& section : facts.sections())
     {
-        if (auto err = emitSection(w,
-                                   file,
-                                   CppSection(names, key, ""),
-                                   sectionMetadata(def.info, def.request, schema, ""),
-                                   def.request,
-                                   flavor,
-                                   doc,
-                                   sectionPlan(schema, ""),
-                                   spelling,
-                                   bodies[""],
-                                   lookups))
+        if (!ctx.accessorsOnly() && !initializers.contains(section))
         {
-            return std::move(err);
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "no plan bodies for %s in the lowered module",
+                                           facts.metadata(section).fullName.c_str());
         }
     }
-
-    emitNamespaceClose(w, namespaces);
-
-    const std::string declarations = body.str();
-    out << llvmdsdl::emitter::c::renderIncludeLines(includes);
-    out << "\n" << declarations;
-
-    return out.str();
+    const CppDeclarations declarations(file, includes, spelling, flavor, initializers);
+    return DeclarationRenderer(names.tree(), cppLayout(), declarations).render(names.file(key), 0, facts, &bodies);
 }
 
 /// @param[in] outRoot The directory the profile's files are written to.

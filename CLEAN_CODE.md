@@ -1136,6 +1136,15 @@ calls are each written as `spellReference` answers from the scope the reference 
 row asked for `qualification`, and the column is gone. A `pmr` body names a nested type by its
 declared name, as the field it sizes does.
 
+C++'s renderer change moves C++'s declaration half onto `DeclarationRenderer`, and completes phase 5.
+C++'s layout names a header's banner, `#pragma once`, includes, the namespaces it opens, helpers, a
+service's struct and facts, the sections, the close of the service's struct, its alias, and the
+namespaces' close; the renderer's `Opening` part is what opens the scope a file declares into. A
+section's parts are its struct, the functions it defines, its close, its layout checks and its
+alias. C++'s signatures are the declaration spelling's, and `CppSpelling::openFunction` binds only
+what a body reads and writes the `pmr` resource lines. C++'s declaration count falls from 65 to 59,
+and its body count from 52 to 44.
+
 **6 to 11 — One phase per language**, each flipping its row from *as today* to the target above and
 turning its judge from phase 1 green. Phase 5 gives each language's bodies their public shape and
 nests C++'s types; these phases carry the rest of each row. Rust's and Go's names landed ahead of the
