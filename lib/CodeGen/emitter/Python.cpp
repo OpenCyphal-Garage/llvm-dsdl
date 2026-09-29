@@ -32,7 +32,6 @@
 #include <llvm/ADT/StringRef.h>
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
-#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -42,6 +41,7 @@
 #include <system_error>
 #include <utility>
 
+#include "llvmdsdl/CodeGen/DeclarationRenderer.h"
 #include "llvmdsdl/CodeGen/ImportSet.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -78,6 +78,7 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Types.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -94,11 +95,6 @@ namespace
 std::string pyConstValue(const TypeExprAST& type, const Value& value)
 {
     return renderConstantLiteral(Language::Python, value, makeConstantTypeInfo(type));
-}
-
-SourceWriter makePyWriter(std::ostringstream& out)
-{
-    return SourceWriter{out, IndentPolicy::spaces(4)};
 }
 
 std::string generatedCommentLine(llvm::StringRef detail)
@@ -620,28 +616,6 @@ private:
     std::string      section_;
 };
 
-/// @brief Declares the tag value that selects each of a union's options.
-void emitUnionOptionTags(SourceWriter& w, const PySection& names, const SectionMetadata& metadata)
-{
-    if (!metadata.isUnion)
-    {
-        return;
-    }
-    for (const auto& option : metadata.unionOptions)
-    {
-        w.line(names.option(option.name) + " = " + std::to_string(option.tag));
-    }
-}
-
-void emitSectionConstants(SourceWriter& w, const PySection& names, const SemanticSection& section)
-{
-    for (const auto& constant : section.constants)
-    {
-        emitAttachedDocPy(w, constant.doc);
-        w.line(names.constant(constant.name) + " = " + pyConstValue(constant.type, constant.value));
-    }
-}
-
 /// @brief Opens a section's class: a dataclass of the runtime's `CompositeObject`, which composes
 ///        `serialize` and `deserialize` from the class's bodies, stating the size of the buffer
 ///        `serialize` writes into.
@@ -824,31 +798,26 @@ public:
 
     // Functions.
 
+    /// @brief Opens a body under the `def` `PyDeclarations` wrote, which leaves the block empty.
     std::vector<std::string> openFunction(SourceWriter& w, mlir::func::FuncOp fn) const override
     {
         const auto direction = planBodyDirection(fn);
         accessor_            = Accessor::None;
         infallible_          = fn->hasAttr("llvmdsdl.infallible");
+        blockEmpty_          = true;
         if (!direction)
         {
             std::vector<std::string> parameters;
-            std::string              list;
             for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
             {
                 parameters.push_back("p" + std::to_string(index));
-                list += (list.empty() ? "" : ", ") + parameters.back() + ": " + typeName(argument.getType());
             }
-            open(w,
-                 "def " + functionName(fn.getSymName()) + "(" + list + ") -> " + typeName(fn.getResultTypes().front()) +
-                     ":");
             return parameters;
         }
         if (*direction == "get" || *direction == "set")
         {
             return openAccessor(w, fn, *direction == "get");
         }
-        open(w,
-             "def " + names_.function(fn.getSymName(), SurfaceDeclKind::Entry) + "(self, buffer: memoryview) -> int:");
         return {"self", "buffer"};
     }
 
@@ -957,43 +926,27 @@ public:
         line(w, expr.str());
     }
 
+    /// @brief The Python type of the member an accessor reaches: its storage, `int`, `bool` or `float`.
+    [[nodiscard]] std::string accessorStorage(mlir::func::FuncOp fn) const
+    {
+        mlir::dsdl::IOOp      io       = accessed(fn).member->io;
+        const llvm::StringRef category = io.getScalarCategory();
+        if ((category == "bool") || (category == "float"))
+        {
+            return category.str();
+        }
+        return "int";
+    }
+
     /// @brief Opens a getter or a setter: a static method of the class, speaking the member's
     ///        own type. The plan holds an integer as an `int`, which a `bool` value is rebound to;
     ///        an index is an `int` already.
     std::vector<std::string> openAccessor(SourceWriter& w, mlir::func::FuncOp fn, const bool getter) const
     {
-        const Accessed        a        = accessed(fn);
-        const std::string&    name     = names_.function(fn.getSymName(), SurfaceDeclKind::Accessor);
-        mlir::dsdl::IOOp      io       = a.member->io;
-        const llvm::StringRef category = io.getScalarCategory();
-        std::string           storage  = "int";
-        if (category == "bool")
-        {
-            storage = "bool";
-        }
-        else if (category == "float")
-        {
-            storage = "float";
-        }
-        const bool        composite = getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front());
-        const bool        indexed   = fn.getNumArguments() == (getter ? 3U : 4U);
-        const std::string index     = indexed ? ", index: int" : "";
-        accessor_                   = getter ? Accessor::Getter : Accessor::Setter;
-        returnCast_                 = (getter && storage == "bool") ? "bool" : std::string{};
-        line(w, "@staticmethod");
-        if (composite)
-        {
-            // The nested type's buffer, as a slice, which carries its own length.
-            open(w, "def " + name + "(buffer: memoryview" + index + ") -> memoryview:");
-        }
-        else if (getter)
-        {
-            open(w, "def " + name + "(buffer: memoryview" + index + ") -> " + storage + ":");
-        }
-        else
-        {
-            open(w, "def " + name + "(buffer: memoryview" + index + ", value: " + storage + ") -> None:");
-        }
+        const std::string storage = accessorStorage(fn);
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        accessor_                 = getter ? Accessor::Getter : Accessor::Setter;
+        returnCast_               = (getter && storage == "bool") ? "bool" : std::string{};
         std::vector<std::string> parameters{"buffer", "len(buffer)"};
         if (indexed)
         {
@@ -1539,6 +1492,8 @@ public:
     }
 
 private:
+    friend class PyDeclarations;
+
     struct Member final
     {
         /// @brief The attribute's name; empty in an accessors-only run, which declares none.
@@ -1922,100 +1877,286 @@ private:
     mutable bool infallible_{false};
 };
 
-/// @brief The three bodies `lower-dsdl-bodies` built for one section.
-struct SectionBodies final
+/// @brief The parts of a Python module and of a section, in the order Python writes them.
+const DeclarationLayout& pyLayout()
 {
-    mlir::func::FuncOp serialize;
-    mlir::func::FuncOp deserialize;
-    mlir::func::FuncOp initialize;
-    /// @brief The section's field accessors, getters and setters, in the module's order.
-    std::vector<mlir::func::FuncOp> accessors;
-};
+    static const DeclarationLayout layout{
+        .files   = {{LayoutPart::Prelude,
+                     LayoutPart::Imports,
+                     LayoutPart::DefinitionConstants,
+                     LayoutPart::HelperDefinitions,
+                     LayoutPart::Sections,
+                     LayoutPart::Alias}},
+        .section = {LayoutPart::Type,
+                    LayoutPart::SectionDefinitions,
+                    LayoutPart::TypeEnd,
+                    LayoutPart::Options,
+                    LayoutPart::Constants},
+        .indent  = IndentPolicy::spaces(4),
+    };
+    return layout;
+}
 
-/// @brief One section: its class with the two bodies and the methods that wrap them, then its
-/// constants.
-llvm::Error emitSection(SourceWriter&             w,
-                        const PySection&          names,
-                        const SemanticSection&    section,
-                        const SectionMetadata&    metadata,
-                        const AttachedDoc&        typeDoc,
-                        const PyFileNames&        file,
-                        const SemanticDefinition& def,
-                        const PythonSpelling&     spelling,
-                        const SectionBodies&      bodies,
-                        PlanBodyLookups&          lookups)
+/// @brief Spells Python's declarations: a module per definition, holding its facts, its helpers, and
+///        a dataclass per section whose methods are the section's bodies and accessors.
+class PyDeclarations final : public DeclarationSpelling
 {
-    // An accessors-only run has no bodies: a bare class carries the accessors as static methods.
-    if (file.context().accessorsOnly())
+public:
+    /// @param[in] ctx The run.
+    /// @param[in] file How the module names what it takes from outside itself.
+    /// @param[in] imports What the module named, which @ref file records.
+    /// @param[in] types The Python spelling of the IR's types.
+    PyDeclarations(const EmitterContext& ctx,
+                   const PyFileNames&    file,
+                   const ImportSet&      imports,
+                   const PythonSpelling& types)
+        : ctx_(ctx)
+        , file_(file)
+        , imports_(imports)
+        , types_(types)
     {
-        emitAttachedDocPy(w,
-                          docWithDeprecationNotice(typeDoc,
-                                                   section.deprecated,
-                                                   def.info.fullName,
-                                                   def.info.majorVersion,
-                                                   def.info.minorVersion));
-        w.open("class " + names.typeName() + ":");
     }
-    else
+
+    void write(DeclarationSite& site, const LayoutPart part) const override
     {
-        if (!bodies.serialize || !bodies.deserialize || !bodies.initialize)
+        switch (part)
         {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "no plan bodies for %s in the lowered module",
-                                           def.info.fullName.c_str());
+        case LayoutPart::Prelude:
+            prelude(site);
+            return;
+        case LayoutPart::DefinitionConstants:
+            moduleConstants(site);
+            return;
+        case LayoutPart::Type:
+            type(site);
+            return;
+        case LayoutPart::TypeEnd:
+            site.writer().dedent();
+            return;
+        case LayoutPart::Options:
+            for (const SurfaceDecl* const option : site.declarations(SurfaceDeclKind::Option))
+            {
+                const auto& options = site.facts().metadata(*site.section()).unionOptions;
+                const auto  found   = std::ranges::find(options, option->of->member, &UnionOption::name);
+                site.writer().line(option->name + " = " + std::to_string(found->tag));
+            }
+            return;
+        case LayoutPart::Constants:
+            constants(site);
+            return;
+        case LayoutPart::Alias:
+            for (const SurfaceDecl* const alias : site.declarations(SurfaceDeclKind::Alias))
+            {
+                site.writer().line(alias->name + " = " +
+                                   PySection(ctx_.names(), site.facts().key(), "request").typeName());
+            }
+            return;
+        default:
+            return;
         }
-        auto init = readInitializer(bodies.initialize);
+    }
+
+    [[nodiscard]] std::string imports(const DeclarationSite& /*site*/) const override
+    {
+        // One empty line between two groups, and none after the last, which the renderer writes.
+        std::string block = renderPythonImports(imports_);
+        while (block.ends_with("\n\n"))
+        {
+            block.pop_back();
+        }
+        return block;
+    }
+
+    [[nodiscard]] std::string signature(const SurfaceDecl& decl, mlir::func::FuncOp fn) const override
+    {
+        const auto direction = planBodyDirection(fn);
+        if (!direction)
+        {
+            std::string list;
+            for (const auto [index, argument] : llvm::enumerate(fn.getArguments()))
+            {
+                list += (list.empty() ? "" : ", ") + ("p" + std::to_string(index)) + ": " +
+                        PythonSpelling::typeName(argument.getType());
+            }
+            return "def " + decl.name + "(" + list + ") -> " + PythonSpelling::typeName(fn.getResultTypes().front());
+        }
+        if ((*direction != "get") && (*direction != "set"))
+        {
+            return "def " + decl.name + "(self, buffer: memoryview) -> int";
+        }
+        // An accessor is a static method speaking the member's own type; a composite getter answers
+        // the nested type's buffer as a slice, which carries its own length.
+        const bool        getter  = *direction == "get";
+        const std::string storage = types_.accessorStorage(fn);
+        const bool        indexed = fn.getNumArguments() == (getter ? 3U : 4U);
+        const std::string index   = indexed ? ", index: int" : "";
+        if (getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front()))
+        {
+            return "def " + decl.name + "(buffer: memoryview" + index + ") -> memoryview";
+        }
+        if (getter)
+        {
+            return "def " + decl.name + "(buffer: memoryview" + index + ") -> " + storage;
+        }
+        return "def " + decl.name + "(buffer: memoryview" + index + ", value: " + storage + ") -> None";
+    }
+
+    void prototype(SourceWriter& /*w*/, const std::string& /*signature*/) const override
+    {
+        llvm::report_fatal_error("Python declares no function ahead of its definition");
+    }
+
+    void openDefinition(SourceWriter& w, const SurfaceDecl& decl, const std::string& signature) const override
+    {
+        if (decl.kind == SurfaceDeclKind::Accessor)
+        {
+            w.line("@staticmethod");
+        }
+        w.open(signature + ":");
+    }
+
+    void forward(SourceWriter& /*w*/,
+                 const SurfaceDecl& /*published*/,
+                 llvm::StringRef /*callee*/,
+                 mlir::func::FuncOp /*fn*/) const override
+    {
+        llvm::report_fatal_error("Python publishes no function over another");
+    }
+
+private:
+    static void prelude(DeclarationSite& site)
+    {
+        const DiscoveredDefinition& info = site.facts().definition().info;
+        SourceWriter&               w    = site.writer();
+        w.line(generatedCommentLine("Python backend"));
+        w.line("# Source: " + info.fullName + "." + std::to_string(info.majorVersion) + "." +
+               std::to_string(info.minorVersion));
+        w.line("from __future__ import annotations");
+    }
+
+    /// @brief The definition's facts at the top of its module. Aliasability is a property of a
+    ///        payload, so a service answers for each of its two and a message once.
+    static void moduleConstants(DeclarationSite& site)
+    {
+        const auto  boolean = [](const bool value) { return std::string(value ? "True" : "False"); };
+        const auto  quoted  = [](const std::string& text) { return "\"" + text + "\""; };
+        const auto& def     = site.facts().definition();
+        for (const SurfaceDecl* const decl : site.fileDeclarations(SurfaceDeclKind::Constant))
+        {
+            if (!decl->fact || !decl->of->member.empty())
+            {
+                continue;
+            }
+            std::string value;
+            switch (*decl->fact)
+            {
+            case GeneratedFact::GeneratorVersion:
+                value = quoted(llvmdsdl::kVersionString);
+                break;
+            case GeneratedFact::FullName:
+                value = quoted(def.info.fullName);
+                break;
+            case GeneratedFact::IsDeprecated:
+                value = boolean(def.request.deprecated);
+                break;
+            case GeneratedFact::VersionMajor:
+                value = std::to_string(def.info.majorVersion);
+                break;
+            case GeneratedFact::VersionMinor:
+                value = std::to_string(def.info.minorVersion);
+                break;
+            case GeneratedFact::HasFixedPortId:
+                value = boolean(def.info.fixedPortId.has_value());
+                break;
+            case GeneratedFact::FixedPortId:
+                value = std::to_string(*def.info.fixedPortId);
+                break;
+            case GeneratedFact::WireFlat:
+                value = boolean(wireFlatVerdict(site.facts().plan(decl->of->section)).holds);
+                break;
+            case GeneratedFact::WireFlatReason:
+                value = quoted(wireFlatVerdict(site.facts().plan(decl->of->section)).reason);
+                break;
+            default:
+                continue;
+            }
+            site.writer().line(decl->name + " = " + value);
+        }
+    }
+
+    /// @brief The section's class and its data: a dataclass of the runtime's `CompositeObject` in a
+    ///        run with bodies, and a bare class carrying the accessors in an accessors-only one.
+    void type(DeclarationSite& site) const
+    {
+        const SemanticDefinition& def     = site.facts().definition();
+        const std::string&        name    = *site.section();
+        const SemanticSection&    section = site.facts().section(name);
+        const PySection           names(ctx_.names(), site.facts().key(), name);
+        if (ctx_.accessorsOnly())
+        {
+            emitAttachedDocPy(site.writer(),
+                              docWithDeprecationNotice(def.doc,
+                                                       section.deprecated,
+                                                       def.info.fullName,
+                                                       def.info.majorVersion,
+                                                       def.info.minorVersion));
+            site.writer().open("class " + names.typeName() + ":");
+            return;
+        }
+        const PlanSymbol     symbol = planFunction(def.info.fullName,
+                                                   def.info.majorVersion,
+                                                   def.info.minorVersion,
+                                                   name,
+                                                   PlanFunction::Initialize);
+        mlir::dsdl::SchemaOp schema = site.facts().schema();
+        const auto           initialize =
+            mlir::SymbolTable::lookupNearestSymbolFrom<mlir::func::FuncOp>(schema,
+                                                                           mlir::StringAttr::get(schema.getContext(),
+                                                                                                 renderPlanSymbol(
+                                                                                                     symbol)));
+        auto init = readInitializer(initialize);
         if (!init)
         {
-            return init.takeError();
+            llvm::report_fatal_error(llvm::Twine("Python: ") + llvm::toString(init.takeError()));
         }
-        emitSectionType(w,
+        emitSectionType(site.writer(),
                         *init,
                         names,
                         section,
-                        typeDoc,
-                        file,
+                        def.doc,
+                        file_,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion);
-        w.blank();
-        if (auto err = translateFunction(bodies.serialize, spelling, w, lookups))
-        {
-            return err;
-        }
-        w.blank();
-        if (auto err = translateFunction(bodies.deserialize, spelling, w, lookups))
-        {
-            return err;
-        }
     }
-    // A wire-flat section's field accessors: each is one read or one write at the field's offset.
-    for (const mlir::func::FuncOp accessor : bodies.accessors)
-    {
-        w.blank();
-        if (auto err = translateFunction(accessor, spelling, w, lookups))
-        {
-            return err;
-        }
-    }
-    w.dedent();
-    if (metadata.isUnion)
-    {
-        w.blank();
-        emitUnionOptionTags(w, names, metadata);
-    }
-    if (!section.constants.empty())
-    {
-        w.blank();
-        emitSectionConstants(w, names, section);
-    }
-    return llvm::Error::success();
-}
 
-llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
-                                                 const EmitterContext&     ctx,
-                                                 mlir::ModuleOp            module,
-                                                 PlanBodyLookups&          lookups)
+    /// @brief The section's DSDL constants, each under its doc.
+    static void constants(DeclarationSite& site)
+    {
+        const auto& constants = site.facts().section(*site.section()).constants;
+        for (const SurfaceDecl* const decl : site.declarations(SurfaceDeclKind::Constant))
+        {
+            if (decl->fact || decl->of->member.empty())
+            {
+                continue;
+            }
+            const auto constant = std::ranges::find(constants, decl->of->member, &SemanticConstant::name);
+            emitAttachedDocPy(site.writer(), constant->doc);
+            site.writer().line(decl->name + " = " + pyConstValue(constant->type, constant->value));
+        }
+    }
+
+    const EmitterContext& ctx_;
+    const PyFileNames&    file_;
+    const ImportSet&      imports_;
+    const PythonSpelling& types_;
+};
+
+/// @brief The module that declares @p def.
+llvm::Expected<std::string> renderModule(const SemanticDefinition& def,
+                                         const EmitterContext&     ctx,
+                                         mlir::ModuleOp            module,
+                                         PlanBodyLookups&          lookups)
 {
     mlir::dsdl::SchemaOp schema = schemaOf(module, def);
     if (!schema)
@@ -2024,163 +2165,23 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                        "no schema for %s in the lowered module",
                                        def.info.fullName.c_str());
     }
-
-    std::ostringstream out;
-    SourceWriter       head = makePyWriter(out);
-    head.line(generatedCommentLine("Python backend"));
-    head.line("# Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
-              std::to_string(def.info.minorVersion));
-    head.line("from __future__ import annotations");
-    head.blank();
-
-    // The file is rendered first and its imports written after, from what it named.
-    const PySurface&   names = ctx.names();
-    const std::string  key   = keyOf(def.info);
-    ImportSet          imports;
-    const PyFileNames  file(ctx, imports, key);
-    std::ostringstream body;
-    SourceWriter       w        = makePyWriter(body);
-    const auto         assemble = [&]() -> std::string {
-        out << renderPythonImports(imports) << body.str();
-        return out.str();
-    };
-    const auto constant = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
-        return names.declared(key, SurfaceDeclKind::Constant, section, {}, fact);
-    };
-    w.line(constant(GeneratedFact::GeneratorVersion) + " = \"" + std::string(llvmdsdl::kVersionString) + "\"");
-    w.line(constant(GeneratedFact::FullName) + " = \"" + def.info.fullName + "\"");
-    w.line(constant(GeneratedFact::IsDeprecated) + " = " + std::string(def.request.deprecated ? "True" : "False"));
-    w.line(constant(GeneratedFact::VersionMajor) + " = " + std::to_string(def.info.majorVersion));
-    w.line(constant(GeneratedFact::VersionMinor) + " = " + std::to_string(def.info.minorVersion));
-    w.line(constant(GeneratedFact::HasFixedPortId) + " = " + std::string(def.info.fixedPortId ? "True" : "False"));
-    if (def.info.fixedPortId)
-    {
-        w.line(constant(GeneratedFact::FixedPortId) + " = " + std::to_string(*def.info.fixedPortId));
-    }
-    // Aliasability is a property of a payload, so a service answers for each of its two and a
-    // message answers once, under the name of the thing the verdict is about.
-    const auto emitLayoutVerdicts = [&w, &constant, schema](const llvm::StringRef section) {
-        const mlir::dsdl::SerializationPlanOp plan = sectionPlan(schema, section);
-        const AliasVerdict                    flat = wireFlatVerdict(plan);
-        w.line(constant(GeneratedFact::WireFlat, section) + " = " + std::string(flat.holds ? "True" : "False"));
-        w.line(constant(GeneratedFact::WireFlatReason, section) + " = \"" + flat.reason + "\"");
-    };
-    if (def.isService)
-    {
-        emitLayoutVerdicts("request");
-        emitLayoutVerdicts("response");
-    }
-    else
-    {
-        emitLayoutVerdicts("");
-    }
-    w.blank();
-
-    // The spelling names a nested type and the runtime as this file does.
-    const PythonSpelling                 spelling(schema, names, file);
-    std::vector<mlir::func::FuncOp>      helpers;
-    std::map<std::string, SectionBodies> bodies;
+    const PySurface&     names = ctx.names();
+    const std::string    key   = keyOf(def.info);
+    ImportSet            imports;
+    const PyFileNames    file(ctx, imports, key);
+    const PythonSpelling spelling(schema, names, file);
+    const PyDeclarations declarations(ctx, file, imports, spelling);
+    // A helper nothing calls is left out; an accessors-only run has many.
+    FunctionBodies bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
-        const auto direction = planBodyDirection(fn);
-        if (!direction)
+        if (!fn->hasAttr("llvmdsdl.unreferenced"))
         {
-            // A helper nothing calls is left out; an accessors-only run has many.
-            if (fn->hasAttr("llvmdsdl.unreferenced"))
-            {
-                continue;
-            }
-            helpers.push_back(fn);
-            continue;
-        }
-        const auto     sectionAttr = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
-        SectionBodies& entry       = bodies[sectionAttr ? sectionAttr.getValue().str() : std::string{}];
-        if (*direction == "serialize")
-        {
-            entry.serialize = fn;
-        }
-        else if (*direction == "deserialize")
-        {
-            entry.deserialize = fn;
-        }
-        else if (*direction == "initialize")
-        {
-            entry.initialize = fn;
-        }
-        else if (*direction == "get" || *direction == "set")
-        {
-            entry.accessors.push_back(fn);
-        }
-        else
-        {
-            llvm::report_fatal_error(llvm::Twine("unknown plan body direction '") + *direction + "'");
+            bodies.functions.push_back(fn);
         }
     }
-    for (const mlir::func::FuncOp helper : helpers)
-    {
-        if (auto err = translateFunction(helper, spelling, w, lookups))
-        {
-            return std::move(err);
-        }
-        w.blank();
-    }
-
-    if (!def.isService)
-    {
-        if (auto err = emitSection(w,
-                                   PySection(names, key, ""),
-                                   def.request,
-                                   sectionMetadata(def.info, def.request, schema, ""),
-                                   def.doc,
-                                   file,
-                                   def,
-                                   spelling,
-                                   bodies[""],
-                                   lookups))
-        {
-            return std::move(err);
-        }
-        return assemble();
-    }
-
-    const PySection request(names, key, "request");
-    if (auto err = emitSection(w,
-                               request,
-                               def.request,
-                               sectionMetadata(def.info, def.request, schema, "request"),
-                               def.doc,
-                               file,
-                               def,
-                               spelling,
-                               bodies["request"],
-                               lookups))
-    {
-        return std::move(err);
-    }
-    w.blank();
-    if (def.response)
-    {
-        if (auto err = emitSection(w,
-                                   PySection(names, key, "response"),
-                                   *def.response,
-                                   sectionMetadata(def.info, *def.response, schema, "response"),
-                                   def.doc,
-                                   file,
-                                   def,
-                                   spelling,
-                                   bodies["response"],
-                                   lookups))
-        {
-            return std::move(err);
-        }
-        w.blank();
-    }
-    if (const SurfaceDecl* const alias =
-            names.tree().find(names.file(key), SurfaceDeclKind::Alias, SurfaceEntity{key, "", "", ""}))
-    {
-        w.line(alias->name + " = " + request.typeName());
-    }
-    return assemble();
+    return DeclarationRenderer(names.tree(), pyLayout(), declarations)
+        .render(names.file(key), 0, DefinitionFacts(def, schema), &bodies);
 }
 
 llvm::Expected<std::string> loadRuntimeFile(const std::string& fileName)
@@ -2411,7 +2412,7 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
             return err;
         }
 
-        auto rendered = renderDefinitionFile(*def, ctx, module, lookups);
+        auto rendered = renderModule(*def, ctx, module, lookups);
         if (!rendered)
         {
             return rendered.takeError();

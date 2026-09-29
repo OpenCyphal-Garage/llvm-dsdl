@@ -172,18 +172,40 @@ std::size_t DeclarationSite::typeScope() const
 
 std::vector<const SurfaceDecl*> DeclarationSite::declarations(const SurfaceDeclKind kind) const
 {
+    // A section's declarations are made in the file scope, or in the section's type where the
+    // language places them there.
     const llvm::StringRef           section = section_ ? llvm::StringRef(*section_) : llvm::StringRef{};
+    std::vector<const SurfaceDecl*> found;
+    const auto                      collect = [&](const std::size_t scope) {
+        for (const SurfaceItem& item : tree_.scope(scope).items)
+        {
+            if (item.scope)
+            {
+                continue;
+            }
+            const SurfaceDecl& decl = tree_.plan().decls[item.index];
+            if ((decl.kind == kind) && decl.of && (decl.of->section == section))
+            {
+                found.push_back(&decl);
+            }
+        }
+    };
+    collect(file_);
+    if (section_)
+    {
+        collect(typeScope());
+    }
+    return found;
+}
+
+std::vector<const SurfaceDecl*> DeclarationSite::fileDeclarations(const SurfaceDeclKind kind) const
+{
     std::vector<const SurfaceDecl*> found;
     for (const SurfaceItem& item : tree_.scope(file_).items)
     {
-        if (item.scope)
+        if (!item.scope && (tree_.plan().decls[item.index].kind == kind))
         {
-            continue;
-        }
-        const SurfaceDecl& decl = tree_.plan().decls[item.index];
-        if ((decl.kind == kind) && decl.of && (decl.of->section == section))
-        {
-            found.push_back(&decl);
+            found.push_back(&tree_.plan().decls[item.index]);
         }
     }
     return found;
@@ -289,8 +311,12 @@ llvm::Error DeclarationRenderer::part(DeclarationSite& site, const LayoutPart pa
             }
         }
         return llvm::Error::success();
+    case LayoutPart::HelperDefinitions:
+        return (bodies != nullptr) ? defineHelpers(site, *bodies) : llvm::Error::success();
     case LayoutPart::Definitions:
         return (bodies != nullptr) ? defineFunctions(site, *bodies) : llvm::Error::success();
+    case LayoutPart::SectionDefinitions:
+        return (bodies != nullptr) ? defineSectionFunctions(site, *bodies) : llvm::Error::success();
     default:
         spelling_.write(site, part);
         return llvm::Error::success();
@@ -354,14 +380,52 @@ llvm::Error DeclarationRenderer::defineFunctions(DeclarationSite& site, const Fu
                                            "the surface declares no function for %s",
                                            fn.getSymName().str().c_str());
         }
-        site.separate();
-        spelling_.openDefinition(site.writer(), spelling_.signature(*decl, fn));
-        if (auto err = translateFunction(fn, bodies.spelling, site.writer(), bodies.lookups))
+        if (auto err = define(site, *decl, fn, bodies))
         {
             return err;
         }
     }
     return llvm::Error::success();
+}
+
+llvm::Error DeclarationRenderer::defineHelpers(DeclarationSite& site, const FunctionBodies& bodies) const
+{
+    for (mlir::func::FuncOp fn : bodies.functions)
+    {
+        if (const SurfaceDecl* const decl = tree_.declarationOf(fn.getSymName(), SurfaceDeclKind::Helper))
+        {
+            if (auto err = define(site, *decl, fn, bodies))
+            {
+                return err;
+            }
+        }
+    }
+    return llvm::Error::success();
+}
+
+llvm::Error DeclarationRenderer::defineSectionFunctions(DeclarationSite& site, const FunctionBodies& bodies) const
+{
+    for (const SurfaceDeclKind kind : {SurfaceDeclKind::Entry, SurfaceDeclKind::Accessor})
+    {
+        for (const SurfaceDecl* const decl : site.declarations(kind))
+        {
+            if (auto err = define(site, *decl, site.facts().function(*decl), bodies))
+            {
+                return err;
+            }
+        }
+    }
+    return llvm::Error::success();
+}
+
+llvm::Error DeclarationRenderer::define(DeclarationSite&      site,
+                                        const SurfaceDecl&    decl,
+                                        mlir::func::FuncOp    fn,
+                                        const FunctionBodies& bodies) const
+{
+    site.separate();
+    spelling_.openDefinition(site.writer(), decl, spelling_.signature(decl, fn));
+    return translateFunction(fn, bodies.spelling, site.writer(), bodies.lookups);
 }
 
 }  // namespace llvmdsdl

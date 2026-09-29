@@ -101,6 +101,7 @@ enum class LayoutPart : std::uint8_t
     Alias,                ///< The name a service is known by, and what it states through it.
     DefinitionWrappers,   ///< The functions a service publishes over its request's.
     HelperPrototypes,     ///< A declaration of each helper, ahead of the definitions.
+    HelperDefinitions,    ///< Each helper the file defines, with its body.
     Definitions,          ///< Each lowered function the file defines, with its body.
     Epilogue,             ///< What closes the file.
     SectionConstants,     ///< The generated constants a section states of itself.
@@ -109,6 +110,8 @@ enum class LayoutPart : std::uint8_t
     ArrayConstants,       ///< The generated constants each array field states.
     Options,              ///< A union's option tags.
     Type,                 ///< The section's type and its fields.
+    SectionDefinitions,   ///< The section's entry points and accessors, with their bodies.
+    TypeEnd,              ///< What closes a type that holds its section's functions.
     LayoutChecks,         ///< What the type's layout must be for its bodies to hold.
     OptionCount,          ///< How many options a union has.
     Prototypes,           ///< A declaration of each entry point, ahead of the functions that name it.
@@ -157,9 +160,9 @@ public:
     /// @brief Writes a declaration of a function whose signature is @p signature.
     virtual void prototype(SourceWriter& w, const std::string& signature) const = 0;
 
-    /// @brief Writes the line that opens the definition of a function whose signature is
+    /// @brief Writes what opens the definition of @p decl's function, whose signature is
     ///        @p signature, ahead of the body `translateFunction` writes.
-    virtual void openDefinition(SourceWriter& w, const std::string& signature) const = 0;
+    virtual void openDefinition(SourceWriter& w, const SurfaceDecl& decl, const std::string& signature) const = 0;
 
     /// @brief Writes @p published, a function published over the one named @p callee, whose
     ///        lowered function is @p fn.
@@ -208,9 +211,13 @@ public:
     /// @brief The type scope of @ref section.
     [[nodiscard]] std::size_t typeScope() const;
 
-    /// @brief The declarations of @p kind the file scope makes for @ref section, or for the
-    ///        definition itself outside a section, in the tree's order.
+    /// @brief The declarations of @p kind the file scope makes for @ref section, then those the
+    ///        section's type makes, or those for the definition itself outside a section, in the
+    ///        tree's order.
     [[nodiscard]] std::vector<const SurfaceDecl*> declarations(SurfaceDeclKind kind) const;
+
+    /// @brief The declarations of @p kind the file scope makes, for any section, in the tree's order.
+    [[nodiscard]] std::vector<const SurfaceDecl*> fileDeclarations(SurfaceDeclKind kind) const;
 
     /// @brief Begins a new unit of the file, one empty line after the last.
     void separate();
@@ -256,6 +263,15 @@ private:
     void accessors(DeclarationSite& site) const;
 
     [[nodiscard]] llvm::Error defineFunctions(DeclarationSite& site, const FunctionBodies& bodies) const;
+
+    [[nodiscard]] llvm::Error defineHelpers(DeclarationSite& site, const FunctionBodies& bodies) const;
+
+    [[nodiscard]] llvm::Error defineSectionFunctions(DeclarationSite& site, const FunctionBodies& bodies) const;
+
+    [[nodiscard]] llvm::Error define(DeclarationSite&      site,
+                                     const SurfaceDecl&    decl,
+                                     mlir::func::FuncOp    fn,
+                                     const FunctionBodies& bodies) const;
 
     const SurfaceTree&         tree_;
     const DeclarationLayout&   layout_;

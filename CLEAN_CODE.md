@@ -1038,6 +1038,12 @@ into as `SERIALIZATION_BUFFER_SIZE_BYTES`, the first of the type's facts on the 
 too long for a line is wrapped as `ruff format` writes it. Ruff's findings fall from 1,355 to 1,160:
 the quoted annotations were the wrappers' return types.
 
+Python's renderer change moves Python's declaration half onto `DeclarationRenderer`. Its section is
+the first whose functions are defined inside its type: the layout opens the class, defines the
+section's bodies and accessors in it, and closes it, and a helper is defined at module level. The
+renderer finds a section's declarations in its type scope as well as in the file's. Python's
+declaration count falls from 46 to 26.
+
 C++'s output change nests its types, and comes last: nesting is the largest change to the surface
 tree any language asks for, and taking it after five languages have exercised the tree tests it on
 the shape that stresses it most.

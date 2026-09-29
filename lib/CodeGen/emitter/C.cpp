@@ -2008,7 +2008,7 @@ public:
         w.line(signature + ";");
     }
 
-    void openDefinition(SourceWriter& w, const std::string& signature) const override
+    void openDefinition(SourceWriter& w, const SurfaceDecl& /*decl*/, const std::string& signature) const override
     {
         w.line(signature);
     }

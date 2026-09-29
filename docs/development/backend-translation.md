@@ -104,7 +104,8 @@ walks one file scope of the surface tree in the order a language's layout names 
 file it writes, one empty line between two parts, and asks a `DeclarationSpelling` for the syntax.
 It declares and defines each lowered function from one signature the spelling writes, and writes
 the body through `translateFunction`; what the tree does not hold, it reads from the definition's
-facts. C's declaration half is written by it.
+facts. C's and Python's declaration halves are written by it; a Python section's bodies and accessors are
+defined inside its class.
 
 ## A value is named by the operation that defines it
 
