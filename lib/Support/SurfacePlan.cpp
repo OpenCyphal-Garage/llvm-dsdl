@@ -416,7 +416,7 @@ private:
         // An accessors-only run declares the type's accessors and none of its data members.
         if (!options_.accessorsOnly)
         {
-            const NamingScope fields = makeSectionFieldScope(language, parts);
+            const NamingScope fields = fieldScope(section, parts);
             for (const FieldParts& field : parts.fields)
             {
                 if (!field.padding)
@@ -450,6 +450,13 @@ private:
                            of(""));
         }
         names.sections.push_back(std::move(section));
+    }
+
+    /// @brief The scope @p section's fields are named in, which claims the name its type is declared
+    ///        under where the language puts that among the type's members.
+    [[nodiscard]] NamingScope fieldScope(const SectionNames& section, const SectionParts& parts) const
+    {
+        return makeSectionFieldScope(row_.language, parts, plan_.scopes[section.typeScope].name);
     }
 
     /// @brief Declares the data members the run's profile adds to a section's type. A host image
@@ -723,7 +730,7 @@ private:
             // compose `get__tag_` and `get_tag_`, two keys that reach one name, which the pool tells
             // apart. Where the union's tag is claimed first, a union whose options collide with
             // nothing keeps its accessors' names and a colliding option is the side that moves.
-            const NamingScope fields = makeSectionFieldScope(language, parts);
+            const NamingScope fields = fieldScope(section, parts);
             NamingScope       pool   = row_.classification.nameClasses.fieldsApart ? NamingScope(language) : fields;
             const auto        name   = [&](const llvm::StringRef member) {
                 return ((member == kPlanUnionTagMember) || !verbs->keyedByDeclaredName)
@@ -791,7 +798,7 @@ private:
         const Language           language = row_.language;
         const FreeFunctionNames& free     = row_.composition.freeFunctions;
         const std::size_t        file     = *plan_.scopes[section.typeScope].parent;
-        const NamingScope        fields   = makeSectionFieldScope(language, parts);
+        const NamingScope        fields   = fieldScope(section, parts);
         const auto               member   = [&](const llvm::StringRef name) {
             return (name == kPlanUnionTagMember) ? unionTagMemberName(language).str()
                                                  : fields.get(IdentifierRole::FieldName, name);
@@ -968,12 +975,12 @@ private:
         const Language    language  = row_.language;
         const std::size_t scope     = (row_.composition.constants == ConstantsScope::Type) ? section.typeScope : file;
         const NameClass   nameClass = row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value;
-        const NamingScope pool      = makeSectionConstantScope(language,
-                                                               parts,
-                                                               codegenProjectIdentifier(language,
-                                                                                        IdentifierRole::ConstantName,
-                                                                                        section.typeName));
-        const auto        declared  = [&](const std::string& allocated) {
+        const NamingScope pool =
+            makeSectionConstantScope(language,
+                                     parts,
+                                     codegenProjectIdentifier(language, IdentifierRole::ConstantName, section.typeName),
+                                     plan_.scopes[section.typeScope].name);
+        const auto declared = [&](const std::string& allocated) {
             return renderDeclaredConstantName(language, section.typeName, allocated);
         };
         if (row_.composition.arrayMetadataConstants)

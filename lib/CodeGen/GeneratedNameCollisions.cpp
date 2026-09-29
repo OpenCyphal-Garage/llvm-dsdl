@@ -74,10 +74,12 @@ std::string describe(const Claim& claim)
 /// @brief Calls @p claim with every name @p language declares beside one section's type.
 ///
 /// A body compiled apart from its entry point is linked under the versioned type name whatever the
-/// type name is, so @p versionedTypeName names those.
+/// type name is, so @p versionedTypeName names those. The section scopes take @p declaredTypeName,
+/// the name the type is declared under.
 void forEachGeneratedName(const LanguageTraits&                              language,
                           const SemanticSection&                             section,
                           const std::string&                                 typeName,
+                          const std::string&                                 declaredTypeName,
                           const std::string&                                 versionedTypeName,
                           const llvm::function_ref<void(const std::string&)> claim)
 {
@@ -90,7 +92,8 @@ void forEachGeneratedName(const LanguageTraits&                              lan
         {
             claim(renderEnclosedConstantName(typeName, token.str() + composition.generatedConstantSuffix.str()));
         }
-        for (const std::string& name : makeSectionConstantScope(language.language, section, {}).assigned())
+        for (const std::string& name :
+             makeSectionConstantScope(language.language, section, {}, declaredTypeName).assigned())
         {
             claim(renderEnclosedConstantName(typeName, name));
         }
@@ -143,7 +146,7 @@ void forEachGeneratedName(const LanguageTraits&                              lan
     {
         return;
     }
-    const NamingScope        fields = makeSectionFieldScope(language.language, section);
+    const NamingScope        fields = makeSectionFieldScope(language.language, section, declaredTypeName);
     std::vector<std::string> members;
     for (const auto& field : section.fields)
     {
@@ -304,7 +307,12 @@ void checkGeneratedNameCollisions(const SemanticModule&                module,
             };
             if (!def.isService)
             {
-                forEachGeneratedName(language, def.request, names.typeName, versionedNames.typeName, claimFor(""));
+                forEachGeneratedName(language,
+                                     def.request,
+                                     names.typeName,
+                                     plan.scopes[names.sections.front().typeScope].name,
+                                     versionedNames.typeName,
+                                     claimFor(""));
                 continue;
             }
             forEachServiceName(language, names.typeName, claimFor(""));
@@ -315,6 +323,7 @@ void checkGeneratedNameCollisions(const SemanticModule&                module,
                 forEachGeneratedName(language,
                                      source,
                                      held.typeName,
+                                     plan.scopes[held.typeScope].name,
                                      versionedNames.sections[section].typeName,
                                      claimFor(held.section));
             }

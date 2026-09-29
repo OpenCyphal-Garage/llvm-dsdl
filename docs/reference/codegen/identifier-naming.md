@@ -64,23 +64,31 @@ uint8 _leading
 becomes, in Go:
 
 ```go
-Break     uint8
-FooBar    uint8
-FooBar_2  uint8
-Leading   uint8
+Break   uint8
+FooBar  uint8
+FooBar2 uint8
+Leading uint8
 ```
 
 The ordinal is assigned in DSDL declaration order, so it is stable across runs and moves only when
 the definition does. Each rename is reported:
 
 ```
-note: field 'foo_bar' is emitted as 'FooBar_2' for target language 'go';
-      another name in the same scope already projects to 'FooBar'
+note: field 'foo_bar' is emitted as 'FooBar2' for target language 'go';
+      another name in the same scope already takes 'FooBar'
 ```
 
 A scope covers one region, not a whole file. C++ declares a definition's fields and constants into
 one struct body, so those share a scope; the languages that put constants where a field cannot reach
 them give each its own.
+
+A C++ class's members may not take the class's name, so the scope of a C++ type's members claims the
+name the type is declared under, and a member landing on it is escaped as a claimed name is:
+
+```
+note: field 'Foo' is emitted as 'Foo_' for target language 'cpp';
+      the type that holds it is named 'Foo'
+```
 
 ## Rejected corpora
 

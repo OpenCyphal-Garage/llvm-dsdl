@@ -268,6 +268,13 @@ The escape is also the right shape: `Serialize_`, where a scope reservation woul
 and `_2` means "the second name competing for this identifier", which is untrue of a name no other
 field wanted.
 
+A type's own name differs from type to type, so the scope of the type's members claims it instead.
+The row's `typeNameAmongMembers` says the language puts the name among the members, as C++ does, and
+the section scopes then claim the name the type is declared under. A member that reaches it takes the
+same escape: a field `Foo` of `ns.Foo.1.0` is `Foo_`, as are a constant, a union option's tag, an
+array's capacity and an accessor that reach the name. A member already ending in `_` takes an
+ordinal, since a doubled `_` is reserved in C++.
+
 There is no `predeclared` field for the shadowable-but-legal names — Go's `len` and `cap`, Python's
 `str` and `list`. Shadowing them becomes problematic only where the name is later used unqualified, 
 as in a local or a function name, and no DSDL name reaches either: `FunctionName` has no call site, 

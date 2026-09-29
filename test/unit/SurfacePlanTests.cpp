@@ -367,6 +367,43 @@ bool runSurfacePlanTests()
                               ok;
     }
 
+    // A member named as its type is escaped where the row puts the type's name among its members, as
+    // a claimed name is, and a member spelled as that escape takes an ordinal. The name claimed is
+    // the one the type is declared under, which a deprecated C++ type has of its own.
+    {
+        const SectionParts selfNamed{.fields = {field("Foo"), field("Foo_")}, .constants = {}};
+        ok                  = expect(outline(allocate(Language::Cpp, {message("Foo", selfNamed)})),
+                                     "root pkg\n"
+                                     "  namespace ns\n"
+                                     "    file Foo_1_0\n"
+                                     "      type Foo\n"
+                                     "        Foo_ : field\n"
+                                     "        Foo_2 : field\n",
+                                     "a C++ member named as its type") &&
+                              ok;
+        ok                  = expect(outline(allocate(Language::Rust, {message("Foo", selfNamed)})),
+                                     "root pkg\n"
+                                     "  namespace ns\n"
+                                     "    module foo_1_0\n"
+                                     "      type Foo\n"
+                                     "        foo : field\n"
+                                     "        foo_ : field\n",
+                                     "a Rust member named as its type") &&
+                              ok;
+        DefinitionParts old = message("Foo", selfNamed);
+        old.deprecated      = true;
+        ok                  = expect(outline(allocate(Language::Cpp, {old})),
+                                     "root pkg\n"
+                                     "  namespace ns\n"
+                                     "    file Foo_1_0\n"
+                                     "      type Foo_\n"
+                                     "        Foo : field\n"
+                                     "        Foo_2 : field\n"
+                                     "      Foo : type\n",
+                                     "a deprecated C++ type's member named as its declared name") &&
+                              ok;
+    }
+
     // Band 4, the lowered functions. A language that compiles the bodies apart links every one, a
     // helper nothing calls included; the others name each helper a body calls, in the pool the
     // language allocates helpers in.

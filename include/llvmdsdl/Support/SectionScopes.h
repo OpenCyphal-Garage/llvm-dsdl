@@ -149,10 +149,17 @@ enum class ArrayMetadataKind : std::uint8_t
 /// Fields are declared in DSDL order, which makes the assignment reproducible; padding fields carry
 /// no name and are skipped. Where the language declares constants into the same region as fields the
 /// constants are declared here too, so the two cannot collide -- see @ref makeSectionConstantScope.
+///
+/// Where the language puts a type's own name among its members' names, the scope claims
+/// @p declaredTypeName, so a member that projects onto it is escaped: a field `Foo` of a C++ struct
+/// `Foo` is `Foo_`.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose fields are being named.
+/// @param[in] declaredTypeName The name the section's type is declared under.
 /// @return A scope with every field declared.
-[[nodiscard]] NamingScope makeSectionFieldScope(Language language, const SectionParts& section);
+[[nodiscard]] NamingScope makeSectionFieldScope(Language            language,
+                                                const SectionParts& section,
+                                                llvm::StringRef     declaredTypeName);
 
 /// @brief The names of @p section's pool-class constants, by DSDL field, in field order: one for each
 ///        variable-length array, where the language declares them.
@@ -184,10 +191,14 @@ enum class ArrayMetadataKind : std::uint8_t
 ///            There is no default. A caller that leaves it out gets a scope that disagrees with the
 ///            one the emitter built, and the names it reads back are then names nothing writes --
 ///            a silent wrong answer rather than a missing one.
+/// @param[in] declaredTypeName The name the section's type is declared under, which the scope
+///            claims where the language declares the constants in the type and puts the type's own
+///            name among its members' names.
 /// @return A scope with every constant declared.
 [[nodiscard]] NamingScope makeSectionConstantScope(Language            language,
                                                    const SectionParts& section,
-                                                   llvm::StringRef     typeConstantPrefix);
+                                                   llvm::StringRef     typeConstantPrefix,
+                                                   llvm::StringRef     declaredTypeName);
 
 /// @brief The scope a Go section's package-level constants are declared into.
 ///
