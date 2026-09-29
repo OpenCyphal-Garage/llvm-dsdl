@@ -404,6 +404,44 @@ bool runSurfacePlanTests()
                               ok;
     }
 
+    // A type named as a member the generated code claims in every type is declared apart and
+    // published under an alias, where the row puts the type's name among its members.
+    {
+        const SectionParts plain{.fields = {field("value")}, .constants = {}};
+        ok                      = expect(outline(allocate(Language::Cpp, {message("FULL_NAME", plain)})),
+                                         "root pkg\n"
+                                         "  namespace ns\n"
+                                         "    file FULL_NAME_1_0\n"
+                                         "      type FULL_NAME_\n"
+                                         "        value : field\n"
+                                         "      FULL_NAME : type\n",
+                                         "a C++ type named as a claimed member") &&
+                                  ok;
+        ok                      = expect(outline(allocate(Language::Rust, {message("FULL_NAME", plain)})),
+                                         "root pkg\n"
+                                         "  namespace ns\n"
+                                         "    module full_name_1_0\n"
+                                         "      type FULLNAME\n"
+                                         "        value : field\n",
+                                         "a Rust type named as a C++ claimed member") &&
+                                  ok;
+        DefinitionParts service = message("serialize", plain);
+        service.service         = true;
+        service.response        = plain;
+        ok                      = expect(outline(allocate(Language::Cpp, {service})),
+                                         "root pkg\n"
+                                         "  namespace ns\n"
+                                         "    file serialize_1_0\n"
+                                         "      type serialize_\n"
+                                         "        type Request\n"
+                                         "          value : field\n"
+                                         "        type Response\n"
+                                         "          value : field\n"
+                                         "      serialize : type\n",
+                                         "a C++ service named as a claimed member") &&
+                                  ok;
+    }
+
     // Band 4, the lowered functions. A language that compiles the bodies apart links every one, a
     // helper nothing calls included; the others name each helper a body calls, in the pool the
     // language allocates helpers in.

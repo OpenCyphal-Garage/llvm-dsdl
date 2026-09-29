@@ -90,6 +90,10 @@ note: field 'Foo' is emitted as 'Foo_' for target language 'cpp';
       the type that holds it is named 'Foo'
 ```
 
+A C++ type named as a member the generated code declares in every type is the side that moves. It is
+declared as `<name>_` and published under the alias `<name>`, as a deprecated type is, so a message
+`ns.FULL_NAME.1.0` is `struct FULL_NAME_` and `using FULL_NAME = FULL_NAME_;`.
+
 ## Rejected corpora
 
 A scope repairs a collision by renaming, which works while the name is internal to a region. Two

@@ -253,18 +253,19 @@ public:
         allocateFileGuards(names, definition.ref, file);
         allocateModuleConstants(names, definition, file);
 
-        const bool declaredApart = definition.deprecated && row_.composition.deprecatedTypeDeclaredApart;
+        const bool deprecated = definition.deprecated;
         if (definition.service && (row_.composition.sectionEnclosure == SectionEnclosure::ServiceType))
         {
-            // The service's type encloses its sections, and a deprecated one is declared apart, as
-            // each of its sections is. So is one whose section would take its name where no member
-            // may: a service named `Request` is reached as `Request::Request` through the alias.
+            // The service's type encloses its sections. It is declared apart as any type is, or where
+            // its section would take its name where no member may: a service named `Request` is
+            // reached as `Request::Request` through the alias. A deprecated service's sections are
+            // declared apart too.
             const bool sectionTakesName =
                 row_.classification.nameClasses.typeNameAmongMembers &&
                 llvm::any_of(std::array<llvm::StringRef, 2>{"request", "response"}, [&](const llvm::StringRef section) {
                     return renderSectionTypeName(language, names.typeName, section) == names.typeName;
                 });
-            const bool          serviceApart = declaredApart || sectionTakesName;
+            const bool          serviceApart = declaredApart(deprecated, names.typeName) || sectionTakesName;
             const SurfaceEntity service{names.key, "", "", ""};
             names.serviceScope =
                 openScope(file, SurfaceScopeKind::Type, renderDeclaredTypeName(names.typeName, serviceApart), service);
@@ -278,23 +279,23 @@ public:
                                service);
             }
             allocateServiceConstants(names, file);
-            allocateSection(names, *names.serviceScope, "request", definition.request, declaredApart);
+            allocateSection(names, *names.serviceScope, "request", definition.request, deprecated);
             if (definition.response)
             {
-                allocateSection(names, *names.serviceScope, "response", *definition.response, declaredApart);
+                allocateSection(names, *names.serviceScope, "response", *definition.response, deprecated);
             }
         }
         else if (definition.service)
         {
-            allocateSection(names, file, "request", definition.request, declaredApart);
+            allocateSection(names, file, "request", definition.request, deprecated);
             if (definition.response)
             {
-                allocateSection(names, file, "response", *definition.response, declaredApart);
+                allocateSection(names, file, "response", *definition.response, deprecated);
             }
         }
         else
         {
-            allocateSection(names, file, "", definition.request, declaredApart);
+            allocateSection(names, file, "", definition.request, deprecated);
         }
         // A service reached by its own name means its request, where no type of the service's own
         // has the name. Where a section's type is already called that -- a service named `Request`
@@ -384,23 +385,44 @@ private:
         return index;
     }
 
+    /// @brief Whether a type named @p typeName is declared under a name of its own, and published
+    ///        under an alias of it. A deprecated type is, where the language does that. So is one
+    ///        named as a member the generated code claims in every type, where no member may take the
+    ///        type's name: a C++ message named `FULL_NAME` is `struct FULL_NAME_`.
+    [[nodiscard]] bool declaredApart(const bool deprecated, const llvm::StringRef typeName) const
+    {
+        if (deprecated && row_.composition.deprecatedTypeDeclaredApart)
+        {
+            return true;
+        }
+        if (!row_.classification.nameClasses.typeNameAmongMembers)
+        {
+            return false;
+        }
+        const LanguageNamingPolicy& policy          = codegenNamingPolicy(row_.language);
+        const bool                  constantsInType = row_.composition.constants == ConstantsScope::Type;
+        return llvm::is_contained(policy.runtimeOwned(IdentifierRole::FieldName), typeName) ||
+               (constantsInType && llvm::is_contained(policy.runtimeOwned(IdentifierRole::ConstantName), typeName));
+    }
+
     /// @brief Declares one section's type in @p parent, and its members. A type declared apart is
     ///        declared under a name of its own, and its public name is an alias of it.
     void allocateSection(DefinitionNames&    names,
                          const std::size_t   parent,
                          const std::string&  sectionName,
                          const SectionParts& parts,
-                         const bool          declaredApart)
+                         const bool          deprecated)
     {
         const Language language = row_.language;
         SectionNames   section;
         section.section = sectionName;
         section.typeName =
             sectionName.empty() ? names.typeName : renderSectionTypeName(language, names.typeName, sectionName);
-        section.isUnion = parts.isUnion;
-        const auto of   = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member, ""}; };
+        section.isUnion  = parts.isUnion;
+        const auto of    = [&](const std::string& member) { return SurfaceEntity{names.key, sectionName, member, ""}; };
+        const bool apart = declaredApart(deprecated, section.typeName);
         section.typeScope =
-            openScope(parent, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, declaredApart), of(""));
+            openScope(parent, SurfaceScopeKind::Type, renderDeclaredTypeName(section.typeName, apart), of(""));
         // A language that keeps structure tags as a class of their own names each type's tag as
         // the type.
         if (row_.classification.nameClasses.tags)
@@ -440,7 +462,7 @@ private:
         {
             allocateConstants(section, parent, parts, of);
         }
-        if (declaredApart)
+        if (apart)
         {
             (void) declare(parent,
                            section.typeName,
@@ -1237,14 +1259,14 @@ private:
             {
                 continue;
             }
-            const bool        apart    = found->second && row_.composition.deprecatedTypeDeclaredApart;
-            const std::string exported = renderDeclaredTypeName(renderDefinitionTypeName(row_.language,
-                                                                                         ref.namespaceComponents,
-                                                                                         ref.shortName,
-                                                                                         ref.majorVersion,
-                                                                                         ref.minorVersion,
-                                                                                         options_.versioning),
-                                                                apart);
+            const std::string typeName = renderDefinitionTypeName(row_.language,
+                                                                  ref.namespaceComponents,
+                                                                  ref.shortName,
+                                                                  ref.majorVersion,
+                                                                  ref.minorVersion,
+                                                                  options_.versioning);
+            const bool        apart    = declaredApart(found->second, typeName);
+            const std::string exported = renderDeclaredTypeName(typeName, apart);
             (void) declare(file,
                            scope.claim(ref, exported, apart),
                            SurfaceDeclKind::Import,

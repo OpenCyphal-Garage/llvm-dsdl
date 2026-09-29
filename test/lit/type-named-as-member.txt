@@ -1,0 +1,59 @@
+# A C++ class's members may not take the class's name, and the generated code declares members of
+# fixed names in every type. A type named as one of them is declared apart, as `<name>_`, and
+# published under the alias `<name>`, as a deprecated type is: a message `ns.FULL_NAME.1.0` is
+# `struct FULL_NAME_` and `using FULL_NAME = FULL_NAME_;`. Generated code names the struct, so a
+# holder's field type is not shadowed by the holder's own `FULL_NAME`. Rust keeps the name.
+
+# RUN: rm -rf %t && mkdir -p %t/ns
+# RUN: printf 'uint8 value\n@sealed\n' > %t/ns/FULL_NAME.1.0.dsdl
+# RUN: printf 'uint8 serialize\nuint8 value\n@sealed\n' > %t/ns/serialize.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/ns/FIXED_PORT_ID.1.0.dsdl
+# RUN: printf '@deprecated\nuint8 value\n@sealed\n' > %t/ns/deserialize.1.0.dsdl
+# RUN: printf 'uint8[<=2] value\n@sealed\n' > %t/ns/set_memory_resource.1.0.dsdl
+# RUN: printf 'ns.FULL_NAME.1.0 a\nns.serialize.1.0 b\nns.set_memory_resource.1.0 c\n@sealed\n' > %t/ns/Holder.1.0.dsdl
+
+# RUN: %dsdlc --target-language cpp --cpp-profile std %t/ns --outdir %t/std 2>&1 | FileCheck %s --check-prefix=NOTES
+# NOTES: note: field 'serialize' is emitted as 'serialize_2' for target language 'cpp'; the type that holds it is named 'serialize_'
+
+# RUN: FileCheck %s --check-prefix=MESSAGE < %t/std/ns/FULL_NAME_1_0.hpp
+# MESSAGE:     struct FULL_NAME_ {
+# MESSAGE:     static constexpr const char* FULL_NAME = "ns.FULL_NAME";
+# MESSAGE:     using FULL_NAME = FULL_NAME_;
+
+# RUN: FileCheck %s --check-prefix=FIELD < %t/std/ns/serialize_1_0.hpp
+# FIELD:      struct serialize_ {
+# FIELD-NEXT:   std::uint8_t serialize_2{};
+# FIELD:      using serialize = serialize_;
+
+# RUN: FileCheck %s --check-prefix=SERVICE < %t/std/ns/FIXED_PORT_ID_1_0.hpp
+# SERVICE:     struct FIXED_PORT_ID_ {
+# SERVICE:     static constexpr bool HAS_FIXED_PORT_ID = false;
+# SERVICE:     struct Request {
+# SERVICE:     using FIXED_PORT_ID = FIXED_PORT_ID_;
+
+# RUN: FileCheck %s --check-prefix=DEPRECATED < %t/std/ns/deserialize_1_0.hpp
+# DEPRECATED: using deserialize {{\[\[deprecated\]\]}} = deserialize_;
+
+# RUN: FileCheck %s --check-prefix=HOLDER < %t/std/ns/Holder_1_0.hpp
+# HOLDER:      struct Holder {
+# HOLDER-NEXT:   FULL_NAME_ a{};
+# HOLDER-NEXT:   serialize_ b{};
+# HOLDER-NEXT:   set_memory_resource_ c{};
+
+# Both profiles compile, `pmr` declaring `set_memory_resource` in every type.
+# RUN: %dsdlc --target-language cpp --cpp-profile pmr %t/ns --outdir %t/pmr
+# RUN: printf '#include "ns/Holder_1_0.hpp"\n#include "ns/FIXED_PORT_ID_1_0.hpp"\n#include "ns/deserialize_1_0.hpp"\nint main() { ns::FULL_NAME a{}; ns::serialize b{}; ns::set_memory_resource c{}; ns::FIXED_PORT_ID::Request r{}; ns::Holder h{}; (void) a; (void) b; (void) c; (void) r; (void) h; return 0; }\n' > %t/probe.cpp
+# RUN: %cxx -std=c++20 -Wall -Wextra -Werror -fsyntax-only -I %t/std %t/probe.cpp
+# RUN: %cxx -std=c++20 -Wall -Wextra -Werror -fsyntax-only -I %t/pmr %t/probe.cpp
+
+# The declared name is claimed beside the public one, so a sibling of that name is refused.
+# RUN: mkdir -p %t/sibling/ns && printf 'uint8 value\n@sealed\n' > %t/sibling/ns/FULL_NAME.1.0.dsdl
+# RUN: printf 'uint8 value\n@sealed\n' > %t/sibling/ns/FULL_NAME_.1.0.dsdl
+# RUN: not %dsdlc --target-language cpp %t/sibling/ns --outdir %t/sibling/out 2>&1 | FileCheck %s --check-prefix=SIBLING
+# SIBLING: error: type name collision in generated output: 'ns.FULL_NAME_' and 'ns.FULL_NAME' both emit 'FULL_NAME_' for target language 'cpp'
+
+# RUN: %dsdlc --target-language rust %t/ns --outdir %t/rust
+# RUN: FileCheck %s --check-prefix=RUST < %t/rust/src/ns/full_name_1_0.rs
+# RUST-NOT: pub type
+# RUST:     pub struct FULLNAME {
+# RUST-NOT: pub type

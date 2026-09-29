@@ -34,7 +34,7 @@ void ImportNameScope::reserve(const llvm::StringRef name)
     declared_.insert(name.str());
 }
 
-std::string ImportNameScope::claim(const DefinitionRef& ref, const std::string& exported, const bool deprecated)
+std::string ImportNameScope::claim(const DefinitionRef& ref, const std::string& exported, const bool declaredApart)
 {
     const std::string key = renderDefinitionKey(ref);
     if (const auto found = claims_.find(key); found != claims_.end())
@@ -44,10 +44,11 @@ std::string ImportNameScope::claim(const DefinitionRef& ref, const std::string& 
     // A candidate is composed from the raw parts and projected once, so the projection decides the
     // casing of the whole name rather than of each part separately. Projecting a part on its own
     // leaves its separator behind: a namespace component the language claims contributes
-    // `Default_`, and a deprecated dependency's exported name ends in its marker. The marker is
+    // `Default_`, and a dependency declared apart has an exported name ending in its marker. The marker is
     // applied after the projection, since it is a suffix the projection would fold away.
     const auto compose = [&](const std::string& raw) {
-        return renderDeclaredTypeName(codegenProjectIdentifier(language_, IdentifierRole::TypeName, raw), deprecated);
+        return renderDeclaredTypeName(codegenProjectIdentifier(language_, IdentifierRole::TypeName, raw),
+                                      declaredApart);
     };
     std::string local = exported;
     for (std::size_t depth = 1; taken(local) && (depth <= ref.namespaceComponents.size()); ++depth)
