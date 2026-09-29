@@ -1,0 +1,57 @@
+# `dsdl-type-accessors` gives each field accessor the member's storage type for the value it
+# carries, and `index` for its buffer's size and an element's index, and states the conversions to
+# and from the plan's `i64` in the body. A value narrower than 32 bits carries the extension the C
+# ABI gives its type. A 64-bit member is stored in the plan's own width and is not converted. C's
+# row selects the pass; a target whose accessors keep the plan's types is not retyped.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language mlir %S/fixtures_accessor_types > %t/plans.mlir
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies{target=c})' %t/plans.mlir | FileCheck %s
+# RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies{target=rust})' %t/plans.mlir | FileCheck %s --check-prefix=KEPT
+
+# A signed member narrower than 32 bits: the getter narrows what the plan read, and the setter
+# widens what it is handed, both sign-extended across a call.
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.get.small(
+# CHECK-SAME:  %{{.*}}: !dsdl.ptr<const !dsdl.byte>, [[SIZE:%[a-z0-9_]+]]: index) -> (i8 {llvm.signext})
+# CHECK-NEXT:  [[HELD:%[a-z0-9_]+]] = arith.index_castui [[SIZE]] : index to i64
+# CHECK:       dsdl.read_bits {{.*}}size %{{.*}} {is_signed, width = 8 : i64}
+# CHECK:       [[NARROW:%[a-z0-9_]+]] = arith.trunci %{{.*}} : i64 to i8
+# CHECK-NEXT:  return [[NARROW]] : i8
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.set.small(
+# CHECK-SAME:  %{{.*}}: !dsdl.ptr<!dsdl.byte>, %{{.*}}: index, [[VALUE:%[a-z0-9_]+]]: i8 {llvm.signext}) -> i8
+# CHECK-NEXT:  arith.index_castui
+# CHECK-NEXT:  arith.extsi [[VALUE]] : i8 to i64
+
+# An unsigned one is zero-extended.
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.get.wide(
+# CHECK-SAME:  -> (i16 {llvm.zeroext})
+# CHECK:       arith.trunci %{{.*}} : i64 to i16
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.set.wide(
+# CHECK-SAME:  [[VALUE:%[a-z0-9_]+]]: i16 {llvm.zeroext}) -> i8
+# CHECK:       arith.extui [[VALUE]] : i16 to i64
+
+# A 64-bit member keeps the plan's width, and its signedness stays an attribute of the accessor.
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.get.large(
+# CHECK-SAME:  [[SIZE:%[a-z0-9_]+]]: index) -> i64 attributes {{{.*}}llvmdsdl.is_signed
+# CHECK-NOT:   arith.trunci
+# CHECK:       return
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.set.large(
+# CHECK-SAME:  %{{.*}}: i64) -> i8
+# CHECK-NOT:   arith.extsi
+# CHECK:       return
+
+# A bool is one bit, zero-extended; an element's index is an `index` like the size.
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.get.flags(
+# CHECK-SAME:  [[SIZE:%[a-z0-9_]+]]: index, [[INDEX:%[a-z0-9_]+]]: index) -> (i1 {llvm.zeroext})
+# CHECK-NEXT:  arith.index_castui [[SIZE]] : index to i64
+# CHECK-NEXT:  arith.index_castui [[INDEX]] : index to i64
+# CHECK:       arith.trunci %{{.*}} : i64 to i1
+# CHECK-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.set.flags(
+# CHECK-SAME:  %{{.*}}: index, %{{.*}}: index, [[VALUE:%[a-z0-9_]+]]: i1 {llvm.zeroext}) -> i8
+# CHECK:       arith.extui [[VALUE]] : i1 to i64
+
+# KEPT-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.get.small(
+# KEPT-SAME:  %{{.*}}: !dsdl.ptr<const !dsdl.byte>, %{{.*}}: i64) -> i64
+# KEPT-NOT:   arith.trunci
+# KEPT-LABEL: func.func @fixtures_accessor_types.vendor.Kinds.1.0.set.flags(
+# KEPT-SAME:  %{{.*}}: i64, %{{.*}}: i64, %{{.*}}: i64) -> i8

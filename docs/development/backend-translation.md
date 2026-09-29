@@ -35,7 +35,10 @@ module.
 After `build-dsdl-plan-bodies` the pipeline folds what the target's `BodyInterface` rules out:
 `dsdl-fold-null-guards` a null test the target cannot fail, `dsdl-fold-unobserved-accessor-sizes`
 a size a getter's caller never reads, with the parameter it went through, and
-`dsdl-fold-host-image-bodies` a field-wise body the target can move whole. For a target whose entry
+`dsdl-fold-host-image-bodies` a field-wise body the target can move whole. For a target whose
+accessors take the member's types, `dsdl-type-accessors` gives each accessor the member's storage
+type for its value and `index` for its size and an element's index, with the conversions to and
+from the plan's `i64` in the body. For a target whose entry
 point is handed the space as its buffer's length and answers what it used,
 `dsdl-fold-nested-call-sizes` turns each `dsdl.call_serdes`, with the local it hands its size
 through and the reads back of that local, into `dsdl.call_serdes_sized`: the space by value in, the

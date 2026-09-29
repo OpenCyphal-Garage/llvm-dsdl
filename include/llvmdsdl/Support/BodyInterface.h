@@ -79,6 +79,13 @@ struct BodyInterface final
     /// another, which the caller reads.
     bool accessorsReturnViews{false};
 
+    /// @brief Whether the target's field accessors take and answer the member's own storage type,
+    ///        and their buffer's size and an element's index as the target's size type.
+    ///
+    /// The plan holds all three in an `i64`. Such a target has each accessor retyped by
+    /// `dsdl-type-accessors`, which states the conversions once rather than in each spelling.
+    bool accessorsTakeMemberTypes{false};
+
     /// @brief Whether the target's objects can be byte images of the wire.
     ///
     /// Such a target folds a host-image section's bodies into one move. Where a structure has no

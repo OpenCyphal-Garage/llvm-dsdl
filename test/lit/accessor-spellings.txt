@@ -25,19 +25,27 @@
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/padded_1_0.py | FileCheck %s --check-prefix=PY
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/arr_1_0.py | FileCheck %s --check-prefix=PY_ELEMENT
 
-# C:      int64_t fixtures_host_image__vendor__Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes);
+# C compiles each accessor under a versioned name, in the member's own type, and publishes it under
+# the section's name.
+# C:      uint16_t fixtures_host_image__vendor__Padded_1_0__get_b_ir_(const uint8_t* buffer, size_t buffer_size_bytes);
+# C-NEXT: int8_t fixtures_host_image__vendor__Padded_1_0__set_b_ir_(uint8_t* buffer, size_t buffer_size_bytes, uint16_t value);
 # C:      static inline uint16_t fixtures_host_image__vendor__Padded__get_b_(const uint8_t* const buffer, const size_t buffer_size_bytes)
 # C-NEXT: {
-# C-NEXT:   return (uint16_t) fixtures_host_image__vendor__Padded_1_0__get_b_ir_(buffer, (int64_t) buffer_size_bytes);
+# C-NEXT:   return fixtures_host_image__vendor__Padded_1_0__get_b_ir_(buffer, buffer_size_bytes);
 # C:      static inline int8_t fixtures_host_image__vendor__Padded__set_b_(uint8_t* const buffer, const size_t buffer_size_bytes, const uint16_t value)
+# C-NEXT: {
+# C-NEXT:   return fixtures_host_image__vendor__Padded_1_0__set_b_ir_(buffer, buffer_size_bytes, value);
 
 # A C getter reads a null buffer as an empty one, so the size it reads for is zero there. The plan
 # names that size, and C declares it by the name.
-# C_BODY:      fixtures_host_image__vendor__Padded_1_0__get_b_ir_(const uint8_t* buffer, int64_t buffer_size_bytes){{$}}
+# C_BODY:      uint16_t fixtures_host_image__vendor__Padded_1_0__get_b_ir_(const uint8_t* buffer, size_t buffer_size_bytes){{$}}
 # C_BODY-NEXT: {
+# C_BODY-NEXT: const uint64_t [[HELD:v[0-9]+]] = (uint64_t) buffer_size_bytes;
 # C_BODY:      const bool is_null = (buffer == NULL);
-# C_BODY-NEXT: const uint64_t size = (is_null ? 0ULL : buffer_size_bytes_);
+# C_BODY-NEXT: const uint64_t size = (is_null ? 0ULL : [[HELD]]);
 # C_BODY-NEXT: dsdl_runtime_get_u16(buf, (size_t) size,
+# C_BODY:      const uint16_t [[NARROW:v[0-9]+]] = (uint16_t)
+# C_BODY-NEXT: return [[NARROW]];
 
 # C++ takes the buffer as a span, which is never null, and binds its size where the plan reads it.
 # A read hands the runtime the span's bytes through `readable_bytes`, since an empty span may hold

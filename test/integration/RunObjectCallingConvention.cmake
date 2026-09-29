@@ -6,8 +6,9 @@
 #===----------------------------------------------------------------------===#
 #
 # The object target's entry points, called through the header it wrote, answer their error codes
-# as the C ABI extends an `int8_t`. The probe is compiled at -O2, where the caller relies on the
-# callee's extension rather than repeating it.
+# as the C ABI extends an `int8_t`, and its field accessors pass and answer each kind of member value
+# as the ABI extends its type. The probe is compiled at -O2, where the caller relies on the callee's
+# extension rather than repeating it.
 #
 cmake_minimum_required(VERSION 3.24)
 
@@ -22,7 +23,8 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 set(obj_out "${OUT_DIR}/obj")
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language obj "${SOURCE_ROOT}/test/lit/fixtures_aliasable" --outdir "${obj_out}"
+  COMMAND "${DSDLC}" --target-language obj "${SOURCE_ROOT}/test/lit/fixtures_aliasable"
+          "${SOURCE_ROOT}/test/lit/fixtures_accessor_types" --outdir "${obj_out}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr
@@ -57,5 +59,5 @@ execute_process(
 )
 message(STATUS "${run_out}${run_err}")
 if(NOT run_result EQUAL 0)
-  message(FATAL_ERROR "an entry point's answer did not arrive as the C ABI extends it")
+  message(FATAL_ERROR "a value did not cross the call as the C ABI extends it")
 endif()

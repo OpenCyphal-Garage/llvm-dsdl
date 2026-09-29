@@ -67,15 +67,20 @@
 # ELEMENT:       dsdl.write_bits
 
 # A nested composite field has a getter and no setter. The getter answers the buffer from the
-# field's byte offset and, through the size pointer, what remains. A field at offset nought answers
-# the buffer the getter was handed, null or not, and the size a getter reads there.
+# field's byte offset and, through the size pointer where the caller hands one, what remains. A
+# field at offset nought answers the buffer the getter was handed, null or not, and the size a
+# getter reads there.
 # RUN: FileCheck %s --check-prefix=COMPOSITE < %t/bodies.mlir
 # COMPOSITE-LABEL: func.func @fixtures_host_image.vendor.Nested.1.0.get.inner(
 # COMPOSITE-SAME:  %[[BUF:.*]]: !dsdl.ptr<const !dsdl.byte>, %[[SIZE:.*]]: i64, %[[OUT:.*]]: !dsdl.ptr<!dsdl.size>) -> !dsdl.ptr<const !dsdl.byte>
 # COMPOSITE-NOT:   dsdl.buffer_or_empty
 # COMPOSITE:       %[[NULL:.*]] = dsdl.is_null %[[BUF]]
 # COMPOSITE-NEXT:  %[[HELD:.*]] = arith.select %[[NULL]], %{{.*}}, %[[SIZE]] {llvmdsdl.result_roles = ["size"]}
+# COMPOSITE-NEXT:  %[[NO_OUT:.*]] = dsdl.is_null %[[OUT]]
+# COMPOSITE-NEXT:  scf.if %[[NO_OUT]] {
+# COMPOSITE-NEXT:  } else {
 # COMPOSITE-NEXT:  dsdl.store_scalar %[[OUT]], %[[HELD]]
+# COMPOSITE-NEXT:  }
 # COMPOSITE-NEXT:  return %[[BUF]]
 # COMPOSITE-NOT:   @fixtures_host_image.vendor.Nested.1.0.set.inner
 
@@ -91,7 +96,11 @@
 # COMPOSITE_AT:       %[[WITHIN:.*]] = arith.cmpi uge, %[[HELD]], %[[OFF]]
 # COMPOSITE_AT-NEXT:  %[[AT:.*]] = arith.select %[[WITHIN]], %[[OFF]], %[[HELD]]
 # COMPOSITE_AT-NEXT:  %[[REST:.*]] = arith.subi %[[HELD]], %[[AT]]
+# COMPOSITE_AT-NEXT:  %[[NO_OUT:.*]] = dsdl.is_null %[[OUT]]
+# COMPOSITE_AT-NEXT:  scf.if %[[NO_OUT]] {
+# COMPOSITE_AT-NEXT:  } else {
 # COMPOSITE_AT-NEXT:  dsdl.store_scalar %[[OUT]], %[[REST]]
+# COMPOSITE_AT-NEXT:  }
 # COMPOSITE_AT-NEXT:  %[[SUB:.*]] = dsdl.buffer_at %[[READABLE]][%[[AT]]]
 # COMPOSITE_AT-NEXT:  return %[[SUB]]
 
