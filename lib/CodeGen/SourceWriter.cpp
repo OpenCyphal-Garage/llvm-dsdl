@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace llvmdsdl
 {
@@ -50,7 +51,23 @@ void SourceWriter::begin()
 void SourceWriter::line(const std::string& text)
 {
     begin();
-    out_ << policy_.prefix(depth_) << text << '\n';
+    const std::string prefix = policy_.prefix(depth_);
+    if ((breaking_ != nullptr) && (prefix.size() + text.size() > breaking_->length))
+    {
+        const std::vector<LineBreaking::Piece> pieces =
+            breaking_->pieces(text, prefix.size(), policy_.prefix(1).size());
+        for (const LineBreaking::Piece& piece : pieces)
+        {
+            out_ << policy_.prefix(depth_ + piece.level) << piece.text << '\n';
+        }
+        if (!pieces.empty())
+        {
+            written_    = true;
+            afterBlank_ = false;
+            return;
+        }
+    }
+    out_ << prefix << text << '\n';
     written_    = true;
     afterBlank_ = false;
 }

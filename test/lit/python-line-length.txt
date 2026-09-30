@@ -1,0 +1,23 @@
+# Generated Python keeps its lines to the length its package states for ruff. A statement longer
+# than that breaks at its last bracket, a call's arguments one a line where they do not fit on one,
+# and a comment breaks between its words.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf 'uint8 a\n@sealed\n' > %t/dsdl/ns/Inner.1.0.dsdl
+# RUN: printf '# %%s\nns.Inner.1.0[<=3] a_member_whose_name_runs_long_enough_to_push_its_statements_past_the_width\n@sealed\n' "A documentation line that the author wrote wider than the output keeps a line, which breaks between its words where it passes the width." > %t/dsdl/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language python %t/dsdl/ns --outdir %t/py
+# RUN: FileCheck %s --check-prefix=PYPROJECT < %t/py/pyproject.toml
+# RUN: FileCheck %s --check-prefix=BROKEN < %t/py/dsdl_gen/ns/holder_1_0.py
+# RUN: %{python} -m py_compile %t/py/dsdl_gen/ns/holder_1_0.py
+
+# PYPROJECT:      [tool.ruff]
+# PYPROJECT-NEXT: line-length = 120
+
+# BROKEN:      # A documentation line that the author wrote wider than the output keeps a line, which breaks between its words where it{{$}}
+# BROKEN-NEXT: # passes the width.
+# BROKEN:      {{^ +}}a_member_whose_name_runs_long_enough_to_push_its_statements_past_the_width_err = min({{$}}
+# BROKEN-NEXT: {{^ +}}self.a_member_whose_name_runs_long_enough_to_push_its_statements_past_the_width[i]._serialize_into({{$}}
+# BROKEN-NEXT: {{^ +}}a_member_whose_name_runs_long_enough_to_push_its_statements_past_the_width_buf[:v{{[0-9]+}}]{{$}}
+# BROKEN-NEXT: {{^ +}}),{{$}}
+# BROKEN-NEXT: {{^ +}}0,{{$}}
+# BROKEN-NEXT: {{^ +}}){{$}}

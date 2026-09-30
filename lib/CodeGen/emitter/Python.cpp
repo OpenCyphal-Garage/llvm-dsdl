@@ -373,8 +373,11 @@ private:
     std::string           ownKey_;
 };
 
-/// @brief The line length `ruff` and `black` hold a Python file to by default.
-constexpr std::size_t kPythonLineLength = 88;
+/// @brief The length the output keeps a Python line to, which its package states for ruff.
+std::size_t pyLineLength()
+{
+    return languageTraits(Language::Python).composition.lineLength;
+}
 
 /// @brief The spaces a Python block is indented by.
 constexpr unsigned kPythonIndent = 4;
@@ -408,7 +411,7 @@ std::string renderPythonImports(const ImportSet& imports)
                 joined += (joined.empty() ? "" : ", ") + names.back();
             }
             const std::string head = "from " + module.path + " import ";
-            if (head.size() + joined.size() <= kPythonLineLength)
+            if (head.size() + joined.size() <= pyLineLength())
             {
                 from += head + joined + "\n";
                 continue;
@@ -1953,22 +1956,228 @@ private:
     mutable bool infallible_{false};
 };
 
+/// @brief A bracket that a line of Python opens and closes at its top level.
+struct Bracket final
+{
+    std::size_t open{};
+    std::size_t close{};
+};
+
+/// @brief The brackets at the top level of @p text, in order; none where a bracket or a string is
+///        left open, which a line of a statement the writer is handed never does.
+std::vector<Bracket> topLevelBrackets(const llvm::StringRef text)
+{
+    std::vector<Bracket> out;
+    int                  depth = 0;
+    std::size_t          start = 0;
+    char                 quote = 0;
+    for (std::size_t i = 0; i < text.size(); ++i)
+    {
+        const char c = text[i];
+        if (quote != 0)
+        {
+            if (c == '\\')
+            {
+                ++i;
+            }
+            else if (c == quote)
+            {
+                quote = 0;
+            }
+            continue;
+        }
+        if ((c == '"') || (c == '\''))
+        {
+            quote = c;
+        }
+        else if ((c == '(') || (c == '[') || (c == '{'))
+        {
+            start = (depth == 0) ? i : start;
+            ++depth;
+        }
+        else if ((c == ')') || (c == ']') || (c == '}'))
+        {
+            if (--depth < 0)
+            {
+                return {};
+            }
+            if (depth == 0)
+            {
+                out.push_back(Bracket{start, i});
+            }
+        }
+    }
+    return ((depth == 0) && (quote == 0)) ? out : std::vector<Bracket>{};
+}
+
+/// @brief The elements @p body separates with commas at its top level, each trimmed.
+std::vector<std::string> topLevelElements(const llvm::StringRef body)
+{
+    std::vector<std::string> out;
+    int                      depth = 0;
+    char                     quote = 0;
+    std::size_t              start = 0;
+    for (std::size_t i = 0; i < body.size(); ++i)
+    {
+        const char c = body[i];
+        if (quote != 0)
+        {
+            if (c == '\\')
+            {
+                ++i;
+            }
+            else if (c == quote)
+            {
+                quote = 0;
+            }
+            continue;
+        }
+        if ((c == '"') || (c == '\''))
+        {
+            quote = c;
+        }
+        else if ((c == '(') || (c == '[') || (c == '{'))
+        {
+            ++depth;
+        }
+        else if ((c == ')') || (c == ']') || (c == '}'))
+        {
+            --depth;
+        }
+        else if ((c == ',') && (depth == 0))
+        {
+            out.push_back(body.slice(start, i).trim().str());
+            start = i + 1;
+        }
+    }
+    if (const llvm::StringRef last = body.drop_front(start).trim(); !last.empty())
+    {
+        out.push_back(last.str());
+    }
+    return out;
+}
+
+/// @brief A comment line broken between its words, each line within @p length of column
+///        @p column and carrying the comment's own indentation.
+std::vector<LineBreaking::Piece> brokenComment(const llvm::StringRef text,
+                                               const std::size_t     column,
+                                               const std::size_t     length)
+{
+    const std::size_t indent = text.drop_front(1).find_first_not_of(' ');
+    const std::string lead   = text.take_front((indent == llvm::StringRef::npos) ? text.size() : indent + 1).str();
+    llvm::SmallVector<llvm::StringRef> words;
+    text.drop_front(lead.size()).split(words, ' ', -1, false);
+    std::vector<LineBreaking::Piece> out;
+    std::string                      current = lead;
+    for (const llvm::StringRef word : words)
+    {
+        const bool first = current.size() == lead.size();
+        if (!first && (column + current.size() + 1 + word.size() > length))
+        {
+            out.push_back(LineBreaking::Piece{0, current});
+            current = lead;
+        }
+        current += ((current.size() == lead.size()) ? "" : " ") + word.str();
+    }
+    out.push_back(LineBreaking::Piece{0, current});
+    return out;
+}
+
+/// @brief A line of Python broken at its brackets, as black breaks one.
+///
+/// The last call's or definition's parenthesis at the top level that holds anything, or else the
+/// last bracket there that does, closes on a line of its own, and what it holds is indented a level: on one line where
+/// it fits, and otherwise, for a call's arguments, one element a line, each ending in a comma. An element that still
+/// does not fit is broken the same way. A comment breaks between its words. Nothing else is broken, and a line with no
+/// bracket to break at is written as it is.
+std::vector<LineBreaking::Piece> brokenPython(const std::string& text,
+                                              const std::size_t  column,
+                                              const std::size_t  unit,
+                                              const std::size_t  length)
+{
+    const llvm::StringRef line(text);
+    if (line.starts_with("#"))
+    {
+        return brokenComment(line, column, length);
+    }
+    // A call's or a definition's parenthesis follows a name or another call's close.
+    const auto isCall = [&](const Bracket& b) {
+        const char before = (b.open > 0) ? line[b.open - 1] : ' ';
+        return (line[b.open] == '(') && ((std::isalnum(static_cast<unsigned char>(before)) != 0) || (before == '_') ||
+                                         (before == ')') || (before == ']'));
+    };
+    const auto                 holds    = [](const Bracket& b) { return b.close > b.open + 1; };
+    const std::vector<Bracket> brackets = topLevelBrackets(line);
+    auto holding = llvm::find_if(llvm::reverse(brackets), [&](const Bracket& b) { return holds(b) && isCall(b); });
+    if (holding == brackets.rend())
+    {
+        holding = llvm::find_if(llvm::reverse(brackets), holds);
+    }
+    if (holding == brackets.rend())
+    {
+        return {};
+    }
+    const Bracket         bracket = *holding;
+    const llvm::StringRef body    = line.slice(bracket.open + 1, bracket.close).trim();
+    const std::size_t     inner   = column + unit;
+    const bool            call    = isCall(bracket);
+
+    std::vector<LineBreaking::Piece> out{{0, line.take_front(bracket.open + 1).str()}};
+    if (!call || (inner + body.size() <= length))
+    {
+        out.push_back({1, body.str()});
+    }
+    else
+    {
+        for (const std::string& element : topLevelElements(body))
+        {
+            const std::string                      piece  = element + ",";
+            const std::vector<LineBreaking::Piece> broken = (inner + piece.size() > length)
+                                                                ? brokenPython(piece, inner, unit, length)
+                                                                : std::vector<LineBreaking::Piece>{};
+            if (broken.empty())
+            {
+                out.push_back({1, piece});
+            }
+            for (const LineBreaking::Piece& p : broken)
+            {
+                out.push_back({p.level + 1, p.text});
+            }
+        }
+    }
+    out.push_back({0, line.drop_front(bracket.close).str()});
+    return out;
+}
+
+/// @brief How Python breaks a line longer than the output keeps one to.
+const LineBreaking& pyLineBreaking()
+{
+    static const LineBreaking breaking{.length = pyLineLength(),
+                                       .pieces = [](const std::string& text,
+                                                    const std::size_t  column,
+                                                    const std::size_t  unit) {
+                                           return brokenPython(text, column, unit, pyLineLength());
+                                       }};
+    return breaking;
+}
+
 /// @brief The parts of a Python module and of a section, in the order Python writes them.
 const DeclarationLayout& pyLayout()
 {
     static const DeclarationLayout layout{
-        .files   = {{LayoutPart::Prelude,
-                     LayoutPart::Imports,
-                     LayoutPart::DefinitionConstants,
-                     LayoutPart::HelperDefinitions,
-                     LayoutPart::Sections,
-                     LayoutPart::Alias}},
-        .section = {LayoutPart::Type,
-                    LayoutPart::SectionDefinitions,
-                    LayoutPart::TypeEnd,
-                    LayoutPart::Options,
-                    LayoutPart::Constants},
-        .indent  = IndentPolicy::spaces(kPythonIndent),
+        .files    = {{LayoutPart::Prelude,
+                      LayoutPart::Imports,
+                      LayoutPart::DefinitionConstants,
+                      LayoutPart::HelperDefinitions,
+                      LayoutPart::Sections,
+                      LayoutPart::Alias}},
+        .section  = {LayoutPart::Type,
+                     LayoutPart::SectionDefinitions,
+                     LayoutPart::TypeEnd,
+                     LayoutPart::Options,
+                     LayoutPart::Constants},
+        .indent   = IndentPolicy::spaces(kPythonIndent),
+        .breaking = &pyLineBreaking(),
     };
     return layout;
 }
@@ -2101,21 +2310,7 @@ public:
         {
             w.line(makes ? "@classmethod" : "@staticmethod");
         }
-        // A definition too long for its line takes its parameters on a line of their own, as
-        // `ruff format` writes it.
-        const std::size_t column = static_cast<std::size_t>(w.depth()) * kPythonIndent;
-        if (column + signature.size() + 1 <= kPythonLineLength)
-        {
-            w.open(signature + ":");
-            return;
-        }
-        const std::size_t open  = signature.find('(');
-        const std::size_t close = signature.rfind(')');
-        w.line(signature.substr(0, open + 1));
-        w.indent();
-        w.line(signature.substr(open + 1, close - open - 1));
-        w.dedent();
-        w.open(signature.substr(close) + ":");
+        w.open(signature + ":");
     }
 
     void forward(SourceWriter& /*w*/,

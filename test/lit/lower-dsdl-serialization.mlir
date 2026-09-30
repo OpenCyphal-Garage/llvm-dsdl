@@ -39,7 +39,7 @@ module {
 // CHECK-NOT: kind = "padding"
 // CHECK: func.func @test.Widget.1.0.plan.capacity_check(%[[CAP:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_capacity_check
 // CHECK: %[[REQ:[^ ]+]] = arith.constant 16 : i64
-// CHECK: %[[CMP:[^ ]+]] = arith.cmpi ugt, %[[REQ]], %[[CAP]] : i64
+// CHECK: %[[CMP:[^ ]+]] = arith.cmpi ult, %[[CAP]], %[[REQ]] : i64
 // CHECK: %[[SEL:[^ ]+]] = scf.if %[[CMP]] -> (i8)
 // CHECK: return %[[SEL]] : i8
 // CHECK: func.func @test.Widget.1.0.plan.validate_union_tag(%[[TAG:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_origin = "lower-dsdl-exec", llvmdsdl.schema_sym = "test.Widget.1.0", llvmdsdl.union_tag_validate

@@ -303,8 +303,9 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp              
     const std::int64_t requiredBits = nonNegative(plan.getMaxBits());
 
     auto requiredBitsValue = mlir::arith::ConstantIntOp::create(builder, loc, requiredBits, 64).getResult();
+    // The capacity is what is tested, so it is the left operand.
     auto cond =
-        mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ugt, requiredBitsValue, capacityBits);
+        mlir::arith::CmpIOp::create(builder, loc, mlir::arith::CmpIPredicate::ult, capacityBits, requiredBitsValue);
     auto status = mlir::scf::IfOp::create(builder, loc, mlir::TypeRange{i8Ty}, cond, true);
     {
         mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();

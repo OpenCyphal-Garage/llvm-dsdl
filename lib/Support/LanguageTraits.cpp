@@ -453,6 +453,8 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .arrayMetadataConstants         = false,
                 .deprecatedTypeDeclaredApart    = false,
                 .freeFunctions                  = {},
+                // The width the DSDL sources are written to, so their documentation keeps its lines.
+                .lineLength = 120,
             },
     },
 }};

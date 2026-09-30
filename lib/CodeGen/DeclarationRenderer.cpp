@@ -241,8 +241,8 @@ llvm::Expected<std::string> DeclarationRenderer::render(const std::size_t      f
     // after it named, so it is written once they are.
     std::ostringstream headOut;
     std::ostringstream bodyOut;
-    SourceWriter       head(headOut, layout_.indent);
-    SourceWriter       body(bodyOut, layout_.indent);
+    SourceWriter       head(headOut, layout_.indent, layout_.breaking);
+    SourceWriter       body(bodyOut, layout_.indent, layout_.breaking);
     DeclarationSite    site(head, tree_, file, facts, layoutFile);
     site.spelling_ = &spelling_;
     for (const LayoutPart layoutPart : layout_.files.at(layoutFile))

@@ -14,9 +14,12 @@
 #ifndef LLVMDSDL_CODEGEN_SOURCE_WRITER_H
 #define LLVMDSDL_CODEGEN_SOURCE_WRITER_H
 
+#include <cstddef>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace llvmdsdl
 {
@@ -48,6 +51,25 @@ private:
     std::string unit_;
 };
 
+/// @brief How a language breaks a line longer than its output keeps a line to.
+struct LineBreaking final
+{
+    /// @brief One line of a broken line: its text, and the levels of indentation it takes beyond
+    ///        the broken line's.
+    struct Piece final
+    {
+        int         level{};
+        std::string text;
+    };
+
+    /// @brief The length a line is kept to, its indentation included.
+    std::size_t length{};
+
+    /// @brief The lines a line breaks into, given its text, the column it starts at and the columns
+    ///        one level of indentation takes; none where the language has no break for it.
+    std::function<std::vector<Piece>(const std::string& text, std::size_t column, std::size_t unit)> pieces;
+};
+
 /// @brief Writes generated source one line at a time, tracking block depth itself.
 ///
 /// Callers name blocks, never columns: @ref open and @ref close move the depth and
@@ -63,9 +85,12 @@ public:
     /// @brief Binds a writer to @p out.
     /// @param[in,out] out Destination stream, which must outlive the writer.
     /// @param[in] policy Indentation unit for the target language.
-    SourceWriter(std::ostringstream& out, IndentPolicy policy)
+    /// @param[in] breaking How the language breaks a line longer than it keeps one to, which must
+    ///            outlive the writer; null where it keeps no length.
+    SourceWriter(std::ostringstream& out, IndentPolicy policy, const LineBreaking* breaking = nullptr)
         : out_(out)
         , policy_(std::move(policy))
+        , breaking_(breaking)
     {
     }
 
@@ -120,9 +145,10 @@ private:
     /// @brief Writes the empty line a separation asked for, where one is due.
     void begin();
 
-    std::ostringstream& out_;
-    IndentPolicy        policy_;
-    int                 depth_{0};
+    std::ostringstream&       out_;
+    IndentPolicy              policy_;
+    const LineBreaking* const breaking_;
+    int                       depth_{0};
     /// @brief Whether a line has been written.
     bool written_{false};
     /// @brief Whether the last line written was empty.

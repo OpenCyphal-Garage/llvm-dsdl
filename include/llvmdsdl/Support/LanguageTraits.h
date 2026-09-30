@@ -472,6 +472,10 @@ struct Composition final
 
     /// @brief How the free functions beside a section's type are named.
     FreeFunctionNames freeFunctions{};
+
+    /// @brief The length a line of the output is held to, which the package states for the
+    ///        language's formatter; zero where it holds none.
+    unsigned lineLength{};
 };
 
 /// @brief One language's row.

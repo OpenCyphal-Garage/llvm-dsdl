@@ -21,10 +21,9 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import Union
 
-BytesLike = Union[bytes, bytearray, memoryview]
-WritableBytes = Union[bytearray, memoryview]
+BytesLike = bytes | bytearray | memoryview
+WritableBytes = bytearray | memoryview
 
 BACKEND = "pure"
 

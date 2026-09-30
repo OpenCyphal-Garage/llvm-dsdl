@@ -6,11 +6,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from fixtures_snapshot_py._runtime_loader import (
-    CompositeObject,
-    error_message,
-    runtime as dsdl_runtime,
-)
+from fixtures_snapshot_py._runtime_loader import CompositeObject, error_message, runtime as dsdl_runtime
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.Helpers"
@@ -22,7 +18,7 @@ DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "sub-byte-field"
 
 def _capacity_check(p0: int) -> int:
-    v0 = 80 > p0
+    v0 = p0 < 80
     v1 = (-3 if v0 else 0)
     return v1
 
