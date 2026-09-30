@@ -2703,6 +2703,7 @@ struct FoldDSDLHostImageBodiesPass
             return;
         }
 
+        std::vector<mlir::func::FuncOp> decided;
         for (const mlir::func::FuncOp body : module.getOps<mlir::func::FuncOp>())
         {
             const auto kind = body->getAttrOfType<mlir::StringAttr>("llvmdsdl.plan_body");
@@ -2721,12 +2722,24 @@ struct FoldDSDLHostImageBodiesPass
             }
             if (kind.getValue() == "deserialize")
             {
-                (void) foldDeserialize(body, found->second);
+                const mlir::FailureOr<bool> zeroed = foldDeserialize(body, found->second);
+                if (mlir::succeeded(zeroed) && *zeroed)
+                {
+                    decided.push_back(body);
+                }
             }
             else if (kind.getValue() == "serialize")
             {
                 (void) foldSerialize(body, found->second);
             }
+        }
+
+        // Each test of a nested type's code the fold made zero is now constant, and so is the guard
+        // on the consumed count it decides. Canonicalising folds both.
+        if (mlir::failed(cleanUpFolded(getContext(), decided, "nested code was folded to zero")))
+        {
+            signalPassFailure();
+            return;
         }
 
         // A folded body no longer calls the per-field helpers built beside it. They stay: the
@@ -2751,10 +2764,13 @@ private:
     /// block stays; everything else after the buffer is taken is the field work, and goes.
     ///
     /// A nested type's own deserialise returns an error code, and the guard and the yield read it.
-    /// After the fold that call is gone, and an image read cannot fail, so the code becomes zero.
-    /// Any other value crossing from the field work to what survives means this is not a shape
-    /// the fold knows, and it declines.
-    static mlir::LogicalResult foldDeserialize(mlir::func::FuncOp body, const std::int64_t bytes)
+    /// Each nested field after the first runs under a guard on the code before it, which answers
+    /// that field's code or the one before, so the code the guard and the yield read is the last
+    /// such guard's. After the fold the calls and their guards are gone, and an image read cannot
+    /// fail, so the code becomes zero. Any other value crossing from the field work to what
+    /// survives means this is not a shape the fold knows, and it declines.
+    /// @return Whether the fold made a nested type's code zero, or failure where it declined.
+    static mlir::FailureOr<bool> foldDeserialize(mlir::func::FuncOp body, const std::int64_t bytes)
     {
         mlir::dsdl::BufferOrEmptyOp buffer;
         body.walk([&](mlir::dsdl::BufferOrEmptyOp op) { buffer = op; });
@@ -2812,12 +2828,12 @@ private:
             pending.pop_back();
             mlir::Operation* const definer = value.getDefiningOp();
             // A definer under a kept guard has had its operands seeded already; only block-level
-            // ops are kept by name. A nested type's own deserialise is field work, not something
-            // the survivors are built from: the guard reads its error code, and that code is what
-            // the fold replaces. Following into it would keep the call, and the fold would then
-            // add a move beside the work it was meant to replace.
-            if ((definer == nullptr) || (definer->getBlock() != &block) ||
-                mlir::isa<mlir::dsdl::CallSerdesOp>(definer) || !keep.insert(definer).second)
+            // ops are kept by name. What answers a nested type's code is field work, not something
+            // the survivors are built from: the guard reads the code, and that code is what the
+            // fold replaces. Following into it would keep the call, and the fold would then add a
+            // move beside the work it was meant to replace.
+            if ((definer == nullptr) || (definer->getBlock() != &block) || answersNestedCode(definer) ||
+                !keep.insert(definer).second)
             {
                 continue;
             }
@@ -2869,7 +2885,7 @@ private:
                 {
                     continue;
                 }
-                if (!mlir::isa<mlir::dsdl::CallSerdesOp>(op) || !result.getType().isInteger(8))
+                if (!answersNestedCode(op) || !result.getType().isInteger(8))
                 {
                     return mlir::failure();
                 }
@@ -2897,7 +2913,27 @@ private:
         {
             op->erase();
         }
-        return mlir::success();
+        return !nestedCodes.empty();
+    }
+
+    /// @brief Whether @p op answers a nested type's code: a nested deserialise, or a guard that runs
+    ///        a later nested field where the code before it is zero and answers either code.
+    static bool answersNestedCode(mlir::Operation* const op)
+    {
+        if (mlir::isa<mlir::dsdl::CallSerdesOp>(op))
+        {
+            return true;
+        }
+        auto       step  = mlir::dyn_cast<mlir::scf::IfOp>(op);
+        const auto roles = step ? step->getAttrOfType<mlir::ArrayAttr>("llvmdsdl.result_roles") : mlir::ArrayAttr{};
+        const auto role  = (roles && (roles.size() == 1)) ? mlir::dyn_cast<mlir::StringAttr>(roles[0]) : nullptr;
+        if (!role || (role.getValue() != "error"))
+        {
+            return false;
+        }
+        bool nested = false;
+        step.walk([&](mlir::dsdl::CallSerdesOp) { nested = true; });
+        return nested;
     }
 
     /// @brief Replaces the per-field write chain with one move.

@@ -8,7 +8,9 @@
 # count of moves alone would pass it.
 
 # RUN: rm -rf %t && mkdir -p %t
-# RUN: %dsdlc --target-language mlir %S/fixtures_host_image > %t/plans.mlir
+# RUN: cp -R %S/fixtures_host_image %t/fixtures_host_image
+# RUN: printf 'vendor.Flat.1.0 first\nvendor.Flat.1.0 second\n@sealed\n' > %t/fixtures_host_image/vendor/Pair.1.0.dsdl
+# RUN: %dsdlc --target-language mlir %t/fixtures_host_image > %t/plans.mlir
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies,dsdl-fold-host-image-bodies)' %t/plans.mlir > %t/folded.mlir
 # RUN: FileCheck %s --check-prefix=FLAT_READ   < %t/folded.mlir
 # RUN: FileCheck %s --check-prefix=FLAT_WRITE  < %t/folded.mlir
@@ -16,6 +18,7 @@
 # RUN: FileCheck %s --check-prefix=ARR_WRITE   < %t/folded.mlir
 # RUN: FileCheck %s --check-prefix=NEST_READ   < %t/folded.mlir
 # RUN: FileCheck %s --check-prefix=NEST_WRITE  < %t/folded.mlir
+# RUN: FileCheck %s --check-prefix=PAIR_READ   < %t/folded.mlir
 # RUN: FileCheck %s --check-prefix=PADDED      < %t/folded.mlir
 
 # FLAT_READ-LABEL: func.func @fixtures_host_image.vendor.Flat.1.0.deserialize(
@@ -44,12 +47,27 @@
 # ARR_WRITE:       return
 
 # A nested record's own deserialise call goes too: its error code is what a guard on the consumed
-# count reads, and an image read cannot fail, so that code becomes zero rather than being kept.
+# count reads, and an image read cannot fail, so that code becomes zero rather than being kept. The
+# zero decides the guard, and the count is stored unguarded.
 # NEST_READ-LABEL: func.func @fixtures_host_image.vendor.Nested.1.0.deserialize(
 # NEST_READ-NOT:   dsdl.call_serdes
 # NEST_READ:       dsdl.image_read {{.*}} {bytes = 12 : i64}
 # NEST_READ-NOT:   dsdl.call_serdes
+# NEST_READ-NOT:   scf.if
+# NEST_READ-NOT:   arith.cmpi eq
+# NEST_READ:       dsdl.store_scalar
 # NEST_READ:       return
+
+# Two records, sixteen bytes: the second's deserialise runs under a guard on the first's code, and
+# the code the body answers is that guard's. The guard is field work too, and goes with the calls.
+# PAIR_READ-LABEL: func.func @fixtures_host_image.vendor.Pair.1.0.deserialize(
+# PAIR_READ-NOT:   dsdl.call_serdes
+# PAIR_READ:       dsdl.image_read {{.*}} {bytes = 16 : i64}
+# PAIR_READ-NOT:   dsdl.call_serdes
+# PAIR_READ-NOT:   scf.if
+# PAIR_READ-NOT:   arith.cmpi eq
+# PAIR_READ:       dsdl.store_scalar
+# PAIR_READ:       return
 
 # NEST_WRITE-LABEL: func.func @fixtures_host_image.vendor.Nested.1.0.serialize(
 # NEST_WRITE-NOT:   dsdl.call_serdes
