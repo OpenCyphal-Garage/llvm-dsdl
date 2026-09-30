@@ -213,25 +213,6 @@ std::string renderAccessorName(const Language        language,
     return "";
 }
 
-std::string renderLoweredEntryPointName(const Language        language,
-                                        const llvm::StringRef versionedTypeName,
-                                        const EntryPoint      entryPoint)
-{
-    const llvm::StringRef suffix = languageTraits(language).composition.freeFunctions.loweredBodySuffix;
-    assert(!suffix.empty() && "the language's bodies are not compiled apart from its entry points");
-    return renderEntryPointName(language, versionedTypeName, entryPoint) + suffix.str();
-}
-
-std::string renderLoweredAccessorName(const Language        language,
-                                      const llvm::StringRef versionedTypeName,
-                                      const AccessorVerb    verb,
-                                      const llvm::StringRef member)
-{
-    const llvm::StringRef suffix = languageTraits(language).composition.freeFunctions.loweredBodySuffix;
-    assert(!suffix.empty() && "the language's bodies are not compiled apart from its accessors");
-    return renderAccessorName(language, versionedTypeName, verb, member) + suffix.str();
-}
-
 std::string renderDefinitionKey(const DefinitionRef& ref)
 {
     std::string key;

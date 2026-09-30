@@ -1,12 +1,7 @@
 {
   "judge": "Ubuntu LLVM version 22.1.2",
   "counts": {
-    "bugprone-narrowing-conversions": 732,
-    "bugprone-signed-char-misuse": 3,
     "clang-analyzer-security.ArrayBound": 1,
-    "modernize-avoid-c-style-cast": 5,
-    "readability-identifier-naming": 1150,
-    "readability-non-const-parameter": 5,
-    "readability-redundant-casting": 2
+    "readability-non-const-parameter": 5
   }
 }

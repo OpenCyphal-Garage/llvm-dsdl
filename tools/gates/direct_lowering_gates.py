@@ -365,8 +365,9 @@ def gate_object_matches_c_lane(args: argparse.Namespace, workdir: Path) -> str:
 # Gate 6 -- every entry point a published header declares, its object defines.
 # ---------------------------------------------------------------------------------------
 
-# `int8_t <type>__serialize_ir_(` as the header declares the body the object must define.
-ENTRY_POINT = re.compile(r"^int8_t\s+(\w+_ir_)\s*\(", re.M)
+# A prototype the header declares at file scope, `int8_t <type>_1_0__serialize_(...);`, is a function
+# the object must define. What the header defines itself is `static inline`.
+ENTRY_POINT = re.compile(r"^(?!static\b|typedef\b)[A-Za-z_][^(;{}=#]*?\b(\w+)\s*\([^;{}]*\)[^;{}=]*;", re.M)
 
 SHT_SYMTAB = 2
 SHN_UNDEF = 0
@@ -420,7 +421,7 @@ def elf_defined_symbols(path: Path) -> set:
 
 
 def gate_object_defines_every_entry_point(args: argparse.Namespace, workdir: Path) -> str:
-    """A header's `_ir_` prototypes are promises its object has to keep.
+    """A header's prototypes are promises its object has to keep.
 
     An object that lacks one links nowhere, and dsdlc reporting success over it is the
     failure this gate exists to catch. The target is ELF on every host, so one symbol-table

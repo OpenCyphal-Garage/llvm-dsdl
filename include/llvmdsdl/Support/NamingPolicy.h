@@ -343,23 +343,21 @@ struct GuardName final
 {
     GeneratedFact fact{};
 
-    /// @brief What comes before the definition's type name.
+    /// @brief What comes before the definition's name.
     llvm::StringRef prefix;
 
     /// @brief What comes after it.
     llvm::StringRef suffix;
 
-    /// @brief Whether the type name is the one carrying the version, whatever the run's scheme.
+    /// @brief Whether the name carries the version, whatever the run's scheme.
     bool versioned{};
-
-    /// @brief Whether the definition's namespace comes before its type name, for a language whose
-    ///        type name carries none: a macro is one name across a translation unit, and the type
-    ///        name alone is not.
-    bool qualified{};
 };
 
 /// @brief The macros the generator guards a definition's file with, each named by its prefix, the
-///        definition's type name and its suffix, projected as a macro.
+///        definition's DSDL name and its suffix, projected as a macro.
+///
+/// A macro is one name across a translation unit, so the name is the full one: the namespace
+/// components, the short name, and the version where the guard carries it.
 ///
 /// A language whose emitter names these itself has none here.
 /// @param[in] language Naming language.

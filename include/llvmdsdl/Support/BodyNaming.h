@@ -71,13 +71,14 @@ struct BodyParts final
 ///        their entry points links it.
 ///
 /// The IR names a function by its definition's DSDL identity, which such a language cannot
-/// declare. It spells the name from the section's type name with its version, which its one global
-/// scope keeps unique: `ns__Msg_1_0__serialize_ir_`, `ns__Msg_1_0__get_speed_ir_`. A helper is not
-/// linked: it is declared where the row places it.
-/// @param[in] language A language whose row names a lowered body's suffix.
+/// declare. It spells the name the entry point or accessor takes for the section's type name with
+/// its version, which its one global scope keeps unique: `ns__Msg_1_0__serialize_`,
+/// `ns__Msg_1_0__get_speed_`. A helper is not linked: it is declared where the row places it.
+/// @param[in] language A language whose row compiles its bodies apart from their entry points.
 /// @param[in] symbol The function, which is not a helper.
+/// @param[in] member The member an accessor reads or writes, as the section's type declares it.
 /// @return The link name.
-[[nodiscard]] std::string renderLoweredLinkName(Language language, const PlanSymbol& symbol);
+[[nodiscard]] std::string renderLoweredLinkName(Language language, const PlanSymbol& symbol, llvm::StringRef member);
 
 /// @brief Names every helper among @p bodies as the scope holding it reaches it.
 ///

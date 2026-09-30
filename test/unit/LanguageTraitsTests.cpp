@@ -320,8 +320,9 @@ std::string render(const LanguageTraits& row)
            " deprecated-apart=" + flag(d.deprecatedTypeDeclaredApart) + " free-entry-join='" +
            d.freeFunctions.entryPointJoin.str() + "' free-init=" + flag(d.freeFunctions.initializer) +
            " free-accessors=" + render(d.freeFunctions.accessors) +
-           " free-union-options=" + flag(d.freeFunctions.unionOptionFunctions) + " lowered-body-suffix='" +
-           d.freeFunctions.loweredBodySuffix.str() + "' line-length=" + std::to_string(d.lineLength);
+           " free-union-options=" + flag(d.freeFunctions.unionOptionFunctions) +
+           " free-bodies-apart=" + flag(d.freeFunctions.bodiesCompiledApart) +
+           " line-length=" + std::to_string(d.lineLength);
 }
 
 }  // namespace
@@ -358,7 +359,7 @@ bool runLanguageTraitsTests()
          "constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
          "deprecated-apart=0 free-entry-join='__' free-init=1 free-accessors=joined free-union-options=1 "
-         "lowered-body-suffix='ir_' line-length=0"},
+         "free-bodies-apart=1 line-length=0"},
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
          "reserved=leading-and-interior classes=010101 lookup='::','::',11,bare,'','','' if-expressions=0 | "
@@ -375,7 +376,7 @@ bool runLanguageTraitsTests()
          "constant-macros=0 generated-suffix='' "
          "array-metadata=1 "
          "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
-         "lowered-body-suffix='' line-length=0"},
+         "free-bodies-apart=0 line-length=0"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "
          "reserved=none classes=110010 lookup='::','crate::',00,self-type,'Self','','' if-expressions=1 | "
@@ -390,7 +391,7 @@ bool runLanguageTraitsTests()
          "generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
-         "lowered-body-suffix='' line-length=0"},
+         "free-bodies-apart=0 line-length=0"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
          "constants=package reserved=none classes=000000 lookup='.','',00,none,'','','' if-expressions=0 | "
@@ -405,7 +406,7 @@ bool runLanguageTraitsTests()
          "constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=concatenated free-union-options=0 "
-         "lowered-body-suffix='' line-length=0"},
+         "free-bodies-apart=0 line-length=0"},
         {Language::TypeScript,
          "ts: scopes=110 nested=1 methods=member internal=not-exported errors=exception constants=type "
          "reserved=none classes=100010 lookup='.','',00,type-name,'','','' if-expressions=0 | nullable=100 "
@@ -420,7 +421,7 @@ bool runLanguageTraitsTests()
          "generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=verb-first free-union-options=0 "
-         "lowered-body-suffix='' line-length=0"},
+         "free-bodies-apart=0 line-length=0"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
          "reserved=none classes=010000 lookup='.','',00,instance,'','self','cls' if-expressions=0 | nullable=100 "
@@ -435,7 +436,7 @@ bool runLanguageTraitsTests()
          "generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
-         "lowered-body-suffix='' line-length=120"},
+         "free-bodies-apart=0 line-length=120"},
     };
     for (const auto& [language, expected] : kExpected)
     {

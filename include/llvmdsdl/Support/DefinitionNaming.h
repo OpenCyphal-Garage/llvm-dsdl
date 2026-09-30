@@ -202,31 +202,6 @@ enum class AccessorVerb : std::uint8_t
                                              AccessorVerb    verb,
                                              llvm::StringRef member);
 
-/// @brief Names the body a free entry point wraps, where the body is compiled apart from it.
-///
-/// `List_Request_0_2__serialize_ir_` in C. The body is linked under this name, so it carries the
-/// version whatever the type name does: two versions of one definition are two bodies to a linker.
-/// @param[in] language Naming language, whose row has a lowered body suffix.
-/// @param[in] versionedTypeName The section's type name under @ref TypeNameVersioning::Versioned.
-/// @param[in] entryPoint The operation.
-/// @return The body's name.
-[[nodiscard]] std::string renderLoweredEntryPointName(Language        language,
-                                                      llvm::StringRef versionedTypeName,
-                                                      EntryPoint      entryPoint);
-
-/// @brief Names the body a free accessor wraps, where the body is compiled apart from it.
-///
-/// `List_Request_0_2__get_path_ir_` in C.
-/// @param[in] language Naming language, whose row has a lowered body suffix.
-/// @param[in] versionedTypeName The section's type name under @ref TypeNameVersioning::Versioned.
-/// @param[in] verb What the accessor does.
-/// @param[in] member The member as the plan names it: a DSDL field's name, or the union's tag.
-/// @return The body's name.
-[[nodiscard]] std::string renderLoweredAccessorName(Language        language,
-                                                    llvm::StringRef versionedTypeName,
-                                                    AccessorVerb    verb,
-                                                    llvm::StringRef member);
-
 /// @brief Names a constant declared beside a type, in the scope that encloses it.
 ///
 /// C declares every constant of a type this way, `List_Request_EXTENT_BYTES_`, and C++ the

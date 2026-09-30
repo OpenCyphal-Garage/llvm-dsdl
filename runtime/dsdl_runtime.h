@@ -132,7 +132,7 @@ extern "C"
                                                              const size_t fragment_offset_bits,
                                                              const size_t fragment_length_bits)
     {
-        const size_t size_bits = (size_t) buffer_size_bytes * 8U;
+        const size_t size_bits = buffer_size_bytes * 8U;
         const size_t tail_bits = size_bits - dsdl_runtime_choose_min(size_bits, fragment_offset_bits);
         return dsdl_runtime_choose_min(fragment_length_bits, tail_bits);
     }
@@ -166,13 +166,13 @@ extern "C"
         if ((0U == (src_offset_bits % 8U)) &&
             (0U == (dst_offset_bits % 8U)))  // Aligned copy, optimised, most common case.
         {
-            const size_t length_bytes = (size_t) (length_bits / 8U);
+            const size_t length_bytes = length_bits / 8U;
 
             // Intentional violation of MISRA: Pointer arithmetics. This is done to remove the API constraint that
             // offsets be under 8 bits. Fewer constraints reduce the chance of API misuse.
-            const uint8_t* const psrc = (src_offset_bits / 8U) + (const uint8_t*) src;  // NOSONAR NOLINT
-            uint8_t* const       pdst = (dst_offset_bits / 8U) + (uint8_t*) dst;        // NOSONAR NOLINT
-            if (length_bytes > 0U)                                                      // issue #337 workaround
+            const uint8_t* const psrc = (src_offset_bits / 8U) + (const uint8_t*) src;
+            uint8_t* const       pdst = (dst_offset_bits / 8U) + (uint8_t*) dst;
+            if (length_bytes > 0U)  // issue #337 workaround
             {
                 (void) memmove(pdst, psrc, length_bytes);
             }
@@ -180,14 +180,11 @@ extern "C"
             if (0U != length_mod)  // If the length is unaligned, the last byte requires special treatment.
             {
                 // Intentional violation of MISRA: Pointer arithmetics. It is unavoidable in this context.
-                const uint8_t* const last_src = psrc + length_bytes;  // NOLINT NOSONAR
-                uint8_t* const       last_dst = pdst + length_bytes;  // NOLINT NOSONAR
+                const uint8_t* const last_src = psrc + length_bytes;
+                uint8_t* const       last_dst = pdst + length_bytes;
                 DSDL_RUNTIME_ASSERT(length_mod < 8U);
                 const uint8_t mask = (uint8_t) ((1U << length_mod) - 1U);
 
-                // No lint for "The left operand of '&' is a garbage value" because
-                // these so called "garbage" bits of `*last_dst` won't be used during deserialisation.
-                // NOLINTNEXTLINE(clang-analyzer-core.UndefinedBinaryOperatorResult)
                 *last_dst = (*last_dst & (uint8_t) ~mask) | (*last_src & mask);
             }
         }
@@ -216,22 +213,21 @@ extern "C"
                 DSDL_RUNTIME_ASSERT(size > 0U);
                 DSDL_RUNTIME_ASSERT(size <= 8U);
 
-                // Suppress a false warning from Clang-Tidy & Sonar that size is being over-shifted. It's not.
-                const uint8_t mask = (uint8_t) ((((1U << size) - 1U) << dst_mod) & 0xFFU);  // NOLINT NOSONAR
+                const uint8_t mask = (uint8_t) ((((1U << size) - 1U) << dst_mod) & 0xFFU);
                 DSDL_RUNTIME_ASSERT(mask > 0U);
 
                 // Intentional violation of MISRA: indexing on a pointer.
                 // This simplifies the implementation greatly and avoids pointer arithmetics.
-                const uint8_t in = (uint8_t) ((uint8_t) (psrc[src_off / 8U] >> src_mod) << dst_mod) & 0xFFU;  // NOSONAR
+                const uint8_t in = (uint8_t) ((uint8_t) (psrc[src_off / 8U] >> src_mod) << dst_mod) & 0xFFU;
 
                 // Intentional violation of MISRA: indexing on a pointer.
                 // This simplifies the implementation greatly and avoids pointer arithmetics.
-                const uint8_t a = pdst[dst_off / 8U] & ((uint8_t) ~mask);  // NOSONAR
+                const uint8_t a = pdst[dst_off / 8U] & ((uint8_t) ~mask);
                 const uint8_t b = in & mask;
 
                 // Intentional violation of MISRA: indexing on a pointer.
                 // This simplifies the implementation greatly and avoids pointer arithmetics.
-                pdst[dst_off / 8U] = a | b;  // NOSONAR
+                pdst[dst_off / 8U] = a | b;
                 src_off += size;
                 dst_off += size;
             }
@@ -529,8 +525,7 @@ extern "C"
         DSDL_RUNTIME_ASSERT(bits <= (sizeof(uint32_t) * 8U));
         uint8_t tmp[sizeof(uint32_t)] = {0};
         dsdl_runtime_copy_bits(&tmp[0], 0U, bits, buf, off_bits);
-        return (uint32_t) (tmp[0] | ((uint32_t) tmp[1] << 8U) | ((uint32_t) tmp[2] << 16U) |
-                           ((uint32_t) tmp[3] << 24U));
+        return (uint32_t) tmp[0] | ((uint32_t) tmp[1] << 8U) | ((uint32_t) tmp[2] << 16U) | ((uint32_t) tmp[3] << 24U);
     }
 
     /// @brief Deserialises an unsigned integer up to 64 bits wide.
@@ -550,9 +545,9 @@ extern "C"
         DSDL_RUNTIME_ASSERT(bits <= (sizeof(uint64_t) * 8U));
         uint8_t tmp[sizeof(uint64_t)] = {0};
         dsdl_runtime_copy_bits(&tmp[0], 0U, bits, buf, off_bits);
-        return (uint64_t) (tmp[0] | ((uint64_t) tmp[1] << 8U) | ((uint64_t) tmp[2] << 16U) |
-                           ((uint64_t) tmp[3] << 24U) | ((uint64_t) tmp[4] << 32U) | ((uint64_t) tmp[5] << 40U) |
-                           ((uint64_t) tmp[6] << 48U) | ((uint64_t) tmp[7] << 56U));
+        return (uint64_t) tmp[0] | ((uint64_t) tmp[1] << 8U) | ((uint64_t) tmp[2] << 16U) | ((uint64_t) tmp[3] << 24U) |
+               ((uint64_t) tmp[4] << 32U) | ((uint64_t) tmp[5] << 40U) | ((uint64_t) tmp[6] << 48U) |
+               ((uint64_t) tmp[7] << 56U);
     }
 
     /// @brief Deserialises a signed integer up to 8 bits wide.
@@ -616,7 +611,7 @@ extern "C"
         {
             val = (uint32_t) (val | ~((1UL << sat) - 1U));  // Sign extension
         }
-        return neg ? (int32_t) ((-(int32_t) ~val) - 1) : (int32_t) val;
+        return neg ? ((-(int32_t) ~val) - 1) : (int32_t) val;
     }
 
     /// @brief Deserialises a signed integer up to 64 bits wide.
@@ -637,7 +632,7 @@ extern "C"
         {
             val = (uint64_t) (val | ~((1ULL << sat) - 1U));  // Sign extension
         }
-        return neg ? (int64_t) ((-(int64_t) ~val) - 1) : (int64_t) val;
+        return neg ? ((-(int64_t) ~val) - 1) : (int64_t) val;
     }
 
     // ---------------------------------------------------- FLOAT16 ----------------------------------------------------
@@ -651,19 +646,18 @@ extern "C"
     /// @return Packed IEEE-754 binary16 bit pattern.
     static inline uint16_t dsdl_runtime_float16_pack(const float value)
     {
-        typedef union  // NOSONAR
+        typedef union
         {
             uint32_t bits;
             float    real;
-        } Float32Bits;
+        } float32_bits;
 
-        // The no-lint statements suppress the warning about the use of union. This is required for low-level bit
-        // access.
+        // Intentional violation of MISRA: a union gives access to the bits of a float.
         const uint32_t round_mask = ~(uint32_t) 0x0FFFU;
-        Float32Bits    f32inf;  // NOSONAR
-        Float32Bits    f16inf;  // NOSONAR
-        Float32Bits    magic;   // NOSONAR
-        Float32Bits    in;      // NOSONAR
+        float32_bits   f32inf;
+        float32_bits   f16inf;
+        float32_bits   magic;
+        float32_bits   in;
         f32inf.bits         = ((uint32_t) 255U) << 23U;
         f16inf.bits         = ((uint32_t) 31U) << 23U;
         magic.bits          = ((uint32_t) 15U) << 23U;
@@ -702,17 +696,16 @@ extern "C"
     /// @return Single-precision floating-point value.
     static inline float dsdl_runtime_float16_unpack(const uint16_t value)
     {
-        typedef union  // NOSONAR
+        typedef union
         {
             uint32_t bits;
             float    real;
-        } Float32Bits;
+        } float32_bits;
 
-        // The no-lint statements suppress the warning about the use of union. This is required for low-level bit
-        // access.
-        Float32Bits magic;    // NOSONAR
-        Float32Bits inf_nan;  // NOSONAR
-        Float32Bits out;      // NOSONAR
+        // Intentional violation of MISRA: a union gives access to the bits of a float.
+        float32_bits magic;
+        float32_bits inf_nan;
+        float32_bits out;
         magic.bits   = ((uint32_t) 0xEFU) << 23U;
         inf_nan.bits = ((uint32_t) 0x8FU) << 23U;
         out.bits     = ((uint32_t) (value & 0x7FFFU)) << 13U;
@@ -771,11 +764,11 @@ extern "C"
         // Intentional violation of MISRA: use union to perform fast conversion from an IEEE 754-compatible native
         // representation into a serialisable integer. The assumptions about the target platform properties are made
         // clear.
-        union  // NOSONAR
+        union
         {
             float    fl;
             uint32_t in;
-        } const tmp = {value};  // NOSONAR
+        } const tmp = {value};
         return dsdl_runtime_set_uxx(buf, buf_size_bytes, off_bits, tmp.in, sizeof(tmp) * 8U);
     }
 
@@ -791,7 +784,7 @@ extern "C"
         // Intentional violation of MISRA: use union to perform fast conversion to an IEEE 754-compatible native
         // representation into a serialisable integer. The assumptions about the target platform properties are made
         // clear.
-        union  // NOSONAR
+        union
         {
             uint32_t in;
             float    fl;
@@ -820,11 +813,11 @@ extern "C"
         // Intentional violation of MISRA: use union to perform fast conversion from an IEEE 754-compatible native
         // representation into a serialisable integer. The assumptions about the target platform properties are made
         // clear.
-        union  // NOSONAR
+        union
         {
             double   fl;
             uint64_t in;
-        } const tmp = {value};  // NOSONAR
+        } const tmp = {value};
         return dsdl_runtime_set_uxx(buf, buf_size_bytes, off_bits, tmp.in, sizeof(tmp) * 8U);
     }
 
@@ -840,7 +833,7 @@ extern "C"
         // Intentional violation of MISRA: use union to perform fast conversion to an IEEE 754-compatible native
         // representation into a serialisable integer. The assumptions about the target platform properties are made
         // clear.
-        union  // NOSONAR
+        union
         {
             uint64_t in;
             double   fl;

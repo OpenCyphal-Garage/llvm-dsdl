@@ -52,14 +52,22 @@
 #
 # readability-identifier-naming states the design in CLEAN_CODE.md. C has no
 # scope a type can open, so an identifier composed for a type carries the
-# type's path: the namespace components, then the short name, then the service
-# section, joined by `__` and each as DSDL spells it --
-# `uavcan__file__List__Request`. An entry point or accessor appends its
-# operation and a trailing `_`, as in `uavcan__file__List__Request__serialize_`,
-# and a fact or constant appends `_` and its upper-case name, as in
-# `uavcan__file__List__Request_EXTENT_BYTES_`. The IgnoredRegexp options accept
-# those three forms. Every other identifier takes the case C conventionally
-# gives its kind, with no leading or trailing underscore.
+# type's path: the namespace components, then the short name with its version
+# where the name carries one, then the service section, joined by `__` and each
+# as DSDL spells it -- `uavcan__file__List__Request`, or
+# `uavcan__file__List_0_2__Request` under versioned type names. An entry point
+# or accessor appends its operation and a trailing `_`, as in
+# `uavcan__file__List__Request__serialize_`, and a fact or constant appends `_`
+# and its upper-case name, as in `uavcan__file__List__Request_EXTENT_BYTES_`.
+# The IgnoredRegexp options accept those three forms. Every other identifier
+# takes the case C conventionally gives its kind, with no leading or trailing
+# underscore.
+#
+# A function compiled in a definition's source file is named for the versioned
+# type whatever the run's type names are, since two versions of a definition
+# link into one program. The header publishes
+# `uavcan__file__List__Request__serialize_` over
+# `uavcan__file__List_0_2__Request__serialize_`.
 #
 # A member ending in `_` is a DSDL field as its author spelt it or as the
 # generator strops a keyword, or a member the generator adds beside the fields.
@@ -100,16 +108,16 @@ CheckOptions:
   readability-identifier-naming.EnumCase: lower_case
   readability-identifier-naming.EnumConstantCase: UPPER_CASE
   readability-identifier-naming.FunctionCase: lower_case
-  readability-identifier-naming.FunctionIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?__[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.FunctionIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(_[0-9]+_[0-9]+)?(__[A-Z][A-Za-z0-9]*)?__[a-z][a-z0-9_]*_$'
   readability-identifier-naming.GlobalConstantCase: UPPER_CASE
   readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
-  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?_[A-Z][A-Z0-9_]*$'
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(_[0-9]+_[0-9]+)?(__[A-Z][A-Za-z0-9]*)?_[A-Z][A-Z0-9_]*$'
   readability-identifier-naming.MemberCase: lower_case
   readability-identifier-naming.MemberIgnoredRegexp: '^_?[a-z][a-z0-9_]*_$'
   readability-identifier-naming.ParameterCase: lower_case
   readability-identifier-naming.StructCase: lower_case
-  readability-identifier-naming.StructIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?$'
+  readability-identifier-naming.StructIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(_[0-9]+_[0-9]+)?(__[A-Z][A-Za-z0-9]*)?$'
   readability-identifier-naming.TypedefCase: lower_case
-  readability-identifier-naming.TypedefIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(__[A-Z][A-Za-z0-9]*)?$'
+  readability-identifier-naming.TypedefIgnoredRegexp: '^([a-z][a-z0-9_]*__)+[A-Z][A-Za-z0-9]*(_[0-9]+_[0-9]+)?(__[A-Z][A-Za-z0-9]*)?$'
   readability-identifier-naming.UnionCase: lower_case
   readability-identifier-naming.VariableCase: lower_case

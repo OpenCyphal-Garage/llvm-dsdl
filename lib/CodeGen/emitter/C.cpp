@@ -39,6 +39,7 @@
 #include <cctype>  // IWYU pragma: keep -- libstdc++ reaches this transitively; libc++ needs it named.
 #include <filesystem>
 #include "llvmdsdl/Support/PlanSymbol.h"
+#include "llvmdsdl/Support/NamingPolicy.h"
 #include <map>
 #include <optional>
 #include <mlir/IR/SymbolTable.h>
@@ -214,10 +215,12 @@ public:
         return declarationOf(symbol).visibility == SurfaceVisibility::Private;
     }
 
-    /// @brief The name of the function that wraps the lowered function @p symbol.
-    [[nodiscard]] const std::string& wrapper(const llvm::StringRef symbol) const
+    /// @brief The name a caller reaches the lowered function @p symbol by: the wrapper's, or the
+    ///        function's own where no wrapper publishes it under another.
+    [[nodiscard]] const std::string& published(const llvm::StringRef symbol) const
     {
-        return tree_.nameOf(symbol, SurfaceDeclKind::Wrapper);
+        const SurfaceDecl* const wrapper = tree_.declarationOf(symbol, SurfaceDeclKind::Wrapper);
+        return (wrapper != nullptr) ? wrapper->name : linkName(symbol);
     }
 
 private:
@@ -892,6 +895,7 @@ public:
         w.close("}");
         unsignedWidth_.reset();
         returnCast_.clear();
+        rebound_.clear();
     }
 
     /// @brief What the parameters of @p fn are called: an entry point's object, buffer and size, an
@@ -936,8 +940,14 @@ public:
     {
         // A body calls the runtime and a synthesised helper by bare name, and both carry a
         // prefix a role name cannot: a role name is a role word, or a member and a role word
-        // joined. C's own keywords are equally out of reach for the same reason.
-        return {};
+        // joined. C's own keywords are equally out of reach for the same reason. A parameter the
+        // prologue took into a local of its own is still in scope.
+        if (rebound_.empty())
+        {
+            return {};
+        }
+        reboundName_ = rebound_;
+        return llvm::ArrayRef<llvm::StringRef>(reboundName_);
     }
 
     // Statements.
@@ -1123,9 +1133,12 @@ public:
     [[nodiscard]] std::string select(const llvm::StringRef condition,
                                      const llvm::StringRef ifTrue,
                                      const llvm::StringRef ifFalse,
-                                     mlir::Type /*type*/) const override
+                                     const mlir::Type      type) const override
     {
-        return "(" + condition.str() + " ? " + ifTrue.str() + " : " + ifFalse.str() + ")";
+        // A conditional's operands are promoted as an operator's are, so a narrow answer is
+        // brought back to the type the plan gave it.
+        const std::string expression = "(" + condition.str() + " ? " + ifTrue.str() + " : " + ifFalse.str() + ")";
+        return isNarrow(type) ? ("(" + typeName(type) + ") " + expression) : expression;
     }
 
     [[nodiscard]] std::string convert(Conversion /*conversion*/,
@@ -1211,23 +1224,28 @@ public:
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
     {
-        return memberPath(op.getObject(), op.getMember(), names);
+        return widened(memberPath(op.getObject(), op.getMember(), names),
+                       signedNarrow(memberOf(op.getObject(), op.getMember())),
+                       op.getValue().getType());
     }
 
     void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
     {
-        w.line(memberPath(op.getObject(), op.getMember(), names) + " = " + names(op.getValue()) + ";");
+        w.line(memberPath(op.getObject(), op.getMember(), names) + " = " +
+               stored(names(op.getValue()), op.getValue().getType(), memberOf(op.getObject(), op.getMember())) + ";");
     }
 
     [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
     {
-        return elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names);
+        return widened(elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                       signedNarrow(memberOf(op.getObject(), op.getMember())),
+                       op.getValue().getType());
     }
 
     void storeElement(SourceWriter& w, mlir::dsdl::StoreElementOp op, const ValueNames& names) const override
     {
-        w.line(elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " + names(op.getValue()) +
-               ";");
+        w.line(elementPath(op.getObject(), op.getMember(), names(op.getIndex()), names) + " = " +
+               stored(names(op.getValue()), op.getValue().getType(), memberOf(op.getObject(), op.getMember())) + ";");
     }
 
     [[nodiscard]] std::string memberAddr(mlir::dsdl::MemberAddrOp op, const ValueNames& names) const override
@@ -1300,7 +1318,9 @@ public:
         {
             arguments += ", (" + file_.standard("uint8_t") + ") " + std::to_string(op.getWidth());
         }
-        return primitive + "(" + arguments + ")";
+        // The runtime answers a signed read in the narrowest signed type that holds it.
+        const bool narrow = !mlir::isa<mlir::FloatType>(valueType) && op.getIsSigned() && (op.getWidth() <= 32U);
+        return widened(primitive + "(" + arguments + ")", narrow, valueType);
     }
 
     void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
@@ -1459,8 +1479,11 @@ private:
             const auto                integer = mlir::dyn_cast<mlir::IntegerType>(value.getType());
             if (integer && (integer.getWidth() == 64U) && (memberTypeName(value.getType(), isSigned) != held))
             {
-                names.back() = parameters.back() + "_";
-                w.line("const " + held + " " + names.back() + " = (" + held + ") " + parameters.back() + ";");
+                rebound_                         = parameters.back();
+                const llvm::StringRef reserved[] = {rebound_};
+                NamingScope           locals(Language::C, reserved);
+                names.back() = locals.declare(IdentifierRole::LocalName, rebound_);
+                w.line("const " + held + " " + names.back() + " = (" + held + ") " + rebound_ + ";");
             }
         }
         return names;
@@ -1600,7 +1623,7 @@ private:
         {
             function = PlanFunction::Deserialize;
         }
-        return names_.wrapper(renderPlanSymbol(
+        return names_.published(renderPlanSymbol(
             planFunction(type.schema.fullName, type.schema.major, type.schema.minor, type.section, function)));
     }
 
@@ -1666,6 +1689,51 @@ private:
     {
         const auto integer = mlir::dyn_cast<mlir::IntegerType>(type);
         return integer && (integer.getWidth() != 1) && (integer.getWidth() != 64);
+    }
+
+    /// @brief @p value, read from a signed integer of fewer than 64 bits as @p fromSignedNarrow says
+    ///        it is, as a value of @p type. It widens to a 64-bit unsigned value through `int64_t`,
+    ///        which states the sign extension the plan's value carries.
+    [[nodiscard]] std::string widened(const std::string& value,
+                                      const bool         fromSignedNarrow,
+                                      const mlir::Type   type) const
+    {
+        const auto integer = mlir::dyn_cast<mlir::IntegerType>(type);
+        const bool extends = fromSignedNarrow && integer && (integer.getWidth() == 64U);
+        return extends ? "(" + typeName(type) + ") (" + file_.standard("int64_t") + ") " + value : value;
+    }
+
+    /// @brief @p value, of @p type, as @p member stores it. A value stored in a signed integer
+    ///        member is cast to the member's type, which states the conversion from the plan's
+    ///        unsigned value.
+    [[nodiscard]] std::string stored(const std::string& value, const mlir::Type type, const CBodyMember* member) const
+    {
+        if ((member == nullptr) || member->heldAsView || (member->category != "signed"))
+        {
+            return value;
+        }
+        const std::string storage = file_.standard("int" + std::to_string(storageWidth(*member)) + "_t");
+        return (storage == typeName(type)) ? value : "(" + storage + ") " + value;
+    }
+
+    /// @brief Whether @p member is a signed integer stored in fewer than 64 bits.
+    [[nodiscard]] static bool signedNarrow(const CBodyMember* member)
+    {
+        return (member != nullptr) && !member->heldAsView && (member->category == "signed") &&
+               (storageWidth(*member) < 64);
+    }
+
+    /// @brief The width of the C integer type @p member is stored in.
+    [[nodiscard]] static std::int64_t storageWidth(const CBodyMember& member)
+    {
+        for (const std::int64_t width : {8, 16, 32})
+        {
+            if (member.bitLength <= width)
+            {
+                return width;
+            }
+        }
+        return 64;
     }
 
     /// @brief Whether C promotes the type to `int` before it operates on it.
@@ -1843,6 +1911,10 @@ private:
     mutable std::optional<unsigned> unsignedWidth_;
     /// @brief The cast the function being spelt answers its value through.
     mutable std::string returnCast_;
+    /// @brief The parameter the prologue of the function being spelt took into a local of its own,
+    ///        which no other local takes.
+    mutable std::string     rebound_;
+    mutable llvm::StringRef reboundName_;
 };
 
 /// @brief The files C writes a definition to: its header, then the source file beside it.
@@ -2373,7 +2445,7 @@ private:
             const auto        fn     = mlir::SymbolTable::lookupNearestSymbolFrom<
                 mlir::func::FuncOp>(site.facts().schema(),
                                                mlir::StringAttr::get(site.facts().schema().getContext(), symbol));
-            site.forward(*published, ctx_.names().wrapper(symbol), fn);
+            site.forward(*published, ctx_.names().published(symbol), fn);
         }
     }
 

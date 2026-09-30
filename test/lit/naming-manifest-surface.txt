@@ -37,14 +37,14 @@
 # C:      alias = ns__Ask
 # C-NEXT: file = ns/Ask_1_0.h
 # C:      generated/full_name = ns__Ask_FULL_NAME_
-# C:      guards/include_guard = LLVMDSDL_NS__ASK_1_0_H
+# C:      guards/include_guard = LLVMDSDL_NS_ASK_1_0_H
 # C:      helpers/0 = capacity_check_request
 # C:      request/declared_type = ns__Ask__Request
-# C-NEXT: request/entry_points/deserialize = ns__Ask_1_0__Request__deserialize_ir_
+# C-NEXT: request/entry_points/deserialize = ns__Ask_1_0__Request__deserialize_
 # C:      request/methods/option_test/small = ns__Ask__Request__is_small_
 # C:      request/tag = ns__Ask__Request
 # C:      request/wrappers/serialize = ns__Ask__Request__serialize_
-# C:      response/accessors/ok/get = ns__Ask_1_0__Response__get_ok_ir_
+# C:      response/accessors/ok/get = ns__Ask_1_0__Response__get_ok_
 # C:      response/wrappers/get/ok = ns__Ask__Response__get_ok_
 # C:      wrappers/serialize = ns__Ask__serialize_
 #
