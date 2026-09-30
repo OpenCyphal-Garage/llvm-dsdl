@@ -60,7 +60,7 @@ go       MacroName             snake     yes     yes    yes
 ts       TypeName              pascal    yes     yes    no
 ts       FieldName             snake     yes     yes    no
 ts       ConstantName          snake     yes     yes    yes
-ts       FunctionName          snake     yes     yes    no
+ts       FunctionName          camel     yes     yes    no
 ts       InternalFunctionName  camel     yes     yes    no
 ts       LocalName             snake     yes     yes    no
 ts       NamespaceName         snake     yes     yes    no

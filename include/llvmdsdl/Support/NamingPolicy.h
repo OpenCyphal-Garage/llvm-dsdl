@@ -431,8 +431,8 @@ struct AccessorVerbs final
 /// A scope is a struct body, a namespace directory, a module's top level -- anywhere two names
 /// landing on one identifier would be a redeclaration. Names are declared in source order and the
 /// scope hands back the identifier each one gets, appending `_2`, `_3`, ... when a projection is
-/// many-to-one. Roles share one pool because they share one C++/Go/TypeScript scope: a Go field and
-/// a Go method on the same struct cannot both be `Serialize`.
+/// many-to-one, and `2`, `3`, ... to a name cased without underscores. Roles share one pool because they share one
+/// C++/Go/TypeScript scope: a Go field and a Go method on the same struct cannot both be `Serialize`.
 ///
 /// A name the scope's owner claims -- a type's own name, where the language puts it among the
 /// type's members -- is escaped with a trailing `_`, as the projection escapes a name the generated

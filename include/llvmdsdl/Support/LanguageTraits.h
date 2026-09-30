@@ -256,8 +256,8 @@ enum class AccessorNaming
     /// @brief The type's name, the verb in title case and the member: `ListRequestGetPath`.
     Concatenated,
 
-    /// @brief The verb, the type's name and the member with its first letter in upper case:
-    ///        `getListRequestPath`.
+    /// @brief The verb, the type's name and the member's words in PascalCase: `getListRequestPath`,
+    ///        and `getEntryNodeId` for a member `node_id`.
     VerbFirst,
 };
 

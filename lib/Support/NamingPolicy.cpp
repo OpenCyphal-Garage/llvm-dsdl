@@ -452,6 +452,11 @@ const RolePolicy& rolePolicy(const Language language, const IdentifierRole role)
         {
             return kPreserve;
         }
+        // TypeScript names a function in camelCase, and a property as the DSDL field is folded.
+        if ((role == IdentifierRole::FunctionName) && (language == Language::TypeScript))
+        {
+            return kCamel;
+        }
         // `non_snake_case` covers a Rust field, method and local alike, so a DSDL member spelled
         // `fooBar` is projected rather than carried through. Two members that fold onto one name
         // are separated by the scope they are declared into, as they already are in the four
@@ -1335,15 +1340,16 @@ std::string NamingScope::declare(const IdentifierRole  role,
     // define. Nothing downstream repairs that: the reserved-namespace encoder runs inside the
     // projection, before this suffix exists.
     //
-    // Go joins with nothing: its names carry no underscore at all, and one here is what `ST1003`
-    // reports whatever put it there.
-    const CaseStyle style = rolePolicy(language_, role).caseStyle;
-    const bool      goName =
-        (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported) || (style == CaseStyle::GoPackage);
-    const bool        doubles = !base.empty() && (base.back() == '_');
-    const std::string join    = (goName || doubles) ? "" : "_";
-    std::string       taken   = base;
-    unsigned          suffix  = 2;
+    // A name cased without underscores joins with nothing: one here is what `ST1003` and
+    // typescript-eslint's `naming-convention` report, whatever put it there.
+    const CaseStyle   style    = rolePolicy(language_, role).caseStyle;
+    const bool        unbroken = (style == CaseStyle::Pascal) || (style == CaseStyle::Camel) ||
+                                 (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported) ||
+                                 (style == CaseStyle::GoPackage);
+    const bool        doubles  = !base.empty() && (base.back() == '_');
+    const std::string join     = (unbroken || doubles) ? "" : "_";
+    std::string       taken    = base;
+    unsigned          suffix   = 2;
     while (!used_.insert(taken).second)
     {
         taken = base + join + std::to_string(suffix);

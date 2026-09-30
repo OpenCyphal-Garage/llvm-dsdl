@@ -1172,6 +1172,13 @@ it holds a file. A doc comment on a type or a constant opens with a sentence nam
 unexported, since `Error` and its values are the API. Go's staticcheck findings fall from 318 to
 none.
 
+TypeScript's phase took its judge to zero. A free accessor's name runs the member's words on in
+PascalCase after the verb and the type, `getEntryNodeId` where it was `getEntryNode_id`, and
+TypeScript's `FunctionName` role is camelCase. An ordinal joins a name cased without underscores
+directly, as Go's always has: `getPickTag2`. A DSDL field's accessors are claimed before the union
+tag's, so an option named `tag` keeps `getPickTag` and the tag's getter moves. TypeScript's
+`naming-convention` findings fall from 75 to none.
+
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
 that moves a wire byte has failed.

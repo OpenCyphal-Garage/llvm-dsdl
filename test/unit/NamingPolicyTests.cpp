@@ -135,7 +135,13 @@ bool runNamingRoleTests()
                 fieldOracle = llvmdsdl::codegenToGoExportedIdentifier(name);
             }
             ok = expectRole(language, IdentifierRole::FieldName, name, fieldOracle, "the field call site") && ok;
-            ok = expectRole(language, IdentifierRole::FunctionName, name, fieldOracle, "the function call site") && ok;
+            // A TypeScript function is camelCase whether it is exported or not.
+            const std::string functionOracle =
+                (language == Language::TypeScript)
+                    ? codegenProjectIdentifier(language, IdentifierRole::InternalFunctionName, name)
+                    : fieldOracle;
+            ok = expectRole(language, IdentifierRole::FunctionName, name, functionOracle, "the function call site") &&
+                 ok;
 
             // Locals: Go alone distinguishes one from a field, because Go says in the name whether
             // something is exported.
