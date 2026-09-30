@@ -24,16 +24,12 @@
 #if defined(__cplusplus) && (__cplusplus >= 201703L) && defined(__has_include)
 #    if __has_include(<memory_resource>)
 #        include <memory_resource>
-#        define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 1
-#    else
-#        define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
+#        define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE
 #    endif
-#else
-#    define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
 #endif
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L)
-#    if defined(__has_cpp_attribute)
+#    ifdef __has_cpp_attribute
 #        if __has_cpp_attribute(nodiscard)
 #            define LLVMDSDL_NODISCARD [[nodiscard]]
 #        else
@@ -51,9 +47,7 @@ extern "C"
 #include "dsdl_runtime.h"
 }
 
-namespace llvmdsdl
-{
-namespace cpp
+namespace llvmdsdl::cpp
 {
 
 /// @brief The source a runtime read primitive takes for a field accessor's buffer: its bytes, or a
@@ -81,7 +75,7 @@ inline void set_bit(std::uint8_t* const buffer, const std::size_t bit_offset, co
     dsdl_runtime_copy_bits(buffer, bit_offset, 1U, &bit, 0U);
 }
 
-#if LLVMDSDL_CPP_HAS_MEMORY_RESOURCE
+#ifdef LLVMDSDL_CPP_HAS_MEMORY_RESOURCE
 /// @brief Alias for the polymorphic memory-resource abstraction.
 using MemoryResource = std::pmr::memory_resource;
 
@@ -94,13 +88,12 @@ inline MemoryResource* default_memory_resource() noexcept
 
 /// @brief Returns a null memory-resource pointer.
 /// @return Always `nullptr`.
-inline constexpr MemoryResource* null_memory_resource() noexcept
+constexpr MemoryResource* null_memory_resource() noexcept
 {
     return nullptr;
 }
 #endif
 
-}  // namespace cpp
-}  // namespace llvmdsdl
+}  // namespace llvmdsdl::cpp
 
 #endif  // LLVMDSDL_CPP_RUNTIME_HPP

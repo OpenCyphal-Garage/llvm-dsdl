@@ -7,7 +7,6 @@
     "modernize-avoid-c-style-cast": 5,
     "readability-identifier-naming": 1150,
     "readability-non-const-parameter": 5,
-    "readability-redundant-casting": 2,
-    "readability-redundant-parentheses": 123
+    "readability-redundant-casting": 2
   }
 }

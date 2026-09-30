@@ -29,7 +29,7 @@
 # ACME_VIEW:     #include "acme/byte_view.hpp"
 # ACME_VIEW:     acme::ByteView<const std::uint8_t> pose;
 # ACME_VIEW:     const std::uint8_t* const pose_buf = this->pose.ptr();
-# ACME_VIEW-NEXT: const std::uint64_t pose_size = static_cast<std::uint64_t>(this->pose.length());
+# ACME_VIEW-NEXT: const auto pose_size = static_cast<std::uint64_t>(this->pose.length());
 # ACME_VIEW:     this->pose = acme::ByteView<const std::uint8_t>::of(&buf[{{.*}}], static_cast<std::size_t>({{.*}}));
 
 # The file names the std profile alone, so pmr keeps the built-in binding.

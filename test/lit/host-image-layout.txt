@@ -51,7 +51,7 @@
 # C_BIG_ENDIAN_HEADER-NOT: __ORDER_LITTLE_ENDIAN__
 # C_BIG_ENDIAN_HEADER:     DSDL_RUNTIME_STATIC_ASSERT(sizeof(struct fixtures_host_image__vendor__Nested) == 12U,
 
-# CPP_NESTED:      static_assert(std::is_standard_layout<Nested>::value,
+# CPP_NESTED:      static_assert(std::is_standard_layout_v<Nested>,
 # CPP_NESTED-NEXT: static_assert(sizeof(Nested) == 12U,
 # CPP_NESTED-NEXT: static_assert(offsetof(Nested, inner) == 0U,
 # CPP_NESTED-NEXT: static_assert(offsetof(Nested, code) == 8U,

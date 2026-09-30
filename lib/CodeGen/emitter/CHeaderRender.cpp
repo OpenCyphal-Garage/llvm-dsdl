@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Implements the byte-order guard of CHeaderRender.h.
+/// Implements the guards of CHeaderRender.h.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -36,6 +36,16 @@ std::vector<std::string> renderLittleEndianGuardLines(const std::string& typeNam
         "#  error \"" + moves + "only on a little-endian host, and this compiler states no byte order." + fix,
         "#endif",
     };
+}
+
+std::vector<std::string> renderIncludeGuardOpening(const std::string& macro)
+{
+    return {"#ifndef " + macro, "#define " + macro};
+}
+
+std::string renderIncludeGuardClosing(const std::string& macro)
+{
+    return "#endif /* " + macro + " */";
 }
 
 }  // namespace llvmdsdl::emitter::c

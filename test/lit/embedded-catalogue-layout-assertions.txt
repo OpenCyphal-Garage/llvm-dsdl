@@ -12,6 +12,6 @@
 # RUN: %dsdlc --target-language cpp %S/fixtures_embedded_layout/demo --outdir %t/cpp >/dev/null 2>&1
 # RUN: cat %t/cpp/std/uavcan/si/unit/angle/Quaternion_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP: static constexpr bool HOST_IMAGE = true;
-# CPP: static_assert(std::is_standard_layout<Quaternion>::value,
+# CPP: static_assert(std::is_standard_layout_v<Quaternion>,
 # CPP: static_assert(sizeof(Quaternion) == 16U,
 # CPP: static_assert(offsetof(Quaternion, wxyz) == 0U,

@@ -58,6 +58,7 @@
 # CPP-NEXT:   dsdl.scope root "" {
 # CPP-NEXT:     dsdl.scope namespace "ns" {
 # CPP-NEXT:       dsdl.scope file "Ask_1_0" path = "std/ns/Ask_1_0.hpp" {
+# CPP-NEXT:         dsdl.decl "LLVMDSDL_NS_ASK_1_0_HPP" kind = guard origin = generated fact = include_guard of = @ns.Ask.1.0
 # CPP-NEXT:         dsdl.scope type "Ask" of = @ns.Ask.1.0 {
 # CPP-NEXT:           dsdl.decl "FULL_NAME" kind = constant origin = generated fact = full_name of = @ns.Ask.1.0
 # CPP-NEXT:           dsdl.decl "FULL_NAME_AND_VERSION" kind = constant origin = generated fact = full_name_and_version of = @ns.Ask.1.0

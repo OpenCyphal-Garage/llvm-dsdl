@@ -185,6 +185,7 @@ public:
         : row_(row)
         , options_(options)
         , sourceDirectory_(sourceDirectoryOf(row, options.packageName))
+        , guards_(row.language)
     {
         for (const DefinitionParts& definition : definitions)
         {
@@ -624,12 +625,22 @@ private:
             {
                 continue;
             }
+            // A qualified name joins its parts as the macro joins words, so two definitions can
+            // compose one name, `ns.A_B` and `ns.A.B` among them, and the one allocated later takes
+            // an ordinal. An unqualified guard is either unique to its file or shared on purpose, as
+            // the one that says a translation unit holds some version of a type is.
+            const std::string qualifier = guard.qualified ? llvm::join(ref.namespaceComponents, "_") + "_" : "";
+            const std::string macro =
+                codegenProjectIdentifier(language,
+                                         IdentifierRole::MacroName,
+                                         guard.prefix.str() + qualifier +
+                                             (guard.versioned ? versioned : names.typeName) + guard.suffix.str());
             (void) declare(file,
-                           codegenProjectIdentifier(language,
-                                                    IdentifierRole::MacroName,
-                                                    guard.prefix.str() +
-                                                        (guard.versioned ? versioned : names.typeName) +
-                                                        guard.suffix.str()),
+                           guard.qualified
+                               ? guards_.declare(IdentifierRole::MacroName,
+                                                 names.key + "/" + std::to_string(static_cast<unsigned>(guard.fact)),
+                                                 macro)
+                               : macro,
                            SurfaceDeclKind::Guard,
                            NameClass::Macro,
                            NameOrigin::Generated,
@@ -1454,6 +1465,10 @@ private:
 
     /// @brief Whether each definition is deprecated, by its key.
     llvm::StringMap<bool> deprecated_;
+
+    /// @brief The macros that guard the surface's files, which are one name across a translation
+    ///        unit whichever file declares them.
+    NamingScope guards_;
 
     /// @brief The helper pool of each package, by the package's scope.
     std::map<std::size_t, NamingScope> packagePools_;

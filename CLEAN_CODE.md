@@ -1137,7 +1137,7 @@ row asked for `qualification`, and the column is gone. A `pmr` body names a nest
 declared name, as the field it sizes does.
 
 C++'s renderer change moves C++'s declaration half onto `DeclarationRenderer`, and completes phase 5.
-C++'s layout names a header's banner, `#pragma once`, includes, the namespaces it opens, helpers, a
+C++'s layout names a header's banner, its include guard, includes, the namespaces it opens, helpers, a
 service's struct and facts, the sections, the close of the service's struct, its alias, and the
 namespaces' close; the renderer's `Opening` part is what opens the scope a file declares into. A
 section's parts are its struct, the functions it defines, its close, its layout checks and its
@@ -1187,6 +1187,22 @@ default carries the section's memory contract, or an array longer than the 32 el
 library implements `Default` for, keeps its impl. A conversion between a type and itself is not
 written. A doc comment's line that returns to the margin after a list item follows a blank line,
 which ends the list for rustdoc's Markdown. Clippy's findings fall from 641 to none.
+
+C++'s phase took its judge from 3,134 findings to 8. A profile states the standard its own C++ is
+written to, C++20 for `std` and `pmr` and C++14 for `autosar`, and whether a declaration initialised
+by a cast declares `auto`, which AUTOSAR C++14's rule A7-1-5 refuses a fundamental type. A C++17
+profile opens `namespace uavcan::node {` and asks `std::is_standard_layout_v<T>`, and a `std` or
+`pmr` body declares `const auto size = static_cast<std::uint64_t>(...)`. A header guards itself with
+a macro the tree declares, `LLVMDSDL_UAVCAN_NODE_HEARTBEAT_1_0_HPP`, rendered for C and C++ alike.
+The guard joins its parts with `_`, since C++ reserves `__`, and where two definitions compose one
+guard the later takes an ordinal. A deserialise reads a null buffer as empty through the runtime's
+`readable_bytes`, as the accessors do. A conditional of two operands of one type is not cast, a
+container member takes no `{}`, a signed value narrower than 64 bits widens to the plan's
+`std::uint64_t` through `std::int64_t`, and the test whether the target's index holds a count
+compares no signed value with an unsigned one. A negation leaves a name unparenthesised in every
+language, which takes C's `readability-redundant-parentheses` from 123 to none. The eight left stay
+by decision: a deprecated type declared apart keeps its trailing `_` (3), and every serialise takes
+a writable buffer, which an empty section's does not write to (5).
 
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase

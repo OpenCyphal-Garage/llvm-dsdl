@@ -8,7 +8,8 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// The byte-order guard a C or C++ header carries over a folded body.
+/// The guards a C or C++ header carries: its include guard, and the byte-order guard over a folded
+/// body. C and C++ carry the same guards, which is why each is rendered once.
 ///
 //===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_EMITTER_C_HEADER_RENDER_H
@@ -30,6 +31,17 @@ namespace llvmdsdl::emitter::c
 /// @param[in] typeName Generated type name, which the refusal names.
 /// @return Ordered preprocessor lines.
 std::vector<std::string> renderLittleEndianGuardLines(const std::string& typeName);
+
+/// @brief Renders what opens a header guarded by @p macro: the test that skips a header already
+///        read, and the macro's definition.
+/// @param[in] macro The include guard the tree declares for the header.
+/// @return Ordered preprocessor lines.
+std::vector<std::string> renderIncludeGuardOpening(const std::string& macro);
+
+/// @brief Renders what closes a header guarded by @p macro.
+/// @param[in] macro The include guard the tree declares for the header.
+/// @return The preprocessor line.
+std::string renderIncludeGuardClosing(const std::string& macro);
 
 }  // namespace llvmdsdl::emitter::c
 

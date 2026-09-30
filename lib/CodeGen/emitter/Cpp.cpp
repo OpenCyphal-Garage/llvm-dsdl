@@ -482,6 +482,51 @@ llvm::StringRef profileName(const CppFlavor flavor)
     llvm::report_fatal_error("C++ backend: a profile with no name");
 }
 
+/// @brief What a profile's own C++ may write, beyond what its runtime needs.
+struct ProfileIdiom final
+{
+    /// @brief Whether the profile compiles under C++17 or later, which writes nested namespaces as
+    ///        one and a trait's value as its `_v` template.
+    bool cpp17{};
+
+    /// @brief Whether a declaration initialised by a cast declares `auto`, the cast naming its type.
+    ///
+    /// AUTOSAR C++14's rule A7-1-5 allows `auto` only for a type that is not fundamental, and a
+    /// cast here answers a fundamental one.
+    bool autoForCasts{};
+};
+
+/// @brief The idiom of @p flavor: `std` and `pmr` are C++20, and `autosar` is AUTOSAR C++14.
+ProfileIdiom idiomOf(const CppFlavor flavor)
+{
+    return isAutosarFlavor(flavor) ? ProfileIdiom{.cpp17 = false, .autoForCasts = false}
+                                   : ProfileIdiom{.cpp17 = true, .autoForCasts = true};
+}
+
+/// @brief Whether @p expr is one cast to @p type, whose parenthesis closes at its end, so a
+///        declaration it initialises names the type already.
+bool castsTo(const llvm::StringRef expr, const llvm::StringRef type)
+{
+    const std::string head = "static_cast<" + type.str() + ">(";
+    if (!expr.starts_with(head))
+    {
+        return false;
+    }
+    int depth = 0;
+    for (std::size_t i = head.size() - 1; i < expr.size(); ++i)
+    {
+        if (expr[i] == '(')
+        {
+            ++depth;
+        }
+        else if ((expr[i] == ')') && (--depth == 0))
+        {
+            return i + 1 == expr.size();
+        }
+    }
+    return false;
+}
+
 /// @brief How one C++ header names what it takes from other headers, recording each include.
 ///
 /// Every name the header writes from another header is named here, so the includes written from
@@ -576,7 +621,9 @@ private:
             {"std::int64_t", "<cstdint>"},
             {"std::int8_t", "<cstdint>"},
             {"std::is_standard_layout", "<type_traits>"},
+            {"std::is_standard_layout_v", "<type_traits>"},
             {"std::move", "<utility>"},
+            {"std::numeric_limits", "<limits>"},
             {"std::pmr::vector", "<vector>"},
             {"std::ptrdiff_t", "<cstddef>"},
             {"std::size_t", "<cstddef>"},
@@ -807,8 +854,15 @@ public:
         }
         else
         {
-            w.line("const " + spelt + " " + name.str() + " = " + expr.str() + ";");
+            w.line("const " + declared(spelt, expr) + " " + name.str() + " = " + expr.str() + ";");
         }
+    }
+
+    /// @brief The type a declaration of @p spelt initialised by @p expr names: `auto` where the
+    ///        profile declares a cast so and @p expr is one to @p spelt.
+    [[nodiscard]] std::string declared(const std::string& spelt, const llvm::StringRef expr) const
+    {
+        return (idiomOf(flavor_).autoForCasts && castsTo(expr, spelt)) ? std::string{"auto"} : spelt;
     }
 
     void declareVariable(SourceWriter&         w,
@@ -891,18 +945,19 @@ public:
                    file_.boundOperation(vocabulary::Concept::Span, "size", {{"self", "buffer"}}) + ";");
         }
         std::vector<std::string> parameters{"buffer", "buffer_size_bytes"};
+        const std::string        u64 = file_.standard("std::uint64_t");
         if (indexed)
         {
-            w.line("const " + file_.standard("std::uint64_t") + " index = static_cast<" +
-                   file_.standard("std::uint64_t") + ">(element_index);");
+            const std::string index = "static_cast<" + u64 + ">(element_index)";
+            w.line("const " + declared(u64, index) + " index = " + index + ";");
             parameters.emplace_back("index");
         }
         if (!getter)
         {
             if (integer)
             {
-                w.line("const " + file_.standard("std::uint64_t") + " value = static_cast<" +
-                       file_.standard("std::uint64_t") + ">(member_value);");
+                const std::string value = castFrom("member_value", signedNarrow(a.member->io), held);
+                w.line("const " + declared(u64, value) + " value = " + value + ";");
             }
             parameters.emplace_back("value");
         }
@@ -940,7 +995,7 @@ public:
 
     void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
     {
-        w.open("if (!(" + condition.str() + ")) {");
+        w.open("if (" + logicalNot(condition) + ") {");
         w.line("break;");
         w.close("}");
     }
@@ -1033,7 +1088,7 @@ public:
 
     [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
     {
-        return "!(" + expr.str() + ")";
+        return isIdentifier(expr) ? "!" + expr.str() : "!(" + expr.str() + ")";
     }
 
     [[nodiscard]] std::string compare(const Comparison      comparison,
@@ -1095,10 +1150,11 @@ public:
     [[nodiscard]] std::string select(const llvm::StringRef condition,
                                      const llvm::StringRef ifTrue,
                                      const llvm::StringRef ifFalse,
-                                     const mlir::Type      type) const override
+                                     const mlir::Type /*type*/) const override
     {
-        const std::string expression = "(" + condition.str() + " ? " + ifTrue.str() + " : " + ifFalse.str() + ")";
-        return isNarrow(type) ? "static_cast<" + typeName(type) + ">" + expression : expression;
+        // Both operands are of the value's type, and a conditional of two operands of one type is
+        // of that type: only an arithmetic operator promotes a narrow one.
+        return "(" + condition.str() + " ? " + ifTrue.str() + " : " + ifFalse.str() + ")";
     }
 
     [[nodiscard]] std::string convert(const Conversion      conversion,
@@ -1139,11 +1195,14 @@ public:
 
     [[nodiscard]] std::string indexHolds(mlir::dsdl::IndexHoldsOp op, const ValueNames& names) const override
     {
-        // Through std::size_t and back as std::ptrdiff_t: a count past the signed range of the
-        // target's index does not come back as itself.
+        // The bound the round trip through std::size_t and back as std::ptrdiff_t states, without
+        // the comparison of a signed value with an unsigned one: an index as wide as the count
+        // holds it, and a narrower one holds a count within its signed range. The two differ only
+        // for a count past the signed range of 64 bits, which the validator rejects as negative.
         const std::string value = names(op.getValue());
-        return "(static_cast<" + file_.standard("std::uint64_t") + ">(static_cast<" + file_.standard("std::ptrdiff_t") +
-               ">(static_cast<" + file_.standard("std::size_t") + ">(" + value + "))) == " + value + ")";
+        return "((sizeof(" + file_.standard("std::ptrdiff_t") + ") >= sizeof(" + file_.standard("std::uint64_t") +
+               ")) || (" + value + " <= static_cast<" + file_.standard("std::uint64_t") + ">(" +
+               file_.standard("std::numeric_limits") + "<" + file_.standard("std::ptrdiff_t") + ">::max())))";
     }
 
     [[nodiscard]] std::string bufferOrEmpty(mlir::dsdl::BufferOrEmptyOp op, const ValueNames& names) const override
@@ -1153,8 +1212,7 @@ public:
         {
             return buffer;
         }
-        return "((" + buffer + " != nullptr) ? " + buffer + " : reinterpret_cast<const " +
-               file_.standard("std::uint8_t") + "*>(\"\"))";
+        return file_.cppRuntime("::llvmdsdl::cpp::readable_bytes") + "(" + buffer + ")";
     }
 
     [[nodiscard]] std::string bufferAt(mlir::dsdl::BufferAtOp op, const ValueNames& names) const override
@@ -1185,13 +1243,17 @@ public:
                                     const llvm::StringRef name,
                                     const ValueNames&     names) const override
     {
-        w.line(file_.standard("std::size_t") + " " + name.str() + " = " + asSize(names(op.getInit())) + ";");
+        const std::string size = file_.standard("std::size_t");
+        const std::string init = asSize(names(op.getInit()));
+        w.line(declared(size, init) + " " + name.str() + " = " + init + ";");
         return "&" + name.str();
     }
 
     [[nodiscard]] std::string loadMember(mlir::dsdl::LoadMemberOp op, const ValueNames& names) const override
     {
-        return loadedValue(memberAccess(op.getObject(), op.getMember(), names), op.getValue().getType());
+        return loadedValue(memberAccess(op.getObject(), op.getMember(), names),
+                           signedNarrow(memberOf(op.getObject(), op.getMember()).io),
+                           op.getValue().getType());
     }
 
     void storeMember(SourceWriter& w, mlir::dsdl::StoreMemberOp op, const ValueNames& names) const override
@@ -1204,6 +1266,7 @@ public:
     [[nodiscard]] std::string loadElement(mlir::dsdl::LoadElementOp op, const ValueNames& names) const override
     {
         return loadedValue(elementAccess(op.getObject(), op.getMember(), names(op.getIndex()), names),
+                           signedNarrow(memberOf(op.getObject(), op.getMember()).io),
                            op.getValue().getType());
     }
 
@@ -1316,10 +1379,11 @@ public:
         // The runtime answers in the narrowest standard width that holds the field; a signed read
         // arrives sign-extended and keeps its value across the widening.
         const unsigned holder = holderWidthFor(width);
-        return "static_cast<" + result + ">(" +
-               file_.cRuntime(std::string(file_.cRuntime("dsdl_runtime_get_")) + (op.getIsSigned() ? "i" : "u") +
-                              std::to_string(holder)) +
-               "(" + prefix + ", " + std::to_string(width) + "U))";
+        return castFrom(file_.cRuntime(std::string(file_.cRuntime("dsdl_runtime_get_")) +
+                                       (op.getIsSigned() ? "i" : "u") + std::to_string(holder)) +
+                            "(" + prefix + ", " + std::to_string(width) + "U)",
+                        op.getIsSigned() && (holder < 64U),
+                        valueType);
     }
 
     void bitWrite(SourceWriter& w, mlir::dsdl::BitWriteOp op, const ValueNames& names) const override
@@ -1572,9 +1636,30 @@ private:
     }
 
     /// @brief @p access read as a value of @p type. A bool is read as a bool.
-    [[nodiscard]] std::string loadedValue(const std::string& access, const mlir::Type type) const
+    /// @brief @p access read as a value of @p type. A bool is read as a bool.
+    [[nodiscard]] std::string loadedValue(const std::string& access,
+                                          const bool         fromSignedNarrow,
+                                          const mlir::Type   type) const
     {
-        return isBool(type) ? access : "static_cast<" + typeName(type) + ">(" + access + ")";
+        return isBool(type) ? access : castFrom(access, fromSignedNarrow, type);
+    }
+
+    /// @brief @p value as @p type. A value of a signed type narrower than 64 bits, as
+    ///        @p fromSignedNarrow says it is, widens to a 64-bit unsigned one through
+    ///        `std::int64_t`, which states the sign extension the plan's value carries.
+    [[nodiscard]] std::string castFrom(const std::string& value,
+                                       const bool         fromSignedNarrow,
+                                       const mlir::Type   type) const
+    {
+        const bool extends = fromSignedNarrow && (widthOf(type) == 64U) && !isSignedSpelt(type);
+        return "static_cast<" + typeName(type) + ">(" +
+               (extends ? "static_cast<" + file_.standard("std::int64_t") + ">(" + value + ")" : value) + ")";
+    }
+
+    /// @brief Whether the member @p io describes is stored in a signed type narrower than 64 bits.
+    static bool signedNarrow(mlir::dsdl::IOOp io)
+    {
+        return (io.getScalarCategory() == "signed") && (io.getBitLength() < 64);
     }
 
     /// @brief @p value, of @p type, converted for storage in a field of @p storage.
@@ -2014,10 +2099,13 @@ public:
             return;
         }
         case LayoutPart::Guards:
-            w.line("#pragma once");
+            for (const std::string& line : llvmdsdl::emitter::c::renderIncludeGuardOpening(includeGuard(site)))
+            {
+                w.line(line);
+            }
             return;
         case LayoutPart::Opening:
-            for (const std::string& name : names().namespaces(site.facts().key()))
+            for (const std::string& name : namespacePath(site))
             {
                 w.line("namespace " + name + " {");
             }
@@ -2042,14 +2130,42 @@ public:
             alias(site);
             return;
         case LayoutPart::Epilogue:
-            for (const std::string& name : std::views::reverse(names().namespaces(site.facts().key())))
+            for (const std::string& name : std::views::reverse(namespacePath(site)))
             {
                 w.line("} // namespace " + name);
             }
+            site.separate();
+            w.line(llvmdsdl::emitter::c::renderIncludeGuardClosing(includeGuard(site)));
             return;
         default:
             return;
         }
+    }
+
+    /// @brief The macro the tree declares to guard the site's header.
+    [[nodiscard]] static const std::string& includeGuard(const DeclarationSite& site)
+    {
+        const SurfaceDecl* const guard = site.tree().find(site.file(),
+                                                          SurfaceDeclKind::Guard,
+                                                          SurfaceEntity{site.facts().key(), {}, {}, {}},
+                                                          GeneratedFact::IncludeGuard);
+        if (guard == nullptr)
+        {
+            llvm::report_fatal_error("C++ backend: the tree declares no include guard for a header");
+        }
+        return guard->name;
+    }
+
+    /// @brief The namespaces the site's declarations are made in, each as the header opens it: one,
+    ///        nested, where the profile compiles under C++17.
+    [[nodiscard]] std::vector<std::string> namespacePath(const DeclarationSite& site) const
+    {
+        std::vector<std::string> path = names().namespaces(site.facts().key());
+        if (idiomOf(flavor_).cpp17 && !path.empty())
+        {
+            return {llvm::join(path, "::")};
+        }
+        return path;
     }
 
     [[nodiscard]] std::string imports(const DeclarationSite& /*site*/) const override
@@ -2238,7 +2354,7 @@ private:
                 // NOLINTBEGIN(performance-inefficient-string-concatenation)
                 if (isPmrFlavor(flavor_))
                 {
-                    w.line(file_.standard("std::pmr::vector") + "<" + element + "> " + member + "{};");
+                    w.line(file_.standard("std::pmr::vector") + "<" + element + "> " + member + ";");
                     variableArrayMembers.push_back(member);
                     if (field.resolvedType.scalarCategory == SemanticScalarCategory::Composite && !field.heldAsView)
                     {
@@ -2248,11 +2364,11 @@ private:
                 else if (isAutosarFlavor(flavor_))
                 {
                     w.line(file_.cppRuntime("::llvmdsdl::cpp::autosar::BoundedVector") + "<" + element + ", " +
-                           std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
+                           std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + ";");
                 }
                 else
                 {
-                    w.line(file_.standard("std::vector") + "<" + element + "> " + member + "{};");
+                    w.line(file_.standard("std::vector") + "<" + element + "> " + member + ";");
                 }
                 // NOLINTEND(performance-inefficient-string-concatenation)
                 ++emitted;
@@ -2425,7 +2541,10 @@ private:
         const std::string& declared = section.declaredName();
         const std::string  path     = section.path(true);
         // NOLINTBEGIN(performance-inefficient-string-concatenation)
-        w.line("static_assert(" + file_.standard("std::is_standard_layout") + "<" + declared + ">::value, \"" + path +
+        const std::string standardLayout =
+            idiomOf(flavor_).cpp17 ? file_.standard("std::is_standard_layout_v") + "<" + declared + ">"
+                                   : file_.standard("std::is_standard_layout") + "<" + declared + ">::value";
+        w.line("static_assert(" + standardLayout + ", \"" + path +
                ": the structure is not the byte image its serialisation assumes\");");
         w.line("static_assert(sizeof(" + declared + ") == " + std::to_string(metadata.serializationBufferSizeBytes) +
                "U, \"" + path + ": the structure is not the byte image its serialisation assumes\");");

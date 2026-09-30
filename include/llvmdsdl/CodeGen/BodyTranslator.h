@@ -442,6 +442,9 @@ public:
     }
 };
 
+/// @brief Whether @p expr is one identifier, which an operator applies to without parentheses.
+[[nodiscard]] bool isIdentifier(llvm::StringRef expr);
+
 /// @brief Renders @p role as `member_role`, `role` when @p member is empty, and appends
 ///        `_<ordinal + 1>` to a repeat.
 std::string snakeValueName(ValueRole role, llvm::StringRef member, std::size_t ordinal);

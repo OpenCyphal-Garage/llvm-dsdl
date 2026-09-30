@@ -1102,11 +1102,17 @@ llvm::ArrayRef<GuardName> generatedFileGuards(const Language language)
                    .prefix    = "LLVMDSDL_SELECTED_",
                    .suffix    = "_",
                    .versioned = true}};
+    static constexpr std::array<GuardName, 1> kCpp = {GuardName{.fact      = GeneratedFact::IncludeGuard,
+                                                                .prefix    = "LLVMDSDL_",
+                                                                .suffix    = "_HPP",
+                                                                .versioned = true,
+                                                                .qualified = true}};
     switch (language)
     {
     case Language::C:
         return kC;
     case Language::Cpp:
+        return kCpp;
     case Language::Rust:
     case Language::Go:
     case Language::TypeScript:
