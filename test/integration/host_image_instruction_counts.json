@@ -30,7 +30,7 @@
       "plain:fixtures_aliasable__vendor__Pose_1_0__serialize_ir_"
     ],
     "measured": {
-      "llvm-22": "LLVM 22.1.8, 2026-09-25, a composite getter at offset nought answers its buffer"
+      "llvm-22": "LLVM 22.1.8, 2026-09-30, a host-image deserialise folds every nested record's code"
     },
     "accessors": "The field accessors of phase 4 are baselined beside the bodies: a getter, a setter, an element getter and a composite getter. A whole-function count includes the cold path: a getter's hot path is a bounds check and one load on a little-endian target, and the primitive it keeps for a buffer short of the field is the rest of the count.",
     "views": "A container holding a view of an @aliasable record, under --aliasable-views (`views:`) and as a decoded copy (`plain:`). A static count is per function, and the plain path's nested decode is a call, so the holder's own count does not show what the view removes: that is the callee, baselined beside it under `plain:`."
@@ -55,7 +55,7 @@
         "views:fixtures_views__vendor__Frame_1_0__serialize_ir_": 61,
         "plain:fixtures_views__vendor__Frame_1_0__deserialize_ir_": 76,
         "plain:fixtures_views__vendor__Frame_1_0__serialize_ir_": 50,
-        "plain:fixtures_aliasable__vendor__Pose_1_0__deserialize_ir_": 61,
+        "plain:fixtures_aliasable__vendor__Pose_1_0__deserialize_ir_": 42,
         "plain:fixtures_aliasable__vendor__Pose_1_0__serialize_ir_": 20
       },
       "x86_64-unknown-linux-gnu": {
@@ -76,7 +76,7 @@
         "views:fixtures_views__vendor__Frame_1_0__serialize_ir_": 72,
         "plain:fixtures_views__vendor__Frame_1_0__deserialize_ir_": 88,
         "plain:fixtures_views__vendor__Frame_1_0__serialize_ir_": 58,
-        "plain:fixtures_aliasable__vendor__Pose_1_0__deserialize_ir_": 69,
+        "plain:fixtures_aliasable__vendor__Pose_1_0__deserialize_ir_": 49,
         "plain:fixtures_aliasable__vendor__Pose_1_0__serialize_ir_": 23
       }
     }
