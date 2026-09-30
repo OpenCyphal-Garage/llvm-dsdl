@@ -1223,6 +1223,21 @@ objects are never the wire's bytes states no host-image verdict. A helper is a t
 where the language keeps a member from its users by the member's own declaration: C++'s `private`
 and Python's leading `_`.
 
+C's judge went from 1,898 findings to 6. A body compiled in a definition's source file is linked
+under the name its entry point or accessor takes for the versioned type,
+`uavcan__file__List_0_2__Request__serialize_`, which the header publishes as
+`uavcan__file__List__Request__serialize_`; under versioned type names the two names are one, and
+the header declares the body itself. A linked accessor spells its member as the section's type
+declares it. The C ruleset accepts a version after the short name in each composed form. Every
+guard, in C and C++, is named from the DSDL name with its parts joined by `_`, through one pool, so
+`ns.A_B` and `ns.A.B` take distinct guards: `LLVMDSDL_SELECTED_UAVCAN_NODE_EXECUTECOMMAND`. A
+conditional of a narrow type is cast back to that type, as an operator is. A value stored in a
+signed member is cast to the member's type, and a value read from a signed member or a signed
+runtime read narrower than 64 bits widens through `int64_t`. The runtime header carries no lint
+suppression. The six left stay: five by the decision C++ took on an empty section's writable buffer,
+and one `ArrayBound` in the runtime's bit copy, which assumes a whole byte and a partial one in a
+copy of at most eight bits.
+
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
 that moves a wire byte has failed.

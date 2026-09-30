@@ -96,7 +96,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                                    .initializer          = true,
                                                    .accessors            = AccessorNaming::Joined,
                                                    .unionOptionFunctions = true,
-                                                   .loweredBodySuffix    = "ir_"},
+                                                   .bodiesCompiledApart  = true},
             },
     },
     {
@@ -308,7 +308,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                                    .initializer          = false,
                                                    .accessors            = AccessorNaming::Concatenated,
                                                    .unionOptionFunctions = false,
-                                                   .loweredBodySuffix    = ""},
+                                                   .bodiesCompiledApart  = false},
             },
     },
     {
@@ -384,7 +384,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                                    .initializer          = false,
                                                    .accessors            = AccessorNaming::VerbFirst,
                                                    .unionOptionFunctions = false,
-                                                   .loweredBodySuffix    = ""},
+                                                   .bodiesCompiledApart  = false},
             },
     },
     {

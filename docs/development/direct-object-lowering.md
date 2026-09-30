@@ -40,7 +40,7 @@ Two properties make it tractable:
   golden snapshot pins C source text. The C text being replaced is the specification of the
   behaviour, and the wire bytes must not move; the shape of the generated C is expected to
   change, because the translator renders it rather than a string formatter.
-- **Progress is a number.** The count of `_ir_` function bodies rendered as text goes from 362
+- **Progress is a number.** The count of out-of-line function bodies rendered as text goes from 362
   towards 0, counted over `dsdlc --target-language c +uavcan` output. 332 are operations:
   scalars, arrays of scalars and of composites, alignment, void fields, nested composites
   sealed and delimited, and unions of any of those, both directions.
@@ -388,7 +388,7 @@ run by `ctest -L direct-lowering-gate`. Each reports `PASS`, `NOT_IMPLEMENTED` o
 | 3 `writes-no-c-intermediates` | No `.c` reaches the output tree or `TMPDIR`, and no staging tree exists | C |
 | 4 `cross-target-without-toolchain` | `riscv32-unknown-elf` yields an ELF with `e_machine` `EM_RISCV`, 32-bit | C |
 | 5 `object-matches-c-lane` | The object links and its wire bytes match the C lane | C |
-| 6 `object-defines-every-entry-point` | Every `_ir_` prototype a published header declares is defined in its object | C |
+| 6 `object-defines-every-entry-point` | Every function prototype a published header declares is defined in its object | C |
 
 Two limits are worth stating, because a gate believed to cover more than it does is worse than
 no gate:

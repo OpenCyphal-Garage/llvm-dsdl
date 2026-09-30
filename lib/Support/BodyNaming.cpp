@@ -109,29 +109,29 @@ std::string renderScopeLocalHelperName(const Language        language,
     return codegenProjectIdentifier(language, IdentifierRole::InternalFunctionName, name);
 }
 
-std::string renderLoweredLinkName(const Language language, const PlanSymbol& symbol)
+std::string renderLoweredLinkName(const Language language, const PlanSymbol& symbol, const llvm::StringRef member)
 {
     const std::string type = versionedSectionTypeName(language, symbol);
     switch (symbol.function)
     {
     case PlanFunction::Serialize:
-        return renderLoweredEntryPointName(language, type, EntryPoint::Serialize);
+        return renderEntryPointName(language, type, EntryPoint::Serialize);
     case PlanFunction::Deserialize:
-        return renderLoweredEntryPointName(language, type, EntryPoint::Deserialize);
+        return renderEntryPointName(language, type, EntryPoint::Deserialize);
     case PlanFunction::Initialize:
-        return renderLoweredEntryPointName(language, type, EntryPoint::Initialize);
+        return renderEntryPointName(language, type, EntryPoint::Initialize);
     case PlanFunction::AppendWireImage:
-        return renderLoweredEntryPointName(language, type, EntryPoint::AppendWireImage);
+        return renderEntryPointName(language, type, EntryPoint::AppendWireImage);
     case PlanFunction::WireImage:
-        return renderLoweredEntryPointName(language, type, EntryPoint::WireImage);
+        return renderEntryPointName(language, type, EntryPoint::WireImage);
     case PlanFunction::ReadWireImage:
-        return renderLoweredEntryPointName(language, type, EntryPoint::ReadWireImage);
+        return renderEntryPointName(language, type, EntryPoint::ReadWireImage);
     case PlanFunction::FromWireImage:
-        return renderLoweredEntryPointName(language, type, EntryPoint::FromWireImage);
+        return renderEntryPointName(language, type, EntryPoint::FromWireImage);
     case PlanFunction::Get:
-        return renderLoweredAccessorName(language, type, AccessorVerb::Get, symbol.member);
+        return renderAccessorName(language, type, AccessorVerb::Get, member);
     case PlanFunction::Set:
-        return renderLoweredAccessorName(language, type, AccessorVerb::Set, symbol.member);
+        return renderAccessorName(language, type, AccessorVerb::Set, member);
     case PlanFunction::Helper:
         break;
     }

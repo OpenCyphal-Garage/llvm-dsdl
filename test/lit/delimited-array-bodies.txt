@@ -6,9 +6,9 @@
 # RUN: %dsdlc --target-language mlir %S/fixtures 2>/dev/null > %t.mlir
 # RUN: %dsdl-opt --pass-pipeline='builtin.module(lower-dsdl-bodies)' %t.mlir | FileCheck %s --check-prefix=IR
 
-# C: int8_t fixtures__vendor__DelimitedList_1_0__serialize_ir_(
+# C: int8_t fixtures__vendor__DelimitedList_1_0__serialize_(
 # C: fixtures__vendor__Delimited__serialize_(
-# C: int8_t fixtures__vendor__DelimitedList_1_0__deserialize_ir_(
+# C: int8_t fixtures__vendor__DelimitedList_1_0__deserialize_(
 # C: fixtures__vendor__Delimited__deserialize_(
 
 # IR-LABEL: func.func @fixtures.vendor.DelimitedList.1.0.serialize

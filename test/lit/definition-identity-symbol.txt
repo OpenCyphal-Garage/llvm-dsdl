@@ -27,18 +27,20 @@
 # BODY-DAG: func.func @ns.A_B.1.0.plan.capacity_check(
 # BODY-DAG: func.func @ns.Svc.1.0.request.plan.scalar_unsigned.{{[0-9]+}}.ser(
 
+# A guard joins the parts of the DSDL name with the `_` a macro joins its words with, so the two
+# compose one guard, in C and in C++, and the one allocated later takes an ordinal.
 # RUN: %dsdlc --target-language c --no-embedded-uavcan %t/ns --outdir %t/c
 # RUN: cat %t/c/ns/A_B_1_0.h | FileCheck %s --check-prefix=C_AB
 # RUN: cat %t/c/ns/A/B_1_0.h | FileCheck %s --check-prefix=C_A_B
-# C_AB: #ifndef LLVMDSDL_NS__A_B_1_0_H
-# C_AB: #define LLVMDSDL_SELECTED_NS__A_B_
-# C_AB: int8_t ns__A_B_1_0__serialize_ir_(
-# C_A_B: #ifndef LLVMDSDL_NS__A__B_1_0_H
-# C_A_B: #define LLVMDSDL_SELECTED_NS__A__B_
-# C_A_B: int8_t ns__A__B_1_0__serialize_ir_(
+# C_AB: #ifndef LLVMDSDL_NS_A_B_1_0_H_2{{$}}
+# C_AB: #define LLVMDSDL_SELECTED_NS_A_B_2{{$}}
+# C_AB: #define LLVMDSDL_SELECTED_NS_A_B_1_0_2{{$}}
+# C_AB: int8_t ns__A_B_1_0__serialize_(
+# C_A_B: #ifndef LLVMDSDL_NS_A_B_1_0_H{{$}}
+# C_A_B: #define LLVMDSDL_SELECTED_NS_A_B{{$}}
+# C_A_B: #define LLVMDSDL_SELECTED_NS_A_B_1_0{{$}}
+# C_A_B: int8_t ns__A__B_1_0__serialize_(
 
-# A C++ guard joins the namespace with the `_` the macro joins its words with, since C++ reserves
-# `__`, so the two compose one guard and the one allocated later takes an ordinal.
 # RUN: %dsdlc --target-language cpp --cpp-profile std --no-embedded-uavcan %t/ns --outdir %t/cpp
 # RUN: cat %t/cpp/ns/A/B_1_0.hpp | FileCheck %s --check-prefix=CPP_A_B
 # RUN: cat %t/cpp/ns/A_B_1_0.hpp | FileCheck %s --check-prefix=CPP_AB

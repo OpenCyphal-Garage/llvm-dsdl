@@ -115,8 +115,9 @@ differently whether a type name carries its version.
 The IR names a definition by its DSDL identity, `ns.Msg.1.0`, and each of its functions by that
 identity with dotted suffixes, `ns.Msg.1.0.serialize`; `Support/PlanSymbol.h` renders and reads
 them. A backend that links or declares a function spells it from what the symbol reads back, in the
-scope where the spelling lives: C links `ns__Msg_1_0__serialize_ir_`, spelt from its versioned type
-name, and builds its include guard and version sentinels from its type name too.
+scope where the spelling lives: C links `ns__Msg_1_0__serialize_`, spelt from its versioned type
+name. C's and C++'s include guards, and C's version sentinels, are spelt from the DSDL name:
+`LLVMDSDL_NS_MSG_1_0_H`.
 
 The C backend's struct declaration and the serialiser bodies `CSpelling` spells from MLIR name a
 member through one section scope, built from the semantic model, so the declaration and the

@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -324,7 +325,7 @@ public:
         }
         allocateMembers(names, definition);
         allocateServiceEntryPoints(names, definition);
-        allocateBodies(names, space, file, definition.bodies);
+        allocateBodies(names, definition, space, file);
         allocateImports(definition, file);
         plan_.definitions.push_back(std::move(names));
     }
@@ -483,6 +484,23 @@ private:
         names.sections.push_back(std::move(section));
     }
 
+    /// @brief What the section's type calls the member the accessor @p plan reads or writes.
+    [[nodiscard]] std::string memberName(const DefinitionNames& names,
+                                         const DefinitionParts& definition,
+                                         const PlanSymbol&      plan) const
+    {
+        if (plan.member == kPlanUnionTagMember)
+        {
+            return unionTagMemberName(row_.language).str();
+        }
+        const auto section = llvm::find_if(names.sections, [&](const SectionNames& candidate) {
+            return candidate.section == plan.section;
+        });
+        assert((section != names.sections.end()) && "an accessor of a section the definition has");
+        const SectionParts& parts = (plan.section == "response") ? *definition.response : definition.request;
+        return fieldScope(*section, parts).get(IdentifierRole::FieldName, plan.member);
+    }
+
     /// @brief The scope @p section's fields are named in, which claims the name its type is declared
     ///        under where the language puts that among the type's members.
     [[nodiscard]] NamingScope fieldScope(const SectionNames& section, const SectionParts& parts) const
@@ -618,13 +636,7 @@ private:
     ///        makes two versions one name.
     void allocateFileGuards(const DefinitionNames& names, const DefinitionRef& ref, const std::size_t file)
     {
-        const Language    language  = row_.language;
-        const std::string versioned = renderDefinitionTypeName(language,
-                                                               ref.namespaceComponents,
-                                                               ref.shortName,
-                                                               ref.majorVersion,
-                                                               ref.minorVersion,
-                                                               TypeNameVersioning::Versioned);
+        const Language language = row_.language;
         for (const GuardName& guard : generatedFileGuards(language))
         {
             const bool selection =
@@ -633,22 +645,27 @@ private:
             {
                 continue;
             }
-            // A qualified name joins its parts as the macro joins words, so two definitions can
-            // compose one name, `ns.A_B` and `ns.A.B` among them, and the one allocated later takes
-            // an ordinal. An unqualified guard is either unique to its file or shared on purpose, as
-            // the one that says a translation unit holds some version of a type is.
-            const std::string qualifier = guard.qualified ? llvm::join(ref.namespaceComponents, "_") + "_" : "";
+            // The name joins its parts as the macro joins words, so two definitions can compose one
+            // name, `ns.A_B` and `ns.A.B` among them, and the one allocated later takes an ordinal.
+            // The guard that says a translation unit holds some version of a type is keyed by the
+            // type alone, so every version's file declares the same name.
+            std::vector<std::string> parts(ref.namespaceComponents.begin(), ref.namespaceComponents.end());
+            parts.push_back(ref.shortName);
+            std::string identity = llvm::join(parts, ".");
+            if (guard.versioned)
+            {
+                parts.push_back(std::to_string(ref.majorVersion));
+                parts.push_back(std::to_string(ref.minorVersion));
+                identity = names.key;
+            }
             const std::string macro =
                 codegenProjectIdentifier(language,
                                          IdentifierRole::MacroName,
-                                         guard.prefix.str() + qualifier +
-                                             (guard.versioned ? versioned : names.typeName) + guard.suffix.str());
+                                         guard.prefix.str() + llvm::join(parts, "_") + guard.suffix.str());
             (void) declare(file,
-                           guard.qualified
-                               ? guards_.declare(IdentifierRole::MacroName,
-                                                 names.key + "/" + std::to_string(static_cast<unsigned>(guard.fact)),
-                                                 macro)
-                               : macro,
+                           guards_.declare(IdentifierRole::MacroName,
+                                           identity + "/" + std::to_string(static_cast<unsigned>(guard.fact)),
+                                           macro),
                            SurfaceDeclKind::Guard,
                            NameClass::Macro,
                            NameOrigin::Generated,
@@ -853,7 +870,7 @@ private:
                                                  : fields.get(IdentifierRole::FieldName, name);
         };
         // Where the bodies are not compiled apart, each free entry point and accessor is its body.
-        if (free.loweredBodySuffix.empty())
+        if (!free.bodiesCompiledApart)
         {
             for (const BodyParts& body : bodies)
             {
@@ -958,7 +975,11 @@ private:
             case PlanFunction::Helper:
                 break;
             }
-            if (name)
+            // A wrapper publishes the body under another name. Where the two names are one, as under
+            // versioned type names, the body is the entry point.
+            const bool accessor =
+                (body.plan.function == PlanFunction::Get) || (body.plan.function == PlanFunction::Set);
+            if (name && (*name != renderLoweredLinkName(language, body.plan, accessor ? member(body.plan.member) : "")))
             {
                 (void) declare(file,
                                *name,
@@ -1165,20 +1186,25 @@ private:
 
     /// @brief Declares the names the definition's lowered functions take: each body compiled apart
     ///        from its entry point under its link name, and each helper where the row places it.
-    void allocateBodies(const DefinitionNames&        names,
-                        const std::size_t             space,
-                        const std::size_t             file,
-                        const std::vector<BodyParts>& bodies)
+    void allocateBodies(const DefinitionNames& names,
+                        const DefinitionParts& definition,
+                        const std::size_t      space,
+                        const std::size_t      file)
     {
-        const Language language = row_.language;
-        if (!row_.composition.freeFunctions.loweredBodySuffix.empty())
+        const Language                language = row_.language;
+        const std::vector<BodyParts>& bodies   = definition.bodies;
+        if (row_.composition.freeFunctions.bodiesCompiledApart)
         {
             for (const BodyParts& body : bodies)
             {
                 if (body.plan.function != PlanFunction::Helper)
                 {
+                    const bool accessor =
+                        (body.plan.function == PlanFunction::Get) || (body.plan.function == PlanFunction::Set);
                     (void) declare(file,
-                                   renderLoweredLinkName(language, body.plan),
+                                   renderLoweredLinkName(language,
+                                                         body.plan,
+                                                         accessor ? memberName(names, definition, body.plan) : ""),
                                    loweredFunctionKind(body.plan.function),
                                    NameClass::Value,
                                    NameOrigin::Generated,

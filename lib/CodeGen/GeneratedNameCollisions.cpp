@@ -34,7 +34,6 @@
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/Support/SectionScopes.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
-#include "llvmdsdl/Support/PlanSymbol.h"
 
 namespace llvmdsdl
 {
@@ -115,31 +114,11 @@ void forEachGeneratedName(const LanguageTraits&                              lan
             claim(renderEntryPointName(language.language, typeName, EntryPoint::Initialize));
         }
     }
-    if (!free.loweredBodySuffix.empty())
+    if (free.bodiesCompiledApart)
     {
-        claim(renderLoweredEntryPointName(language.language, versionedTypeName, EntryPoint::Serialize));
-        claim(renderLoweredEntryPointName(language.language, versionedTypeName, EntryPoint::Deserialize));
-        claim(renderLoweredEntryPointName(language.language, versionedTypeName, EntryPoint::Initialize));
-        // A lowered accessor is named by the member as the plan names it.
-        for (const auto& field : section.fields)
-        {
-            if (!field.isPadding)
-            {
-                claim(renderLoweredAccessorName(language.language, versionedTypeName, AccessorVerb::Get, field.name));
-                claim(renderLoweredAccessorName(language.language, versionedTypeName, AccessorVerb::Set, field.name));
-            }
-        }
-        if (section.isUnion)
-        {
-            claim(renderLoweredAccessorName(language.language,
-                                            versionedTypeName,
-                                            AccessorVerb::Get,
-                                            kPlanUnionTagMember));
-            claim(renderLoweredAccessorName(language.language,
-                                            versionedTypeName,
-                                            AccessorVerb::Set,
-                                            kPlanUnionTagMember));
-        }
+        claim(renderEntryPointName(language.language, versionedTypeName, EntryPoint::Serialize));
+        claim(renderEntryPointName(language.language, versionedTypeName, EntryPoint::Deserialize));
+        claim(renderEntryPointName(language.language, versionedTypeName, EntryPoint::Initialize));
     }
 
     if ((free.accessors == AccessorNaming::None) && !free.unionOptionFunctions)
@@ -169,10 +148,17 @@ void forEachGeneratedName(const LanguageTraits&                              lan
         {
             members.push_back(unionTagMemberName(language.language).str());
         }
+        // A body compiled apart from its accessor is linked under the accessor's name for the
+        // versioned type.
         for (const std::string& member : members)
         {
             claim(renderAccessorName(language.language, typeName, AccessorVerb::Get, member));
             claim(renderAccessorName(language.language, typeName, AccessorVerb::Set, member));
+            if (free.bodiesCompiledApart)
+            {
+                claim(renderAccessorName(language.language, versionedTypeName, AccessorVerb::Get, member));
+                claim(renderAccessorName(language.language, versionedTypeName, AccessorVerb::Set, member));
+            }
         }
     }
 }

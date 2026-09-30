@@ -85,6 +85,16 @@ SurfacePlan allocate(const Language                      language,
                                                               .profile       = {}});
 }
 
+SurfacePlan allocateVersioned(const Language language, const std::vector<DefinitionParts>& definitions)
+{
+    return llvmdsdl::allocateSurface(llvmdsdl::languageTraits(language),
+                                     definitions,
+                                     llvmdsdl::SurfaceOptions{.packageName   = "pkg",
+                                                              .versioning    = llvmdsdl::TypeNameVersioning::Versioned,
+                                                              .accessorsOnly = false,
+                                                              .profile       = {}});
+}
+
 /// @brief A variable-length array field.
 FieldParts varying(const std::string& name)
 {
@@ -443,8 +453,9 @@ bool runSurfacePlanTests()
     }
 
     // Band 4, the lowered functions. A language that compiles the bodies apart links each body under
-    // its link name. Every language names each helper a body calls where its row places it: private
-    // to the file in C, a private member of the section's type in C++.
+    // the name its entry point takes for the versioned type, which is the entry point's own under
+    // versioned type names. Every language names each helper a body calls where its row places it:
+    // private to the file in C, a private member of the section's type in C++.
     {
         DefinitionParts owner = message("Msg", SectionParts{.fields = {}, .constants = {}});
         owner.bodies          = {body("ns.Msg.1.0.plan.capacity_check"),
@@ -459,11 +470,22 @@ bool runSurfacePlanTests()
                                        "    ns__Msg : tag\n"
                                        "    ns__Msg__serialize_ : value\n"
                                        "    ns__Msg__get_speed_ : value\n"
-                                       "    ns__Msg_1_0__serialize_ir_ : value\n"
-                                       "    ns__Msg_1_0__get_speed_ir_ : value\n"
+                                       "    ns__Msg_1_0__serialize_ : value\n"
+                                       "    ns__Msg_1_0__get_speed_ : value\n"
                                        "    capacity_check : value private\n"
                                        "    scalar_unsigned_0_ser : value private\n",
                                        "C's lowered functions") &&
+                                ok;
+        ok                    = expect(outline(allocateVersioned(Language::C, {owner})),
+                                       "root pkg\n"
+                                       "  file Msg_1_0\n"
+                                       "    type ns__Msg_1_0\n"
+                                       "    ns__Msg_1_0 : tag\n"
+                                       "    ns__Msg_1_0__serialize_ : value\n"
+                                       "    ns__Msg_1_0__get_speed_ : value\n"
+                                       "    capacity_check : value private\n"
+                                       "    scalar_unsigned_0_ser : value private\n",
+                                       "C's lowered functions under versioned type names") &&
                                 ok;
         ok                    = expect(outline(allocate(Language::Cpp, {owner})),
                                        "root pkg\n"
@@ -773,9 +795,9 @@ bool runSurfacePlanTests()
         ok                   = expect(outline(allocate(Language::C, {pick}), true),
                                       "root pkg\n"
                                       "  file Pick_1_0\n"
-                                      "    LLVMDSDL_NS__PICK_1_0_H : macro\n"
-                                      "    LLVMDSDL_SELECTED_NS__PICK_ : macro\n"
-                                      "    LLVMDSDL_SELECTED_NS__PICK_1_0_ : macro\n"
+                                      "    LLVMDSDL_NS_PICK_1_0_H : macro\n"
+                                      "    LLVMDSDL_SELECTED_NS_PICK : macro\n"
+                                      "    LLVMDSDL_SELECTED_NS_PICK_1_0 : macro\n"
                                       "    type ns__Pick\n"
                                       "      small : field\n"
                                       "      large : field\n"
@@ -800,8 +822,8 @@ bool runSurfacePlanTests()
                                       "    ns__Pick__select_small_ : value\n"
                                       "    ns__Pick__is_large_ : value\n"
                                       "    ns__Pick__select_large_ : value\n"
-                                      "    ns__Pick_1_0__serialize_ir_ : value\n"
-                                      "    ns__Pick_1_0__get__tag__ir_ : value\n",
+                                      "    ns__Pick_1_0__serialize_ : value\n"
+                                      "    ns__Pick_1_0__get__tag__ : value\n",
                                       "C's generated names") &&
                                ok;
 
