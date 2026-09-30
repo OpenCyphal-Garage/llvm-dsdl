@@ -7,56 +7,19 @@ from typing import ClassVar
 
 from fixtures_snapshot_py._runtime_loader import CompositeObject, error_message, runtime as dsdl_runtime
 
-LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
-DSDL_FULL_NAME = "fixtures.vendor.UnionTag"
-DSDL_IS_DEPRECATED = False
-DSDL_VERSION_MAJOR = 1
-DSDL_VERSION_MINOR = 0
-DSDL_HAS_FIXED_PORT_ID = False
-DSDL_WIRE_FLAT = False
-DSDL_WIRE_FLAT_REASON = "union-type"
-
-def _capacity_check(p0: int) -> int:
-    v0 = p0 < 24
-    v1 = (-3 if v0 else 0)
-    return v1
-
-def _validate_union_tag(p0: int) -> int:
-    v0 = p0 == 0
-    v1 = p0 == 1
-    v2 = v0 or v1
-    v3 = (0 if v2 else -11)
-    return v3
-
-def _scalar_unsigned_0_ser(p0: int) -> int:
-    v0 = p0 > 255
-    v1 = (255 if v0 else p0)
-    return v1
-
-def _scalar_unsigned_0_deser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
-def _scalar_unsigned_1_ser(p0: int) -> int:
-    v0 = p0 > 65535
-    v1 = (65535 if v0 else p0)
-    return v1
-
-def _scalar_unsigned_1_deser(p0: int) -> int:
-    v0 = p0 & 65535
-    return v0
-
-def _union_tag_ser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
-def _union_tag_deser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
 @dataclass(slots=True)
 class UnionTag(CompositeObject):
+    FULL_NAME: ClassVar[str] = "fixtures.vendor.UnionTag"
+    IS_DEPRECATED: ClassVar[bool] = False
+    FULL_NAME_AND_VERSION: ClassVar[str] = "fixtures.vendor.UnionTag.1.0"
+    EXTENT_BYTES: ClassVar[int] = 3
     SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 3
+    WIRE_FLAT: ClassVar[bool] = False
+    WIRE_FLAT_REASON: ClassVar[str] = "union-type"
+    HAS_FIXED_PORT_ID: ClassVar[bool] = False
+    UNION_OPTION_COUNT: ClassVar[int] = 2
+    FIRST_OPTION_TAG: ClassVar[int] = 0
+    SECOND_OPTION_TAG: ClassVar[int] = 1
     _tag: int = 0
     first: int | None = 0
     second: int | None = None
@@ -68,10 +31,10 @@ class UnionTag(CompositeObject):
             v0 = 0
         else:
             v1 = size * 8
-            err_2 = _capacity_check(v1)
+            err_2 = self._capacity_check(v1)
             tag = int(self._tag)
-            tag_2 = _union_tag_ser(tag)
-            err_3 = _validate_union_tag(tag_2)
+            tag_2 = self._union_tag_ser(tag)
+            err_3 = self._validate_union_tag(tag_2)
             v2 = err_2 == 0
             v3 = (err_3 if v2 else err_2)
             v4 = v3 == 0
@@ -86,7 +49,7 @@ class UnionTag(CompositeObject):
                 v7 = err_4 == 0
                 if v7:
                     first_value = int(self.first)
-                    value = _scalar_unsigned_0_ser(first_value)
+                    value = self._scalar_unsigned_0_ser(first_value)
                     err_8 = dsdl_runtime.write_unsigned(buffer, 8, 8, value, False)
                     err_7 = err_8
                 else:
@@ -100,7 +63,7 @@ class UnionTag(CompositeObject):
                 v10 = err_4 == 0
                 if v10:
                     second_value = int(self.second)
-                    value_2 = _scalar_unsigned_1_ser(second_value)
+                    value_2 = self._scalar_unsigned_1_ser(second_value)
                     err_11 = dsdl_runtime.write_unsigned(buffer, 8, 16, value_2, False)
                     err_10 = err_11
                 else:
@@ -122,8 +85,8 @@ class UnionTag(CompositeObject):
             v0 = 0
         else:
             value = dsdl_runtime.read_unsigned(buffer, 0, 8)
-            tag = _union_tag_deser(value)
-            err_2 = _validate_union_tag(tag)
+            tag = self._union_tag_deser(value)
+            err_2 = self._validate_union_tag(tag)
             v1 = err_2 == 0
             if v1:
                 self._tag = tag
@@ -135,13 +98,13 @@ class UnionTag(CompositeObject):
             v3 = (16 if v2 else 8)
             if v2:
                 value_2 = dsdl_runtime.read_unsigned(buffer, 8, 8)
-                value_3 = _scalar_unsigned_0_deser(value_2)
+                value_3 = self._scalar_unsigned_0_deser(value_2)
                 self.first = value_3
             v4 = tag == 1
             v5 = (24 if v4 else v3)
             if v4:
                 value_4 = dsdl_runtime.read_unsigned(buffer, 8, 16)
-                value_5 = _scalar_unsigned_1_deser(value_4)
+                value_5 = self._scalar_unsigned_1_deser(value_4)
                 self.second = value_5
             v6 = v5 + 7
             v7 = v6 // 8
@@ -174,5 +137,48 @@ class UnionTag(CompositeObject):
             raise ValueError(error_message(err))
         return v0
 
-UNION_TAG_FIRST_OPTION_TAG = 0
-UNION_TAG_SECOND_OPTION_TAG = 1
+    @staticmethod
+    def _capacity_check(p0: int) -> int:
+        v0 = p0 < 24
+        v1 = (-3 if v0 else 0)
+        return v1
+
+    @staticmethod
+    def _validate_union_tag(p0: int) -> int:
+        v0 = p0 == 0
+        v1 = p0 == 1
+        v2 = v0 or v1
+        v3 = (0 if v2 else -11)
+        return v3
+
+    @staticmethod
+    def _scalar_unsigned_0_ser(p0: int) -> int:
+        v0 = p0 > 255
+        v1 = (255 if v0 else p0)
+        return v1
+
+    @staticmethod
+    def _scalar_unsigned_0_deser(p0: int) -> int:
+        v0 = p0 & 255
+        return v0
+
+    @staticmethod
+    def _scalar_unsigned_1_ser(p0: int) -> int:
+        v0 = p0 > 65535
+        v1 = (65535 if v0 else p0)
+        return v1
+
+    @staticmethod
+    def _scalar_unsigned_1_deser(p0: int) -> int:
+        v0 = p0 & 65535
+        return v0
+
+    @staticmethod
+    def _union_tag_ser(p0: int) -> int:
+        v0 = p0 & 255
+        return v0
+
+    @staticmethod
+    def _union_tag_deser(p0: int) -> int:
+        v0 = p0 & 255
+        return v0

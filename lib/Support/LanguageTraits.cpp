@@ -428,7 +428,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .wireImage =
                     {.appends = false, .answersNew = true, .reads = false, .makes = true, .readerKeepsNothing = false},
             },
-        // A type's constants are the module's, where the classification puts them on the class.
+        // A service is named by an alias of its request, so its own facts are the module's.
         .composition =
             {
                 .definitionName   = {.namespaceJoin = "", .versionInTypeName = true, .typeNameReachesTheType = true},
@@ -443,10 +443,10 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .namespaceFile                  = "__init__.py",
                 .rootFile                       = "__init__.py",
                 .imports                        = ImportNaming::Type,
-                .helpers                        = HelperPlacement::Module,
+                .helpers                        = HelperPlacement::Type,
                 .fileAndDirectoryAreOneModule   = true,
                 .namespaceAndTypeShareScope     = false,
-                .constants                      = ConstantsScope::Module,
+                .constants                      = ConstantsScope::Type,
                 .serviceConstants               = ConstantsScope::Module,
                 .constantsAreMacros             = false,
                 .generatedConstantSuffix        = "",

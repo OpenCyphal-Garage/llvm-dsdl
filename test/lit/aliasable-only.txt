@@ -100,13 +100,17 @@
 # TS_POSE: export function getPosePosition(buffer: Uint8Array): Uint8Array {
 # TS_POSE-NOT: import
 
-# Python: a bare class of static methods, and no import of the nested type.
+# Python: a bare class of the type's facts and static methods, and no import of the nested type. A
+# static method reaches a helper through the class.
 # RUN: cat %t/python/dsdl_gen/fixtures_aliasable/vendor/vec3_1_0.py | FileCheck %s --check-prefix=PY_VEC3
 # PY_VEC3-NOT: @dataclass
 # PY_VEC3: class Vec3:
+# PY_VEC3-NEXT: FULL_NAME: ClassVar[str] = "fixtures_aliasable.vendor.Vec3"
+# PY_VEC3: HAS_FIXED_PORT_ID: ClassVar[bool] = False
 # PY_VEC3-EMPTY:
 # PY_VEC3-NEXT: @staticmethod
 # PY_VEC3-NEXT: def get_x(buffer: memoryview) -> float:
+# PY_VEC3: = Vec3._scalar_float_0_deser(value)
 # PY_VEC3-NOT: def serialize
 # RUN: cat %t/python/dsdl_gen/fixtures_aliasable/vendor/pose_1_0.py | FileCheck %s --check-prefix=PY_POSE
 # PY_POSE-NOT: import Vec3

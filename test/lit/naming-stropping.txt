@@ -196,9 +196,9 @@
 
 # GO_NAMESPACE: package map_
 
-# PY_CONSTANTS: CONSTANTS_FOO_BAR = 1
-# PY_CONSTANTS: CONSTANTS_FOO_BAR_2 = 2
-# PY_CONSTANTS: CONSTANTS_BREAK_ = 3
+# PY_CONSTANTS: FOO_BAR: ClassVar[int] = 1
+# PY_CONSTANTS: FOO_BAR_2: ClassVar[int] = 2
+# PY_CONSTANTS: BREAK_: ClassVar[int] = 3
 
 # ---------------------------------------------------------------------------------------------
 # Colliding projections: two distinct DSDL types that project onto one generated name are rejected, and the
@@ -284,9 +284,10 @@
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FIXED_PORT_ID (10)
 
 # ---------------------------------------------------------------------------------------------
-# The module's own names. Python and TypeScript declare a definition's facts at module scope under
-# a fixed prefix, and a section constant lands in the same scope behind the type's prefix, so a type
-# named DSDL is the one case where the two are in reach of each other.
+# The module's own names. TypeScript declares a definition's facts at module scope under a fixed
+# prefix, and a section constant lands in the same scope behind the type's prefix, so a type named
+# DSDL is the one case where the two are in reach of each other. A Python class holds the facts
+# beside the constants, and the projection escapes a constant that reaches one.
 # ---------------------------------------------------------------------------------------------
 
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/dsdl_1_0.py | FileCheck %s --check-prefix=PY_MODULE
@@ -295,12 +296,12 @@
 # The module keeps its names and the DSDL constants move past them. `FIXED_PORT_ID` is reserved even
 # though this definition has none, for the reason the rest of the claimed names are: what a constant
 # is called should not depend on whether a later revision was given a port-ID.
-# PY_MODULE: DSDL_FULL_NAME = "fixtures_naming.naming.DSDL"
-# PY_MODULE: DSDL_HAS_FIXED_PORT_ID = False
-# PY_MODULE: DSDL_FULL_NAME_2 = 1
-# PY_MODULE: DSDL_HAS_FIXED_PORT_ID_2 = 2
-# PY_MODULE: DSDL_FIXED_PORT_ID_2 = 3
-# PY_MODULE: DSDL_VERSION_MAJOR_2 = 4
+# PY_MODULE: FULL_NAME: ClassVar[str] = "fixtures_naming.naming.DSDL"
+# PY_MODULE: HAS_FIXED_PORT_ID: ClassVar[bool] = False
+# PY_MODULE: FULL_NAME_: ClassVar[int] = 1
+# PY_MODULE: HAS_FIXED_PORT_ID_: ClassVar[int] = 2
+# PY_MODULE: FIXED_PORT_ID_: ClassVar[int] = 3
+# PY_MODULE: VERSION_MAJOR: ClassVar[int] = 4
 
 # The list of module-owned names is a second copy of what the two emitters write, and a fixture can
 # only pin the names that exist when it is written. This pins the property that list exists to hold,
@@ -308,9 +309,9 @@
 # RUN: %{python} %S/check_no_duplicate_module_constants.py %t/py/naming_freeze %t/ts
 
 # The repair is said out loud, which it is only when the CLI builds the same scope the emitter did.
-# RUN: %dsdlc --target-language python %S/fixtures_naming --py-package naming_freeze --outdir %t/pynote 2>&1 | FileCheck %s --check-prefix=PY_MODULE_NOTE
-# PY_MODULE_NOTE-DAG: note: constant 'FULL_NAME' is emitted as 'FULL_NAME_2' for target language 'python'
-# PY_MODULE_NOTE-DAG: note: constant 'HAS_FIXED_PORT_ID' is emitted as 'HAS_FIXED_PORT_ID_2' for target language 'python'
+# RUN: %dsdlc --target-language ts %S/fixtures_naming --ts-module naming_freeze --outdir %t/tsnote 2>&1 | FileCheck %s --check-prefix=TS_MODULE_NOTE
+# TS_MODULE_NOTE-DAG: note: constant 'FULL_NAME' is emitted as 'FULL_NAME_2' for target language 'ts'
+# TS_MODULE_NOTE-DAG: note: constant 'HAS_FIXED_PORT_ID' is emitted as 'HAS_FIXED_PORT_ID_2' for target language 'ts'
 
 # A duplicate `export const` is not a shadowing in TypeScript, it is a module that does not compile.
 # TS_MODULE: export const DSDL_FULL_NAME = "fixtures_naming.naming.DSDL";
@@ -355,8 +356,8 @@
 # RUST_OPTION_TAGS: pub const FOO_BAR_OPTION_TAG_2: u8 = 1;
 # RUST_OPTION_TAGS: pub const OTHER_OPTION_TAG: u8 = 2;
 
-# PY_OPTION_TAGS: OPTION_TAGS_FOO_BAR_OPTION_TAG = 0
-# PY_OPTION_TAGS: OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1
+# PY_OPTION_TAGS: FOO_BAR_OPTION_TAG: ClassVar[int] = 0
+# PY_OPTION_TAGS: FOO_BAR_OPTION_TAG_2: ClassVar[int] = 1
 
 # TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG = 0;
 # TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1;

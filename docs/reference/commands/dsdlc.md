@@ -159,8 +159,8 @@ carries two versions of one type — which the newest-version default prevents:
 ## Deprecation
 
 A definition marked `@deprecated` generates a `Deprecated: …` notice in its documentation comment and
-an `IS_DEPRECATED` metadata constant (`DSDL_IS_DEPRECATED` in TypeScript and Python,
-`<TYPE>_IS_DEPRECATED_` in C), in every language. Go recognises the `Deprecated: ` doc paragraph, and
+an `IS_DEPRECATED` metadata constant (`DSDL_IS_DEPRECATED` in TypeScript, `<TYPE>_IS_DEPRECATED_`
+in C), in every language. Go recognises the `Deprecated: ` doc paragraph, and
 TypeScript is additionally given a `/** @deprecated … */` JSDoc block.
 
 C, C++, and Rust additionally get a language-native attribute — `__attribute__((deprecated))`,

@@ -92,7 +92,7 @@
 # PY:      file = dsdl_gen/ns/old_1_0.py
 # PY:      message/accessors/a/get = get_a
 # PY:      message/entry_points/serialize = _serialize_into
-# PY:      message/generated/is_deprecated = DSDL_IS_DEPRECATED
+# PY:      message/generated/is_deprecated = IS_DEPRECATED
 # PY:      message/generated/serialization_buffer_size_bytes = SERIALIZATION_BUFFER_SIZE_BYTES
 #
 # AST-NOT: file =

@@ -560,6 +560,14 @@ private:
                                           : *plan_.scopes[section.typeScope].parent;
         for (const GeneratedName& member : generatedTypeMembers(language))
         {
+            // Whether the object is the wire's bytes is a verdict only a target whose objects can be
+            // is asked.
+            const bool hostImageFact =
+                (member.fact == GeneratedFact::HostImage) || (member.fact == GeneratedFact::HostImageReason);
+            if (hostImageFact && !row_.body.objectsAreByteImages)
+            {
+                continue;
+            }
             if (member.fact == GeneratedFact::PoolClass)
             {
                 for (const auto& [field, name] : poolClassConstantNames(language, parts))

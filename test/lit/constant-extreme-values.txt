@@ -38,9 +38,9 @@
 
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
 # RUN: cat %t/py/dsdl_gen/dsdl/kv/k_1_0.py | FileCheck %s --check-prefix=PY
-# PY-DAG: K_MASK = 18446744073709551615
-# PY-DAG: K_FLOOR = -9223372036854775808
-# PY-DAG: K_HALF = 2.0
+# PY-DAG: MASK: ClassVar[int] = 18446744073709551615
+# PY-DAG: FLOOR: ClassVar[int] = -9223372036854775808
+# PY-DAG: HALF: ClassVar[float] = 2.0
 
 # An out-of-range constant is a hard error (a constant must fit its declared width/signedness).
 # RUN: rm -rf %t/bad && mkdir -p %t/bad/kv

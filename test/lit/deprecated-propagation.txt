@@ -137,10 +137,11 @@
 # TS_OK: DSDL_IS_DEPRECATED = false;
 # TS_OK-NOT: @deprecated
 
-# PY_DEP: DSDL_IS_DEPRECATED = True
 # PY_DEP: # Deprecated: dep.Retired.1.0 is marked @deprecated
+# PY_DEP: class RetiredRequest(CompositeObject):
+# PY_DEP: IS_DEPRECATED: ClassVar[bool] = True
 
-# PY_OK: DSDL_IS_DEPRECATED = False
+# PY_OK: IS_DEPRECATED: ClassVar[bool] = False
 # PY_OK-NOT: Deprecated:
 
 # --------------------------------------------------------------------------------------------------

@@ -591,10 +591,22 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
     // reaches once a package name runs its words together.
     static constexpr std::array<llvm::StringRef, 1> kGoPackages = {"dsdlruntime"};
 
-    static constexpr std::array<llvm::StringRef, 4> kPyMethods = {"serialize",
-                                                                  "deserialize",
-                                                                  "_serialize_to",
-                                                                  "_deserialize_from"};
+    static constexpr std::array<llvm::StringRef, 16> kPyMembers = {"FULL_NAME",
+                                                                   "FULL_NAME_AND_VERSION",
+                                                                   "IS_DEPRECATED",
+                                                                   "EXTENT_BYTES",
+                                                                   "SERIALIZATION_BUFFER_SIZE_BYTES",
+                                                                   "WIRE_FLAT",
+                                                                   "WIRE_FLAT_REASON",
+                                                                   "HOST_IMAGE",
+                                                                   "HOST_IMAGE_REASON",
+                                                                   "UNION_OPTION_COUNT",
+                                                                   "HAS_FIXED_PORT_ID",
+                                                                   "FIXED_PORT_ID",
+                                                                   "serialize",
+                                                                   "deserialize",
+                                                                   "_serialize_into",
+                                                                   "_deserialize_from"};
 
     static constexpr std::array<llvm::StringRef, 2> kTsProperties = {"constructor", "prototype"};
 
@@ -657,11 +669,15 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::Python:
-        // A dataclass attribute shadows the method of the same name, the ones a class inherits from the
-        // runtime's `CompositeObject` among them, so `self.serialize()` would call an int. Constants are
-        // safe: the generated ones take a different prefix.
-        return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kPyMethods)
-                                                   : llvm::ArrayRef<llvm::StringRef>(kNone);
+        // The class holds its fields, its constants, the generated facts and its methods in one
+        // scope, and a dataclass attribute shadows the method of the same name: `self.serialize()`
+        // would call an int.
+        if (role == IdentifierRole::FieldName)
+        {
+            return kPyMembers;
+        }
+        return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
+                                                      : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::TypeScript:
         // A property named `constructor` or `prototype` shadows the one every object has. Constants
         // are safe: the generated ones take a different prefix.
@@ -907,7 +923,7 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT_"}};
     // Go's are constants of the package, each named by the type's name and the fact's token; C++'s
-    // are static members of the type.
+    // are static members of the type, and Python's are class attributes.
     static constexpr std::array<GeneratedName, 12> kFacts =
         {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
          GeneratedName{GeneratedFact::IsDeprecated, "IS_DEPRECATED"},
@@ -921,9 +937,6 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::HasFixedPortId, "HAS_FIXED_PORT_ID"},
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT"}};
-    // Python's runtime base class sizes the buffer `serialize` writes into from the class.
-    static constexpr std::array<GeneratedName, 1> kPython = {
-        GeneratedName{GeneratedFact::SerializationBufferSizeBytes, "SERIALIZATION_BUFFER_SIZE_BYTES", true}};
     switch (language)
     {
     case Language::Rust:
@@ -932,9 +945,8 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
         return kC;
     case Language::Go:
     case Language::Cpp:
-        return kFacts;
     case Language::Python:
-        return kPython;
+        return kFacts;
     case Language::TypeScript:
         break;
     }
@@ -965,8 +977,8 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
 
 llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
 {
-    // A service is named by an alias of its request, and a Rust or Go alias carries none of the
-    // service's own facts, so they are constants beside it.
+    // A service is named by an alias of its request, and a Rust, Go or Python alias carries none of
+    // the service's own facts, so they are constants beside it.
     static constexpr std::array<GeneratedName, 2> kAliased = {GeneratedName{GeneratedFact::HasFixedPortId,
                                                                             "HAS_FIXED_PORT_ID"},
                                                               GeneratedName{GeneratedFact::FixedPortId,
@@ -992,13 +1004,13 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
     {
     case Language::Rust:
     case Language::Go:
+    case Language::Python:
         return kAliased;
     case Language::C:
         return kC;
     case Language::Cpp:
         return kCpp;
     case Language::TypeScript:
-    case Language::Python:
         break;
     }
     return {};

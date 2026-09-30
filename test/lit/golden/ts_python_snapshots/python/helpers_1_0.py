@@ -8,70 +8,16 @@ from typing import ClassVar
 
 from fixtures_snapshot_py._runtime_loader import CompositeObject, error_message, runtime as dsdl_runtime
 
-LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
-DSDL_FULL_NAME = "fixtures.vendor.Helpers"
-DSDL_IS_DEPRECATED = False
-DSDL_VERSION_MAJOR = 1
-DSDL_VERSION_MINOR = 0
-DSDL_HAS_FIXED_PORT_ID = False
-DSDL_WIRE_FLAT = False
-DSDL_WIRE_FLAT_REASON = "sub-byte-field"
-
-def _capacity_check(p0: int) -> int:
-    v0 = p0 < 80
-    v1 = (-3 if v0 else 0)
-    return v1
-
-def _scalar_unsigned_2_ser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
-def _scalar_unsigned_2_deser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
-def _scalar_signed_0_ser(p0: int) -> int:
-    v0 = p0 < -4096
-    v1 = p0 > 4095
-    v2 = (-4096 if v0 else p0)
-    v3 = (4095 if v1 else v2)
-    return v3
-
-def _scalar_signed_0_deser(p0: int) -> int:
-    v0 = p0 & 8191
-    v1 = v0 & 4096
-    v2 = v1 != 0
-    v3 = v0 | -8192
-    v4 = (v3 if v2 else v0)
-    return v4
-
-def _scalar_float_1_ser(p0: float) -> float:
-    return p0
-
-def _scalar_float_1_deser(p0: float) -> float:
-    return p0
-
-def _validate_array_length_2(p0: int) -> int:
-    v0 = p0 < 0
-    v1 = p0 > 5
-    index_holds = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
-    v2 = not index_holds
-    v3 = v0 or v1
-    v4 = v3 or v2
-    v5 = (-10 if v4 else 0)
-    return v5
-
-def _array_length_prefix_2_ser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
-def _array_length_prefix_2_deser(p0: int) -> int:
-    v0 = p0 & 255
-    return v0
-
 @dataclass(slots=True)
 class Helpers(CompositeObject):
+    FULL_NAME: ClassVar[str] = "fixtures.vendor.Helpers"
+    IS_DEPRECATED: ClassVar[bool] = False
+    FULL_NAME_AND_VERSION: ClassVar[str] = "fixtures.vendor.Helpers.1.0"
+    EXTENT_BYTES: ClassVar[int] = 10
     SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 10
+    WIRE_FLAT: ClassVar[bool] = False
+    WIRE_FLAT_REASON: ClassVar[str] = "sub-byte-field"
+    HAS_FIXED_PORT_ID: ClassVar[bool] = False
     a: int = 0
     b: float = 0.0
     c: list[int] = field(default_factory=list)
@@ -83,11 +29,11 @@ class Helpers(CompositeObject):
             v0 = 0
         else:
             v1 = size * 8
-            err_2 = _capacity_check(v1)
+            err_2 = self._capacity_check(v1)
             v2 = err_2 == 0
             if v2:
                 a_value = int(self.a)
-                value = _scalar_signed_0_ser(a_value)
+                value = self._scalar_signed_0_ser(a_value)
                 err_4 = dsdl_runtime.write_signed(buffer, 0, 13, value, False)
                 err_3 = err_4
             else:
@@ -95,7 +41,7 @@ class Helpers(CompositeObject):
             v3 = err_3 == 0
             if v3:
                 b_value = float(self.b)
-                value_2 = _scalar_float_1_ser(b_value)
+                value_2 = self._scalar_float_1_ser(b_value)
                 err_6 = dsdl_runtime.write_float(buffer, 13, 16, value_2)
                 err_5 = err_6
             else:
@@ -103,10 +49,10 @@ class Helpers(CompositeObject):
             v4 = err_5 == 0
             if v4:
                 c_count = len(self.c)
-                err_8 = _validate_array_length_2(c_count)
+                err_8 = self._validate_array_length_2(c_count)
                 v5 = err_8 == 0
                 if v5:
-                    count = _array_length_prefix_2_ser(c_count)
+                    count = self._array_length_prefix_2_ser(c_count)
                     err_10 = dsdl_runtime.write_unsigned(buffer, 29, 8, count, False)
                     err_11 = err_10
                     for i in range(0, c_count, 1):
@@ -115,7 +61,7 @@ class Helpers(CompositeObject):
                         v8 = err_11 == 0
                         if v8:
                             c_value = int(self.c[i])
-                            value_3 = _scalar_unsigned_2_ser(c_value)
+                            value_3 = self._scalar_unsigned_2_ser(c_value)
                             err_13 = dsdl_runtime.write_unsigned(buffer, v7, 8, value_3, False)
                             err_12 = err_13
                         else:
@@ -156,14 +102,14 @@ class Helpers(CompositeObject):
             v0 = 0
         else:
             value = dsdl_runtime.read_signed(buffer, 0, 13)
-            value_2 = _scalar_signed_0_deser(value)
+            value_2 = self._scalar_signed_0_deser(value)
             self.a = value_2
             value_3 = dsdl_runtime.read_float(buffer, 13, 16)
-            value_4 = _scalar_float_1_deser(value_3)
+            value_4 = self._scalar_float_1_deser(value_3)
             self.b = value_4
             value_5 = dsdl_runtime.read_unsigned(buffer, 29, 8)
-            count = _array_length_prefix_2_deser(value_5)
-            err_2 = _validate_array_length_2(count)
+            count = self._array_length_prefix_2_deser(value_5)
+            err_2 = self._validate_array_length_2(count)
             v1 = err_2 == 0
             if v1:
                 self.c = [0] * count
@@ -171,7 +117,7 @@ class Helpers(CompositeObject):
                     v3 = i * 8
                     v4 = v3 + 37
                     value_6 = dsdl_runtime.read_unsigned(buffer, v4, 8)
-                    value_7 = _scalar_unsigned_2_deser(value_6)
+                    value_7 = self._scalar_unsigned_2_deser(value_6)
                     self.c[i] = value_7
                 v5 = count * 8
                 v6 = v5 + 37
@@ -207,4 +153,66 @@ class Helpers(CompositeObject):
         err = min(v0._deserialize_from(memoryview(data).cast("B")), 0)
         if err != 0:
             raise ValueError(error_message(err))
+        return v0
+
+    @staticmethod
+    def _capacity_check(p0: int) -> int:
+        v0 = p0 < 80
+        v1 = (-3 if v0 else 0)
+        return v1
+
+    @staticmethod
+    def _scalar_unsigned_2_ser(p0: int) -> int:
+        v0 = p0 & 255
+        return v0
+
+    @staticmethod
+    def _scalar_unsigned_2_deser(p0: int) -> int:
+        v0 = p0 & 255
+        return v0
+
+    @staticmethod
+    def _scalar_signed_0_ser(p0: int) -> int:
+        v0 = p0 < -4096
+        v1 = p0 > 4095
+        v2 = (-4096 if v0 else p0)
+        v3 = (4095 if v1 else v2)
+        return v3
+
+    @staticmethod
+    def _scalar_signed_0_deser(p0: int) -> int:
+        v0 = p0 & 8191
+        v1 = v0 & 4096
+        v2 = v1 != 0
+        v3 = v0 | -8192
+        v4 = (v3 if v2 else v0)
+        return v4
+
+    @staticmethod
+    def _scalar_float_1_ser(p0: float) -> float:
+        return p0
+
+    @staticmethod
+    def _scalar_float_1_deser(p0: float) -> float:
+        return p0
+
+    @staticmethod
+    def _validate_array_length_2(p0: int) -> int:
+        v0 = p0 < 0
+        v1 = p0 > 5
+        index_holds = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
+        v2 = not index_holds
+        v3 = v0 or v1
+        v4 = v3 or v2
+        v5 = (-10 if v4 else 0)
+        return v5
+
+    @staticmethod
+    def _array_length_prefix_2_ser(p0: int) -> int:
+        v0 = p0 & 255
+        return v0
+
+    @staticmethod
+    def _array_length_prefix_2_deser(p0: int) -> int:
+        v0 = p0 & 255
         return v0

@@ -8,10 +8,11 @@
 
 """No generated Python or TypeScript module declares one name twice.
 
-Python and TypeScript put a definition's own facts and its sections' constants in one scope, so a
-type whose constant prefix is the module's own prefix can reach them. `moduleMetadataNames` in
-`lib/CodeGen/SectionNaming.cpp` lists what the module owns, and that list is a second copy of what
-the two emitters write.
+TypeScript puts a definition's own facts and its sections' constants in one scope, so a type whose
+constant prefix is the module's own prefix can reach them. `moduleMetadataNames` in
+`lib/Support/SectionScopes.cpp` lists what the module owns, and that list is a second copy of what
+the emitter writes. A Python module holds its classes, a service's alias and the service's own
+facts.
 
 A fixture can only pin the names that exist when it is written. This pins the property the list
 exists to hold, so a name added to an emitter and forgotten there is caught by what it does rather

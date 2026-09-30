@@ -8,30 +8,16 @@ from typing import ClassVar
 from fixtures_snapshot_py._runtime_loader import CompositeObject, error_message, runtime as dsdl_runtime
 from fixtures_snapshot_py.fixtures.vendor.delimited_1_0 import Delimited
 
-LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
-DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited"
-DSDL_IS_DEPRECATED = False
-DSDL_VERSION_MAJOR = 1
-DSDL_VERSION_MINOR = 0
-DSDL_HAS_FIXED_PORT_ID = False
-DSDL_WIRE_FLAT = False
-DSDL_WIRE_FLAT_REASON = "nested-not-flat"
-
-def _capacity_check(p0: int) -> int:
-    v0 = p0 < 96
-    v1 = (-3 if v0 else 0)
-    return v1
-
-def _validate_delimiter_header_1(p0: int, p1: int) -> int:
-    v0 = p0 < 0
-    v1 = p0 > p1
-    v2 = v0 or v1
-    v3 = (-12 if v2 else 0)
-    return v3
-
 @dataclass(slots=True)
 class UsesDelimited(CompositeObject):
+    FULL_NAME: ClassVar[str] = "fixtures.vendor.UsesDelimited"
+    IS_DEPRECATED: ClassVar[bool] = False
+    FULL_NAME_AND_VERSION: ClassVar[str] = "fixtures.vendor.UsesDelimited.1.0"
+    EXTENT_BYTES: ClassVar[int] = 12
     SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 12
+    WIRE_FLAT: ClassVar[bool] = False
+    WIRE_FLAT_REASON: ClassVar[str] = "nested-not-flat"
+    HAS_FIXED_PORT_ID: ClassVar[bool] = False
     nested: Delimited = field(default_factory=lambda: Delimited())
 
     def _serialize_into(self, buffer: memoryview) -> int:
@@ -40,7 +26,7 @@ class UsesDelimited(CompositeObject):
             err = -2
         else:
             v0 = size * 8
-            err_2 = _capacity_check(v0)
+            err_2 = self._capacity_check(v0)
             v1 = err_2 == 0
             if v1:
                 v2 = size - 4
@@ -48,7 +34,7 @@ class UsesDelimited(CompositeObject):
                 if v3:
                     nested_buf = buffer[min(4, len(buffer)):]
                     nested_err = min(self.nested._serialize_into(nested_buf[:v2]), 0)
-                    err_5 = _validate_delimiter_header_1(1, v2)
+                    err_5 = self._validate_delimiter_header_1(1, v2)
                     v4 = nested_err == 0
                     v5 = (err_5 if v4 else nested_err)
                     v6 = v5 == 0
@@ -80,7 +66,7 @@ class UsesDelimited(CompositeObject):
             v1 = size > 4
             v2 = (4 if v1 else size)
             v3 = size - v2
-            err_2 = _validate_delimiter_header_1(value, v3)
+            err_2 = self._validate_delimiter_header_1(value, v3)
             v4 = err_2 == 0
             if v4:
                 nested_buf = buffer[min(v2, len(buffer)):]
@@ -127,3 +113,17 @@ class UsesDelimited(CompositeObject):
         if err != 0:
             raise ValueError(error_message(err))
         return v0
+
+    @staticmethod
+    def _capacity_check(p0: int) -> int:
+        v0 = p0 < 96
+        v1 = (-3 if v0 else 0)
+        return v1
+
+    @staticmethod
+    def _validate_delimiter_header_1(p0: int, p1: int) -> int:
+        v0 = p0 < 0
+        v1 = p0 > p1
+        v2 = v0 or v1
+        v3 = (-12 if v2 else 0)
+        return v3

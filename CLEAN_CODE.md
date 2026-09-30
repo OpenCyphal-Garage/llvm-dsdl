@@ -1213,6 +1213,16 @@ its words, and the DSDL documentation otherwise keeps the lines its authors wrot
 wraps at the same length. A lowered capacity check tests the capacity, `p0 < 2112`, in every
 language, and the runtime writes its byte aliases as `bytes | bytearray | memoryview`.
 
+Python's row then took its target. A section's class holds the type's facts, a union's option tags
+and the DSDL constants as class attributes, `Heartbeat.MAX_PUBLICATION_PERIOD` where the module held
+`HEARTBEAT_MAX_PUBLICATION_PERIOD`, and a service's own facts stay beside its sections' classes, named
+after it, as Rust's do. A helper is a static method of its section's class, which a method reaches
+through `self`, a class method through `cls` and a static one by the class. The class claims the
+facts' names, so a DSDL constant named `FULL_NAME` is `FULL_NAME_`, as in Rust. A target whose
+objects are never the wire's bytes states no host-image verdict. A helper is a type's member exactly
+where the language keeps a member from its users by the member's own declaration: C++'s `private`
+and Python's leading `_`.
+
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
 that moves a wire byte has failed.
