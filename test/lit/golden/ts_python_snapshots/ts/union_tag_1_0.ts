@@ -13,7 +13,7 @@ export const DSDL_WIRE_FLAT = false;
 export const DSDL_WIRE_FLAT_REASON = "union-type";
 
 function capacityCheck(p0: bigint): number {
-  const v0 = 24n > p0;
+  const v0 = p0 < 24n;
   const v1 = v0 ? -3 : 0;
   return v1;
 }

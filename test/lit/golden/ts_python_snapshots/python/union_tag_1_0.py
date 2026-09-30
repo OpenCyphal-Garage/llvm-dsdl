@@ -5,11 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from fixtures_snapshot_py._runtime_loader import (
-    CompositeObject,
-    error_message,
-    runtime as dsdl_runtime,
-)
+from fixtures_snapshot_py._runtime_loader import CompositeObject, error_message, runtime as dsdl_runtime
 
 LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>"
 DSDL_FULL_NAME = "fixtures.vendor.UnionTag"
@@ -21,7 +17,7 @@ DSDL_WIRE_FLAT = False
 DSDL_WIRE_FLAT_REASON = "union-type"
 
 def _capacity_check(p0: int) -> int:
-    v0 = 24 > p0
+    v0 = p0 < 24
     v1 = (-3 if v0 else 0)
     return v1
 

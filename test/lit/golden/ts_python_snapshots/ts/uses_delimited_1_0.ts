@@ -16,7 +16,7 @@ export const DSDL_WIRE_FLAT = false;
 export const DSDL_WIRE_FLAT_REASON = "nested-not-flat";
 
 function capacityCheck(p0: bigint): number {
-  const v0 = 96n > p0;
+  const v0 = p0 < 96n;
   const v1 = v0 ? -3 : 0;
   return v1;
 }

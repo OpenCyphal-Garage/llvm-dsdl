@@ -1204,6 +1204,15 @@ language, which takes C's `readability-redundant-parentheses` from 123 to none. 
 by decision: a deprecated type declared apart keeps its trailing `_` (3), and every serialise takes
 a writable buffer, which an empty section's does not write to (5).
 
+Python's judge went from 1,155 findings to none. A row's `lineLength` is the length a line of the
+output is kept to, which the package states for the language's formatter. Python's is 120, the width
+the DSDL sources are written to: the generated `pyproject.toml` states it as ruff's `line-length`,
+and the judge reads it there. A line longer than that breaks where black would break it, at its
+last call's parenthesis, with the arguments on one line or one to a line; a comment breaks between
+its words, and the DSDL documentation otherwise keeps the lines its authors wrote. An import list
+wraps at the same length. A lowered capacity check tests the capacity, `p0 < 2112`, in every
+language, and the runtime writes its byte aliases as `bytes | bytearray | memoryview`.
+
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
 that moves a wire byte has failed.

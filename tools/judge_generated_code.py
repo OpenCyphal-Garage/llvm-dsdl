@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from assert_style_judges import GO_TOOLS, find_command
@@ -165,10 +166,34 @@ def judge_go(judge: Path, root: Path, env: dict[str, str]) -> collections.Counte
     return counts
 
 
+def declared_line_length(root: Path) -> list[str]:
+    """Ruff's option for the line length the package at @p root states, if it states one.
+
+    The judge runs isolated from every configuration file, so the one setting the generated code
+    declares of itself is read here and passed on.
+    """
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+    ruff = tomllib.loads(pyproject.read_text(encoding="utf-8")).get("tool", {}).get("ruff", {})
+    length = ruff.get("line-length")
+    return ["--line-length", str(length)] if length is not None else []
+
+
 def judge_python(judge: Path, root: Path, env: dict[str, str]) -> collections.Counter:
-    """Count ruff's findings by rule code."""
+    """Count ruff's findings by rule code, at the line length the package states."""
     result = run(
-        [str(judge), "check", "--isolated", "--select", RUFF_SELECT, "--output-format", "json", "."],
+        [
+            str(judge),
+            "check",
+            "--isolated",
+            "--select",
+            RUFF_SELECT,
+            *declared_line_length(root),
+            "--output-format",
+            "json",
+            ".",
+        ],
         cwd=root,
         env=env,
     )

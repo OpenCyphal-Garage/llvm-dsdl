@@ -133,6 +133,10 @@ struct DeclarationLayout final
 
     /// @brief How the language indents a block.
     IndentPolicy indent;
+
+    /// @brief How the language breaks a line longer than it keeps one to; null where it keeps no
+    ///        length.
+    const LineBreaking* breaking{nullptr};
 };
 
 class DeclarationSite;
