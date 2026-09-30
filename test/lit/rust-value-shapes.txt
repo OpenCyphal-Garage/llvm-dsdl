@@ -1,0 +1,57 @@
+# Rust's `if` is an expression, a struct whose initialise body sets every member to its type's
+# `Default` derives it, and a conversion between one type and itself is not written. Each shape is
+# one clippy reports otherwise: `needless_late_init`, `derivable_impls` and `unnecessary_cast`.
+#
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns
+# RUN: printf 'uint8[32] fits\nfloat32 ratio\n@sealed\n' > %t/dsdl/ns/Wide.1.0.dsdl
+# RUN: printf 'uint8[33] over\nuint64 stamp\n@sealed\n' > %t/dsdl/ns/Wider.1.0.dsdl
+# RUN: printf 'uint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Listed.1.0.dsdl
+# RUN: printf 'ns.Wide.1.0 wide\nuint16 count\n@sealed\n' > %t/dsdl/ns/Holder.1.0.dsdl
+# RUN: %dsdlc --target-language rust %t/dsdl/ns --rust-crate-name m --outdir %t/rust
+
+# The results of an `scf.if` are declared as its value, and each arm ends with what it yields.
+# RUN: cat %t/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=VALUED
+# RUN: cat %t/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=VALUED_NEG
+# VALUED:      let err_2: i8 = if v1 {
+# VALUED:      {{^ +}}wide_err{{$}}
+# VALUED-NEXT: } else {
+# VALUED-NEXT:     err
+# VALUED-NEXT: };
+# VALUED_NEG-NOT: {{^ *let [a-z_0-9]+: [a-z0-9]+;$}}
+
+# A nested definition, a float and an array of 32 elements take their type's `Default`.
+# RUN: cat %t/rust/src/ns/wide_1_0.rs %t/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=DERIVED
+# RUN: cat %t/rust/src/ns/wide_1_0.rs %t/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=DERIVED_NEG
+# DERIVED:      #[derive(Clone, Debug, Default, PartialEq)]
+# DERIVED-NEXT: pub struct Wide {
+# DERIVED:      #[derive(Clone, Debug, Default, PartialEq)]
+# DERIVED-NEXT: pub struct Holder {
+# DERIVED_NEG-NOT: impl Default for
+
+# The standard library implements `Default` for arrays of at most 32 elements, and a
+# variable-length array's default carries the section's memory contract.
+# RUN: cat %t/rust/src/ns/wider_1_0.rs %t/rust/src/ns/listed_1_0.rs | FileCheck %s --check-prefix=WRITTEN
+# WRITTEN:      #[derive(Clone, Debug, PartialEq)]
+# WRITTEN-NEXT: pub struct Wider {
+# WRITTEN:      impl Default for Wider {
+# WRITTEN:      #[derive(Clone, Debug, PartialEq)]
+# WRITTEN-NEXT: pub struct Listed {
+# WRITTEN:      impl Default for Listed {
+# WRITTEN:      items: crate::dsdl_runtime::DsdlVec::with_contract(
+# WRITTEN:      } else if let Err(_alloc_err) = self.items.try_reserve(
+
+# A `u64` field is read, stored, taken and answered as it is; a `u8` element is taken as the plan's
+# `u64`.
+# RUN: cat %t/rust/src/ns/wider_1_0.rs | FileCheck %s --check-prefix=CAST
+# RUN: cat %t/rust/src/ns/wider_1_0.rs | FileCheck %s --check-prefix=CAST_NEG
+# CAST:      let stamp_value: u64 = self.stamp;
+# CAST:      crate::dsdl_runtime::get_u64(buffer, 264u64 as usize, 64u8);
+# CAST:      self.stamp = value_4;
+# CAST:      pub fn set_over(buffer: &mut [u8], index: usize, value: u8)
+# CAST:      let value = value as u64;
+# CAST:      pub fn get_stamp(buffer: &[u8]) -> u64 {
+# CAST:      {{^ +}}value_2{{$}}
+# CAST:      pub fn set_stamp(buffer: &mut [u8], value: u64)
+# CAST-NEXT: let _buffer_size_bytes: u64 = buffer.len() as u64;
+# CAST-NEXT: let v0: u64 =
+# CAST_NEG-NOT: 64u8) as u64

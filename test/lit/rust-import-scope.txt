@@ -130,8 +130,8 @@
 # RUN: printf 'ns.Default.1.0 d\nns.Ok.1.0 o\nns.Err.1.0 e\n@sealed\n' > %t/prelude/ns/Holder.1.0.dsdl
 # RUN: %dsdlc --target-language rust %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust
 # RUN: cat %t/prelude/rust/src/ns/default_1_0.rs | FileCheck %s --check-prefix=PRELUDE
-# PRELUDE: pub struct Default_ {
-# PRELUDE: impl Default for Default_ {
+# PRELUDE: #[derive(Clone, Debug, Default, PartialEq)]
+# PRELUDE-NEXT: pub struct Default_ {
 # RUN: cat %t/prelude/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=PRELUDE_USE
 # PRELUDE_USE-DAG: use crate::ns::default_1_0::Default_;
 # PRELUDE_USE-DAG: use crate::ns::ok_1_0::Ok_;
@@ -142,7 +142,7 @@
 # RUN: printf 'uint8 a\n@sealed\n' > %t/prelude/ns/Clone.1.0.dsdl
 # RUN: %dsdlc --target-language rust %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust2
 # RUN: cat %t/prelude/rust2/src/ns/clone_1_0.rs | FileCheck %s --check-prefix=DERIVE
-# DERIVE: #[derive(Clone, Debug, PartialEq)]
+# DERIVE: #[derive(Clone, Debug, Default, PartialEq)]
 # DERIVE-NEXT: pub struct Clone {
 
 # ---------------------------------------------------------------------------------------------

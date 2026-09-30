@@ -241,6 +241,9 @@ struct Classification final
 
     /// @brief How a name written in a body is resolved.
     Lookup lookup{};
+
+    /// @brief Whether an `if` is an expression, whose value is the value its arm taken ends with.
+    bool ifExpressions{};
 };
 
 /// @brief How a free function that reads or writes one member of a type is named.

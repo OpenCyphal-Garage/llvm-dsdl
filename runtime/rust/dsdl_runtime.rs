@@ -122,7 +122,7 @@ pub fn copy_bits(
 /// Reads a bit fragment from `buf` into `output` with implicit zero extension.
 pub fn get_bits(output: &mut [u8], buf: &[u8], off_bits: usize, len_bits: usize) {
     let sat_bits = saturate_fragment_bits(buf.len(), off_bits, len_bits);
-    let out_len = (len_bits + 7) / 8;
+    let out_len = len_bits.div_ceil(8);
     for b in output.iter_mut().take(out_len) {
         *b = 0;
     }

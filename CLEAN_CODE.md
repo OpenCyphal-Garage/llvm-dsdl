@@ -83,14 +83,14 @@ The classification is the input the surface layer reads. One row per language, s
 language can express, indexed by the questions a declaration's shape depends on. The rows are
 `LanguageTraits` in `llvmdsdl/Support/LanguageTraits.h`, and `LanguageTraitsTests` pins each.
 
-| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | fields a class of their own | reserved by underscores | name classes in one scope |
-|---|---|---|---|---|---|---|---|---|---|
-| C | none | no | no | `static` | status code | macros in the enclosing scope | yes | leading `__`, `_X` | ordinary identifiers and structure tags; macros across the translation unit |
-| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | no | those, and `__` anywhere | one; macros across the translation unit |
-| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | yes | none | types, modules among them, values, and fields |
-| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none | one per package, across its files |
-| Python | class | yes | yes | `_` prefix | exception | class attribute | no | none | one |
-| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | yes | none | types and values; modules by path |
+| | scopes below the file | nested type declarations | methods | internal linkage | error convention | type's own constants | fields a class of their own | reserved by underscores | name classes in one scope | `if` is an expression |
+|---|---|---|---|---|---|---|---|---|---|---|
+| C | none | no | no | `static` | status code | macros in the enclosing scope | yes | leading `__`, `_X` | ordinary identifiers and structure tags; macros across the translation unit | no |
+| C++ | namespace, class | yes | yes | private member | status code | `static constexpr` in the class | no | those, and `__` anywhere | one; macros across the translation unit | no |
+| Rust | module | no | yes, in `impl` | private by default | `Result<T, E>` | associated `const` | yes | none | types, modules among them, values, and fields | yes |
+| Go | none below the package | no | yes, by receiver | lower-case initial | `(T, error)` | package scope, typed | no | none | one per package, across its files | no |
+| Python | class | yes | yes | `_` prefix | exception | class attribute | no | none | one | no |
+| TypeScript | class, namespace | yes | yes | not exported | exception | `static readonly` | yes | none | types and values; modules by path | no |
 
 A row is a claim about the language, not a preference, which is what makes it testable and what
 keeps it out of the emitters. Two consequences follow directly and are worth stating because they
@@ -1178,6 +1178,15 @@ TypeScript's `FunctionName` role is camelCase. An ordinal joins a name cased wit
 directly, as Go's always has: `getPickTag2`. A DSDL field's accessors are claimed before the union
 tag's, so an option named `tag` keeps `getPickTag` and the tag's getter moves. TypeScript's
 `naming-convention` findings fall from 75 to none.
+
+Rust's phase took its judge to zero. The row states whether an `if` is an expression, and Rust's is:
+the translator declares an `scf.if`'s results as the value of the `if`, and each arm ends with what
+it yields, where it had declared them ahead and assigned them in each arm. A struct whose initialise
+body sets every member to its type's `Default` derives it. One holding a variable-length array, whose
+default carries the section's memory contract, or an array longer than the 32 elements the standard
+library implements `Default` for, keeps its impl. A conversion between a type and itself is not
+written. A doc comment's line that returns to the margin after a list item follows a blank line,
+which ends the list for rustdoc's Markdown. Clippy's findings fall from 641 to none.
 
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase

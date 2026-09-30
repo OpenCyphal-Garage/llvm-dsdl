@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Transforms/SurfaceTree.h"
 
@@ -188,6 +189,9 @@ struct FunctionBodies final
     const BodySpelling& spelling;
 
     PlanBodyLookups& lookups;
+
+    /// @brief The language's row, which the translator reads.
+    const LanguageTraits& row;
 };
 
 /// @brief Where the renderer is in a file, as a spelling reads it.

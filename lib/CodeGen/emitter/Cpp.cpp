@@ -2511,7 +2511,10 @@ llvm::Expected<std::string> renderHeader(const SemanticDefinition&     def,
     const DefinitionFacts facts(def, schema);
     // The functions the header defines: every one but a helper nothing calls, which an accessors-only
     // run has many of, and an initialiser, which is read into the member initialisers.
-    FunctionBodies                          bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    FunctionBodies                          bodies{.functions = {},
+                                                   .spelling  = spelling,
+                                                   .lookups   = lookups,
+                                                   .row       = languageTraits(Language::Cpp)};
     std::map<std::string, InitializerShape> initializers;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {

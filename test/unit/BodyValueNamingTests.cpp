@@ -40,6 +40,7 @@
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/IR/DSDLOps.h"
 #include "llvmdsdl/Support/Language.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 #include "UnitTests.h"
 
@@ -583,7 +584,7 @@ std::optional<std::vector<std::string>> declaredNamesOfBody(const llvm::StringRe
     std::ostringstream        out;
     SourceWriter              w(out, IndentPolicy::spaces(2));
     llvmdsdl::PlanBodyLookups lookups(*module);
-    if (auto err = translateFunction(body, spelling, w, lookups))
+    if (auto err = translateFunction(body, llvmdsdl::languageTraits(llvmdsdl::Language::C), spelling, w, lookups))
     {
         std::cerr << "translation failed: " << llvm::toString(std::move(err)) << "\n";
         return std::nullopt;
@@ -625,7 +626,7 @@ std::optional<std::vector<std::string>> declaredNamesFor(const llvm::StringRef  
     std::ostringstream        out;
     SourceWriter              w(out, IndentPolicy::spaces(2));
     llvmdsdl::PlanBodyLookups lookups(*module);
-    if (auto err = translateFunction(fn, spelling, w, lookups))
+    if (auto err = translateFunction(fn, llvmdsdl::languageTraits(llvmdsdl::Language::C), spelling, w, lookups))
     {
         std::cerr << "translation failed: " << llvm::toString(std::move(err)) << "\n";
         return std::nullopt;

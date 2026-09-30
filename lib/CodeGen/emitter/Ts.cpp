@@ -2247,7 +2247,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const TsSpelling  spelling(schema, names, file);
     // The functions the module translates: every one but a helper nothing calls, which an
     // accessors-only run has many of, and an initialiser, which is the section's factory.
-    FunctionBodies                          bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    FunctionBodies                          bodies{.functions = {},
+                                                   .spelling  = spelling,
+                                                   .lookups   = lookups,
+                                                   .row       = languageTraits(Language::TypeScript)};
     std::map<std::string, InitializerShape> initializers;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {

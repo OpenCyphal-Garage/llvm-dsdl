@@ -449,7 +449,7 @@ llvm::Error DeclarationRenderer::define(DeclarationSite&      site,
         site.separate();
     }
     spelling_.openDefinition(site.writer(), decl, spelling_.signature(decl, fn));
-    return translateFunction(fn, bodies.spelling, site.writer(), bodies.lookups);
+    return translateFunction(fn, bodies.row, bodies.spelling, site.writer(), bodies.lookups);
 }
 
 }  // namespace llvmdsdl
