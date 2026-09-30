@@ -161,14 +161,14 @@
 # CPP:       #include "fixtures_aliasable/vendor/Vec3_1_0.hpp"
 # CPP:       std::span<const std::uint8_t> pose;
 # CPP:       const std::uint8_t* const pose_buf = this->pose.data();
-# CPP-NEXT:  const std::uint64_t pose_size = static_cast<std::uint64_t>(this->pose.size());
+# CPP-NEXT:  const auto pose_size = static_cast<std::uint64_t>(this->pose.size());
 # CPP-NEXT:  dsdl_runtime_copy_bytes(&buffer[{{.*}}], pose_buf, static_cast<std::size_t>(pose_size), 24U);
 # CPP:       this->pose = std::span<const std::uint8_t>(&buf[{{.*}}], static_cast<std::size_t>({{.*}}));
 # CPP-NOT:   #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
 # RUN: cat %t/cpp/std/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_TRACK
 # CPP_TRACK-NOT: Pose_1_0.hpp
 # CPP_TRACK:     std::array<std::span<const std::uint8_t>, 2U> pair{};
-# CPP_TRACK:     std::vector<std::span<const std::uint8_t>> trail{};
+# CPP_TRACK:     std::vector<std::span<const std::uint8_t>> trail;
 # CPP_TRACK:     = this->pair[static_cast<std::size_t>({{.*}})].data();
 # CPP_TRACK:     = this->trail[static_cast<std::size_t>({{.*}})].data();
 # CPP_TRACK:     this->pair[static_cast<std::size_t>({{.*}})] = std::span<const std::uint8_t>(
@@ -176,7 +176,7 @@
 # CPP_TRACK-NOT: Pose_1_0.hpp
 # RUN: cat %t/cpp/pmr/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR_TRACK
 # CPP_PMR_TRACK:     std::array<std::span<const std::uint8_t>, 2U> pair{};
-# CPP_PMR_TRACK:     std::pmr::vector<std::span<const std::uint8_t>> trail{};
+# CPP_PMR_TRACK:     std::pmr::vector<std::span<const std::uint8_t>> trail;
 # CPP_PMR_TRACK:     trail = decltype(trail)(_memory_resource);
 # CPP_PMR_TRACK-NOT: set_memory_resource(_memory_resource);
 # CPP_PMR_TRACK:     std::pmr::vector<std::span<const std::uint8_t>> _sized0_(
@@ -186,7 +186,7 @@
 # RUN: cat %t/cpp-autosar/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR_TRACK
 # CPP_AUTOSAR_TRACK:     #include "cetl/pf20/span.hpp"
 # CPP_AUTOSAR_TRACK:     std::array<cetl::pf20::span<const std::uint8_t>, 2U> pair{};
-# CPP_AUTOSAR_TRACK:     ::llvmdsdl::cpp::autosar::BoundedVector<cetl::pf20::span<const std::uint8_t>, 3U> trail{};
+# CPP_AUTOSAR_TRACK:     ::llvmdsdl::cpp::autosar::BoundedVector<cetl::pf20::span<const std::uint8_t>, 3U> trail;
 # CPP_AUTOSAR_TRACK:     this->pair[static_cast<std::size_t>({{.*}})] = cetl::pf20::span<const std::uint8_t>(
 # CPP_AUTOSAR_TRACK:     this->trail[static_cast<std::size_t>({{.*}})] = cetl::pf20::span<const std::uint8_t>(
 # No profile holds a view in the C runtime's type.

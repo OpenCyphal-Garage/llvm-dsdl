@@ -1,12 +1,12 @@
 {
   "C": {
     "body": 33,
-    "declaration": 52,
+    "declaration": 53,
     "support": 0
   },
   "Cpp": {
     "body": 44,
-    "declaration": 60,
+    "declaration": 62,
     "support": 0
   },
   "Rust": {

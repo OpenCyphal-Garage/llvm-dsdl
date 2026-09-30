@@ -20,7 +20,7 @@
 # CAPTURED-NEXT: {{^ *}}ns::a::Inner Inner{};
 
 # RUN: FileCheck %s --check-prefix=FAR < %t/cpp/ns/b/Far_1_0.hpp
-# FAR: std::pmr::vector<ns::a::Inner> inner{};
+# FAR: std::pmr::vector<ns::a::Inner> inner;
 # FAR: std::pmr::vector<ns::a::Inner> _sized0_(
 
 # RUN: FileCheck %s --check-prefix=SHADOWED < %t/cpp/ns/b/Shadowed_1_0.hpp

@@ -37,11 +37,15 @@
 # C_A_B: #define LLVMDSDL_SELECTED_NS__A__B_
 # C_A_B: int8_t ns__A__B_1_0__serialize_ir_(
 
+# A C++ guard joins the namespace with the `_` the macro joins its words with, since C++ reserves
+# `__`, so the two compose one guard and the one allocated later takes an ordinal.
 # RUN: %dsdlc --target-language cpp --cpp-profile std --no-embedded-uavcan %t/ns --outdir %t/cpp
-# RUN: cat %t/cpp/ns/A_B_1_0.hpp | FileCheck %s --check-prefix=CPP
-# CPP: #pragma once
-# CPP-NOT: #ifndef
-# CPP-NOT: LLVMDSDL_SELECTED_
+# RUN: cat %t/cpp/ns/A/B_1_0.hpp | FileCheck %s --check-prefix=CPP_A_B
+# RUN: cat %t/cpp/ns/A_B_1_0.hpp | FileCheck %s --check-prefix=CPP_AB
+# CPP_A_B: #ifndef LLVMDSDL_NS_A_B_1_0_HPP{{$}}
+# CPP_A_B: #endif /* LLVMDSDL_NS_A_B_1_0_HPP */
+# CPP_AB: #ifndef LLVMDSDL_NS_A_B_1_0_HPP_2{{$}}
+# CPP_AB-NOT: LLVMDSDL_SELECTED_
 
 # RUN: %dsdlc --target-language obj --no-embedded-uavcan %t/ns --outdir %t/obj
 # RUN: %dsdlc --target-language rust --no-embedded-uavcan %t/ns --outdir %t/rust

@@ -943,10 +943,10 @@ bool runSurfacePlanTests()
              ok;
     }
 
-    // C++'s generated names: the structure's statics and the methods that call its bodies, which
-    // are free functions beside it named after it, and its accessors among its fields. A `get_`
-    // before a member that begins with `_` joins it with no further `_`. The `pmr` profile's
-    // structure holds its memory resource, unless it is its wire image.
+    // C++'s generated names: the header's include guard, the structure's statics and the methods
+    // that call its bodies, which are free functions beside it named after it, and its accessors
+    // among its fields. A `get_` before a member that begins with `_` joins it with no further `_`.
+    // The `pmr` profile's structure holds its memory resource, unless it is its wire image.
     {
         DefinitionParts pick = message("Pick",
                                        SectionParts{.fields    = {field("small", false, 0), field("tag_", false, 1)},
@@ -961,6 +961,7 @@ bool runSurfacePlanTests()
                                       "root pkg\n"
                                       "  namespace ns\n"
                                       "    file Pick_1_0\n"
+                                      "      LLVMDSDL_NS_PICK_1_0_HPP : macro\n"
                                       "      type Pick\n"
                                       "        small : field\n"
                                       "        tag_ : field\n"

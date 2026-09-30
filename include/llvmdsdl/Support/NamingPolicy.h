@@ -351,6 +351,11 @@ struct GuardName final
 
     /// @brief Whether the type name is the one carrying the version, whatever the run's scheme.
     bool versioned{};
+
+    /// @brief Whether the definition's namespace comes before its type name, for a language whose
+    ///        type name carries none: a macro is one name across a translation unit, and the type
+    ///        name alone is not.
+    bool qualified{};
 };
 
 /// @brief The macros the generator guards a definition's file with, each named by its prefix, the

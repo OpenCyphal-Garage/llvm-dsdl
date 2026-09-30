@@ -1443,6 +1443,12 @@ std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, const llv
     return out;
 }
 
+bool isIdentifier(const llvm::StringRef expr)
+{
+    const auto word = [](const char c) { return (std::isalnum(static_cast<unsigned char>(c)) != 0) || (c == '_'); };
+    return !expr.empty() && (std::isdigit(static_cast<unsigned char>(expr.front())) == 0) && llvm::all_of(expr, word);
+}
+
 void BodySpelling::openValuedIf(SourceWriter& /*w*/,
                                 llvm::ArrayRef<mlir::Type> /*types*/,
                                 llvm::ArrayRef<std::string> /*names*/,

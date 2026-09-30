@@ -59,7 +59,7 @@ def _validate_array_length_2(p0: int) -> int:
     v0 = p0 < 0
     v1 = p0 > 5
     index_holds = (-sys.maxsize - 1 <= p0 <= sys.maxsize)
-    v2 = not (index_holds)
+    v2 = not index_holds
     v3 = v0 or v1
     v4 = v3 or v2
     v5 = (-10 if v4 else 0)

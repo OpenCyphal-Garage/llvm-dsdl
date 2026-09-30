@@ -998,7 +998,7 @@ public:
 
     void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
     {
-        w.open("if (!(" + condition.str() + ")) {");
+        w.open("if (" + logicalNot(condition) + ") {");
         w.line("break;");
         w.close("}");
     }
@@ -1085,7 +1085,7 @@ public:
 
     [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
     {
-        return "!(" + expr.str() + ")";
+        return isIdentifier(expr) ? "!" + expr.str() : "!(" + expr.str() + ")";
     }
 
     [[nodiscard]] std::string compare(const Comparison      comparison,

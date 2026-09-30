@@ -1015,7 +1015,7 @@ public:
 
     void breakUnless(SourceWriter& w, const llvm::StringRef condition) const override
     {
-        w.open("if (!(" + condition.str() + ")) {");
+        w.open("if (" + logicalNot(condition) + ") {");
         w.line("break;");
         w.close("}");
     }
@@ -1102,7 +1102,7 @@ public:
 
     [[nodiscard]] std::string logicalNot(const llvm::StringRef expr) const override
     {
-        return "!(" + expr.str() + ")";
+        return isIdentifier(expr) ? "!" + expr.str() : "!(" + expr.str() + ")";
     }
 
     [[nodiscard]] std::string compare(const Comparison      comparison,
@@ -2005,7 +2005,7 @@ public:
             }
             return;
         case LayoutPart::Epilogue:
-            site.writer().line("#endif /* " + guard(site, GeneratedFact::IncludeGuard)->name + " */");
+            site.writer().line(renderIncludeGuardClosing(guard(site, GeneratedFact::IncludeGuard)->name));
             return;
         default:
             return;
@@ -2115,10 +2115,11 @@ private:
                std::to_string(info.minorVersion) + " */");
         if (site.layoutFile() == kHeaderFile)
         {
-            const std::string& includeGuard = guard(site, GeneratedFact::IncludeGuard)->name;
             w.separate();
-            w.line("#ifndef " + includeGuard);
-            w.line("#define " + includeGuard);
+            for (const std::string& line : renderIncludeGuardOpening(guard(site, GeneratedFact::IncludeGuard)->name))
+            {
+                w.line(line);
+            }
         }
     }
 
