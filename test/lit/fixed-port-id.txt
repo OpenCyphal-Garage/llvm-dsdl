@@ -58,18 +58,21 @@
 # RUST_SERVICE: pub const PORTED_CALL_HAS_FIXED_PORT_ID: bool = true;
 # RUST_SERVICE: pub const PORTED_CALL_FIXED_PORT_ID: u16 = 200;
 
-# Python and TypeScript declare the definition's facts at module scope, so a service's pair is
-# already the service's and needs no alias.
+# Python declares a message's pair on its class, and a service's beside its sections' classes,
+# named after the service, as Rust does.
 
 # RUN: %dsdlc --target-language python --py-package ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/py
 # RUN: cat %t/py/ported/fixtures_unregulated/unregulated_1_0.py | FileCheck %s --check-prefix=PY_MESSAGE
 # RUN: cat %t/py/ported/fixtures_unregulated/ported_call_1_0.py | FileCheck %s --check-prefix=PY_SERVICE
 
-# PY_MESSAGE: DSDL_HAS_FIXED_PORT_ID = True
-# PY_MESSAGE: DSDL_FIXED_PORT_ID = 1234
+# PY_MESSAGE: HAS_FIXED_PORT_ID: ClassVar[bool] = True
+# PY_MESSAGE: FIXED_PORT_ID: ClassVar[int] = 1234
 
-# PY_SERVICE: DSDL_HAS_FIXED_PORT_ID = True
-# PY_SERVICE: DSDL_FIXED_PORT_ID = 200
+# PY_SERVICE: PORTED_CALL_HAS_FIXED_PORT_ID = True
+# PY_SERVICE: PORTED_CALL_FIXED_PORT_ID = 200
+
+# TypeScript declares the definition's facts at module scope, so a service's pair is already the
+# service's and needs no alias.
 
 # RUN: %dsdlc --target-language ts --ts-module ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/ts
 # RUN: cat %t/ts/fixtures_unregulated/unregulated_1_0.ts | FileCheck %s --check-prefix=TS_MESSAGE

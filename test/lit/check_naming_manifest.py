@@ -28,7 +28,7 @@ DEFINITIONS = {
     "c": (r"^#define NAME\b", (".h",)),
     "go": (r"^\s*(?:const\s+)?NAME\b[^=\n]*=", (".go",)),
     "ts": (r"^export const NAME\b", (".ts",)),
-    "python": (r"^NAME\s*=", (".py",)),
+    "python": (r"^\s*NAME\s*(?::[^=\n]+)?=", (".py",)),
 }
 
 
@@ -162,21 +162,31 @@ def main() -> int:
         failures += undefined_constants(language, languages[language], root)
 
     # A type named DSDL is the one case where a section constant is in reach of the module's own
-    # names in Python and TypeScript. The manifest reports what is written, so it has to report the
-    # moved name; reporting the unescaped one would name a constant the module does not define.
-    for language in ("python", "ts"):
+    # names in TypeScript, and a Python class holds the type's facts beside its constants. The
+    # manifest reports what is written, so it has to report the moved name; reporting the unescaped
+    # one would name a constant the module does not define.
+    sources = ("FULL_NAME", "HAS_FIXED_PORT_ID", "FIXED_PORT_ID", "VERSION_MAJOR")
+    moved = {
+        "ts": {source: "DSDL_" + source + "_2" for source in sources},
+        "python": {
+            "FULL_NAME": "FULL_NAME_",
+            "HAS_FIXED_PORT_ID": "HAS_FIXED_PORT_ID_",
+            "FIXED_PORT_ID": "FIXED_PORT_ID_",
+            "VERSION_MAJOR": "VERSION_MAJOR",
+        },
+    }
+    for language, names in moved.items():
         constants = (
             manifest["languages"][language]
             .get("fixtures_naming.naming.DSDL.1.0", {})
             .get("message", {})
             .get("constants", {})
         )
-        for source in ("FULL_NAME", "HAS_FIXED_PORT_ID", "FIXED_PORT_ID", "VERSION_MAJOR"):
+        for source, expected in names.items():
             reported = constants.get(source)
-            if reported != "DSDL_" + source + "_2":
+            if reported != expected:
                 failures.append(
-                    f"{language}: DSDL's constant {source} is reported as {reported!r}, "
-                    f"expected {'DSDL_' + source + '_2'!r}"
+                    f"{language}: DSDL's constant {source} is reported as {reported!r}, expected {expected!r}"
                 )
 
     for failure in failures:

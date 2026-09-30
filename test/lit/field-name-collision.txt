@@ -36,8 +36,8 @@
 # PY-DAG: foo_bar: int = 0
 # PY-DAG: foo_bar_2: int = 0
 # PY-DAG: self.foo_bar_2 =
-# PY-DAG: C_BAR_BAZ = 1
-# PY-DAG: C_BAR_BAZ_2 = 2
+# PY-DAG: BAR_BAZ: ClassVar[int] = 1
+# PY-DAG: BAR_BAZ_2: ClassVar[int] = 2
 
 # Rust folds field names and constants the way the other module-scoped languages do: `fooBar` and
 # `foo_bar` reach one identifier and the scope separates them.

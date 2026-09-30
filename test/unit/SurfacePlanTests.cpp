@@ -509,8 +509,8 @@ bool runSurfacePlanTests()
                                        "  namespace ns\n"
                                        "    module msg_1_0\n"
                                        "      type Msg\n"
-                                       "      _capacity_check : value private\n"
-                                       "      _scalar_unsigned_0_ser : value private\n",
+                                       "        _capacity_check : value private\n"
+                                       "        _scalar_unsigned_0_ser : value private\n",
                                        "Python's helpers") &&
                                 ok;
 
@@ -565,13 +565,13 @@ bool runSurfacePlanTests()
                     "DSDL_FULL_NAME_2",
                     "a TypeScript constant that reaches the module's metadata") &&
              ok;
-        ok = expect(constantName(allocate(Language::Python, {message("DSDL", claimed)}), "FULL_NAME"),
-                    "DSDL_FULL_NAME_2",
-                    "a Python constant that reaches the module's metadata") &&
-             ok;
         ok = expect(constantName(allocate(Language::Rust, {message("Msg", claimed)}), "FULL_NAME"),
                     "FULL_NAME_",
                     "a Rust constant the projection's table claims") &&
+             ok;
+        ok = expect(constantName(allocate(Language::Python, {message("Msg", claimed)}), "FULL_NAME"),
+                    "FULL_NAME_",
+                    "a Python constant the projection's table claims") &&
              ok;
     }
 
@@ -900,8 +900,8 @@ bool runSurfacePlanTests()
         ok = expect(accessors, "FlatGetSpeed2\nFlatSetSpeed\n", "Go's accessors among its constants") && ok;
     }
 
-    // Python's generated names: the definition's facts at the top of its module, the size the
-    // runtime's base class serialises into on the class, the bodies as the class's own methods, and
+    // Python's generated names: the type's facts and a union's option tags on the class, without the
+    // host-image verdict a Python object is never asked, the bodies as the class's own methods, and
     // the accessors among the fields, whose names they share a class with. A module imports each
     // class its fields hold.
     {
@@ -918,26 +918,26 @@ bool runSurfacePlanTests()
                     "root pkg\n"
                     "  namespace ns\n"
                     "    module pick_1_0\n"
-                    "      LLVMDSDL_GENERATOR_VERSION : value\n"
-                    "      DSDL_FULL_NAME : value\n"
-                    "      DSDL_IS_DEPRECATED : value\n"
-                    "      DSDL_VERSION_MAJOR : value\n"
-                    "      DSDL_VERSION_MINOR : value\n"
-                    "      DSDL_HAS_FIXED_PORT_ID : value\n"
-                    "      DSDL_WIRE_FLAT : value\n"
-                    "      DSDL_WIRE_FLAT_REASON : value\n"
                     "      type Pick\n"
                     "        get_small : field\n"
                     "        small : field\n"
                     "        far : field\n"
                     "        _tag : field\n"
+                    "        FULL_NAME : value\n"
+                    "        IS_DEPRECATED : value\n"
+                    "        FULL_NAME_AND_VERSION : value\n"
+                    "        EXTENT_BYTES : value\n"
                     "        SERIALIZATION_BUFFER_SIZE_BYTES : value\n"
+                    "        WIRE_FLAT : value\n"
+                    "        WIRE_FLAT_REASON : value\n"
+                    "        HAS_FIXED_PORT_ID : value\n"
+                    "        UNION_OPTION_COUNT : value\n"
+                    "        GET_SMALL_OPTION_TAG : value\n"
+                    "        SMALL_OPTION_TAG : value\n"
+                    "        FAR_OPTION_TAG : value\n"
                     "        _serialize_into : value\n"
                     "        _deserialize_from : value\n"
                     "        get_small_2 : value\n"
-                    "      PICK_GET_SMALL_OPTION_TAG : value\n"
-                    "      PICK_SMALL_OPTION_TAG : value\n"
-                    "      PICK_FAR_OPTION_TAG : value\n"
                     "      Far : type private\n",
                     "Python's generated names") &&
              ok;

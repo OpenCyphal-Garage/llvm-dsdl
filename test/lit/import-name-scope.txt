@@ -44,8 +44,7 @@
 # RUN: cat %t/shadow-py/dsdl_gen/adv/outer/owner_1_0.py | FileCheck %s --check-prefix=PY_SHADOW
 # PY_SHADOW:      from dsdl_gen.adv.inner.owner_1_0 import Owner as InnerOwner
 # PY_SHADOW:      class Owner(CompositeObject):
-# PY_SHADOW-NEXT: SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = {{[0-9]+}}
-# PY_SHADOW-NEXT: inner: InnerOwner = field(default_factory=lambda: InnerOwner())
+# PY_SHADOW:      inner: InnerOwner = field(default_factory=lambda: InnerOwner())
 
 # A file whose referenced names are already unique imports them under their own names.
 # RUN: %dsdlc --target-language ts %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/plain >/dev/null 2>&1

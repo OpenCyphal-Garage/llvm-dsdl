@@ -87,8 +87,8 @@ def roundtrip(obj: object, cls: type) -> object:
 # Message roundtrip.
 heartbeat = HeartbeatMod.Heartbeat_1_0(
     uptime=123456,
-    health=HealthMod.Health_1_0(value=HealthMod.HEALTH_1_0_CAUTION),
-    mode=ModeMod.Mode_1_0(value=ModeMod.MODE_1_0_INITIALIZATION),
+    health=HealthMod.Health_1_0(value=HealthMod.Health_1_0.CAUTION),
+    mode=ModeMod.Mode_1_0(value=ModeMod.Mode_1_0.INITIALIZATION),
     vendor_specific_status_code=77,
 )
 heartbeat_rt = roundtrip(heartbeat, HeartbeatMod.Heartbeat_1_0)
@@ -100,7 +100,7 @@ print("uavcan-python-runtime message-roundtrip-ok")
 
 # Service request/response roundtrip.
 execute_req = ExecuteCommandMod.ExecuteCommand_1_3Request(
-    command=ExecuteCommandMod.EXECUTE_COMMAND_1_3REQUEST_COMMAND_IDENTIFY,
+    command=ExecuteCommandMod.ExecuteCommand_1_3Request.COMMAND_IDENTIFY,
     parameter=[ord(c) for c in "blink"],
 )
 execute_req_rt = roundtrip(execute_req, ExecuteCommandMod.ExecuteCommand_1_3Request)
@@ -109,7 +109,7 @@ assert execute_req_rt.parameter == execute_req.parameter
 print("uavcan-python-runtime service-request-roundtrip-ok")
 
 execute_resp = ExecuteCommandMod.ExecuteCommand_1_3Response(
-    status=ExecuteCommandMod.EXECUTE_COMMAND_1_3RESPONSE_STATUS_SUCCESS,
+    status=ExecuteCommandMod.ExecuteCommand_1_3Response.STATUS_SUCCESS,
     output=[1, 2, 3, 4],
 )
 execute_resp_rt = roundtrip(execute_resp, ExecuteCommandMod.ExecuteCommand_1_3Response)

@@ -201,13 +201,15 @@
 # PY_PYPROJECT: requires-python = ">=3.10"
 # PY_PYPROJECT: [tool.setuptools.package-data]
 # PY_PYPROJECT: _dsdl_runtime_accel*.so
-# A helper is a module-level function of the definition's own module, marked as not part of its
-# surface the way Python marks one.
-# PY_HELPERS: def _capacity_check(
-# PY_HELPERS: def _scalar_unsigned_2_ser(
+# A helper is a static method of its section's class, marked as not part of its surface the way
+# Python marks one, and a body calls it through the instance.
 # PY_HELPERS: @dataclass(slots=True)
 # PY_HELPERS: class Helpers(CompositeObject):
-# PY_HELPERS-NEXT: SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 10
-# PY_HELPERS: _capacity_check(
-# PY_TYPE: DSDL_WIRE_FLAT = True
+# PY_HELPERS: SERIALIZATION_BUFFER_SIZE_BYTES: ClassVar[int] = 10
+# PY_HELPERS: self._capacity_check(
+# PY_HELPERS: @staticmethod
+# PY_HELPERS-NEXT: def _capacity_check(
+# PY_HELPERS: @staticmethod
+# PY_HELPERS-NEXT: def _scalar_unsigned_2_ser(
+# PY_TYPE: WIRE_FLAT: ClassVar[bool] = True
 # PY_TYPE-NOT: HOST_IMAGE

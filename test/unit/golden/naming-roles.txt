@@ -379,7 +379,7 @@ FULL_NAME             cpp      FULL_NAME              FULL_NAME              FUL
 FULL_NAME             rust     FULLNAME               full_name              full_name              FULL_NAME_             full_name              full_name              FULL_NAME
 FULL_NAME             go       FULLNAME               fullName               FullName               FullName               fullname               full_name              FULL_NAME
 FULL_NAME             ts       FULLNAME               fULLNAME               full_name              FULL_NAME              full_name              full_name              FULL_NAME
-FULL_NAME             python   FULLNAME               full_name              full_name              FULL_NAME              full_name              full_name              FULL_NAME
+FULL_NAME             python   FULLNAME               full_name              full_name              FULL_NAME_             full_name              full_name              FULL_NAME
 FULL_NAME_            c        FULL_NAME_             FULL_NAME_             FULL_NAME_             FULL_NAME__            FULL_NAME_             FULL_NAME_             FULL_NAME__
 FULL_NAME_            cpp      FULL_NAME_             FULL_NAME_             FULL_NAME_             FULL_NAME_             FULL_NAME_             FULL_NAME_             FULL_NAME_
 FULL_NAME_            rust     FULLNAME               full_name_             full_name_             FULL_NAME_             full_name_             full_name_             FULL_NAME_
@@ -397,7 +397,7 @@ UNION_OPTION_COUNT    cpp      UNION_OPTION_COUNT     UNION_OPTION_COUNT     UNI
 UNION_OPTION_COUNT    rust     UNIONOPTIONCOUNT       union_option_count     union_option_count     UNION_OPTION_COUNT_    union_option_count     union_option_count     UNION_OPTION_COUNT
 UNION_OPTION_COUNT    go       UNIONOPTIONCOUNT       unionOptionCount       UnionOptionCount       UnionOptionCount       unionoptioncount       union_option_count     UNION_OPTION_COUNT
 UNION_OPTION_COUNT    ts       UNIONOPTIONCOUNT       uNIONOPTIONCOUNT       union_option_count     UNION_OPTION_COUNT     union_option_count     union_option_count     UNION_OPTION_COUNT
-UNION_OPTION_COUNT    python   UNIONOPTIONCOUNT       union_option_count     union_option_count     UNION_OPTION_COUNT     union_option_count     union_option_count     UNION_OPTION_COUNT
+UNION_OPTION_COUNT    python   UNIONOPTIONCOUNT       union_option_count     union_option_count     UNION_OPTION_COUNT_    union_option_count     union_option_count     UNION_OPTION_COUNT
 Efoo                  c        Efoo                   Efoo                   Efoo                   EFOO                   Efoo                   Efoo                   EFOO
 Efoo                  cpp      Efoo                   Efoo                   Efoo                   EFOO                   Efoo                   Efoo                   EFOO
 Efoo                  rust     Efoo                   efoo                   efoo                   EFOO                   efoo                   efoo                   EFOO
@@ -592,7 +592,7 @@ constants_claimed     ts       FULL_NAME             FULL_NAME
 constants_claimed     ts       FULL_NAME_            FULL_NAME_
 constants_claimed     ts       full_name_            FULL_NAME_2
 constants_claimed     ts       wire_flat_            WIRE_FLAT_
-constants_claimed     python   FULL_NAME             FULL_NAME
-constants_claimed     python   FULL_NAME_            FULL_NAME_
-constants_claimed     python   full_name_            FULL_NAME_2
+constants_claimed     python   FULL_NAME             FULL_NAME_
+constants_claimed     python   FULL_NAME_            FULL_NAME_2
+constants_claimed     python   full_name_            FULL_NAME_3
 constants_claimed     python   wire_flat_            WIRE_FLAT_

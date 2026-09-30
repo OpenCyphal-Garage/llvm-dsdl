@@ -64,10 +64,12 @@
 #include "llvmdsdl/Support/GeneratedFact.h"
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/PlanSymbol.h"
+#include "llvmdsdl/Support/SurfaceLookup.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
@@ -95,6 +97,22 @@ namespace
 std::string pyConstValue(const TypeExprAST& type, const Value& value)
 {
     return renderConstantLiteral(Language::Python, value, makeConstantTypeInfo(type));
+}
+
+/// @brief The Python type of a DSDL constant of @p type, which DSDL makes a boolean or a number.
+const char* pyConstTypeName(const TypeExprAST& type)
+{
+    switch (makeConstantTypeInfo(type).numericClass)
+    {
+    case ConstantNumericClass::Float:
+        return "float";
+    case ConstantNumericClass::SignedInt:
+    case ConstantNumericClass::UnsignedInt:
+        return "int";
+    case ConstantNumericClass::Other:
+        break;
+    }
+    return "bool";
 }
 
 std::string generatedCommentLine(llvm::StringRef detail)
@@ -220,6 +238,28 @@ public:
                                               const std::optional<GeneratedFact> fact = std::nullopt) const
     {
         return tree_.nameOf(symbol, kind, fact);
+    }
+
+    /// @brief The helper the lowered function @p symbol is, as code written in the scope @p site,
+    ///        which is to that scope's type what @p relation says, reaches it.
+    [[nodiscard]] std::string helperFrom(const std::size_t     site,
+                                         const SiteRelation    relation,
+                                         const llvm::StringRef symbol) const
+    {
+        const std::optional<std::size_t> index = tree_.declarationIndex(symbol, SurfaceDeclKind::Helper);
+        if (!index)
+        {
+            llvm::report_fatal_error(llvm::Twine("Python backend: the surface declares no helper ") + symbol);
+        }
+        std::optional<std::string> spelling = spellReference(languageTraits(Language::Python),
+                                                             tree_.plan(),
+                                                             SurfaceSite{.scope = site, .relation = relation},
+                                                             SurfaceItem{.scope = false, .index = *index});
+        if (!spelling)
+        {
+            llvm::report_fatal_error(llvm::Twine("Python backend: no spelling reaches the helper ") + symbol);
+        }
+        return std::move(*spelling);
     }
 
     /// @brief The local name the definition keyed @p key imports the one keyed @p imported under,
@@ -624,31 +664,30 @@ private:
 };
 
 /// @brief Opens a section's class: a dataclass of the runtime's `CompositeObject`, which composes
-///        `serialize` and `deserialize` from the class's bodies, stating the size of the buffer
-///        `serialize` writes into.
-void openClass(SourceWriter& w, const PySection& names, const SemanticSection& section, const PyFileNames& file)
+///        `serialize` and `deserialize` from the class's bodies.
+void openClass(SourceWriter& w, const PySection& names, const PyFileNames& file)
 {
     w.line("@" + file.dataclasses("dataclass") + "(slots=True)");
     w.open("class " + names.typeName() + "(" + file.compositeObject() + "):");
-    w.line(names.classAttribute(GeneratedFact::SerializationBufferSizeBytes) + ": " + file.typing("ClassVar") +
-           "[int] = " + std::to_string((section.serializationBufferSizeBits + 7) / 8));
 }
 
 const MemberDefault* memberDefault(const InitializerShape& init, const std::string& name);
 
-void emitStructSectionType(SourceWriter&           w,
-                           const InitializerShape& init,
-                           const PySection&        names,
-                           const SemanticSection&  section,
-                           const AttachedDoc&      typeDoc,
-                           const PyFileNames&      file,
-                           const std::string&      fullName,
-                           const std::uint32_t     majorVersion,
-                           const std::uint32_t     minorVersion)
+void emitStructSectionType(SourceWriter&              w,
+                           const InitializerShape&    init,
+                           const PySection&           names,
+                           const SemanticSection&     section,
+                           const AttachedDoc&         typeDoc,
+                           const PyFileNames&         file,
+                           const std::string&         fullName,
+                           const std::uint32_t        majorVersion,
+                           const std::uint32_t        minorVersion,
+                           llvm::function_ref<void()> attributes)
 {
     const std::string& typeName = names.typeName();
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
-    openClass(w, names, section, file);
+    openClass(w, names, file);
+    attributes();
     for (const auto& field : section.fields)
     {
         if (field.isPadding)
@@ -684,19 +723,21 @@ const MemberDefault* memberDefault(const InitializerShape& init, const std::stri
     return nullptr;
 }
 
-void emitUnionSectionType(SourceWriter&           w,
-                          const InitializerShape& init,
-                          const PySection&        names,
-                          const SemanticSection&  section,
-                          const AttachedDoc&      typeDoc,
-                          const PyFileNames&      file,
-                          const std::string&      fullName,
-                          const std::uint32_t     majorVersion,
-                          const std::uint32_t     minorVersion)
+void emitUnionSectionType(SourceWriter&              w,
+                          const InitializerShape&    init,
+                          const PySection&           names,
+                          const SemanticSection&     section,
+                          const AttachedDoc&         typeDoc,
+                          const PyFileNames&         file,
+                          const std::string&         fullName,
+                          const std::uint32_t        majorVersion,
+                          const std::uint32_t        minorVersion,
+                          llvm::function_ref<void()> attributes)
 {
     const std::string& typeName = names.typeName();
     emitAttachedDocPy(w, docWithDeprecationNotice(typeDoc, section.deprecated, fullName, majorVersion, minorVersion));
-    openClass(w, names, section, file);
+    openClass(w, names, file);
+    attributes();
     // A Python union holds one arm: the tag the body stores, and that arm at the default the body
     // gives it. The other arms are absent, which is what `None` says.
     w.line(names.dataMember(GeneratedFact::UnionTag) + ": int = " + std::to_string(init.unionTag));
@@ -721,23 +762,26 @@ void emitUnionSectionType(SourceWriter&           w,
     }
 }
 
-void emitSectionType(SourceWriter&           w,
-                     const InitializerShape& init,
-                     const PySection&        names,
-                     const SemanticSection&  section,
-                     const AttachedDoc&      typeDoc,
-                     const PyFileNames&      file,
-                     const std::string&      fullName,
-                     const std::uint32_t     majorVersion,
-                     const std::uint32_t     minorVersion)
+/// @brief Writes a section's class: its doc, the class, the attributes @p attributes writes, and the
+///        fields.
+void emitSectionType(SourceWriter&              w,
+                     const InitializerShape&    init,
+                     const PySection&           names,
+                     const SemanticSection&     section,
+                     const AttachedDoc&         typeDoc,
+                     const PyFileNames&         file,
+                     const std::string&         fullName,
+                     const std::uint32_t        majorVersion,
+                     const std::uint32_t        minorVersion,
+                     llvm::function_ref<void()> attributes)
 {
     if (section.isUnion)
     {
-        emitUnionSectionType(w, init, names, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitUnionSectionType(w, init, names, section, typeDoc, file, fullName, majorVersion, minorVersion, attributes);
     }
     else
     {
-        emitStructSectionType(w, init, names, section, typeDoc, file, fullName, majorVersion, minorVersion);
+        emitStructSectionType(w, init, names, section, typeDoc, file, fullName, majorVersion, minorVersion, attributes);
     }
 }
 
@@ -757,6 +801,7 @@ public:
     PythonSpelling(mlir::dsdl::SchemaOp schema, const PySurface& names, const PyFileNames& file)
         : file_(file)
         , names_(names)
+        , key_(schema.getSymName().str())
     {
         // A nested call names the nested type's own method, found by the identity of its plan.
         for (const SurfaceScope& scope : names.tree().plan().scopes)
@@ -812,6 +857,18 @@ public:
         accessor_            = Accessor::None;
         infallible_          = fn->hasAttr("llvmdsdl.infallible");
         blockEmpty_          = true;
+        // A helper the body calls is a static method of the class the body is written in: a method
+        // reaches it through `self`, a class method through `cls`, and a static one by the class.
+        const auto section = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+        site_              = names_.tree().typeScope(key_, section ? section.getValue() : llvm::StringRef{});
+        if (!direction || (*direction == "get") || (*direction == "set"))
+        {
+            relation_ = SiteRelation::Static;
+        }
+        else
+        {
+            relation_ = (*direction == "from_wire_image") ? SiteRelation::Class : SiteRelation::Instance;
+        }
         if (!direction)
         {
             std::vector<std::string> parameters;
@@ -910,7 +967,7 @@ public:
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return names_.function(callee, SurfaceDeclKind::Helper);
+        return names_.helperFrom(site_, relation_, callee);
     }
 
     // Statements.
@@ -1954,6 +2011,11 @@ private:
     mutable unsigned    fresh_{0};
     /// @brief Whether the function being spelt answers no error, which it then never raises.
     mutable bool infallible_{false};
+    /// @brief The type scope the function being spelt is written in, and what the function is to it.
+    mutable std::size_t  site_{};
+    mutable SiteRelation relation_{SiteRelation::Static};
+    /// @brief The schema the spelling spells the functions of.
+    std::string key_;
 };
 
 /// @brief A bracket that a line of Python opens and closes at its top level.
@@ -2168,14 +2230,12 @@ const DeclarationLayout& pyLayout()
         .files    = {{LayoutPart::Prelude,
                       LayoutPart::Imports,
                       LayoutPart::DefinitionConstants,
-                      LayoutPart::HelperDefinitions,
                       LayoutPart::Sections,
                       LayoutPart::Alias}},
         .section  = {LayoutPart::Type,
                      LayoutPart::SectionDefinitions,
-                     LayoutPart::TypeEnd,
-                     LayoutPart::Options,
-                     LayoutPart::Constants},
+                     LayoutPart::HelperDefinitions,
+                     LayoutPart::TypeEnd},
         .indent   = IndentPolicy::spaces(kPythonIndent),
         .breaking = &pyLineBreaking(),
     };
@@ -2217,17 +2277,6 @@ public:
             return;
         case LayoutPart::TypeEnd:
             site.writer().dedent();
-            return;
-        case LayoutPart::Options:
-            for (const SurfaceDecl* const option : site.declarations(SurfaceDeclKind::Option))
-            {
-                const auto& options = site.facts().metadata(*site.section()).unionOptions;
-                const auto  found   = std::ranges::find(options, option->of->member, &UnionOption::name);
-                site.writer().line(option->name + " = " + std::to_string(found->tag));
-            }
-            return;
-        case LayoutPart::Constants:
-            constants(site);
             return;
         case LayoutPart::Alias:
             for (const SurfaceDecl* const alias : site.declarations(SurfaceDeclKind::Alias))
@@ -2303,10 +2352,11 @@ public:
 
     void openDefinition(SourceWriter& w, const SurfaceDecl& decl, const std::string& signature) const override
     {
-        // An accessor is a static method, and a reader that makes its object a class method.
+        // An accessor and a helper are static methods, and a reader that makes its object a class
+        // method.
         const std::optional<PlanSymbol> symbol = decl.of ? parsePlanSymbol(decl.of->function) : std::nullopt;
         const bool                      makes  = symbol && (symbol->function == PlanFunction::FromWireImage);
-        if ((decl.kind == SurfaceDeclKind::Accessor) || makes)
+        if ((decl.kind == SurfaceDeclKind::Accessor) || (decl.kind == SurfaceDeclKind::Helper) || makes)
         {
             w.line(makes ? "@classmethod" : "@staticmethod");
         }
@@ -2332,8 +2382,8 @@ private:
         w.line("from __future__ import annotations");
     }
 
-    /// @brief The definition's facts at the top of its module. Aliasability is a property of a
-    ///        payload, so a service answers for each of its two and a message once.
+    /// @brief The facts a service states of itself at the top of its module, since its name is an
+    ///        alias of its request's class.
     static void moduleConstants(DeclarationSite& site)
     {
         const auto  boolean = [](const bool value) { return std::string(value ? "True" : "False"); };
@@ -2399,6 +2449,7 @@ private:
                                                        def.info.majorVersion,
                                                        def.info.minorVersion));
             site.writer().open("class " + names.typeName() + ":");
+            classAttributes(site);
             return;
         }
         const PlanSymbol     symbol = planFunction(def.info.fullName,
@@ -2425,13 +2476,77 @@ private:
                         file_,
                         def.info.fullName,
                         def.info.majorVersion,
-                        def.info.minorVersion);
+                        def.info.minorVersion,
+                        [&] { classAttributes(site); });
     }
 
-    /// @brief The section's DSDL constants, each under its doc.
-    static void constants(DeclarationSite& site)
+    /// @brief The section's class attributes, in the order the tree declares them: the facts it
+    ///        states of itself, a union's option tags, and its DSDL constants, each under its doc.
+    void classAttributes(DeclarationSite& site) const
     {
-        const auto& constants = site.facts().section(*site.section()).constants;
+        const SectionMetadata& metadata  = site.facts().metadata(*site.section());
+        const auto&            constants = site.facts().section(*site.section()).constants;
+        const auto             boolean   = [](const bool value) { return std::string(value ? "True" : "False"); };
+        const auto             quoted    = [](const std::string& text) { return "\"" + text + "\""; };
+        const auto             attribute = [&](const std::string& name, const char* type, const std::string& value) {
+            site.writer().line(name + ": " + file_.typing("ClassVar") + "[" + type + "] = " + value);
+        };
+        for (const SurfaceDecl* const decl : site.declarations(SurfaceDeclKind::Constant))
+        {
+            if (!decl->fact)
+            {
+                continue;
+            }
+            switch (*decl->fact)
+            {
+            case GeneratedFact::FullName:
+                attribute(decl->name, "str", quoted(metadata.fullName));
+                break;
+            case GeneratedFact::IsDeprecated:
+                attribute(decl->name, "bool", boolean(metadata.deprecated));
+                break;
+            case GeneratedFact::FullNameAndVersion:
+                attribute(decl->name,
+                          "str",
+                          quoted(metadata.fullName + "." + std::to_string(metadata.majorVersion) + "." +
+                                 std::to_string(metadata.minorVersion)));
+                break;
+            case GeneratedFact::ExtentBytes:
+                attribute(decl->name, "int", std::to_string(metadata.extentBytes));
+                break;
+            case GeneratedFact::SerializationBufferSizeBytes:
+                attribute(decl->name, "int", std::to_string(metadata.serializationBufferSizeBytes));
+                break;
+            case GeneratedFact::WireFlat:
+                attribute(decl->name, "bool", boolean(metadata.wireFlat.holds));
+                break;
+            case GeneratedFact::WireFlatReason:
+                attribute(decl->name, "str", quoted(metadata.wireFlat.reason));
+                break;
+            case GeneratedFact::HostImage:
+                attribute(decl->name, "bool", boolean(metadata.hostImage.holds));
+                break;
+            case GeneratedFact::HostImageReason:
+                attribute(decl->name, "str", quoted(metadata.hostImage.reason));
+                break;
+            case GeneratedFact::HasFixedPortId:
+                attribute(decl->name, "bool", boolean(metadata.fixedPortId.has_value()));
+                break;
+            case GeneratedFact::FixedPortId:
+                attribute(decl->name, "int", std::to_string(*metadata.fixedPortId));
+                break;
+            case GeneratedFact::UnionOptionCount:
+                attribute(decl->name, "int", std::to_string(metadata.unionOptions.size()));
+                break;
+            default:
+                llvm::report_fatal_error(llvm::Twine("Python: a class states no fact '") + decl->name + "'");
+            }
+        }
+        for (const SurfaceDecl* const option : site.declarations(SurfaceDeclKind::Option))
+        {
+            const auto found = std::ranges::find(metadata.unionOptions, option->of->member, &UnionOption::name);
+            attribute(option->name, "int", std::to_string(found->tag));
+        }
         for (const SurfaceDecl* const decl : site.declarations(SurfaceDeclKind::Constant))
         {
             if (decl->fact || decl->of->member.empty())
@@ -2440,7 +2555,7 @@ private:
             }
             const auto constant = std::ranges::find(constants, decl->of->member, &SemanticConstant::name);
             emitAttachedDocPy(site.writer(), constant->doc);
-            site.writer().line(decl->name + " = " + pyConstValue(constant->type, constant->value));
+            attribute(decl->name, pyConstTypeName(constant->type), pyConstValue(constant->type, constant->value));
         }
     }
 

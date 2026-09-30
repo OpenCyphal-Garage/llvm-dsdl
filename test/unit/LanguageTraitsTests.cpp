@@ -430,8 +430,8 @@ bool runLanguageTraitsTests()
          "version-in-name=1 name-reaches-type=1 section-join='' sections=none namespace-shared=0 namespaces=module "
          "extension='.py' directories-projected=1 source='' package-directory=1 namespace-file='__init__.py' "
          "root-file='__init__.py' imports=type "
-         "helpers=module "
-         "file-directory-module=1 namespace-type-scope=0 constants=module service-constants=module constant-macros=0 "
+         "helpers=type "
+         "file-directory-module=1 namespace-type-scope=0 constants=type service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
@@ -457,13 +457,16 @@ bool runLanguageTraitsTests()
                  row.name.str() + ": a buffer no body sees null is not null to a getter");
     }
 
-    // A helper is declared in its section's type exactly where a private member is how the language
-    // keeps a declaration from its users.
+    // A helper is declared in its section's type exactly where the language keeps a member of a
+    // type from its users by the member's own declaration: a private member, or a leading `_`.
     for (const LanguageTraits& row : llvmdsdl::allLanguageTraits())
     {
+        const llvmdsdl::InternalLinkage linkage = row.classification.internalLinkage;
         t.expect((row.composition.helpers == llvmdsdl::HelperPlacement::Type) ==
-                     (row.classification.internalLinkage == llvmdsdl::InternalLinkage::PrivateMember),
-                 row.name.str() + ": a helper is a member of its type where, and only where, a private member is");
+                     ((linkage == llvmdsdl::InternalLinkage::PrivateMember) ||
+                      (linkage == llvmdsdl::InternalLinkage::UnderscorePrefix)),
+                 row.name.str() + ": a helper is a member of its type where, and only where, a member keeps itself "
+                                  "from the type's users");
     }
 
     // A namespace is joined into each identifier exactly where the row names a separator to join it.
@@ -484,7 +487,7 @@ bool runLanguageTraitsTests()
             departures.insert(row.name.str());
         }
     }
-    t.expect(departures == std::set<std::string>{"python", "ts"},
+    t.expect(departures == std::set<std::string>{"ts"},
              "the languages whose constants are not yet where the language declares them");
 
     return t.ok;
