@@ -70,6 +70,9 @@ FooBar2 uint8
 Leading uint8
 ```
 
+The ordinal joins a snake_case name with `_`, as `foo_bar_2`, and a name cased without underscores
+directly, as `FooBar2` and TypeScript's `getPickTag2`.
+
 The ordinal is assigned in DSDL declaration order, so it is stable across runs and moves only when
 the definition does. Each rename is reported:
 
@@ -162,7 +165,8 @@ appends `_` to a keyword. `upper` upper-cases the finished identifier.
 | Go | FileStem | snake | ✅ | ✅ | |
 | Go | MacroName | snake | ✅ | ✅ | ✅ |
 | TypeScript | TypeName | pascal | ✅ | ✅ | |
-| TypeScript | FieldName, FunctionName, LocalName, NamespaceName, FileStem | snake | ✅ | ✅ | |
+| TypeScript | FieldName, LocalName, NamespaceName, FileStem | snake | ✅ | ✅ | |
+| TypeScript | FunctionName | camel | ✅ | ✅ | |
 | TypeScript | ConstantName, MacroName | snake | ✅ | ✅ | ✅ |
 | Python | TypeName | pascal | ✅ | ✅ | |
 | Python | FieldName, FunctionName, LocalName, NamespaceName, FileStem | snake | ✅ | ✅ | |

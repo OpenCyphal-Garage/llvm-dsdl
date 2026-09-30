@@ -1046,9 +1046,34 @@ bool runSurfacePlanTests()
                                       "      serializePick : value\n"
                                       "      deserializePick : value\n"
                                       "      getPickSmall : value\n"
-                                      "      getPick_tag : value\n",
+                                      "      getPickTag : value\n",
                                       "TypeScript's generated names") &&
                                ok;
+    }
+
+    // A field's accessor is claimed before the union tag's, so an option named `tag` keeps
+    // `getPickTag` and the tag's getter takes the ordinal, run on as camelCase runs.
+    {
+        DefinitionParts pick = message("Pick",
+                                       SectionParts{.fields    = {field("small", false, 0), field("tag", false, 1)},
+                                                    .constants = {},
+                                                    .isUnion   = true});
+        pick.bodies = {body("ns.Pick.1.0.get._tag_"), body("ns.Pick.1.0.get.small"), body("ns.Pick.1.0.get.tag")};
+        const SurfacePlan plan = allocate(Language::TypeScript, {pick});
+        std::string       accessors;
+        for (const llvmdsdl::SurfaceDecl& decl : plan.decls)
+        {
+            if (decl.kind == llvmdsdl::SurfaceDeclKind::Accessor)
+            {
+                accessors += decl.of->member + " " + decl.name + "\n";
+            }
+        }
+        ok = expect(accessors,
+                    "_tag_ getPickTag2\n"
+                    "small getPickSmall\n"
+                    "tag getPickTag\n",
+                    "a TypeScript option named as the union's tag") &&
+             ok;
     }
 
     // Rust's accessors are allocated in a pool of their own, apart from the fields: a field

@@ -19,7 +19,6 @@
 #include <cassert>
 #include <cstdint>
 #include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <string>
@@ -204,14 +203,9 @@ std::string renderAccessorName(const Language        language,
         return typeName.str() + names.entryPointJoin.str() + joined.str() + "_" + member.str() + "_";
     case AccessorNaming::Concatenated:
         return typeName.str() + concatenated.str() + member.str();
-    case AccessorNaming::VerbFirst: {
-        std::string name = joined.str() + typeName.str() + member.str();
-        if (!member.empty())
-        {
-            name[joined.size() + typeName.size()] = llvm::toUpper(member.front());
-        }
-        return name;
-    }
+    case AccessorNaming::VerbFirst:
+        return joined.str() + typeName.str() +
+               (member.empty() ? std::string{} : codegenToPascalCaseIdentifier(language, member));
     case AccessorNaming::None:
         break;
     }

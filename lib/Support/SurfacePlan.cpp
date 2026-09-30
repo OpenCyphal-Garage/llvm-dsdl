@@ -858,21 +858,38 @@ private:
             }
             // An accessor is claimed among the values its file declares, after every one of them,
             // so a DSDL constant `GET_SPEED` keeps its name and the getter of `speed` moves.
+            // A DSDL member's accessors are claimed before the union tag's, so a field keeps its
+            // accessor's name and the tag's moves.
             const std::vector<std::string>     declared = declaredValues(file);
             const std::vector<llvm::StringRef> reserved(declared.begin(), declared.end());
             NamingScope                        pool(language, reserved);
+            const auto                         accessor = [&](const BodyParts& body) {
+                return (body.plan.section == section.section) &&
+                       ((body.plan.function == PlanFunction::Get) || (body.plan.function == PlanFunction::Set));
+            };
+            for (const bool tag : {false, true})
+            {
+                for (const BodyParts& body : bodies)
+                {
+                    if (accessor(body) && ((body.plan.member == kPlanUnionTagMember) == tag))
+                    {
+                        (void) pool.declare(IdentifierRole::FunctionName,
+                                            body.symbol,
+                                            renderAccessorName(language,
+                                                               section.typeName,
+                                                               (body.plan.function == PlanFunction::Get)
+                                                                   ? AccessorVerb::Get
+                                                                   : AccessorVerb::Set,
+                                                               member(body.plan.member)));
+                    }
+                }
+            }
             for (const BodyParts& body : bodies)
             {
-                const bool getter = body.plan.function == PlanFunction::Get;
-                if ((body.plan.section == section.section) && (getter || (body.plan.function == PlanFunction::Set)))
+                if (accessor(body))
                 {
                     (void) declare(file,
-                                   pool.declare(IdentifierRole::FunctionName,
-                                                body.symbol,
-                                                renderAccessorName(language,
-                                                                   section.typeName,
-                                                                   getter ? AccessorVerb::Get : AccessorVerb::Set,
-                                                                   member(body.plan.member))),
+                                   pool.get(IdentifierRole::FunctionName, body.symbol),
                                    SurfaceDeclKind::Accessor,
                                    NameClass::Value,
                                    NameOrigin::Generated,
