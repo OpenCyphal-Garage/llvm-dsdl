@@ -251,6 +251,12 @@ public:
         const std::size_t file  = openScope(space, fileKind, names.fileStem, std::nullopt);
         names.fileScope         = file;
         plan_.scopes[file].path = directory + names.fileStem + row_.composition.fileExtension.str();
+        // A directory is a package once it holds a file, and its namespace file is then written.
+        if (!row_.composition.namespaceFile.empty() && (plan_.scopes[space].kind == SurfaceScopeKind::Package) &&
+            plan_.scopes[space].path.empty())
+        {
+            plan_.scopes[space].path = directory + row_.composition.namespaceFile.str();
+        }
         allocateFileGuards(names, definition.ref, file);
         allocateModuleConstants(names, definition, file);
 
@@ -341,8 +347,9 @@ private:
     }
 
     /// @brief The scope a namespace component opens in @p parent: opened by the first definition in
-    ///        it and found by the others. It is written to @p directory's namespace file, where the
-    ///        language writes one.
+    ///        it and found by the others. A namespace or a module is written to @p directory's
+    ///        namespace file, where the language writes one; a package is written to it once it
+    ///        holds a file (see @ref allocate).
     std::size_t namespaceScope(const std::size_t      parent,
                                const SurfaceScopeKind kind,
                                const std::string&     name,
@@ -356,7 +363,7 @@ private:
             }
         }
         const std::size_t scope = openScope(parent, kind, name, std::nullopt);
-        if (!row_.composition.namespaceFile.empty())
+        if (!row_.composition.namespaceFile.empty() && (kind != SurfaceScopeKind::Package))
         {
             plan_.scopes[scope].path = directory + row_.composition.namespaceFile.str();
         }

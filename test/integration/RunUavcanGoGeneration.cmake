@@ -54,12 +54,21 @@ file(GLOB_RECURSE go_files "${OUT_DIR}/*.go")
 set(type_go_files "")
 foreach(gf IN LISTS go_files)
   get_filename_component(name "${gf}" NAME)
-  # A folded host image's endianness guard is a second file beside its type's.
-  if(NOT name STREQUAL "dsdl_runtime.go" AND NOT name MATCHES "_host_image\\.go$")
+  # A folded host image's endianness guard is a second file beside its type's, and a package's
+  # doc file holds no type.
+  if(NOT name STREQUAL "dsdl_runtime.go" AND NOT name MATCHES "_host_image\\.go$" AND NOT name STREQUAL "doc.go")
     list(APPEND type_go_files "${gf}")
   endif()
 endforeach()
 list(LENGTH type_go_files type_go_count)
+
+# Every package that holds a type is documented by its doc file.
+foreach(gf IN LISTS type_go_files)
+  get_filename_component(package_dir "${gf}" DIRECTORY)
+  if(NOT EXISTS "${package_dir}/doc.go")
+    message(FATAL_ERROR "Missing package doc file: ${package_dir}/doc.go")
+  endif()
+endforeach()
 
 set(found_mlir_union_helper FALSE)
 set(found_mlir_union_validate_helper FALSE)

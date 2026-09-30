@@ -288,7 +288,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                 .directoriesProjected           = true,
                 .sourceDirectory                = "",
                 .packageDirectory               = false,
-                .namespaceFile                  = "",
+                .namespaceFile                  = "doc.go",
                 .rootFile                       = "",
                 .imports                        = ImportNaming::Package,
                 .helpers                        = HelperPlacement::Package,

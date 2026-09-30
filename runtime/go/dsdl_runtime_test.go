@@ -52,10 +52,10 @@ func TestErrorAnswersTheCodeItWasMadeFrom(t *testing.T) {
 			t.Fatalf("code %d came back as %d", code, got)
 		}
 	}
-	if ErrorOf(DSDL_RUNTIME_SUCCESS) != nil {
+	if ErrorOf(codeSuccess) != nil {
 		t.Fatalf("success answered an error")
 	}
-	if ErrorOf(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL) != ErrBufferTooSmall {
+	if ErrorOf(-codeBufferTooSmall) != ErrBufferTooSmall {
 		t.Fatalf("buffer too small is not ErrBufferTooSmall")
 	}
 	if got := Error(-4).Error(); got != "dsdl: unrecognised error code -4" {
@@ -194,7 +194,7 @@ func TestGetBitsImplicitZeroExtension(t *testing.T) {
 // TestSetUxxAndGetU32RoundTrip validates unsigned integer round-trip behaviour.
 func TestSetUxxAndGetU32RoundTrip(t *testing.T) {
 	buf := make([]byte, 8)
-	if rc := SetUxx(buf, 3, 0xABCDE, 20); rc != DSDL_RUNTIME_SUCCESS {
+	if rc := SetUxx(buf, 3, 0xABCDE, 20); rc != codeSuccess {
 		t.Fatalf("SetUxx failed with rc=%d", rc)
 	}
 	got := GetU32(buf, 3, 20)
@@ -207,8 +207,8 @@ func TestSetUxxAndGetU32RoundTrip(t *testing.T) {
 func TestSetUxxBufferTooSmall(t *testing.T) {
 	buf := make([]byte, 1)
 	rc := SetUxx(buf, 7, 0x3, 2)
-	if rc != -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL {
-		t.Fatalf("SetUxx rc=%d, want %d", rc, -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL)
+	if rc != -codeBufferTooSmall {
+		t.Fatalf("SetUxx rc=%d, want %d", rc, -codeBufferTooSmall)
 	}
 }
 
@@ -216,8 +216,8 @@ func TestSetUxxBufferTooSmall(t *testing.T) {
 func TestSetBitBufferTooSmall(t *testing.T) {
 	buf := make([]byte, 1)
 	rc := SetBit(buf, 8, true)
-	if rc != -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL {
-		t.Fatalf("SetBit rc=%d, want %d", rc, -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL)
+	if rc != -codeBufferTooSmall {
+		t.Fatalf("SetBit rc=%d, want %d", rc, -codeBufferTooSmall)
 	}
 }
 
@@ -269,7 +269,7 @@ func TestSetGetFloatsRoundTrip(t *testing.T) {
 	buf := make([]byte, 16)
 
 	const f32Value float32 = 1.25
-	if rc := SetF32(buf, 0, f32Value); rc != DSDL_RUNTIME_SUCCESS {
+	if rc := SetF32(buf, 0, f32Value); rc != codeSuccess {
 		t.Fatalf("SetF32 failed with rc=%d", rc)
 	}
 	if got := GetF32(buf, 0); got != f32Value {
@@ -277,7 +277,7 @@ func TestSetGetFloatsRoundTrip(t *testing.T) {
 	}
 
 	const f64Value float64 = -1234.5
-	if rc := SetF64(buf, 32, f64Value); rc != DSDL_RUNTIME_SUCCESS {
+	if rc := SetF64(buf, 32, f64Value); rc != codeSuccess {
 		t.Fatalf("SetF64 failed with rc=%d", rc)
 	}
 	if got := GetF64(buf, 32); got != f64Value {

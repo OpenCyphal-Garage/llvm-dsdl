@@ -1,10 +1,10 @@
 # The lowering for a target writes the surface of its output last: the scopes the output opens and
 # every name declared in them. Each language opens its own: C joins the namespace into each name and
 # declares a type's constants as macros beside it, C++ opens a namespace, Go a package its files
-# share, and Rust, TypeScript and Python a module per definition. A service's own name is an alias
-# of its request, or in C++ the struct that holds the service's facts and encloses its sections, and
-# a deprecated type is declared apart where the language does that. A scope the
-# output writes to a file of its own names the file, and in Rust, TypeScript and Python a
+# share, which it documents in a doc file, and Rust, TypeScript and Python a module per definition. A
+# service's own name is an alias of its request, or in C++ the struct that holds the service's facts
+# and encloses its sections, and a deprecated type is declared apart where the language does that.
+# A scope the output writes to a file of its own names the file, and in Rust, TypeScript and Python a
 # definition's module imports each definition its fields hold, TypeScript's with the functions
 # named after it. A type holds the members the generator adds, each generated constant and data
 # member naming the fact it states, and an accessors-only run declares no data member. A TypeScript
@@ -124,7 +124,7 @@
 #
 # GO:      dsdl.surface target = "go" {
 # GO-NEXT:   dsdl.scope root "m" {
-# GO-NEXT:     dsdl.scope package "ns" {
+# GO-NEXT:     dsdl.scope package "ns" path = "ns/doc.go" {
 # GO-NEXT:       dsdl.scope file "ask_1_0" path = "ns/ask_1_0.go" {
 # GO-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
 # GO-NEXT:           dsdl.decl "Small" kind = field of = @ns.Ask.1.0 section = "request" member = "small"
