@@ -494,6 +494,8 @@ const char* caseStyleName(const CaseStyle style)
         return "go-exported";
     case CaseStyle::GoUnexported:
         return "go-unexported";
+    case CaseStyle::GoPackage:
+        return "go-package";
     }
     return "?";
 }

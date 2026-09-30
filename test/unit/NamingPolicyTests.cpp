@@ -162,10 +162,14 @@ bool runNamingRoleTests()
                 cLike ? emitterMacroToken(name) : codegenToUpperSnakeCaseIdentifier(language, name);
             ok = expectRole(language, IdentifierRole::MacroName, name, macroOracle, "the macro call site") && ok;
 
-            // Namespaces: C/C++/Rust sanitize each component, Go/TypeScript/Python snake_case it
-            // (emitter/Go.cpp packagePathFromComponents, renderNamespaceRelativePath).
-            const std::string nsOracle =
+            // Namespaces: C and C++ sanitize each component, Rust, TypeScript and Python snake_case
+            // it, and Go names a package in one lower-case word: its unexported spelling, lowered.
+            std::string nsOracle =
                 cLike ? codegenSanitizeIdentifier(language, name) : codegenToSnakeCaseIdentifier(language, name);
+            if (goLike)
+            {
+                nsOracle = llvm::StringRef(llvmdsdl::codegenToGoUnexportedIdentifier(name)).lower();
+            }
             ok = expectRole(language, IdentifierRole::NamespaceName, name, nsOracle, "the namespace call site") && ok;
 
             // File stems: C and C++ use the DSDL short name untouched (headerFileName), the other

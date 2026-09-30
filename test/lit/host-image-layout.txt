@@ -22,10 +22,10 @@
 # RUN: %dsdlc --target-language rust %S/fixtures_host_image --rust-crate-name host_image --outdir %t/rust > /dev/null
 # RUN: cat %t/rust/src/fixtures_host_image/vendor/nested_1_0.rs | FileCheck %s --check-prefix=RUST_NESTED
 # RUN: %dsdlc --target-language go %S/fixtures_host_image --outdir %t/go > /dev/null
-# RUN: cat %t/go/fixtures_host_image/vendor/nested_1_0.go | FileCheck %s --check-prefix=GO_NESTED
-# RUN: cat %t/go/fixtures_host_image/vendor/nested_1_0_host_image.go | FileCheck %s --check-prefix=GO_GUARD
-# RUN: cat %t/go/fixtures_host_image/vendor/padded_1_0.go | FileCheck %s --check-prefix=GO_PADDED
-# RUN: test ! -e %t/go/fixtures_host_image/vendor/padded_1_0_host_image.go
+# RUN: cat %t/go/fixtureshostimage/vendor/nested_1_0.go | FileCheck %s --check-prefix=GO_NESTED
+# RUN: cat %t/go/fixtureshostimage/vendor/nested_1_0_host_image.go | FileCheck %s --check-prefix=GO_GUARD
+# RUN: cat %t/go/fixtureshostimage/vendor/padded_1_0.go | FileCheck %s --check-prefix=GO_PADDED
+# RUN: test ! -e %t/go/fixtureshostimage/vendor/padded_1_0_host_image.go
 
 # C_NESTED:      DSDL_RUNTIME_STATIC_ASSERT(sizeof(struct fixtures_host_image__vendor__Nested) == 12U,
 # C_NESTED-NEXT: DSDL_RUNTIME_STATIC_ASSERT(offsetof(struct fixtures_host_image__vendor__Nested, inner) == 0U,

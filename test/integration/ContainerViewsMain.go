@@ -19,8 +19,8 @@ import (
 	"math"
 	"os"
 
-	aliasable "llvmdsdl_generated/fixtures_aliasable/vendor"
-	views "llvmdsdl_generated/fixtures_views/vendor"
+	aliasable "llvmdsdl_generated/fixturesaliasable/vendor"
+	views "llvmdsdl_generated/fixturesviews/vendor"
 )
 
 var failures = 0

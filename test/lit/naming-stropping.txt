@@ -23,12 +23,12 @@
 # RUN: test -f %t/rust/src/fixtures_naming/naming/break_1_0.rs
 
 # RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/go 2>&1 | FileCheck %s --check-prefix=SUMMARY
-# RUN: cat %t/go/fixtures_naming/naming/keywords_1_0.go | FileCheck %s --check-prefix=GO_KEYWORDS
-# RUN: cat %t/go/fixtures_naming/naming/case_folds_1_0.go | FileCheck %s --check-prefix=GO_FOLDS
-# RUN: test -f %t/go/fixtures_naming/naming/break_1_0.go
-# RUN: cat %t/go/fixtures_naming/naming/constants_1_0.go | FileCheck %s --check-prefix=GO_CONSTANTS
+# RUN: cat %t/go/fixturesnaming/naming/keywords_1_0.go | FileCheck %s --check-prefix=GO_KEYWORDS
+# RUN: cat %t/go/fixturesnaming/naming/case_folds_1_0.go | FileCheck %s --check-prefix=GO_FOLDS
+# RUN: test -f %t/go/fixturesnaming/naming/break_1_0.go
+# RUN: cat %t/go/fixturesnaming/naming/constants_1_0.go | FileCheck %s --check-prefix=GO_CONSTANTS
 # A namespace component that is a Go keyword is escaped in both the directory and the package clause.
-# RUN: cat %t/go/fixtures_naming/naming/map_/nested_1_0.go | FileCheck %s --check-prefix=GO_NAMESPACE
+# RUN: cat %t/go/fixturesnaming/naming/map_/nested_1_0.go | FileCheck %s --check-prefix=GO_NAMESPACE
 
 # RUN: %dsdlc --target-language ts %S/fixtures_naming --ts-module naming_freeze --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/ts/fixtures_naming/naming/keywords_1_0.ts | FileCheck %s --check-prefix=TS_KEYWORDS
@@ -61,14 +61,14 @@
 # A C++ struct body holds the fields and the constants, so the two share one pool there and the
 # constant is the one that moves. Nowhere else can a field and a constant reach each other.
 # RUN: cat %t/cpp/fixtures_naming/naming/MemberPool_1_0.hpp | FileCheck %s --check-prefix=CPP_POOL
-# RUN: cat %t/go/fixtures_naming/naming/member_pool_1_0.go | FileCheck %s --check-prefix=GO_POOL
+# RUN: cat %t/go/fixturesnaming/naming/member_pool_1_0.go | FileCheck %s --check-prefix=GO_POOL
 
 # Every repair is reported.
 # RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
 
 # RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
 # RUN: cat %t/cpp/fixtures_naming/naming/ClaimedUnion_1_0.hpp | FileCheck %s --check-prefix=CPP_UNION
-# RUN: cat %t/go/fixtures_naming/naming/claimed_union_1_0.go | FileCheck %s --check-prefix=GO_UNION
+# RUN: cat %t/go/fixturesnaming/naming/claimed_union_1_0.go | FileCheck %s --check-prefix=GO_UNION
 # RUN: cat %t/rust/src/fixtures_naming/naming/claimed_union_1_0.rs | FileCheck %s --check-prefix=RUST_UNION
 # RUN: cat %t/cpp/fixtures_naming/naming/Arrays_1_0.hpp | FileCheck %s --check-prefix=CPP_ARRAYS
 # RUN: cat %t/c/fixtures_naming/naming/Arrays_1_0.h | FileCheck %s --check-prefix=C_ARRAYS
@@ -247,7 +247,7 @@
 # is a duplicate declaration in a language that has to compile.
 # ---------------------------------------------------------------------------------------------
 
-# RUN: cat %t/go/fixtures_naming/naming/claimed_1_0.go | FileCheck %s --check-prefix=GO_CLAIMED
+# RUN: cat %t/go/fixturesnaming/naming/claimed_1_0.go | FileCheck %s --check-prefix=GO_CLAIMED
 # RUN: cat %t/rust/src/fixtures_naming/naming/claimed_1_0.rs | FileCheck %s --check-prefix=RUST_CLAIMED
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/claimed_1_0.py | FileCheck %s --check-prefix=PY_CLAIMED
 # RUN: cat %t/c/fixtures_naming/naming/Claimed_1_0.h | FileCheck %s --check-prefix=C_CLAIMED
@@ -325,7 +325,7 @@
 # ---------------------------------------------------------------------------------------------
 
 # RUN: cat %t/c/fixtures_naming/naming/OptionTags_1_0.h | FileCheck %s --check-prefix=C_OPTION_TAGS
-# RUN: cat %t/go/fixtures_naming/naming/option_tags_1_0.go | FileCheck %s --check-prefix=GO_OPTION_TAGS
+# RUN: cat %t/go/fixturesnaming/naming/option_tags_1_0.go | FileCheck %s --check-prefix=GO_OPTION_TAGS
 # RUN: cat %t/rust/src/fixtures_naming/naming/option_tags_1_0.rs | FileCheck %s --check-prefix=RUST_OPTION_TAGS
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/option_tags_1_0.py | FileCheck %s --check-prefix=PY_OPTION_TAGS
 # RUN: cat %t/ts/fixtures_naming/naming/option_tags_1_0.ts | FileCheck %s --check-prefix=TS_OPTION_TAGS

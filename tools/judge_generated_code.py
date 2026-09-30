@@ -45,6 +45,10 @@ from assert_style_judges import GO_TOOLS, find_command
 RUFF_SELECT = "E,F,W,N,UP,B,SIM,RUF"
 STATICCHECK_CHECKS = "all"
 
+# Go's mark of a generated file. staticcheck leaves its naming and doc-comment checks off a file
+# that carries it, and the generated code is held to what a hand-written file is.
+GO_GENERATED_MARK = re.compile(r"^// Code generated (.*) DO NOT EDIT\.$", re.MULTILINE)
+
 # clang-tidy's rulesets are long enough to carry a reason per subtraction, so they are files beside
 # the baselines rather than strings here.
 CLANG_TIDY_RULESETS = Path(__file__).resolve().parent.parent / "test" / "integration" / "judge-rulesets"
@@ -111,6 +115,15 @@ def prepare(language: str, outdir: Path, root: Path) -> dict[str, str]:
     if language == "go":
         env["GOCACHE"] = str(outdir / ".gocache")
         env["GOMODCACHE"] = str(outdir / ".gomodcache")
+        # The mark is taken off the tree the judge reads, which is the judge's own copy. Go's
+        # caches inside it are skipped: their files are not the tree's.
+        for source in root.rglob("*.go"):
+            if any(part.startswith(".") for part in source.relative_to(root).parts):
+                continue
+            text = source.read_text(encoding="utf-8")
+            unmarked = GO_GENERATED_MARK.sub(r"// Generated \1", text, count=1)
+            if unmarked != text:
+                source.write_text(unmarked, encoding="utf-8")
     elif language == "rust":
         env["CARGO_HOME"] = str(outdir / ".cargo")
         env["CARGO_TARGET_DIR"] = str(outdir / "target")
@@ -368,6 +381,9 @@ def main() -> int:
         " a baseline taken on one machine and judged in the container needs this",
     )
     arguments = parser.parse_args()
+    # Go takes its caches from the environment only as absolute paths, and a judge that cannot load
+    # the packages reports nothing.
+    arguments.outdir = arguments.outdir.resolve()
     if not arguments.skip_generate and arguments.dsdlc is None:
         parser.error("--dsdlc is required unless --skip-generate is given")
 

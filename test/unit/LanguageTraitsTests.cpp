@@ -397,7 +397,7 @@ bool runLanguageTraitsTests()
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' sections=none "
          "namespace-shared=1 namespaces=package extension='.go' directories-projected=1 source='' package-directory=0 "
-         "namespace-file='' root-file='' imports=package helpers=package "
+         "namespace-file='doc.go' root-file='' imports=package helpers=package "
          "file-directory-module=0 "
          "namespace-type-scope=0 "
          "constants=package service-constants=package "

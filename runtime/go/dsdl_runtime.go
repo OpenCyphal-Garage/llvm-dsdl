@@ -19,22 +19,19 @@ import (
 )
 
 const (
-	// DSDL_RUNTIME_SUCCESS indicates successful runtime execution.
-	DSDL_RUNTIME_SUCCESS int8 = 0
-	// DSDL_RUNTIME_ERROR_INVALID_ARGUMENT indicates invalid API arguments.
-	DSDL_RUNTIME_ERROR_INVALID_ARGUMENT int8 = 2
-	// DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL indicates that the
-	// destination buffer cannot hold the requested serialised bits.
-	DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL int8 = 3
-	// DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH indicates malformed
-	// array-length representation in serialised data.
-	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH int8 = 10
-	// DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG indicates malformed union
-	// discriminator representation in serialised data.
-	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG int8 = 11
-	// DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER indicates malformed
-	// delimiter header representation in serialised data.
-	DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER int8 = 12
+	// codeSuccess indicates successful runtime execution.
+	codeSuccess int8 = 0
+	// codeInvalidArgument indicates invalid API arguments.
+	codeInvalidArgument int8 = 2
+	// codeBufferTooSmall indicates that the destination buffer cannot hold the requested
+	// serialised bits.
+	codeBufferTooSmall int8 = 3
+	// codeBadArrayLength indicates a malformed array-length representation in serialised data.
+	codeBadArrayLength int8 = 10
+	// codeBadUnionTag indicates a malformed union discriminator in serialised data.
+	codeBadUnionTag int8 = 11
+	// codeBadDelimiterHeader indicates a malformed delimiter header in serialised data.
+	codeBadDelimiterHeader int8 = 12
 )
 
 // Error is a runtime error code, negative as the runtime returns it, answered as an error.
@@ -44,15 +41,15 @@ type Error int8
 // code.
 const (
 	// ErrInvalidArgument is an argument the call cannot use.
-	ErrInvalidArgument = Error(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT)
+	ErrInvalidArgument = Error(-codeInvalidArgument)
 	// ErrBufferTooSmall is a buffer that cannot hold what is serialised into it.
-	ErrBufferTooSmall = Error(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL)
+	ErrBufferTooSmall = Error(-codeBufferTooSmall)
 	// ErrBadArrayLength is an invalid array-length value in serialised data.
-	ErrBadArrayLength = Error(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH)
+	ErrBadArrayLength = Error(-codeBadArrayLength)
 	// ErrBadUnionTag is an invalid union tag value in serialised data.
-	ErrBadUnionTag = Error(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG)
+	ErrBadUnionTag = Error(-codeBadUnionTag)
 	// ErrBadDelimiterHeader is a malformed delimiter header in serialised data.
-	ErrBadDelimiterHeader = Error(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER)
+	ErrBadDelimiterHeader = Error(-codeBadDelimiterHeader)
 )
 
 // Error answers what the code stands for.
@@ -74,7 +71,7 @@ func (e Error) Error() string {
 
 // ErrorOf answers the error a runtime code names, or nil for success.
 func ErrorOf(code int8) error {
-	if code == DSDL_RUNTIME_SUCCESS {
+	if code == codeSuccess {
 		return nil
 	}
 	return Error(code)
@@ -84,7 +81,7 @@ func ErrorOf(code int8) error {
 // answers is an Error; any other error reads as an invalid argument.
 func CodeOf(err error) int8 {
 	if err == nil {
-		return DSDL_RUNTIME_SUCCESS
+		return codeSuccess
 	}
 	var code Error
 	if errors.As(err, &code) {
@@ -172,24 +169,24 @@ func GetBits(output []byte, buf []byte, offBits, lenBits int) {
 }
 
 // SetBit serialises a single boolean bit at offBits in buf.
-// It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
+// It returns codeSuccess on success or a negative runtime error code.
 func SetBit(buf []byte, offBits int, value bool) int8 {
 	if len(buf)*8 <= offBits {
-		return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL
+		return -codeBufferTooSmall
 	}
 	tmp := byte(0)
 	if value {
 		tmp = 1
 	}
 	CopyBits(buf, offBits, 1, []byte{tmp}, 0)
-	return DSDL_RUNTIME_SUCCESS
+	return codeSuccess
 }
 
 // SetUxx serialises an unsigned integer fragment of lenBits width at offBits.
-// It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
+// It returns codeSuccess on success or a negative runtime error code.
 func SetUxx(buf []byte, offBits int, value uint64, lenBits uint8) int8 {
 	if len(buf)*8 < offBits+int(lenBits) {
-		return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL
+		return -codeBufferTooSmall
 	}
 	saturatedLenBits := ChooseMin(int(lenBits), 64)
 	tmp := [8]byte{
@@ -203,11 +200,11 @@ func SetUxx(buf []byte, offBits int, value uint64, lenBits uint8) int8 {
 		byte(value >> 56),
 	}
 	CopyBits(buf, offBits, saturatedLenBits, tmp[:], 0)
-	return DSDL_RUNTIME_SUCCESS
+	return codeSuccess
 }
 
 // SetIxx serialises a signed integer fragment of lenBits width at offBits.
-// It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
+// It returns codeSuccess on success or a negative runtime error code.
 func SetIxx(buf []byte, offBits int, value int64, lenBits uint8) int8 {
 	return SetUxx(buf, offBits, uint64(value), lenBits)
 }
@@ -353,7 +350,7 @@ func Float16Unpack(value uint16) float32 {
 }
 
 // SetF16 serialises value as binary16 at offBits.
-// It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
+// It returns codeSuccess on success or a negative runtime error code.
 func SetF16(buf []byte, offBits int, value float32) int8 {
 	return SetUxx(buf, offBits, uint64(Float16Pack(value)), 16)
 }
@@ -364,7 +361,7 @@ func GetF16(buf []byte, offBits int) float32 {
 }
 
 // SetF32 serialises value as IEEE-754 binary32 at offBits.
-// It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
+// It returns codeSuccess on success or a negative runtime error code.
 func SetF32(buf []byte, offBits int, value float32) int8 {
 	return SetUxx(buf, offBits, uint64(math.Float32bits(value)), 32)
 }
@@ -375,7 +372,7 @@ func GetF32(buf []byte, offBits int) float32 {
 }
 
 // SetF64 serialises value as IEEE-754 binary64 at offBits.
-// It returns DSDL_RUNTIME_SUCCESS on success or a negative runtime error code.
+// It returns codeSuccess on success or a negative runtime error code.
 func SetF64(buf []byte, offBits int, value float64) int8 {
 	return SetUxx(buf, offBits, math.Float64bits(value), 64)
 }

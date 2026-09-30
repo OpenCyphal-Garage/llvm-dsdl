@@ -101,6 +101,10 @@ enum class CaseStyle
     /// The whole of the first word is lowered, an initialism included, so `id_list` reaches
     /// `idList` rather than `iDList`.
     GoUnexported,
+
+    /// @brief Lower case with the words run together, as Go names a package: `angular_acceleration`
+    ///        reaches `angularacceleration`. `ST1003` reports an underscore or a capital in one.
+    GoPackage,
 };
 
 /// @brief How one role is named in one language.

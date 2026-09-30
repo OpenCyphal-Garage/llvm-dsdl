@@ -155,9 +155,12 @@ appends `_` to a keyword. `upper` upper-cases the finished identifier.
 | Rust | TypeName, FieldName, FunctionName, LocalName, NamespaceName | preserve | ✅ | ✅ | |
 | Rust | ConstantName, MacroName | snake | ✅ | ✅ | ✅ |
 | Rust | FileStem | snake | ✅ | ✅ | |
-| Go | TypeName, FieldName, FunctionName, LocalName | pascal | ✅ | ✅ | |
-| Go | ConstantName, MacroName | snake | ✅ | ✅ | ✅ |
-| Go | NamespaceName, FileStem | snake | ✅ | ✅ | |
+| Go | TypeName | pascal | ✅ | ✅ | |
+| Go | FieldName, ConstantName, FunctionName | go-exported | ✅ | ✅ | |
+| Go | LocalName | go-unexported | ✅ | ✅ | |
+| Go | NamespaceName | go-package | ✅ | ✅ | |
+| Go | FileStem | snake | ✅ | ✅ | |
+| Go | MacroName | snake | ✅ | ✅ | ✅ |
 | TypeScript | TypeName | pascal | ✅ | ✅ | |
 | TypeScript | FieldName, FunctionName, LocalName, NamespaceName, FileStem | snake | ✅ | ✅ | |
 | TypeScript | ConstantName, MacroName | snake | ✅ | ✅ | ✅ |
@@ -168,6 +171,11 @@ appends `_` to a keyword. `upper` upper-cases the finished identifier.
 A C or C++ file stem takes no keyword escape because a file name is not an identifier, and a C or C++
 macro takes none because a macro token is not in the language's namespace and always carries its type
 name as a prefix.
+
+The Go cases are Go's own. `go-exported` recases each word and upper-cases the ones Go writes as
+initialisms: `unique_id` is `UniqueID`. `go-unexported` does the same with its first word in lower
+case. `go-package` is one lower-case word, the words run together: `angular_acceleration` is
+`angularacceleration`, in a directory of that name.
 
 The machine-checked form of this table is
 [`test/unit/golden/naming-roles.txt`](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/test/unit/golden/naming-roles.txt),

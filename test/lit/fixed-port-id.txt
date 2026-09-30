@@ -39,8 +39,8 @@
 # CPP_SERVICE-NOT: FIXED_PORT_ID
 
 # RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/go
-# RUN: cat %t/go/fixtures_unregulated/unregulated_1_0.go | FileCheck %s --check-prefix=GO_MESSAGE
-# RUN: cat %t/go/fixtures_unregulated/ported_call_1_0.go | FileCheck %s --check-prefix=GO_SERVICE
+# RUN: cat %t/go/fixturesunregulated/unregulated_1_0.go | FileCheck %s --check-prefix=GO_MESSAGE
+# RUN: cat %t/go/fixturesunregulated/ported_call_1_0.go | FileCheck %s --check-prefix=GO_SERVICE
 
 # GO_MESSAGE: const UnregulatedHasFixedPortID = true
 # GO_MESSAGE: const UnregulatedFixedPortID = 1234

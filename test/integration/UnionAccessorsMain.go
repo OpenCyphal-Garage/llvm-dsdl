@@ -17,7 +17,7 @@ import (
 	"math"
 	"os"
 
-	vendor "llvmdsdl_generated/fixtures_union/vendor"
+	vendor "llvmdsdl_generated/fixturesunion/vendor"
 )
 
 func main() {

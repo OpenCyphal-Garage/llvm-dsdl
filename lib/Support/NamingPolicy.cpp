@@ -321,6 +321,20 @@ std::vector<std::string> splitWords(llvm::StringRef name)
     return words;
 }
 
+/// @brief Projects @p name as Go names a package: every word in lower case, run together.
+std::string normalizeGoPackageName(const llvm::StringRef name)
+{
+    std::string out;
+    for (const std::string& word : splitWords(name))
+    {
+        for (const char c : word)
+        {
+            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+    }
+    return out;
+}
+
 std::string normalizeGoName(llvm::StringRef name, const bool exported)
 {
     // A source with no lower case is a DSDL constant's SCREAMING_SNAKE, and every word of it is
@@ -401,6 +415,7 @@ const RolePolicy& rolePolicy(const Language language, const IdentifierRole role)
     static constexpr RolePolicy kCamel{CaseStyle::Camel, true, true, false};
     static constexpr RolePolicy kGoExported{CaseStyle::GoExported, true, true, false};
     static constexpr RolePolicy kGoUnexported{CaseStyle::GoUnexported, true, true, false};
+    static constexpr RolePolicy kGoPackage{CaseStyle::GoPackage, true, true, false};
     static constexpr RolePolicy kUpperSnake{CaseStyle::Snake, true, true, true};
 
     // A preprocessor token: escaped and upper-cased, never stropped against keywords.
@@ -460,8 +475,13 @@ const RolePolicy& rolePolicy(const Language language, const IdentifierRole role)
     case IdentifierRole::MacroName:
         return cLike ? kMacroToken : kUpperSnake;
     case IdentifierRole::NamespaceName:
-        // A Rust namespace component is a module, which `non_snake_case` covers too.
-        return cLike ? kPreserve : kSnake;
+        // A Rust namespace component is a module, which `non_snake_case` covers too. A Go one is a
+        // package, whose name is one lower-case word.
+        if (cLike)
+        {
+            return kPreserve;
+        }
+        return goLike ? kGoPackage : kSnake;
     case IdentifierRole::FileStem:
         return cLike ? kVerbatim : kSnake;
     }
@@ -562,6 +582,10 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
     static constexpr std::array<llvm::StringRef, 6> kGoMethods =
         {"Serialize", "Deserialize", "AppendBinary", "MarshalBinary", "UnmarshalBinary", "Tag"};
 
+    // The runtime's package, beside the root's namespaces, which a DSDL namespace `dsdlRuntime`
+    // reaches once a package name runs its words together.
+    static constexpr std::array<llvm::StringRef, 1> kGoPackages = {"dsdlruntime"};
+
     static constexpr std::array<llvm::StringRef, 4> kPyMethods = {"serialize",
                                                                   "deserialize",
                                                                   "_serialize_to",
@@ -608,6 +632,10 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
         // A struct field and a method may not share a name. A Go constant carries the type it
         // belongs to, so none of these tokens is a name on its own and the claim is on the composed
         // one, which the scope that declares it reserves.
+        if (role == IdentifierRole::NamespaceName)
+        {
+            return kGoPackages;
+        }
         return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kGoMethods)
                                                    : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::Rust:
@@ -741,6 +769,9 @@ ProjectedIdentifier runPipeline(const Language                      language,
         break;
     case CaseStyle::GoUnexported:
         out = normalizeGoName(name, false);
+        break;
+    case CaseStyle::GoPackage:
+        out = normalizeGoPackageName(name);
         break;
     }
 
@@ -1306,8 +1337,9 @@ std::string NamingScope::declare(const IdentifierRole  role,
     //
     // Go joins with nothing: its names carry no underscore at all, and one here is what `ST1003`
     // reports whatever put it there.
-    const CaseStyle   style   = rolePolicy(language_, role).caseStyle;
-    const bool        goName  = (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported);
+    const CaseStyle style = rolePolicy(language_, role).caseStyle;
+    const bool      goName =
+        (style == CaseStyle::GoExported) || (style == CaseStyle::GoUnexported) || (style == CaseStyle::GoPackage);
     const bool        doubles = !base.empty() && (base.back() == '_');
     const std::string join    = (goName || doubles) ? "" : "_";
     std::string       taken   = base;

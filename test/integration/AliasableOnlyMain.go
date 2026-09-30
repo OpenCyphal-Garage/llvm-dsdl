@@ -17,7 +17,7 @@ import (
 	"math"
 	"os"
 
-	vendor "aliasable_only_generated/fixtures_aliasable/vendor"
+	vendor "aliasable_only_generated/fixturesaliasable/vendor"
 )
 
 func main() {
