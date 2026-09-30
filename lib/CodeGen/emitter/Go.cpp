@@ -2550,7 +2550,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     // The functions the file translates: every one but a helper nothing calls, which an
     // accessors-only run has many of, and an initialiser, which is Go's zero value or a constructor
     // the declarations write.
-    FunctionBodies                       bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    FunctionBodies                       bodies{.functions = {},
+                                                .spelling  = spelling,
+                                                .lookups   = lookups,
+                                                .row       = languageTraits(Language::Go)};
     std::map<std::string, GoConstructor> constructors;
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {

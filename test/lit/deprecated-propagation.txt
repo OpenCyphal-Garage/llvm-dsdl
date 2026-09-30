@@ -99,11 +99,10 @@
 # included, so nothing generated may name it. The attribute is on the alias alone, and it carries the
 # notice as its message, which rustc prints after "use of deprecated type alias".
 # RUST_DEP: Deprecated: dep.Retired.1.0 is marked @deprecated
-# RUST_DEP: #[derive(Clone, Debug, PartialEq)]
+# RUST_DEP: #[derive(Clone, Debug, Default, PartialEq)]
 # RUST_DEP-NEXT: pub struct Request_ {
 # RUST_DEP: #[deprecated(note = "dep.Retired.1.0 is marked @deprecated in its DSDL definition and is scheduled for removal; migrate to a newer version of this type.")]
 # RUST_DEP-NEXT: pub type Request = Request_;
-# RUST_DEP: impl Default for Request_ {
 # RUST_DEP: impl Request_ {
 # RUST_DEP: IS_DEPRECATED: bool = true;
 # RUST_DEP: pub type Response = Response_;

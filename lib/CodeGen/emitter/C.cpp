@@ -2553,7 +2553,10 @@ llvm::Error emit(const SemanticModule& semantic,
                 functions.push_back(fn);
             }
         }
-        const FunctionBodies bodies{.functions = std::move(functions), .spelling = spelling, .lookups = lookups};
+        const FunctionBodies bodies{.functions = std::move(functions),
+                                    .spelling  = spelling,
+                                    .lookups   = lookups,
+                                    .row       = languageTraits(Language::C)};
         auto source = DeclarationRenderer(*tree, cLayout(), declarations)
                           .render(names.file(keyOf(def)), kSourceFile, DefinitionFacts(def, schema), &bodies);
         if (!source)

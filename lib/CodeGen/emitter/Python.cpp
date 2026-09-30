@@ -2275,7 +2275,10 @@ llvm::Expected<std::string> renderModule(const SemanticDefinition& def,
     const PythonSpelling spelling(schema, names, file);
     const PyDeclarations declarations(ctx, file, imports, spelling);
     // A helper nothing calls is left out; an accessors-only run has many.
-    FunctionBodies bodies{.functions = {}, .spelling = spelling, .lookups = lookups};
+    FunctionBodies bodies{.functions = {},
+                          .spelling  = spelling,
+                          .lookups   = lookups,
+                          .row       = languageTraits(Language::Python)};
     for (const mlir::func::FuncOp fn : schemaFunctions(module, schema.getSymName()))
     {
         if (!fn->hasAttr("llvmdsdl.unreferenced"))

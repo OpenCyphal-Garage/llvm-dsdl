@@ -51,11 +51,13 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include "llvmdsdl/CodeGen/SourceWriter.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/NameCanonicalization.h"
 #include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/IR/DSDLOps.h"
@@ -487,8 +489,9 @@ Reached roleOfReached(mlir::Value value, RoleWalk& walk)
 class Translator final : public ValueNames
 {
 public:
-    Translator(const BodySpelling& spelling, SourceWriter& w, PlanBodyLookups& lookups)
-        : spelling_(spelling)
+    Translator(const LanguageTraits& row, const BodySpelling& spelling, SourceWriter& w, PlanBodyLookups& lookups)
+        : ifExpressions_(row.classification.ifExpressions)
+        , spelling_(spelling)
         , w_(w)
         , walk_(lookups)
     {
@@ -753,6 +756,14 @@ private:
             return llvm::Error::success();
         }
 
+        // Where an `if` is an expression, the results are declared as its value and each arm ends
+        // with what it yields. Declaring them ahead and assigning them in each arm is the late
+        // initialisation clippy reports as needless.
+        if (ifExpressions_ && (op.getNumResults() > 0))
+        {
+            return valued(op);
+        }
+
         std::vector<std::string> results;
         results.reserve(op.getNumResults());
         for (const mlir::Value result : op.getResults())
@@ -776,6 +787,56 @@ private:
         }
         spelling_.closeBlock(w_);
         discardUnused(op.getResults());
+        return llvm::Error::success();
+    }
+
+    /// @brief Spells @p op, which has results, as an `if` whose value declares them.
+    llvm::Error valued(mlir::scf::IfOp op)
+    {
+        std::vector<mlir::Type>  types;
+        std::vector<std::string> results;
+        for (const mlir::Value result : op.getResults())
+        {
+            types.push_back(result.getType());
+            results.push_back(result.use_empty() ? std::string{} : nameFor(result));
+        }
+        spelling_.openValuedIf(w_, types, results, (*this)(op.getCondition()));
+        if (auto err = answeringArm(op.getThenRegion().front()))
+        {
+            return err;
+        }
+        spelling_.openElse(w_);
+        if (auto err = answeringArm(op.getElseRegion().front()))
+        {
+            return err;
+        }
+        spelling_.closeValuedIf(w_);
+        for (const auto& [result, name] : llvm::zip(op.getResults(), results))
+        {
+            if (!name.empty())
+            {
+                names_[result] = name;
+            }
+        }
+        return llvm::Error::success();
+    }
+
+    /// @brief Translates @p b, an arm of a valued `if`, ending it with what its `scf.yield` yields.
+    llvm::Error answeringArm(mlir::Block& b)
+    {
+        for (mlir::Operation& op : b.without_terminator())
+        {
+            if (auto err = translate(&op, {}, {}))
+            {
+                return err;
+            }
+        }
+        std::vector<std::string> values;
+        for (const mlir::Value value : mlir::cast<mlir::scf::YieldOp>(b.getTerminator()).getOperands())
+        {
+            values.push_back((*this)(value));
+        }
+        spelling_.answerArm(w_, values);
         return llvm::Error::success();
     }
 
@@ -1190,6 +1251,8 @@ private:
     /// @brief How many spellings of one role a function asks for before naming the value itself.
     static constexpr std::size_t MaxNameOrdinals = 1024;
 
+    /// @brief Whether the language's `if` is an expression, from its row.
+    bool                                     ifExpressions_;
     const BodySpelling&                      spelling_;
     SourceWriter&                            w_;
     llvm::DenseMap<mlir::Value, std::string> names_;
@@ -1356,12 +1419,13 @@ ValueRole PlanBodyLookups::roleOfCallee(mlir::func::CallOp call)
     return ValueRole::Anonymous;
 }
 
-llvm::Error translateFunction(mlir::func::FuncOp  fn,
-                              const BodySpelling& spelling,
-                              SourceWriter&       w,
-                              PlanBodyLookups&    lookups)
+llvm::Error translateFunction(mlir::func::FuncOp    fn,
+                              const LanguageTraits& row,
+                              const BodySpelling&   spelling,
+                              SourceWriter&         w,
+                              PlanBodyLookups&      lookups)
 {
-    Translator translator(spelling, w, lookups);
+    Translator translator(row, spelling, w, lookups);
     return translator.run(fn);
 }
 
@@ -1377,6 +1441,24 @@ std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, const llv
         }
     }
     return out;
+}
+
+void BodySpelling::openValuedIf(SourceWriter& /*w*/,
+                                llvm::ArrayRef<mlir::Type> /*types*/,
+                                llvm::ArrayRef<std::string> /*names*/,
+                                const llvm::StringRef /*condition*/) const
+{
+    llvm::report_fatal_error("a valued if reached a spelling whose row states that an if is no expression");
+}
+
+void BodySpelling::answerArm(SourceWriter& /*w*/, llvm::ArrayRef<std::string> /*values*/) const
+{
+    llvm::report_fatal_error("a valued if reached a spelling whose row states that an if is no expression");
+}
+
+void BodySpelling::closeValuedIf(SourceWriter& /*w*/) const
+{
+    llvm::report_fatal_error("a valued if reached a spelling whose row states that an if is no expression");
 }
 
 void BodySpelling::declareCallInitialize(SourceWriter& /*w*/,

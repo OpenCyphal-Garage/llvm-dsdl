@@ -38,6 +38,7 @@
 #include <mlir/IR/Value.h>
 
 #include "llvmdsdl/IR/DSDLOps.h"
+#include "llvmdsdl/Support/LanguageTraits.h"
 
 namespace llvmdsdl
 {
@@ -215,6 +216,20 @@ public:
 
     virtual void openIf(SourceWriter& w, llvm::StringRef condition) const = 0;
     virtual void openElse(SourceWriter& w) const                          = 0;
+
+    /// @brief Opens an `if` whose value declares @p names, one of @p types each, where the row
+    ///        states that an `if` is an expression. @ref openElse separates its arms.
+    /// @param[in] names One per result; empty for a result nothing reads.
+    virtual void openValuedIf(SourceWriter&               w,
+                              llvm::ArrayRef<mlir::Type>  types,
+                              llvm::ArrayRef<std::string> names,
+                              llvm::StringRef             condition) const;
+
+    /// @brief Ends an arm of a valued `if` with the arm's value, @p values, one per result.
+    virtual void answerArm(SourceWriter& w, llvm::ArrayRef<std::string> values) const;
+
+    /// @brief Closes the `if` @ref openValuedIf opened.
+    virtual void closeValuedIf(SourceWriter& w) const;
 
     /// @brief Opens a loop that runs until @ref breakUnless ends it.
     virtual void openLoop(SourceWriter& w) const                               = 0;
@@ -465,12 +480,14 @@ private:
 };
 
 /// @brief Spells @p fn through @p spelling into @p w.
+/// @param[in] row The language's row, whose classification decides the statements written.
 /// @param[in,out] lookups What @p fn's module has already been asked, shared across its functions.
 /// @return An error naming the first operation the translator has no spelling for.
-llvm::Error translateFunction(mlir::func::FuncOp  fn,
-                              const BodySpelling& spelling,
-                              SourceWriter&       w,
-                              PlanBodyLookups&    lookups);
+llvm::Error translateFunction(mlir::func::FuncOp    fn,
+                              const LanguageTraits& row,
+                              const BodySpelling&   spelling,
+                              SourceWriter&         w,
+                              PlanBodyLookups&      lookups);
 
 /// @brief The functions `lower-dsdl-bodies` built for @p schemaSym, in module order.
 std::vector<mlir::func::FuncOp> schemaFunctions(mlir::ModuleOp module, llvm::StringRef schemaSym);

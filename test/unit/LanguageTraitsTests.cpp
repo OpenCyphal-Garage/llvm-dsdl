@@ -298,10 +298,11 @@ std::string render(const LanguageTraits& row)
            c.lookup.rootPrefix.str() + "'," + flag(c.lookup.rootPrefixOnlyWhenShadowed) +
            flag(c.lookup.enclosingNamespaces) + "," + render(c.lookup.ownMembers) + ",'" + c.lookup.selfType.str() +
            "','" + c.lookup.selfInstance.str() + "','" + c.lookup.selfClass.str() + "'" +
-           " | nullable=" + flag(b.nullability.objectPointer) + flag(b.nullability.rawPointer) +
-           flag(b.nullability.accessorBuffer) + " views=" + flag(b.accessorsReturnViews) +
-           " images=" + flag(b.objectsAreByteImages) + " answers-size=" + flag(b.bodiesAnswerSize) +
-           " bool-arrays=" + render(b.boolArrays) + " | namespace-join='" + d.definitionName.namespaceJoin.str() +
+           " if-expressions=" + flag(c.ifExpressions) + " | nullable=" + flag(b.nullability.objectPointer) +
+           flag(b.nullability.rawPointer) + flag(b.nullability.accessorBuffer) +
+           " views=" + flag(b.accessorsReturnViews) + " images=" + flag(b.objectsAreByteImages) +
+           " answers-size=" + flag(b.bodiesAnswerSize) + " bool-arrays=" + render(b.boolArrays) +
+           " | namespace-join='" + d.definitionName.namespaceJoin.str() +
            "' version-in-name=" + flag(d.definitionName.versionInTypeName) +
            " name-reaches-type=" + flag(d.definitionName.typeNameReachesTheType) + " section-join='" +
            d.sectionJoin.str() + "' sections=" + render(d.sectionEnclosure) +
@@ -345,7 +346,7 @@ bool runLanguageTraitsTests()
     const std::pair<Language, std::string> kExpected[] = {
         {Language::C,
          "c: scopes=000 nested=0 methods=none internal=static errors=status-code constants=enclosing "
-         "reserved=leading classes=001110 lookup='','',00,none,'','','' | nullable=111 views=0 "
+         "reserved=leading classes=001110 lookup='','',00,none,'','','' if-expressions=0 | nullable=111 views=0 "
          "images=1 answers-size=0 "
          "bool-arrays=packed | "
          "namespace-join='__' "
@@ -360,7 +361,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix='ir_'"},
         {Language::Cpp,
          "cpp: scopes=110 nested=1 methods=member internal=private-member errors=status-code constants=type "
-         "reserved=leading-and-interior classes=010101 lookup='::','::',11,bare,'','','' | "
+         "reserved=leading-and-interior classes=010101 lookup='::','::',11,bare,'','','' if-expressions=0 | "
          "nullable=010 views=1 images=1 "
          "answers-size=0 "
          "bool-arrays=packed-when-fixed "
@@ -377,7 +378,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Rust,
          "rust: scopes=001 nested=0 methods=impl internal=private-by-default errors=result constants=type "
-         "reserved=none classes=110010 lookup='::','crate::',00,self-type,'Self','','' | "
+         "reserved=none classes=110010 lookup='::','crate::',00,self-type,'Self','','' if-expressions=1 | "
          "nullable=000 views=1 images=1 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
@@ -392,7 +393,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Go,
          "go: scopes=000 nested=0 methods=receiver internal=lower-case-initial errors=value-and-error "
-         "constants=package reserved=none classes=000000 lookup='.','',00,none,'','','' | "
+         "constants=package reserved=none classes=000000 lookup='.','',00,none,'','','' if-expressions=0 | "
          "nullable=100 views=1 images=1 "
          "answers-size=1 bool-arrays=per-element | "
          "namespace-join='' version-in-name=1 name-reaches-type=1 section-join='' sections=none "
@@ -407,7 +408,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::TypeScript,
          "ts: scopes=110 nested=1 methods=member internal=not-exported errors=exception constants=type "
-         "reserved=none classes=100010 lookup='.','',00,type-name,'','','' | nullable=100 "
+         "reserved=none classes=100010 lookup='.','',00,type-name,'','','' if-expressions=0 | nullable=100 "
          "views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "
@@ -422,7 +423,7 @@ bool runLanguageTraitsTests()
          "lowered-body-suffix=''"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
-         "reserved=none classes=010000 lookup='.','',00,instance,'','self','cls' | nullable=100 "
+         "reserved=none classes=010000 lookup='.','',00,instance,'','self','cls' if-expressions=0 | nullable=100 "
          "views=1 images=0 answers-size=1 "
          "bool-arrays=per-element | "
          "namespace-join='' "

@@ -56,6 +56,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfType                   = "",
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
+                .ifExpressions       = false,
             },
         // Handed pointers throughout, and a structure is its bytes.
         .body =
@@ -124,6 +125,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfType                   = "",
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
+                .ifExpressions       = false,
             },
         // Serialise and deserialise are members, handed their buffer and its size by pointer; a
         // field accessor takes a span.
@@ -189,6 +191,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfType                   = "Self",
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
+                .ifExpressions       = true,
             },
         // Handed a reference, a slice and a local, none of which can be null. A type encodes itself
         // into new bytes, and reads a new value of itself and the bytes it read; a view borrows what
@@ -261,6 +264,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfType                   = "",
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
+                .ifExpressions       = false,
             },
         // Handed an object a caller may still omit, beside a slice. The encoding package's
         // BinaryAppender, BinaryMarshaler and BinaryUnmarshaler move the wire image, and the last may
@@ -333,6 +337,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfType                   = "",
                                         .selfInstance               = "",
                                         .selfClass                  = ""},
+                .ifExpressions       = false,
             },
         // Handed an object a caller may still omit, beside a `Uint8Array`; an object has no layout. A
         // module encodes a value into new bytes, and reads a new value and the bytes it read.
@@ -408,6 +413,7 @@ constexpr std::array<LanguageTraits, 6> kTraits{{
                                         .selfType                   = "",
                                         .selfInstance               = "self",
                                         .selfClass                  = "cls"},
+                .ifExpressions       = false,
             },
         // Handed an object a caller may still omit, beside a `memoryview`; an object has no layout. A
         // class serialises itself into new bytes, and deserialises a new instance of itself.
