@@ -198,6 +198,13 @@ jobs:
           ctest --preset test-ci-full \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
+      - name: Every test ran
+        # ctest counts a test that skipped as passed, so a gate that skips where it was meant to gate
+        # leaves the job green. A test that must skip in this job is allowed by name with the reason,
+        # through `--allow NAME=REASON`.
+        if: always()
+        run: python3 tools/check_test_skips.py test-results/junit-linux.xml
+
       - name: Behavioural report gates (parity/malformed/determinism pass-fail)
         # Runs after the suite so it can consume the executed JUnit results. `if: always()`
         # ensures the gate still runs (and can fail the job) even if an earlier test failed.
@@ -335,6 +342,13 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/test-results"
           ctest --preset test-ci-asan-sanitizer \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-sanitizers.xml"
+
+      - name: Every test ran
+        # ctest counts a test that skipped as passed, so a gate that skips where it was meant to gate
+        # leaves the job green. A test that must skip in this job is allowed by name with the reason,
+        # through `--allow NAME=REASON`.
+        if: always()
+        run: python3 tools/check_test_skips.py test-results/junit-sanitizers.xml
 
       - name: Collect fuzz reproducers
         # Any crash/leak/timeout reproducer libFuzzer saved becomes a CI artifact
@@ -819,7 +833,16 @@ jobs:
         # The preset selects the `bench` label and inherits no `jobs`, so ctest runs serially. Both
         # tests also carry RUN_SERIAL; a wall-clock measurement never shares the machine with a
         # compile.
-        run: ctest --preset test-ci-bench
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/test-results"
+          ctest --preset test-ci-bench --output-junit "${GITHUB_WORKSPACE}/test-results/junit-bench.xml"
+
+      - name: Every test ran
+        # ctest counts a test that skipped as passed, so a gate that skips where it was meant to gate
+        # leaves the job green. A test that must skip in this job is allowed by name with the reason,
+        # through `--allow NAME=REASON`.
+        if: always()
+        run: python3 tools/check_test_skips.py test-results/junit-bench.xml
 
       - name: Summarise
         # `always()` because the numbers from a failed run are the interesting ones. The renderer

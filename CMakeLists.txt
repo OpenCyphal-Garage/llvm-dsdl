@@ -1523,6 +1523,15 @@ if(LLVMDSDL_PYTHON3_EXE)
     llvmdsdl-emitter-ir-queries
     llvmdsdl-emitter-ir-queries-selftest
     PROPERTIES LABELS "contract")
+
+  # CI fails a job in which a test did not run, reading the JUnit report ctest writes; this holds the
+  # check to reports in ctest's shape.
+  add_test(
+    NAME llvmdsdl-test-skips-selftest
+    COMMAND "${LLVMDSDL_PYTHON3_EXE}"
+            "${LLVMDSDL_SOURCE_DIR}/tools/check_test_skips.py"
+            --self-test)
+  set_tests_properties(llvmdsdl-test-skips-selftest PROPERTIES LABELS "contract")
 endif()
 
 # Below enable_testing() rather than beside the other examples: the showroom registers ctests for its
