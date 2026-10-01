@@ -15,9 +15,10 @@ iterations of a payload family, and the difference is N iterations with start-up
 teardown cancelled.
 
 A count belongs to an architecture and an interpreter build, so the baseline is keyed by the first
-and records the second as `sys.version` states it: the release, the build's date and its compiler. Off CI, a missing valgrind, a missing baseline or another interpreter is a
-skip, since none of them is a verdict on the generated code. On CI each is a failure: the image
-pins the interpreter and carries valgrind, so a gate that skipped there would be no gate.
+and records the second as `sys.version` states it: the release, the build's date and its compiler.
+Off CI, a missing valgrind, a missing baseline or another interpreter build is a skip, since none
+of them is a verdict on the generated code. On CI each is a failure: the image pins the interpreter
+and carries valgrind, so a gate that skipped there would be no gate.
 """
 
 from __future__ import annotations
