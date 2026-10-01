@@ -13,9 +13,8 @@
 /// Each row is rendered to one line and held against the line stated here, so a row changes only
 /// where a test says it should. The relations between columns are asserted rather than restated:
 /// that every language has its row, that a getter answering a view is one no caller can hand null,
-/// and where today's output departs from what its language can express -- which is the work the
-/// per-language phases of `CLEAN_CODE.md` exist to do, and which one of them ends by editing the
-/// list here.
+/// that a helper is a member of its type where a member keeps itself from the type's users, and
+/// that a joined namespace has a separator.
 ///
 //===----------------------------------------------------------------------===//
 

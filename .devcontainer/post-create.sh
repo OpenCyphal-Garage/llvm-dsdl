@@ -42,8 +42,8 @@ if [ "${#missing[@]}" -gt 0 ]; then
   exit 1
 fi
 
-# The style judges CLEAN_CODE.md phase 1 points at the generated code, checked by the same script
-# CI uses so the two cannot disagree about what the image owes.
+# The style judges the generated code is held to (docs/development/generated-surface.md), checked by
+# the same script CI uses so the two cannot disagree about what the image owes.
 python3 "$(dirname "$0")/../tools/assert_style_judges.py"
 
 git submodule update --init --recursive

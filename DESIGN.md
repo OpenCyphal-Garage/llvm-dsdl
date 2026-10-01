@@ -135,6 +135,8 @@ Code generation is the translation of plan bodies into each language, plus the d
 
 The backend emitters live in [`include/llvmdsdl/CodeGen/emitter`](./include/llvmdsdl/CodeGen/emitter) and [`lib/CodeGen/emitter`](./lib/CodeGen/emitter), one translation unit per language, each in the namespace `llvmdsdl::emitter::<language>`.
 
+Each language is a row of [`LanguageTraits`](include/llvmdsdl/Support/LanguageTraits.h), and code that needs a fact about a language reads the row. For a target, `project-dsdl-surface` writes a surface tree that names and places every declaration the output makes; `DeclarationRenderer` writes the declarations through a spelling per language, and `ImportSet` writes each file's imports from the names the file uses. [Generated Surface](docs/development/generated-surface.md) is the design.
+
 ## 4. Backend Contract
 
 A backend is a translation of MLIR. One pass pipeline runs over the module, regardless of target — `lower-dsdl-exec`, `dsdl-verify-alias-layout`, `build-dsdl-plan-bodies` — and produces, for each serialisation plan, a serialise function, a deserialise function and an initialise function whose bodies are dialect operations. A backend receives those functions and spells them in its language. The body translator's input is the `func.func`; it has no access to the `SemanticModule`, to lowered-facts maps, or to any codegen-side plan structure. Type declarations, module layout, manifests and runtime support are outside the body contract and may consult the semantic model.
@@ -158,16 +160,17 @@ A backend listed in `LLVMDSDL_BACKEND_CONTRACT_ENFORCED` fails its test on a gap
 
 ### 4.2 Where a fix goes
 
-A defect in generated serialisation is fixed where its meaning lives, once, and proved by a gate every backend runs.
+A defect in generated serialisation is fixed where its meaning lives, once, and proved by a gate every backend runs. A fix belongs as high in the pipeline as it can go: a fact about a plan is an IR fact, a fact about a language is its row, and an emitter spells.
 
 | Defect | Fix | Proof |
 |---|---|---|
 | Wire semantics: what is read or written, what is validated, and in what order | [`lib/Transforms/BuildDSDLPlanBodies.cpp`](lib/Transforms/BuildDSDLPlanBodies.cpp), or the helper lowering in [`lib/Transforms/Passes.cpp`](lib/Transforms/Passes.cpp). A question only the target can answer becomes an operation of the dialect, as `dsdl.index_holds` is. | a lit test on the operations, and a lane that runs the generated code of every language |
 | Surface idiom: how one language spells an operation, its integer widths, its containers, what its linters accept | that language's `BodySpelling`, which may not add, remove or reorder a check | the backend-contract gate, held strict, and the language's parity lanes |
 | Default value: what a type is before anything is read into it | the initialise body [`lib/Transforms/BuildDSDLPlanBodies.cpp`](lib/Transforms/BuildDSDLPlanBodies.cpp) builds beside the serdes pair. A language that spells the default as a value rather than a function -- C++ member initialisers, Rust's `Default`, a Python dataclass, a TypeScript factory -- reads that body through [`include/llvmdsdl/CodeGen/InitializerRender.h`](include/llvmdsdl/CodeGen/InitializerRender.h), which refuses any operation it does not recognise. | the initialisation-reflection gate, and `llvmdsdl-initialize-equivalence`: in every language the default serialised equals the default deserialised from nothing and serialised |
+| Language fact: what a language can express, where it declares a name, how it composes its files | the language's row in [`LanguageTraits`](include/llvmdsdl/Support/LanguageTraits.h), read wherever the fact is needed | `llvmdsdl-language-classification` and `LanguageTraitsTests` |
 | Runtime primitive: `set_uxx`, `copy_bits`, `write_unsigned` and their kin | the runtime, with a vector in [`test/integration/primitive_vectors.txt`](test/integration/primitive_vectors.txt) that every runtime answers, the Python accelerator included | `llvmdsdl-primitive-equivalence` |
 
-One defect is one change covering every backend: the lane the defect fails is written first and shown to fail, the fix lands in one of the three places above, and the lane passes for all of them. A change under `lib/CodeGen/emitter/` that alters what a body does is the shape the contract gate exists to reject; a fix made there for a defect the other languages share is a second copy of the defect's history, not a fix.
+One defect is one change covering every backend: the lane the defect fails is written first and shown to fail, the fix lands in one of the places above, and the lane passes for all of them. A change under `lib/CodeGen/emitter/` that alters what a body does is the shape the contract gate exists to reject; a fix made there for a defect the other languages share is a second copy of the defect's history, not a fix.
 
 ## 5. Backend Architecture (As Implemented)
 
@@ -223,7 +226,7 @@ Key file:
 
 ### 5.5 TypeScript backend (`emitter::ts::emit`)
 
-TypeScript emission produces typed model declarations and runtime-backed SerDes functions. It supports `portable` and `fast` runtime variants. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `TsSpelling` spells its operations, and the `serialize` and `deserialize` entry points wrap them. The plan's `i64` is `bigint`.
+TypeScript emission produces typed model declarations and runtime-backed SerDes functions. It supports `portable` and `fast` runtime variants. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `TsSpelling` spells its operations, and the `serialize` and `deserialize` entry points translate the bodies `dsdl-build-wire-image-bodies` builds over them. A section is an interface and a `const` of the same name that holds its functions and facts. The plan's `i64` is `bigint`.
 
 Key file:
 
@@ -231,7 +234,7 @@ Key file:
 
 ### 5.6 Python backend (`emitter::python::emit`)
 
-Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `PythonSpelling` spells its operations as methods of the dataclass, and the `serialize` and `deserialize` methods wrap them. A fixed-length array holds its elements from construction.
+Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behaviour for `auto|pure|accel` backend selection. Its serialise and deserialise bodies, and the helpers they call, are translations of the plan bodies: `translateFunction` walks each function and `PythonSpelling` spells its operations as methods of the dataclass, and the `serialize` and `deserialize` methods translate the bodies `dsdl-build-wire-image-bodies` builds over them. A fixed-length array holds its elements from construction.
 
 Key file:
 
@@ -325,6 +328,7 @@ Important characteristics of the current suite:
 - Contract checks between lowering and conversion are tested directly.
 - Multi-language generation outputs are smoke-tested and structurally validated.
 - Parity/malformed-input lanes enforce consistent behaviour under invalid or adversarial decode paths.
+- Each language's own linter judges the generated code against a per-rule baseline, and an adversarial corpus compiles in every backend; see [Generated Surface](docs/development/generated-surface.md).
 - CMake exposes coverage and parity report targets for ongoing hardening.
 
 ## 10. Why LLVM/MLIR Here, Specifically

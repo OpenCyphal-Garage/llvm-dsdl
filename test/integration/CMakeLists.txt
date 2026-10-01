@@ -4068,10 +4068,10 @@ if(PYTHON_EXECUTABLE)
   )
 endif()
 
-# The style judges of CLEAN_CODE.md phase 1, each over the regulated corpus in its own language.
-# A judge reports on shape rather than on correctness, which no compiler here does: a compiler
-# accepts an un-idiomatic name by design. Each lane holds its judge to the per-rule baseline in
-# test/integration/judge-baselines, so a count may fall and may not rise.
+# The style judges docs/development/generated-surface.md describes, each over the regulated corpus
+# in its own language. A judge reports on shape rather than on correctness, which no compiler here
+# does: a compiler accepts an un-idiomatic name by design. Each lane holds its judge to the per-rule
+# baseline in test/integration/judge-baselines, so a count may fall and may not rise.
 #
 # A judge is located through the same script the toolchain assertion uses, because none of them is
 # reliably on PATH -- staticcheck is a Go tool and sits in GOPATH/bin. A lane is registered only for

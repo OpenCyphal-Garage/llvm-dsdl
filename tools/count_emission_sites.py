@@ -17,11 +17,11 @@ An emission site is a place in an emitter's source that writes generated text:
 
 Each language's sources are counted in three figures. `body` is its `BodySpelling`, which spells a
 body the IR states. `declaration` is every other site in its declaration half, the files listed in
-DECLARATION: what `CLEAN_CODE.md`'s declaration renderer replaces. `support` is its packaging
-writers, the files listed in SUPPORT, which no renderer of the tree writes. Every file in the
-emitter directory belongs to one language. The count is a proxy -- a site that writes one token and
-a site that assembles a signature count alike -- but it moves when string-built code is added or
-removed.
+DECLARATION: what the declaration renderer states (docs/development/generated-surface.md). `support`
+is its packaging writers, the files listed in SUPPORT, which no renderer of the tree writes. Every
+file in the emitter directory belongs to one language. The count is a proxy -- a site that writes
+one token and a site that assembles a signature count alike -- but it moves when string-built code
+is added or removed.
 
 A count may fall and not rise. A rise that is intended is retaken with --update, and the commit says
 what was added and why the renderer could not state it.

@@ -1497,7 +1497,7 @@ if(LLVMDSDL_PYTHON3_EXE)
     PROPERTIES LABELS "contract")
 
   # Where each emitter writes text, held to test/integration/emission-sites.json: string-built code
-  # in the declaration half is what the renderer of CLEAN_CODE.md replaces, so it may fall and may
+  # in the declaration half is what the declaration renderer states instead, so it may fall and may
   # rise only by a retake that says why.
   add_test(
     NAME llvmdsdl-emission-sites
@@ -1507,7 +1507,8 @@ if(LLVMDSDL_PYTHON3_EXE)
   set_tests_properties(llvmdsdl-emission-sites PROPERTIES LABELS "contract")
 
   # What each emitter decides by querying the IR around the op it spells, held to the inventory in
-  # test/integration/emitter-ir-queries.json exactly. Phase 3 of CLEAN_CODE.md empties it.
+  # test/integration/emitter-ir-queries.json exactly, which is empty: a plan's semantics are stated
+  # in the IR.
   add_test(
     NAME llvmdsdl-emitter-ir-queries
     COMMAND "${LLVMDSDL_PYTHON3_EXE}"

@@ -666,8 +666,7 @@ compares the two: every file, the naming manifests, the lowered MLIR and every
 exit code. A single differing byte fails it.
 
 Reviewers ask for the label on a PR that refactors naming, declarations or the
-lowering without meaning to change what is generated, which includes each step
-of phases 4 and 5 in [CLEAN_CODE.md](CLEAN_CODE.md). A PR that changes output
+lowering without meaning to change what is generated. A PR that changes output
 fails the oracle and does not carry the label. Applying it starts a run
 immediately; it costs about ten minutes.
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Run one language's style judge over generated code and hold it to a recorded baseline.
 
-`CLEAN_CODE.md` phase 1 points each language's own judge at the generated code, because a compiler
-accepts an un-idiomatic name by design. The findings are a backlog rather than a wall: a checked-in
-baseline records what each rule reported when it was taken, and a lane fails where a rule reports
-more than that. So the count can fall and cannot rise, and a rule that appears for the first time is
-a regression even though its baseline is absent.
+Each language's own judge reads the generated code (docs/development/generated-surface.md), because
+a compiler accepts an un-idiomatic name by design. The findings are a backlog rather than a wall: a
+checked-in baseline records what each rule reported when it was taken, and a lane fails where a rule
+reports more than that. So the count can fall and cannot rise, and a rule that appears for the first
+time is a regression even though its baseline is absent.
 
 The comparison is per rule, not on the total. A total alone lets one rule grow behind another
 shrinking, which is the drift a baseline exists to catch.
@@ -40,9 +40,9 @@ from pathlib import Path
 
 from assert_style_judges import GO_TOOLS, find_command
 
-# What each judge is asked, beside the corpus. The selections are the ones `CLEAN_CODE.md` records
-# its counts under; changing one changes what the baseline means, so it belongs here rather than in
-# a lane's arguments.
+# What each judge is asked, beside the corpus. The baselines record their counts under these
+# selections; changing one changes what a baseline means, so it belongs here rather than in a lane's
+# arguments.
 RUFF_SELECT = "E,F,W,N,UP,B,SIM,RUF"
 STATICCHECK_CHECKS = "all"
 
