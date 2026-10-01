@@ -26,14 +26,6 @@ set(LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_LARGE
     "250"
     CACHE STRING
     "Python runtime benchmark iterations for the large payload family.")
-set(LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS
-    ON
-    CACHE BOOL
-    "Enable pass/fail threshold checks for the Python runtime benchmark integration test.")
-set(LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON
-    "${LLVMDSDL_SOURCE_DIR}/test/integration/python_runtime_bench_thresholds.json"
-    CACHE FILEPATH
-    "Threshold config used when LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS is ON.")
 set(LLVMDSDL_RUST_RUNTIME_BENCH_INLINE_THRESHOLD_BYTES
     "256"
     CACHE STRING
@@ -2497,8 +2489,6 @@ if(PYTHON_EXECUTABLE)
         -DBENCH_ITERATIONS_SMALL=${LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_SMALL}
         -DBENCH_ITERATIONS_MEDIUM=${LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_MEDIUM}
         -DBENCH_ITERATIONS_LARGE=${LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_LARGE}
-        -DBENCH_ENABLE_THRESHOLDS=${LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS}
-        -DBENCH_THRESHOLDS_JSON=${LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON}
         -DBENCH_REPORT_JSON=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-bench-out/python-runtime-bench.json
         -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonRuntimeBench.cmake
@@ -2507,14 +2497,32 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-uavcan-python-runtime-bench
     PROPERTIES
-      # A benchmark asserting absolute wall-clock seconds cannot share the machine with the rest of
-      # the suite. Its thresholds were calibrated from serial runs; co-scheduled with three cargo/go
-      # builds at -j 4 a single family has been measured 32% over its limit while the structurally
-      # identical family in the other memory mode came in 8% under, in the same process. Widening the
-      # budget to absorb that would cost the check the regressions it exists to catch, so serialise
-      # the measurement instead.
+      # Seconds measured beside a compile measure the compile, so the benchmark runs alone for the
+      # numbers it reports to be comparable from one run to the next.
       RUN_SERIAL TRUE
       LABELS "integration;uavcan;python;bench;slow;release-blocking"
+  )
+
+  # The gate on the generated Python. The benchmark above answers "how fast", which is a property of
+  # the machine; this counts the instructions a round trip executes under cachegrind, which is a
+  # property of the code. Off CI it skips where valgrind, or a baseline for the architecture and
+  # interpreter, is absent; on CI it fails instead.
+  add_test(
+    NAME llvmdsdl-uavcan-python-runtime-instructions
+    COMMAND
+      ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python_runtime_instructions.py
+        --dsdlc $<TARGET_FILE:dsdlc>
+        --uavcan-root ${LLVMDSDL_UAVCAN_ROOT}
+        --out-dir ${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-instructions-out
+        --baseline ${CMAKE_CURRENT_SOURCE_DIR}/python_runtime_instruction_counts.json
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-python-runtime-instructions
+    PROPERTIES
+      SKIP_RETURN_CODE 77
+      # Not in the `bench` label: the count is deterministic, so it gates in the ordinary suite.
+      LABELS "integration;uavcan;python;runtime;instructions;slow;release-blocking"
   )
 
   add_test(
@@ -2760,7 +2768,8 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
 
   # The deterministic half of the same question. The benchmark above answers "how fast", which is a
   # property of the machine; this answers "did the emitted code change", which is a property of the
-  # code. Skips where valgrind is absent -- Apple Silicon, which it has never supported.
+  # code. Off CI it skips where valgrind, or a baseline for the architecture and toolchain, is absent
+  # (Apple Silicon has no valgrind); on CI it fails instead.
   add_test(
     NAME llvmdsdl-fixtures-rust-runtime-instructions
     COMMAND

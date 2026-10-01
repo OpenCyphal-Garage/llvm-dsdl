@@ -50,6 +50,7 @@ runs:
         # fewer tests rather than a failure.
         require_command go           "Go backend integration lane"
         require_command cargo        "Rust backend integration lane"
+        require_command rustc        "Rust backend integration lane"
         require_command tsc          "TypeScript backend integration lane"
         require_command node         "TypeScript backend integration lane"
 

@@ -18,10 +18,15 @@
 # Two consequences of counting instructions rather than time:
 #
 #   * The count is per ARCHITECTURE. amd64 and arm64 execute different instruction streams for the
-#     same source, so the baseline file is keyed by processor and a machine with no entry skips
-#     rather than pretending some other machine's number applies to it.
-#   * The count moves when the COMPILER moves. A rustc bump changes it, and that is a deliberate,
-#     visible re-baseline rather than a flake -- and it tells you what the upgrade cost.
+#     same source, so the baseline file is keyed by processor, and no machine is measured against
+#     another machine's number.
+#   * The count moves when the COMPILER moves, so each entry records the rustc build it was taken
+#     with, and the LLVM it generates code with. A toolchain bump is a deliberate, visible re-baseline
+#     rather than a flake -- and it tells you what the upgrade cost.
+#
+# Off CI, a missing valgrind, architecture or toolchain is a skip, since none of them is a verdict on
+# the generated code. On CI each is a failure: the image pins the toolchain and carries valgrind, so
+# a gate that skipped there would be no gate.
 #
 # Iteration counts here are the script's own and deliberately small: cachegrind runs ~77x slower than
 # native, and the count is exact, so there is nothing to gain from a long run. They are also
@@ -35,15 +40,46 @@ foreach(var DSDLC OUT_DIR RUST_BENCH_ROOT CARGO_EXECUTABLE BASELINE_JSON)
   endif()
 endforeach()
 
-# Valgrind does not exist on every host this suite runs on -- not on Apple Silicon, which it
-# has never supported. A skip is the answer there; a failure would say the code regressed when the
-# tool is absent.
+# Skips off CI and fails on it, for a reason that is not a verdict on the generated code. 77 is the
+# SKIP_RETURN_CODE this test is registered with.
+macro(llvmdsdl_decline reason)
+  if("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+    message(FATAL_ERROR "${reason}")
+  endif()
+  message(STATUS "${reason}; skipping the Rust instruction-count gate")
+  cmake_language(EXIT 77)
+endmacro()
+
+# Valgrind does not exist on every host this suite runs on -- not on Apple Silicon, which it has
+# never supported.
 find_program(VALGRIND_EXECUTABLE valgrind)
 find_program(CG_ANNOTATE_EXECUTABLE cg_annotate)
 if(NOT VALGRIND_EXECUTABLE OR NOT CG_ANNOTATE_EXECUTABLE)
-  message(STATUS "valgrind/cg_annotate unavailable; skipping the Rust instruction-count gate")
-  # 77 is the SKIP_RETURN_CODE this test is registered with.
-  cmake_language(EXIT 77)
+  llvmdsdl_decline("valgrind or cg_annotate is not installed")
+endif()
+
+# The compiler that builds the harness: RUSTC where the environment names one, as cargo reads it, and
+# otherwise the rustc beside cargo. The build below is handed this compiler, so the identity recorded
+# is the compiler that generated the instructions counted. Two builds of one release can generate
+# code with different LLVMs, so the release alone does not identify it.
+if(DEFINED ENV{RUSTC} AND NOT "$ENV{RUSTC}" STREQUAL "")
+  set(RUSTC_EXECUTABLE "$ENV{RUSTC}")
+else()
+  get_filename_component(cargo_dir "${CARGO_EXECUTABLE}" DIRECTORY)
+  find_program(RUSTC_EXECUTABLE rustc HINTS "${cargo_dir}")
+  if(NOT RUSTC_EXECUTABLE)
+    message(FATAL_ERROR "no rustc beside ${CARGO_EXECUTABLE}")
+  endif()
+endif()
+execute_process(
+  COMMAND "${RUSTC_EXECUTABLE}" --version --verbose
+  OUTPUT_VARIABLE rustc_text
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  COMMAND_ERROR_IS_FATAL ANY
+)
+string(REGEX MATCH "^[^\n]*" toolchain "${rustc_text}")
+if(rustc_text MATCHES "\nLLVM version: ([^\n]*)")
+  string(APPEND toolchain ", LLVM ${CMAKE_MATCH_1}")
 endif()
 
 if(NOT DEFINED BENCH_ITERATIONS_SMALL OR "${BENCH_ITERATIONS_SMALL}" STREQUAL "")
@@ -99,7 +135,7 @@ configure_file(
 
 execute_process(
   COMMAND
-    "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${OUT_DIR}/cargo-target"
+    "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${OUT_DIR}/cargo-target" "RUSTC=${RUSTC_EXECUTABLE}"
       "${CARGO_EXECUTABLE}" build --quiet --release --manifest-path "${OUT_DIR}/Cargo.toml"
   RESULT_VARIABLE build_result
   OUTPUT_VARIABLE build_stdout
@@ -166,7 +202,7 @@ endif()
 
 # CMAKE_SYSTEM_PROCESSOR is not set in script mode, so ask the host directly.
 cmake_host_system_information(RESULT arch QUERY OS_PLATFORM)
-message(STATUS "Rust instruction counts (${arch}, ${mode}, "
+message(STATUS "Rust instruction counts (${arch}, ${toolchain}, ${mode}, "
                "iterations ${BENCH_ITERATIONS_SMALL}/${BENCH_ITERATIONS_MEDIUM}/${BENCH_ITERATIONS_LARGE}):")
 message(STATUS "  deserialize = ${deserialize_ir}")
 message(STATUS "  serialize   = ${serialize_ir}")
@@ -177,17 +213,25 @@ if(budget_error OR "${budget_percent}" STREQUAL "")
   set(budget_percent 1)
 endif()
 
+# What to paste where this machine has no baseline to compare against.
+string(CONCAT paste
+  "    \"${arch}\": {\n"
+  "      \"rustc\": \"${toolchain}\",\n"
+  "      \"deserialize\": ${deserialize_ir},\n"
+  "      \"serialize\": ${serialize_ir}\n"
+  "    }")
 string(JSON arch_entry ERROR_VARIABLE arch_error GET "${baseline_json}" counts "${arch}")
 if(arch_error OR "${arch_entry}" STREQUAL "")
-  # Deliberately a skip and not a pass: there is no number for this processor, so there is nothing to
-  # compare against and saying "ok" would be a lie. The message carries what to paste.
-  message(STATUS
-    "No instruction-count baseline for '${arch}'. Add one to ${BASELINE_JSON}:\n"
-    "    \"${arch}\": {\n"
-    "      \"deserialize\": ${deserialize_ir},\n"
-    "      \"serialize\": ${serialize_ir}\n"
-    "    }")
-  cmake_language(EXIT 77)
+  message(STATUS "The entry to add to ${BASELINE_JSON}:\n${paste}")
+  llvmdsdl_decline("${BASELINE_JSON} holds no instruction-count baseline for '${arch}'")
+endif()
+string(JSON baseline_toolchain ERROR_VARIABLE toolchain_error GET "${arch_entry}" rustc)
+if(toolchain_error OR NOT "${baseline_toolchain}" STREQUAL "${toolchain}")
+  message(STATUS "The entry to replace in ${BASELINE_JSON}:\n${paste}")
+  string(CONCAT reason
+    "the '${arch}' baseline was taken with ${baseline_toolchain}, and this is ${toolchain}; "
+    "re-baseline in the change that moves the toolchain")
+  llvmdsdl_decline("${reason}")
 endif()
 
 set(failures "")

@@ -4,16 +4,23 @@
     "what": "Instructions executed inside the generated Rust serialize/deserialize, counted by cachegrind and attributed per function by cg_annotate.",
     "why_this_unit": "Three idle runs and three on a 6x oversubscribed container reported identical counts to the digit, where a wall-clock sample of the same binary spread 1.41x across twenty runs. A deterministic measurement can carry a 1% budget; a wall-clock one cannot carry 15%.",
     "iterations": "The gate's own counts (2000/1000/500), independent of the timing benchmark's, so tuning that one does not silently re-baseline this one. One run costs about a second under cachegrind.",
-    "rebaseline_when": "A deliberate codegen change, or a rustc upgrade. Both move the count, and both are visible events rather than flakes. Re-baseline in the commit that causes it.",
-    "arch_keys": "cmake_host_system_information OS_PLATFORM -- 'aarch64', 'x86_64'. Counts are per-architecture. An architecture with no entry SKIPS and prints the value to paste; it never passes on another architecture's number.",
+    "rebaseline_when": "A deliberate codegen change, or a toolchain upgrade. Both move the count, and both are visible events rather than flakes. Re-baseline in the commit that causes it.",
+    "arch_keys": "cmake_host_system_information OS_PLATFORM -- 'aarch64', 'x86_64'. Counts are per-architecture, and each entry records the rustc build it was taken with and its LLVM. Off CI, an architecture or a toolchain with no entry SKIPS and prints the entry to paste; on CI it fails. No machine is measured against another architecture's number.",
     "measured": {
-      "aarch64": "toolshed ts26.4.3 arm64, cargo 1.93.1, 2026-08-25"
+      "aarch64": "toolshed ts26.4.3 arm64, 2026-10-01",
+      "x86_64": "CI, toolshed ts26.4.5 amd64, 2026-10-01"
     }
   },
   "counts": {
     "aarch64": {
-      "deserialize": 298807000,
-      "serialize": 26219000
+      "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball), LLVM 21.1.8",
+      "deserialize": 294705500,
+      "serialize": 19879500
+    },
+    "x86_64": {
+      "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball), LLVM 21.1.8",
+      "deserialize": 381500000,
+      "serialize": 15914000
     }
   }
 }

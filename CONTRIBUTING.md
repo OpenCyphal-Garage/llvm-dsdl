@@ -233,12 +233,21 @@ ctest --preset test-dev-homebrew-release-blocking
 ctest --preset test-ci-release-blocking
 ```
 
-These lanes include runtime benchmark threshold gates by default.
+These lanes include the Rust runtime benchmark's threshold gate by default.
 They also include hard-cut integrity validation (no-shim canonical-path guard).
-Threshold policy is 5% regression budget vs in-repo baselines in:
-- [`test/integration/python_runtime_bench_thresholds.json`](./test/integration/python_runtime_bench_thresholds.json)
-- [`test/integration/rust_runtime_bench_thresholds.json`](./test/integration/rust_runtime_bench_thresholds.json)
-If an intentional performance shift is accepted, update these files in the same PR.
+Its threshold policy is a 5% regression budget against
+[`test/integration/rust_runtime_bench_thresholds.json`](./test/integration/rust_runtime_bench_thresholds.json).
+If an intentional performance shift is accepted, update the file in the same PR.
+
+Instruction counts. `llvmdsdl-fixtures-rust-runtime-instructions` and
+`llvmdsdl-uavcan-python-runtime-instructions` count the instructions the generated Rust and Python
+execute under cachegrind, and hold each count to
+[`test/integration/rust_runtime_instruction_counts.json`](./test/integration/rust_runtime_instruction_counts.json)
+and
+[`test/integration/python_runtime_instruction_counts.json`](./test/integration/python_runtime_instruction_counts.json),
+keyed by architecture and recording the toolchain. Off CI, a missing valgrind, architecture or
+toolchain skips and prints the entry to add; on CI it fails. A change that moves a count
+re-baselines in the same PR.
 
 Style judges. `llvmdsdl-uavcan-<language>-style-judge` points each language's own linter at the
 generated code and holds its count per rule to

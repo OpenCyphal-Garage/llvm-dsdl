@@ -9,16 +9,17 @@ machine and the wrong one for the reason CI runs them. A number nobody reads
 cannot become a threshold, and until it is a threshold the lane is only proving
 that the harness still compiles.
 
-So this exists to make the numbers legible in the job summary, and to print them
-in the shape the threshold files want -- `max_elapsed_sec`, keyed the same way --
-so that calibrating a runner is reading a table rather than writing a script.
+So this exists to make the numbers legible in the job summary, and to print the
+Rust benchmark's timings in the shape its threshold file wants -- `max_elapsed_sec`,
+keyed the same way -- so that calibrating a runner is reading a table rather than
+writing a script.
 
 Ratios are reported separately and deliberately. `fastVsPortableRatio` compares
 two specialisations measured in the same process on the same machine, so it is
 invariant to how fast that machine happens to be. An absolute second is not: it
 encodes the host's CPU, its standard library, and in the Python case the exact
-interpreter build. So the absolute thresholds in this repository are calibrated on
-one developer machine and enforced nowhere.
+interpreter build. So the Rust thresholds are calibrated on one developer machine
+and enforced nowhere else, and the gates on both languages count instructions.
 
 The C comparison against Nunavut is reported in instructions, which is a property
 of the code rather than of the runner, and its ratios can therefore be read
@@ -264,8 +265,8 @@ def _render_serdes(reports: list[tuple[pathlib.Path, dict | None]], out: list[st
             out.append("Geometric means of the per-type ratios.")
 
 
-def _render_calibration(rust: dict | None, python: dict | None, out: list[str]) -> None:
-    """Prints the observed elapsed times as threshold-file fragments.
+def _render_calibration(rust: dict | None, out: list[str]) -> None:
+    """Prints the Rust benchmark's observed elapsed times as a threshold-file fragment.
 
     Calibrating a runner means running this lane a handful of times and taking
     the per-cell maximum plus a budget. Emitting the shape here means that is a
@@ -289,14 +290,6 @@ def _render_calibration(rust: dict | None, python: dict | None, out: list[str]) 
             }
             for mode in sorted(rust.get("modes", {}))
         }
-    if python is not None:
-        py: dict = {}
-        for spec, mode, family, m in _python_rows(python):
-            entry = py.setdefault(spec, {}).setdefault(mode, {})
-            entry[family] = round(m.get("elapsedSec", 0.0), 6)
-            if m.get("cpuSec") is not None:
-                py.setdefault(spec + " (cpu)", {}).setdefault(mode, {})[family] = round(m["cpuSec"], 6)
-        fragment["python"] = py
     out.append(json.dumps(fragment, indent=2, sort_keys=True))
     out.append("```")
     out.append("")
@@ -326,16 +319,17 @@ def main(argv: list[str]) -> int:
 
     out: list[str] = ["# Runtime benchmarks", ""]
     out.append(
-        "Reported, not enforced. The checked-in thresholds are calibrated on one "
+        "Reported, not enforced. The Rust benchmark's checked-in thresholds are calibrated on one "
         "developer machine (macOS/arm64) and do not describe this runner; see "
         "`.github/workflows/ci.yml` for what turning them on requires."
     )
     out.append("")
     out.append(
-        "Regressions in the generated Rust *are* gated, by "
-        "`llvmdsdl-fixtures-rust-runtime-instructions` in the main suite, which counts instructions "
-        "under cachegrind instead of seconds and so needs no calibration. Nothing on this page "
-        "fails a build."
+        "Regressions in the generated Rust and Python *are* gated, by "
+        "`llvmdsdl-fixtures-rust-runtime-instructions` and `llvmdsdl-uavcan-python-runtime-instructions` "
+        "in the main suite, which count instructions under cachegrind instead of seconds against a "
+        "checked-in baseline per architecture and toolchain, so no runner needs calibrating. Nothing on "
+        "this page fails a build."
     )
     out.append("")
     _render_rust(rust, out)
@@ -343,7 +337,7 @@ def main(argv: list[str]) -> int:
     _render_python(python, out)
     out.append("")
     _render_serdes([(path, _load(path)) for path in args.serdes_report], out)
-    _render_calibration(rust, python, out)
+    _render_calibration(rust, out)
     out.append("")
 
     text = "\n".join(out)
