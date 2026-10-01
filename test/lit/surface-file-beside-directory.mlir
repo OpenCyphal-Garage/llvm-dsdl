@@ -1,20 +1,11 @@
-// RUN: %dsdl-opt --lower-dsdl-bodies="target=ts package=m" %s | FileCheck %s --check-prefix=TS
+// RUN: not %dsdl-opt --lower-dsdl-bodies="target=ts package=m" %s 2>&1 | FileCheck %s --check-prefix=TS
 // RUN: not %dsdl-opt --lower-dsdl-bodies="target=rust package=m" %s 2>&1 | FileCheck %s --check-prefix=RUST
 
 // A definition `ns.File.1.0` beside a namespace `ns.file_1_0`: the definition's module and the
-// namespace's directory take one name. TypeScript keeps a file and a directory apart, so the tree
-// holds both, with the namespace's definitions inside the namespace rather than inside the
-// definition's module. Rust declares either as one `mod`, and the tree is refused.
+// namespace's directory take one name. Rust declares either as one `mod`, and a TypeScript
+// directory's index re-exports either under its name, so the tree is refused.
 
-// TS:      dsdl.scope namespace "ns" {
-// TS-NEXT:   dsdl.scope module "file_1_0" path = "ns/file_1_0.ts" {
-// TS-NOT:      dsdl.scope
-// TS:          dsdl.scope type "File" of = @ns.File.1.0 {
-// TS:        dsdl.scope namespace "file_1_0" {
-// TS-NEXT:     dsdl.scope module "x_1_0" path = "ns/file_1_0/x_1_0.ts" {
-// TS-NOT:        dsdl.scope
-// TS:            dsdl.scope type "X" of = @ns.file_1_0.X.1.0 {
-
+// TS: error: 'dsdl.scope' op declares 'file_1_0' as a module in scope 'ns', which already declares it as a module
 // RUST: error: 'dsdl.scope' op declares 'file_1_0' as a module in scope 'ns', which already declares it as a module
 
 module {

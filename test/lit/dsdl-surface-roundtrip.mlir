@@ -6,8 +6,7 @@
 // and its typedef, a TypeScript interface and a constant, a Rust module and a function, a Rust
 // field and an accessor, and a Go package's two files importing one package under one name. Two versions of one C definition
 // declare one type name, as the unversioned scheme generates them, and each keeps a private name
-// of the same spelling to its file. A TypeScript namespace's directory and a definition's module of
-// one name are two paths.
+// of the same spelling to its file.
 
 module {
   dsdl.schema @uavcan.file.Path.2.0 attributes {full_name = "uavcan.file.Path", major = 2 : i32, minor = 0 : i32, sealed} {
@@ -184,8 +183,6 @@ module {
       dsdl.decl "dsdl_runtime" kind = module origin = generated
       dsdl.scope module "uavcan" {
         dsdl.scope module "file" {
-          dsdl.scope namespace "path_2_0" {
-          }
           dsdl.scope module "path_2_0" path = "uavcan/file/path_2_0.ts" {
             dsdl.decl "dsdlRuntime" kind = import class = value
             dsdl.scope type "Path" of = @uavcan.file.Path.2.0 {

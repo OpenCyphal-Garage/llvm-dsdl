@@ -113,35 +113,15 @@ if(NOT ts_gen_result EQUAL 0)
   message(FATAL_ERROR "fixture TypeScript generation failed")
 endif()
 
-set(ts_index "${ts_out}/index.ts")
-if(NOT EXISTS "${ts_index}")
-  message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
-endif()
-file(READ "${ts_index}" ts_index_content)
+include("${CMAKE_CURRENT_LIST_DIR}/TsModulePath.cmake")
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*uses_delimited_1_0\";" ts_type_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate uses_delimited_1_0 export alias in ${ts_index}")
-endif()
-set(ts_type_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "uses_delimited_1_0" ts_type_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*uses_empty_delimited_1_0\";" ts_empty_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate uses_empty_delimited_1_0 export alias in ${ts_index}")
-endif()
-set(ts_empty_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "uses_empty_delimited_1_0" ts_empty_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*uses_max_delimited_1_0\";" ts_max_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate uses_max_delimited_1_0 export alias in ${ts_index}")
-endif()
-set(ts_max_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "uses_max_delimited_1_0" ts_max_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*uses_nested_delimited_1_0\";" ts_nested_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate uses_nested_delimited_1_0 export alias in ${ts_index}")
-endif()
-set(ts_nested_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "uses_nested_delimited_1_0" ts_nested_module)
 
 set(c_harness_src "${work_dir}/c_delimited_parity_harness.c")
 file(WRITE
@@ -280,7 +260,7 @@ endif()
 
 file(WRITE
   "${ts_out}/runtime_delimited_parity_smoke.ts"
-  "import { ${ts_type_module}, ${ts_empty_module}, ${ts_max_module}, ${ts_nested_module} } from \"./index\";\n"
+  "import { ${TS_INDEX_IMPORTS} } from \"./index\";\n"
   "\n"
   "const basicIn: ${ts_type_module}.UsesDelimited_1_0 = { nested: { value: 171 } };\n"
   "const basicBytes = ${ts_type_module}.UsesDelimited_1_0.serialize(basicIn);\n"

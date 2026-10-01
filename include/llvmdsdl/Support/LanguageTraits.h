@@ -431,7 +431,8 @@ struct Composition final
 
     /// @brief Whether a definition's file and a namespace's directory of one name are one module.
     ///
-    /// Rust declares either as a `mod`, and Python imports either as its package's attribute.
+    /// Rust declares either as a `mod`, Python imports either as its package's attribute, and a
+    /// TypeScript directory's index re-exports either under its name.
     bool fileAndDirectoryAreOneModule{};
 
     /// @brief Whether a namespace is declared in the scope that holds its parent namespace's types.

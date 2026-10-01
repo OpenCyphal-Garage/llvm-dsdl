@@ -144,7 +144,7 @@
 #
 # TS:      dsdl.surface target = "ts" {
 # TS-NEXT:   dsdl.scope root "m" path = "index.ts" {
-# TS-NEXT:     dsdl.scope namespace "ns" {
+# TS-NEXT:     dsdl.scope namespace "ns" path = "ns/index.ts" {
 # TS-NEXT:       dsdl.scope module "ask_1_0" path = "ns/ask_1_0.ts" {
 # TS-NEXT:         dsdl.scope type "AskRequest" of = @ns.Ask.1.0 section = "request" {
 # TS:                dsdl.decl "_tag" kind = field origin = generated fact = union_tag of = @ns.Ask.1.0 section = "request"

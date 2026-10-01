@@ -70,16 +70,8 @@ if(NOT ts_gen_result EQUAL 0)
   message(FATAL_ERROR "fixture TypeScript generation failed")
 endif()
 
-set(ts_index "${ts_out}/index.ts")
-if(NOT EXISTS "${ts_index}")
-  message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
-endif()
-file(READ "${ts_index}" ts_index_content)
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./vendor/widget_+1_0\";" ts_type_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate vendor/Widget_1_0 export alias in ${ts_index}")
-endif()
-set(ts_type_module "${CMAKE_MATCH_1}")
+include("${CMAKE_CURRENT_LIST_DIR}/TsModulePath.cmake")
+llvmdsdl_ts_module("${ts_out}" "widget_1_0" ts_type_module)
 
 set(c_harness_src "${work_dir}/c_parity_harness.c")
 file(WRITE
@@ -150,7 +142,7 @@ endif()
 
 file(WRITE
   "${ts_out}/runtime_parity_smoke.ts"
-  "import { ${ts_type_module} } from \"./index\";\n"
+  "import { ${TS_INDEX_IMPORTS} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.Widget_1_0 = { foo: 0x12, bar: 0x3456 };\n"
   "const outBytes = ${ts_type_module}.Widget_1_0.serialize(inObj);\n"

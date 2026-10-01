@@ -203,11 +203,9 @@ reserved as each language's projection table reserves them today, so the output 
 a root namespace that meets one is reported with every other collision.
 
 The root namespaces are the root's children, and each namespace scope names the file it is written
-to: Rust's `mod.rs`, Python's `__init__.py`, and TypeScript's `index.ts` once TypeScript's phase
-replaces the flat root index. A directory is a scope whose subdirectories and files share one name
-class, since Rust's `pub mod`, Python's package attributes and TypeScript's import paths name both in
-one space. Until TypeScript's phase, the flat root `index.ts` stays with the TypeScript emitter, outside
-the tree: its aliases share a namespace with nothing but one another.
+to: Rust's `mod.rs`, Python's `__init__.py` and TypeScript's `index.ts`. A directory is a scope
+whose subdirectories and files share one name class, since Rust's `pub mod`, Python's package
+attributes and a TypeScript index's re-exports name both in one space.
 
 A tree is built per language and C++ profile. `pmr` declares `_memory_resource` and
 `set_memory_resource`, and `--cpp-profile both` builds two trees; the Rust profile and memory mode
@@ -1249,6 +1247,12 @@ A body reaches a global through `globalThis` where its module binds the global's
 `uavcan.file.Error`'s does. The judge accepts an exported `const` in PascalCase, the name of the
 type it belongs to, and holds at zero. Every row now declares a type's constants where its language
 does, so the row states that once, in the classification.
+
+TypeScript's index then took its target. Each directory's `index.ts` re-exports its namespaces'
+indexes and then its modules, each under its own name, so a consumer imports `uavcan` from the
+package's root and reaches `uavcan.node.heartbeat_1_0.Heartbeat`. The tree names each namespace's
+index, and a definition's module and a namespace's directory of one name are then one export: as in
+Rust and Python, `dsdlc` refuses a run that writes both.
 
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase

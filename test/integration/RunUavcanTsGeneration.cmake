@@ -59,7 +59,7 @@ endforeach()
 
 file(READ "${OUT_DIR}/index.ts" ts_index)
 if(NOT ts_index MATCHES "export \\* as ")
-  message(FATAL_ERROR "Expected index.ts to export collision-safe namespace aliases")
+  message(FATAL_ERROR "Expected index.ts to re-export its namespaces by name")
 endif()
 if(ts_index MATCHES "export \\* from ")
   message(FATAL_ERROR "Unexpected wildcard re-export in index.ts; collisions may occur")
