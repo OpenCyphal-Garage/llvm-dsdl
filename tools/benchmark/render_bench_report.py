@@ -320,16 +320,17 @@ def main(argv: list[str]) -> int:
 
     out: list[str] = ["# Runtime benchmarks", ""]
     out.append(
-        "Reported, not enforced. The checked-in thresholds are calibrated on one "
+        "Reported, not enforced. The Rust benchmark's checked-in thresholds are calibrated on one "
         "developer machine (macOS/arm64) and do not describe this runner; see "
-        "`.github/workflows/ci.yml` for what turning them on requires."
+        "`.github/workflows/ci.yml` for what turning them on requires. The Python benchmark holds "
+        "none."
     )
     out.append("")
     out.append(
-        "Regressions in the generated Rust *are* gated, by "
-        "`llvmdsdl-fixtures-rust-runtime-instructions` in the main suite, which counts instructions "
-        "under cachegrind instead of seconds and so needs no calibration. Nothing on this page "
-        "fails a build."
+        "Regressions in the generated Rust and Python *are* gated, by "
+        "`llvmdsdl-fixtures-rust-runtime-instructions` and `llvmdsdl-uavcan-python-runtime-instructions` "
+        "in the main suite, which count instructions under cachegrind instead of seconds and so need "
+        "no calibration. Nothing on this page fails a build."
     )
     out.append("")
     _render_rust(rust, out)
