@@ -565,11 +565,11 @@ is worse than no switch.
   `file_stem` is exact for every backend. `type_name` is reported for Rust, Go, TypeScript and
   Python, which name a type after its short name and let a module carry the namespace, and on each
   section as well as the definition: Rust reaches a section through the definition's module, so the
-  name is the section word alone and does not follow from the definition's. C joins the namespace
-  into the identifier and reports the joined name as `qualified_type_name`, on the definition and
-  on each section. C++ builds namespace-qualified symbols in its own emitter, for which the shared
-  projection is only part of the answer, so the manifest omits the key rather than report half a
-  name.
+  name is the section word alone and does not follow from the definition's. C and C++ report
+  `qualified_type_name` instead, on the definition and on each section: the name qualified by every
+  namespace and type that encloses it, as the language qualifies a name. C joins the namespace into
+  the identifier, `uavcan__file__List__Request`, and C++ declares a service's sections in the
+  service's struct, `uavcan::file::List::Request`.
 
   A run that generates a language adds, for that language, everything its lowering declares: each
   definition's `file`, `imports` and `guards` and the `helpers` its file declares, and on each

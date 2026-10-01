@@ -305,14 +305,16 @@ struct DefinitionNamePolicy final
 
     /// @brief Whether a consumer can reach the generated type from this name and the namespace.
     ///
-    /// The naming manifest reports the type name under this, and the naming golden pins it, so the
-    /// answer is stated once here rather than by each of them. It is true where the language carries
-    /// the namespace itself and the name is the definition's own: Rust in a module, Go, TypeScript
-    /// and Python in a per-namespace one.
+    /// The naming manifest reports the type name as `type_name` where this holds, and otherwise as
+    /// `qualified_type_name`, qualified by every scope that encloses it; the naming golden pins it, so
+    /// the answer is stated once here rather than by each of them. It is true where the language
+    /// carries the namespace itself and the name is the definition's own: Rust in a module, Go,
+    /// TypeScript and Python in a per-namespace one.
     ///
     /// C is false because its namespace is joined into the identifier, so the namespace the manifest
-    /// reports beside the name would double it; the manifest reports C's joined name as
-    /// `qualified_type_name`. C++ is false.
+    /// reports beside the name would double it; C's qualified name is the identifier it joins. C++ is
+    /// false because a service's sections are declared in the service's struct, which the namespace
+    /// beside a section's name does not reach: `uavcan::file::List::Request`.
     bool typeNameReachesTheType{true};
 };
 

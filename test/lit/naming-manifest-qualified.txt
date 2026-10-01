@@ -1,0 +1,52 @@
+# Where a consumer cannot reach a type from its name and the namespace, the naming manifest reports
+# the name qualified by every scope that encloses it, as the language qualifies a name. C++ declares a
+# service's sections in the service's struct, a type declared apart is published under its alias, and
+# a namespace may be escaped; each qualified name the manifest reports names a type the generated
+# headers declare, in every profile.
+
+# RUN: rm -rf %t && mkdir -p %t/ns/inner %t/std
+# RUN: printf 'uint8 a\n@sealed\n' > %t/ns/Msg.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/ns/Ask.1.0.dsdl
+# RUN: printf '@deprecated\nuint8 a\n@sealed\n' > %t/ns/Old.1.0.dsdl
+# RUN: printf '@deprecated\nuint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/ns/Read.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/ns/Request.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n' > %t/ns/inner/Deep.1.0.dsdl
+# RUN: printf 'uint8 a\n@sealed\n' > %t/std/Held.1.0.dsdl
+
+# RUN: %dsdlc --target-language ast %t/ns %t/std --naming-manifest %t/names.json 2> /dev/null
+# RUN: %{python} %S/print_qualified_type_names.py %t/names.json cpp | FileCheck %s --check-prefix=CPP
+# CPP:      ns.Ask.1.0 ns::Ask
+# CPP-NEXT: ns.Ask.1.0 request ns::Ask::Request
+# CPP-NEXT: ns.Ask.1.0 response ns::Ask::Response
+# CPP-NEXT: ns.Msg.1.0 ns::Msg
+# CPP-NEXT: ns.Msg.1.0 message ns::Msg
+# CPP-NEXT: ns.Old.1.0 ns::Old
+# CPP-NEXT: ns.Old.1.0 message ns::Old
+# CPP-NEXT: ns.Read.1.0 ns::Read
+# CPP-NEXT: ns.Read.1.0 request ns::Read::Request
+# CPP-NEXT: ns.Read.1.0 response ns::Read::Response
+# CPP-NEXT: ns.Request.1.0 ns::Request
+# CPP-NEXT: ns.Request.1.0 request ns::Request::Request
+# CPP-NEXT: ns.Request.1.0 response ns::Request::Response
+# CPP-NEXT: ns.inner.Deep.1.0 ns::inner::Deep
+# CPP-NEXT: ns.inner.Deep.1.0 message ns::inner::Deep
+# CPP-NEXT: std.Held.1.0 std_::Held
+# CPP-NEXT: std.Held.1.0 message std_::Held
+
+# C has no scope a name is qualified by, so its qualified name is the identifier it joins.
+# RUN: %{python} %S/print_qualified_type_names.py %t/names.json c | FileCheck %s --check-prefix=C
+# C:      ns.Ask.1.0 ns__Ask
+# C-NEXT: ns.Ask.1.0 request ns__Ask__Request
+# C:      std.Held.1.0 std__Held
+
+# RUN: %dsdlc --target-language ast %t/ns %t/std --versioned-type-names --naming-manifest %t/versioned.json 2> /dev/null
+# RUN: %{python} %S/print_qualified_type_names.py %t/versioned.json cpp | FileCheck %s --check-prefix=VERSIONED
+# VERSIONED:      ns.Ask.1.0 ns::Ask_1_0
+# VERSIONED-NEXT: ns.Ask.1.0 request ns::Ask_1_0::Request
+
+# A deprecated type is reached through the alias that marks it deprecated.
+# RUN: %dsdlc --target-language cpp --cpp-profile both %t/ns %t/std --outdir %t/cpp 2> /dev/null
+# RUN: %{python} %S/print_qualified_type_names.py %t/names.json cpp --probe %t/cpp/std > %t/probe-std.cpp
+# RUN: %cxx -std=c++20 -Wall -Wextra -Werror -Wno-deprecated-declarations -fsyntax-only -I %t/cpp/std %t/probe-std.cpp
+# RUN: %{python} %S/print_qualified_type_names.py %t/names.json cpp --probe %t/cpp/pmr > %t/probe-pmr.cpp
+# RUN: %cxx -std=c++20 -Wall -Wextra -Werror -Wno-deprecated-declarations -fsyntax-only -I %t/cpp/pmr %t/probe-pmr.cpp

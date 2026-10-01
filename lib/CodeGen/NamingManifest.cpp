@@ -30,8 +30,10 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -45,31 +47,55 @@ namespace llvmdsdl
 namespace
 {
 
-std::optional<llvm::StringLiteral> typeNameKey(const Language language)
+/// @brief @p name, qualified by @p holder and each namespace, module, package and type enclosing it,
+///        as @p row joins a qualifier to the name it qualifies.
+///
+/// A file scope declares into the namespace around it, and the root is the package rather than a
+/// scope a name is qualified by, so neither qualifies. The one type that encloses another is the
+/// definition's own, which encloses its sections, and it qualifies them by its public name, the name
+/// a type declared apart is published under.
+std::string qualifiedName(const LanguageTraits&            row,
+                          const SurfacePlan&               plan,
+                          const DefinitionNames&           definition,
+                          const std::optional<std::size_t> holder,
+                          const llvm::StringRef            name)
 {
-    const DefinitionNamePolicy& policy = definitionNamePolicy(language);
-    if (policy.typeNameReachesTheType)
+    std::vector<std::string> parts{name.str()};
+    for (std::optional<std::size_t> at = holder; at; at = plan.scopes[*at].parent)
     {
-        return llvm::StringLiteral{"type_name"};
+        const SurfaceScope& scope = plan.scopes[*at];
+        switch (scope.kind)
+        {
+        case SurfaceScopeKind::Root:
+        case SurfaceScopeKind::File:
+            break;
+        case SurfaceScopeKind::Type:
+            parts.push_back(definition.typeName);
+            break;
+        case SurfaceScopeKind::Namespace:
+        case SurfaceScopeKind::Module:
+        case SurfaceScopeKind::Package:
+            parts.push_back(scope.name);
+            break;
+        }
     }
-    if (!policy.namespaceJoin.empty())
-    {
-        return llvm::StringLiteral{"qualified_type_name"};
-    }
-    return std::nullopt;
+    std::ranges::reverse(parts);
+    return llvm::join(parts, row.classification.lookup.separator);
 }
 
 /// @brief Renders one section's attribute names.
 ///
 /// @param[in] plan The language's plan.
 /// @param[in] section Where the section's names are in @p plan.
-/// @param[in] typeNameKey The key the section's type name is reported under, or nothing where it is
-///            not reported. Reported for each section because it does not follow from the
-///            definition's own: Rust reaches a section through the definition's module, so the name
-///            is the section word alone and a consumer cannot derive it from the type name.
-llvm::json::Object renderSection(const SurfacePlan&                       plan,
-                                 const SectionNames&                      section,
-                                 const std::optional<llvm::StringLiteral> typeNameKey)
+/// @param[in] typeNameKey The key the section's type name is reported under.
+/// @param[in] typeName The section's type name, as it is reported. Reported for each section because
+///            it does not follow from the definition's own: Rust reaches a section through the
+///            definition's module, so the name is the section word alone and a consumer cannot
+///            derive it from the type name.
+llvm::json::Object renderSection(const SurfacePlan&        plan,
+                                 const SectionNames&       section,
+                                 const llvm::StringLiteral typeNameKey,
+                                 std::string               typeName)
 {
     llvm::json::Object fields;
     for (const auto& field : section.fields)
@@ -83,10 +109,7 @@ llvm::json::Object renderSection(const SurfacePlan&                       plan,
     }
 
     llvm::json::Object out;
-    if (typeNameKey)
-    {
-        out[*typeNameKey] = section.typeName;
-    }
+    out[typeNameKey] = std::move(typeName);
     out["fields"]    = std::move(fields);
     out["constants"] = std::move(constants);
 
@@ -110,15 +133,28 @@ llvm::json::Object renderSection(const SurfacePlan&                       plan,
 }
 
 /// @brief Renders one definition under one language.
-llvm::json::Object renderDefinition(const Language language, const SurfacePlan& plan, const DefinitionNames& definition)
+llvm::json::Object renderDefinition(const LanguageTraits&  row,
+                                    const SurfacePlan&     plan,
+                                    const DefinitionNames& definition)
 {
-    const std::optional<llvm::StringLiteral> reportType = typeNameKey(language);
+    // A type's name is reported as `type_name` where a consumer reaches the type from the name and the
+    // namespace, and otherwise as `qualified_type_name`, qualified by every scope that encloses it.
+    const bool                qualified = !row.composition.definitionName.typeNameReachesTheType;
+    const llvm::StringLiteral key =
+        qualified ? llvm::StringLiteral{"qualified_type_name"} : llvm::StringLiteral{"type_name"};
+    const auto reported = [&](const std::optional<std::size_t> holder, const llvm::StringRef name) {
+        return qualified ? qualifiedName(row, plan, definition, holder, name) : name.str();
+    };
+    // The definition's type is declared where its sections are, or encloses them where the language
+    // declares a type that does.
+    std::optional<std::size_t> holder = plan.scopes[definition.sections.front().typeScope].parent;
+    if (holder && (plan.scopes[*holder].kind == SurfaceScopeKind::Type))
+    {
+        holder = plan.scopes[*holder].parent;
+    }
 
     llvm::json::Object out;
-    if (reportType)
-    {
-        out[*reportType] = definition.typeName;
-    }
+    out[key]         = reported(holder, definition.typeName);
     out["file_stem"] = definition.fileStem;
     llvm::json::Array namespaceParts;
     for (const std::string& component : definition.namespaceNames)
@@ -133,7 +169,7 @@ llvm::json::Object renderDefinition(const Language language, const SurfacePlan& 
     for (const SectionNames& section : definition.sections)
     {
         out[section.section.empty() ? std::string("message") : section.section] =
-            renderSection(plan, section, reportType);
+            renderSection(plan, section, key, reported(plan.scopes[section.typeScope].parent, section.typeName));
     }
     return out;
 }
@@ -369,7 +405,7 @@ std::string renderNamingManifest(const SemanticModule&                 semantic,
         for (std::size_t index = 0; index < plan.definitions.size(); ++index)
         {
             const DefinitionNames& definition = plan.definitions[index];
-            llvm::json::Object     entry      = renderDefinition(row.language, plan, definition);
+            llvm::json::Object     entry      = renderDefinition(row, plan, definition);
             // A generation run reports the whole surface its lowering wrote, each profile's apart
             // where it wrote several.
             if (generated && (surfaces.size() == 1))
