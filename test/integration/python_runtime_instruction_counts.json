@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "budget_percent": 1,
+    "what": "Instructions the interpreter executes for one serialise, deserialise and re-serialise round trip of each payload family of the generated Python, under cachegrind, in the pure runtime of each specialisation.",
+    "how": "The interpreter runs each family at N and at 2N iterations; the difference over N is one iteration, with start-up, imports and teardown cancelled.",
+    "keys": "counts[<platform.machine()>], recording the interpreter it was taken with. Off CI, an architecture or an interpreter with no baseline skips and prints the entry to paste; on CI it fails.",
+    "rebaseline_when": "A change to the generated Python or its runtime that moves a count, or a new interpreter in the image. Run python_runtime_instructions.py with --update in the change that causes it."
+  },
+  "counts": {
+    "aarch64": {
+      "python": "3.14.4",
+      "portable": {
+        "small": 873760,
+        "medium": 15119783,
+        "large": 99809014
+      },
+      "fast": {
+        "small": 874104,
+        "medium": 15119783,
+        "large": 99808677
+      }
+    }
+  }
+}

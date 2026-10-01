@@ -1,3 +1,7 @@
+# Timing benchmark for the generated Python: seconds per payload family, runtime specialisation and
+# runtime mode, reported and not gated. A second is a property of the machine that measured it; the
+# gate on the generated Python is llvmdsdl-uavcan-python-runtime-instructions, which counts
+# instructions.
 cmake_minimum_required(VERSION 3.24)
 
 foreach(var DSDLC OUT_DIR PYTHON_EXECUTABLE)
@@ -35,12 +39,6 @@ endif()
 if(NOT DEFINED BENCH_ITERATIONS_LARGE OR "${BENCH_ITERATIONS_LARGE}" STREQUAL "")
   set(BENCH_ITERATIONS_LARGE 500)
 endif()
-if(NOT DEFINED BENCH_ENABLE_THRESHOLDS OR "${BENCH_ENABLE_THRESHOLDS}" STREQUAL "")
-  set(BENCH_ENABLE_THRESHOLDS ON)
-endif()
-if(NOT DEFINED BENCH_THRESHOLDS_JSON OR "${BENCH_THRESHOLDS_JSON}" STREQUAL "")
-  set(BENCH_THRESHOLDS_JSON "")
-endif()
 if(NOT DEFINED BENCH_REPORT_JSON OR "${BENCH_REPORT_JSON}" STREQUAL "")
   set(BENCH_REPORT_JSON "${OUT_DIR}/python-runtime-bench.json")
 endif()
@@ -52,15 +50,6 @@ string(REPLACE "'" "\\'" source_root_py "${source_root_py}")
 set(bench_report_json_py "${BENCH_REPORT_JSON}")
 string(REPLACE "\\" "\\\\" bench_report_json_py "${bench_report_json_py}")
 string(REPLACE "'" "\\'" bench_report_json_py "${bench_report_json_py}")
-
-set(bench_thresholds_json_py "${BENCH_THRESHOLDS_JSON}")
-string(REPLACE "\\" "\\\\" bench_thresholds_json_py "${bench_thresholds_json_py}")
-string(REPLACE "'" "\\'" bench_thresholds_json_py "${bench_thresholds_json_py}")
-
-set(bench_thresholds_enabled_py "False")
-if(BENCH_ENABLE_THRESHOLDS)
-  set(bench_thresholds_enabled_py "True")
-endif()
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
@@ -128,8 +117,6 @@ file(WRITE
   "}\n"
   "SOURCE_ROOT = '${source_root_py}'\n"
   "REPORT_PATH = Path('${bench_report_json_py}')\n"
-  "THRESHOLDS_ENABLED = ${bench_thresholds_enabled_py}\n"
-  "THRESHOLDS_PATH = Path('${bench_thresholds_json_py}') if '${bench_thresholds_json_py}' else None\n"
   "\n"
   "def clear_package_modules(prefix: str) -> None:\n"
   "    for name in list(sys.modules):\n"
@@ -143,10 +130,9 @@ file(WRITE
   "    return ((checksum * 16777619) ^ value) & 0xFFFFFFFF\n"
   "\n"
   "def _run_case(case_name, cls, factory, iterations):\n"
-  "    # Two clocks over one region. perf_counter is what the thresholds have always used;\n"
-  "    # process_time excludes time the process spent off-CPU, which is the difference between\n"
-  "    # measuring this code and measuring what else the machine was doing. On a 6x\n"
-  "    # oversubscribed box the wall reading inflated 12x while the CPU reading inflated 1.8x.\n"
+  "    # Two clocks over one region. process_time excludes time the process spent off-CPU, which is\n"
+  "    # the difference between measuring this code and measuring what else the machine was doing.\n"
+  "    # On a 6x oversubscribed box the wall reading inflated 12x while the CPU reading inflated 1.8x.\n"
   "    start = time.perf_counter()\n"
   "    start_cpu = time.process_time()\n"
   "    payload_bytes = 0\n"
@@ -383,61 +369,6 @@ file(WRITE
   "\n"
   "    report['comparisons'] = comparisons\n"
   "\n"
-  "def evaluate_thresholds(report):\n"
-  "    if not THRESHOLDS_ENABLED:\n"
-  "        return {'enabled': False, 'failures': []}\n"
-  "\n"
-  "    if THRESHOLDS_PATH is None or not THRESHOLDS_PATH.exists():\n"
-  "        return {\n"
-  "            'enabled': True,\n"
-  "            'failures': [\n"
-  "                f'thresholds enabled but thresholds file is missing: {THRESHOLDS_PATH}'\n"
-  "            ],\n"
-  "        }\n"
-  "\n"
-  "    thresholds = json.loads(THRESHOLDS_PATH.read_text(encoding='utf-8'))\n"
-  "    failures = []\n"
-  "\n"
-  "    for spec, mode_map in thresholds.get('max_elapsed_sec', {}).items():\n"
-  "        for mode, family_map in mode_map.items():\n"
-  "            for family, limit in family_map.items():\n"
-  "                observed = get_family_elapsed(report, spec, mode, family)\n"
-  "                if observed is None:\n"
-  "                    failures.append(f'missing benchmark sample for max_elapsed_sec[{spec}][{mode}][{family}]')\n"
-  "                    continue\n"
-  "                if observed > float(limit):\n"
-  "                    failures.append(\n"
-  "                        f'max_elapsed_sec violation {spec}/{mode}/{family}: observed={observed:.6f}s limit={float(limit):.6f}s'\n"
-  "                    )\n"
-  "\n"
-  "    # process_time rather than perf_counter. Same shape, different clock: this one does not\n"
-  "    # count the time the process spent waiting for a CPU, so it survives a machine that is\n"
-  "    # busy in a way the wall-clock budget above cannot.\n"
-  "    for spec, mode_map in thresholds.get('max_cpu_sec', {}).items():\n"
-  "        for mode, family_map in mode_map.items():\n"
-  "            for family, limit in family_map.items():\n"
-  "                observed = get_family_metric(report, spec, mode, family, 'cpuSec')\n"
-  "                if observed is None:\n"
-  "                    failures.append(f'missing benchmark sample for max_cpu_sec[{spec}][{mode}][{family}]')\n"
-  "                    continue\n"
-  "                if observed > float(limit):\n"
-  "                    failures.append(\n"
-  "                        f'max_cpu_sec violation {spec}/{mode}/{family}: observed={observed:.6f}s limit={float(limit):.6f}s'\n"
-  "                    )\n"
-  "\n"
-  "    for spec, family_map in thresholds.get('min_accel_speedup_ratio', {}).items():\n"
-  "        for family, minimum in family_map.items():\n"
-  "            ratio = report['comparisons']['accelSpeedupRatio'].get(spec, {}).get(family)\n"
-  "            if ratio is None:\n"
-  "                failures.append(f'missing accel speedup sample for {spec}/{family}')\n"
-  "                continue\n"
-  "            if ratio < float(minimum):\n"
-  "                failures.append(\n"
-  "                    f'min_accel_speedup_ratio violation {spec}/{family}: observed={ratio:.6f} minimum={float(minimum):.6f}'\n"
-  "                )\n"
-  "\n"
-  "    return {'enabled': True, 'path': str(THRESHOLDS_PATH), 'failures': failures}\n"
-  "\n"
   "def main() -> int:\n"
   "    report = {\n"
   "        'schemaVersion': 1,\n"
@@ -460,8 +391,6 @@ file(WRITE
   "        }\n"
   "\n"
   "    compute_comparisons(report)\n"
-  "    threshold_eval = evaluate_thresholds(report)\n"
-  "    report['thresholdEvaluation'] = threshold_eval\n"
   "\n"
   "    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)\n"
   "    REPORT_PATH.write_text(json.dumps(report, indent=2, sort_keys=True) + '\\n', encoding='utf-8')\n"
@@ -485,14 +414,6 @@ file(WRITE
   "                )\n"
   "\n"
   "    print(f'python-bench report={REPORT_PATH}')\n"
-  "\n"
-  "    failures = threshold_eval.get('failures', [])\n"
-  "    if failures:\n"
-  "        print('python-bench threshold failures:')\n"
-  "        for failure in failures:\n"
-  "            print(f'  - {failure}')\n"
-  "        return 2\n"
-  "\n"
   "    return 0\n"
   "\n"
   "if __name__ == '__main__':\n"

@@ -734,23 +734,21 @@ jobs:
     # So the first thing this lane buys is that the harnesses are exercised. The numbers are the
     # second thing, and they are REPORTED, NOT ENFORCED, on purpose:
     #
-    #   The two checked-in threshold files hold absolute wall-clock seconds calibrated on one
-    #   developer machine (macOS/arm64, and in the Python case a specific interpreter build --
-    #   `python_runtime_bench_thresholds.json` records 3.14/Clang timings to five decimal places).
-    #   Nothing about those numbers describes an ubuntu-26.04 container, so enforcing them here
-    #   would gate on a measurement that was never taken on this hardware.
+    #   The Rust benchmark's threshold file holds absolute wall-clock seconds calibrated on one
+    #   developer machine (macOS/arm64). Nothing about those numbers describes an ubuntu-26.04
+    #   container, so enforcing them here would gate on a measurement that was never taken on this
+    #   hardware.
     #
     # Turning them on takes three things, in order. Run this lane enough times to have a spread
     # (the job summary prints every observation in `max_elapsed_sec` shape, so this is a copy);
-    # write those maxima plus a budget into runner-specific threshold files and point
-    # LLVMDSDL_*_BENCH_THRESHOLDS_JSON at them; then drop the two `=OFF` flags below. Do not skip
-    # the first step -- a hosted runner's variance is the thing being measured, and a budget
+    # write those maxima plus a budget into a runner-specific threshold file and point
+    # LLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON at it; then drop the `=OFF` flag below. Do not
+    # skip the first step -- a hosted runner's variance is the thing being measured, and a budget
     # guessed rather than observed either flakes or is too wide to catch anything.
     #
-    # The durable answer is narrower than absolute seconds. The Python report already carries
-    # `fastVsPortableRatio`: two specialisations timed in the same process on the same machine, so
-    # the ratio survives a runner that is having a bad day in a way that a second does not. A gate
-    # built on ratios would work here today; one built on seconds needs the calibration above.
+    # The Python benchmark holds no thresholds. Its gate is
+    # `llvmdsdl-uavcan-python-runtime-instructions`, which counts the instructions a round trip
+    # executes under cachegrind, carries no `bench` label, and gates in the `linux` job.
     #
     # For the Rust half that question is already answered elsewhere and this lane is not where to
     # look for it: `llvmdsdl-fixtures-rust-runtime-instructions` counts instructions under cachegrind
@@ -799,18 +797,17 @@ jobs:
         uses: ./.github/actions/provision-peer-dsdl-compiler
 
       - name: Configure (ci preset, thresholds reporting-only)
-        # See the note at the top of this job for why the thresholds are off and what turning them
-        # on requires. They are disabled here rather than deleted from the tree because the values
-        # are still correct for the machine they were calibrated on, where the suite does enforce
-        # them.
+        # See the note at the top of this job for why the Rust thresholds are off and what turning
+        # them on requires. They are disabled here rather than deleted from the tree because the
+        # values are still correct for the machine they were calibrated on, where the suite does
+        # enforce them.
         run: |
           cmake --preset ci \
             -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
             -DLLVMDSDL_NUNAVUT_REPO="${{ steps.peer-dsdl.outputs.nunavut-path }}" \
             -DLLVMDSDL_PYDSDL_REPO="${{ steps.peer-dsdl.outputs.pydsdl-path }}" \
             -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON \
-            -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF \
-            -DLLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF
+            -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci
