@@ -44,7 +44,10 @@ FAMILIES = ("small", "medium", "large")
 ITERATIONS = {"small": 50, "medium": 25, "large": 10}
 
 # Run under cachegrind as `driver.py PYTHONPATH PACKAGE FAMILY ITERATIONS`. The families are the
-# timing benchmark's: one small message, a service's two sections, and three 256-byte payloads.
+# timing benchmark's: one small message, a service's two sections, and three 256-byte payloads. An
+# iteration constructs its value through the generated class, whose constructor and defaults are
+# generated code too, then serialises, deserialises and re-serialises it. The lists the harness
+# builds for a value cost the same in every iteration, and are a small share of one.
 DRIVER = """\
 import importlib
 import sys
