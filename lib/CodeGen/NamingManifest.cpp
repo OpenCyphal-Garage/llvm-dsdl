@@ -51,9 +51,9 @@ namespace
 ///        as @p row joins a qualifier to the name it qualifies.
 ///
 /// A file scope declares into the namespace around it, and the root is the package rather than a
-/// scope a name is qualified by, so neither qualifies. The one type that encloses another is the
-/// definition's own, which encloses its sections, and it qualifies them by its public name, the name
-/// a type declared apart is published under.
+/// scope a name is qualified by, so neither qualifies. A type encloses another only where a
+/// definition's own type encloses its sections, and it qualifies them by its public name, the name a
+/// type declared apart is published under.
 std::string qualifiedName(const LanguageTraits&            row,
                           const SurfacePlan&               plan,
                           const DefinitionNames&           definition,

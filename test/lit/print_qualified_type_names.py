@@ -6,15 +6,7 @@
 #
 #===----------------------------------------------------------------------===//
 
-"""Print the qualified type names a language's naming manifest reports.
-
-Each line is a definition's key, then a section's key where the name is a section's, then the name.
-With --probe, print instead a C++ translation unit that includes every header under ROOT and names
-every type the manifest reports, so that compiling it shows each name reaches a type.
-
-    print_qualified_type_names.py MANIFEST LANGUAGE
-    print_qualified_type_names.py MANIFEST LANGUAGE --probe ROOT
-"""
+"""Print the qualified type names a language's naming manifest reports."""
 
 from __future__ import annotations
 
@@ -26,10 +18,19 @@ SECTIONS = ("message", "request", "response")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("manifest", type=pathlib.Path)
-    parser.add_argument("language")
-    parser.add_argument("--probe", type=pathlib.Path)
+    parser = argparse.ArgumentParser(
+        description="Print each qualified type name a language's naming manifest reports, one per line: "
+        "the definition's key, the section's key where the name is a section's, and the name."
+    )
+    parser.add_argument("manifest", type=pathlib.Path, help="the naming manifest dsdlc wrote")
+    parser.add_argument("language", help="the language whose names are printed, as the manifest keys it")
+    parser.add_argument(
+        "--probe",
+        type=pathlib.Path,
+        metavar="ROOT",
+        help="print instead a C++ translation unit that includes every header under ROOT and names every "
+        "type the manifest reports, so that compiling it shows each name reaches a type",
+    )
     args = parser.parse_args()
 
     definitions = json.loads(args.manifest.read_text(encoding="utf-8"))["languages"][args.language]
