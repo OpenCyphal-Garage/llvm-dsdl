@@ -31,7 +31,6 @@
 #include <algorithm>
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
-#include <cctype>
 #include <filesystem>
 #include <map>
 #include <set>
