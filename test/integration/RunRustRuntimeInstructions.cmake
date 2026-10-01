@@ -214,7 +214,7 @@ if(budget_error OR "${budget_percent}" STREQUAL "")
 endif()
 
 # What to paste where this machine has no baseline to compare against.
-set(paste
+string(CONCAT paste
   "    \"${arch}\": {\n"
   "      \"rustc\": \"${toolchain}\",\n"
   "      \"deserialize\": ${deserialize_ir},\n"

@@ -7,7 +7,8 @@
     "rebaseline_when": "A deliberate codegen change, or a toolchain upgrade. Both move the count, and both are visible events rather than flakes. Re-baseline in the commit that causes it.",
     "arch_keys": "cmake_host_system_information OS_PLATFORM -- 'aarch64', 'x86_64'. Counts are per-architecture, and each entry records the rustc build it was taken with and its LLVM. Off CI, an architecture or a toolchain with no entry SKIPS and prints the entry to paste; on CI it fails. No machine is measured against another architecture's number.",
     "measured": {
-      "aarch64": "toolshed ts26.4.3 arm64, 2026-10-01"
+      "aarch64": "toolshed ts26.4.3 arm64, 2026-10-01",
+      "x86_64": "CI, toolshed ts26.4.5 amd64, 2026-10-01"
     }
   },
   "counts": {
@@ -15,6 +16,11 @@
       "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball), LLVM 21.1.8",
       "deserialize": 294705500,
       "serialize": 19879500
+    },
+    "x86_64": {
+      "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11) (built from a source tarball), LLVM 21.1.8",
+      "deserialize": 381500000,
+      "serialize": 15914000
     }
   }
 }
