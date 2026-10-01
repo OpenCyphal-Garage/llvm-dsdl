@@ -10,8 +10,8 @@ cannot become a threshold, and until it is a threshold the lane is only proving
 that the harness still compiles.
 
 So this exists to make the numbers legible in the job summary, and to print the
-Rust benchmark's in the shape its threshold file wants -- `max_elapsed_sec`, keyed
-the same way -- so that calibrating a runner is reading a table rather than
+Rust benchmark's timings in the shape its threshold file wants -- `max_elapsed_sec`,
+keyed the same way -- so that calibrating a runner is reading a table rather than
 writing a script.
 
 Ratios are reported separately and deliberately. `fastVsPortableRatio` compares
