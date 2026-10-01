@@ -14,10 +14,6 @@ the step allows that test by name, with the reason.
 
 An allowance is held to the run it is given for: one whose test ran is reported, so the list stays a
 true statement of what skips.
-
-    python3 tools/check_test_skips.py test-results/junit-linux.xml
-    python3 tools/check_test_skips.py report.xml --allow 'llvmdsdl-example=why it cannot run here'
-    python3 tools/check_test_skips.py --self-test
 """
 
 from __future__ import annotations
@@ -108,6 +104,9 @@ def self_test() -> int:
                 failures.append(f"{what}: reported {problems}")
             if what.endswith("with what the test said") and not any("valgrind" in p for p in problems):
                 failures.append(f"{what}: the test's output is missing from {problems}")
+        missing = Path(scratch) / "absent.xml"
+        if not any("no such report" in p for p in check([missing], {})):
+            failures.append("a missing report was not reported")
     try:
         allowance("gate=")
         failures.append("an allowance without a reason was accepted")
@@ -117,7 +116,7 @@ def self_test() -> int:
         print(f"self-test: {failure}", file=sys.stderr)
     if failures:
         return 1
-    print(f"self-test: {len(cases) + 1} cases as expected")
+    print(f"self-test: {len(cases) + 2} cases as expected")
     return 0
 
 
