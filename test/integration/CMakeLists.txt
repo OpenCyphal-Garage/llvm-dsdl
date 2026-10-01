@@ -2768,7 +2768,8 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
 
   # The deterministic half of the same question. The benchmark above answers "how fast", which is a
   # property of the machine; this answers "did the emitted code change", which is a property of the
-  # code. Skips where valgrind is absent -- Apple Silicon, which it has never supported.
+  # code. Off CI it skips where valgrind, or a baseline for the architecture and toolchain, is absent
+  # (Apple Silicon has no valgrind); on CI it fails instead.
   add_test(
     NAME llvmdsdl-fixtures-rust-runtime-instructions
     COMMAND

@@ -746,15 +746,12 @@ jobs:
     # skip the first step -- a hosted runner's variance is the thing being measured, and a budget
     # guessed rather than observed either flakes or is too wide to catch anything.
     #
-    # The Python benchmark holds no thresholds. Its gate is
-    # `llvmdsdl-uavcan-python-runtime-instructions`, which counts the instructions a round trip
-    # executes under cachegrind, carries no `bench` label, and gates in the `linux` job.
-    #
-    # For the Rust half that question is already answered elsewhere and this lane is not where to
-    # look for it: `llvmdsdl-fixtures-rust-runtime-instructions` counts instructions under cachegrind
-    # rather than seconds, carries no `bench` label, and therefore runs and GATES in the `linux` job.
-    # It is deterministic -- six runs, idle and oversubscribed, agreed to the digit -- so it needs no
-    # calibration at all.
+    # The gates on speed are not here. `llvmdsdl-fixtures-rust-runtime-instructions` and
+    # `llvmdsdl-uavcan-python-runtime-instructions` count instructions under cachegrind rather than
+    # seconds, carry no `bench` label, and gate in the `linux` job. A count is deterministic --
+    # repeated runs, idle and oversubscribed, agree to the instruction -- so it needs no calibration
+    # beyond a baseline per architecture and toolchain. Where valgrind or that baseline is missing,
+    # each gate skips off CI and fails on CI. The Python benchmark holds no wall-clock thresholds.
     #
     # The C comparison against Nunavut counts instructions too, and is here rather than in `linux`
     # for a different reason: it is a ratio against a peer implementation. Nunavut is corroboration

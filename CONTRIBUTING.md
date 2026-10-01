@@ -239,12 +239,15 @@ Its threshold policy is a 5% regression budget against
 [`test/integration/rust_runtime_bench_thresholds.json`](./test/integration/rust_runtime_bench_thresholds.json).
 If an intentional performance shift is accepted, update the file in the same PR.
 
-Instruction counts. `llvmdsdl-uavcan-python-runtime-instructions` counts the instructions the
-generated Python executes per round trip under cachegrind and holds each count to
+Instruction counts. `llvmdsdl-fixtures-rust-runtime-instructions` and
+`llvmdsdl-uavcan-python-runtime-instructions` count the instructions the generated Rust and Python
+execute under cachegrind, and hold each count to
+[`test/integration/rust_runtime_instruction_counts.json`](./test/integration/rust_runtime_instruction_counts.json)
+and
 [`test/integration/python_runtime_instruction_counts.json`](./test/integration/python_runtime_instruction_counts.json),
-keyed by architecture and recording the interpreter. Off CI, a missing valgrind, architecture or
-interpreter skips; on CI it fails. A change that moves a count re-baselines with `--update` in the
-same PR.
+keyed by architecture and recording the toolchain. Off CI, a missing valgrind, architecture or
+toolchain skips and prints the entry to add; on CI it fails. A change that moves a count
+re-baselines in the same PR.
 
 Style judges. `llvmdsdl-uavcan-<language>-style-judge` points each language's own linter at the
 generated code and holds its count per rule to

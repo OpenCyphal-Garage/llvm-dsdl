@@ -18,10 +18,15 @@
 # Two consequences of counting instructions rather than time:
 #
 #   * The count is per ARCHITECTURE. amd64 and arm64 execute different instruction streams for the
-#     same source, so the baseline file is keyed by processor and a machine with no entry skips
-#     rather than pretending some other machine's number applies to it.
-#   * The count moves when the COMPILER moves. A rustc bump changes it, and that is a deliberate,
-#     visible re-baseline rather than a flake -- and it tells you what the upgrade cost.
+#     same source, so the baseline file is keyed by processor, and no machine is measured against
+#     another machine's number.
+#   * The count moves when the COMPILER moves, so each entry records the cargo it was taken with. A
+#     toolchain bump is a deliberate, visible re-baseline rather than a flake -- and it tells you
+#     what the upgrade cost.
+#
+# Off CI, a missing valgrind, architecture or toolchain is a skip, since none of them is a verdict on
+# the generated code. On CI each is a failure: the image pins the toolchain and carries valgrind, so
+# a gate that skipped there would be no gate.
 #
 # Iteration counts here are the script's own and deliberately small: cachegrind runs ~77x slower than
 # native, and the count is exact, so there is nothing to gain from a long run. They are also
@@ -35,16 +40,33 @@ foreach(var DSDLC OUT_DIR RUST_BENCH_ROOT CARGO_EXECUTABLE BASELINE_JSON)
   endif()
 endforeach()
 
-# Valgrind does not exist on every host this suite runs on -- not on Apple Silicon, which it
-# has never supported. A skip is the answer there; a failure would say the code regressed when the
-# tool is absent.
+# Skips off CI and fails on it, for a reason that is not a verdict on the generated code. 77 is the
+# SKIP_RETURN_CODE this test is registered with.
+macro(llvmdsdl_decline reason)
+  if("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+    message(FATAL_ERROR "${reason}")
+  endif()
+  message(STATUS "${reason}; skipping the Rust instruction-count gate")
+  cmake_language(EXIT 77)
+endmacro()
+
+# Valgrind does not exist on every host this suite runs on -- not on Apple Silicon, which it has
+# never supported.
 find_program(VALGRIND_EXECUTABLE valgrind)
 find_program(CG_ANNOTATE_EXECUTABLE cg_annotate)
 if(NOT VALGRIND_EXECUTABLE OR NOT CG_ANNOTATE_EXECUTABLE)
-  message(STATUS "valgrind/cg_annotate unavailable; skipping the Rust instruction-count gate")
-  # 77 is the SKIP_RETURN_CODE this test is registered with.
-  cmake_language(EXIT 77)
+  llvmdsdl_decline("valgrind or cg_annotate is not installed")
 endif()
+
+execute_process(
+  COMMAND "${CARGO_EXECUTABLE}" --version
+  OUTPUT_VARIABLE cargo_version_text
+  COMMAND_ERROR_IS_FATAL ANY
+)
+if(NOT cargo_version_text MATCHES "^cargo ([0-9]+\\.[0-9]+\\.[0-9]+)")
+  message(FATAL_ERROR "cannot read a version from `cargo --version`: ${cargo_version_text}")
+endif()
+set(cargo_version "${CMAKE_MATCH_1}")
 
 if(NOT DEFINED BENCH_ITERATIONS_SMALL OR "${BENCH_ITERATIONS_SMALL}" STREQUAL "")
   set(BENCH_ITERATIONS_SMALL 2000)
@@ -166,7 +188,7 @@ endif()
 
 # CMAKE_SYSTEM_PROCESSOR is not set in script mode, so ask the host directly.
 cmake_host_system_information(RESULT arch QUERY OS_PLATFORM)
-message(STATUS "Rust instruction counts (${arch}, ${mode}, "
+message(STATUS "Rust instruction counts (${arch}, cargo ${cargo_version}, ${mode}, "
                "iterations ${BENCH_ITERATIONS_SMALL}/${BENCH_ITERATIONS_MEDIUM}/${BENCH_ITERATIONS_LARGE}):")
 message(STATUS "  deserialize = ${deserialize_ir}")
 message(STATUS "  serialize   = ${serialize_ir}")
@@ -177,17 +199,25 @@ if(budget_error OR "${budget_percent}" STREQUAL "")
   set(budget_percent 1)
 endif()
 
+# What to paste where this machine has no baseline to compare against.
+set(paste
+  "    \"${arch}\": {\n"
+  "      \"cargo\": \"${cargo_version}\",\n"
+  "      \"deserialize\": ${deserialize_ir},\n"
+  "      \"serialize\": ${serialize_ir}\n"
+  "    }")
 string(JSON arch_entry ERROR_VARIABLE arch_error GET "${baseline_json}" counts "${arch}")
 if(arch_error OR "${arch_entry}" STREQUAL "")
-  # Deliberately a skip and not a pass: there is no number for this processor, so there is nothing to
-  # compare against and saying "ok" would be a lie. The message carries what to paste.
-  message(STATUS
-    "No instruction-count baseline for '${arch}'. Add one to ${BASELINE_JSON}:\n"
-    "    \"${arch}\": {\n"
-    "      \"deserialize\": ${deserialize_ir},\n"
-    "      \"serialize\": ${serialize_ir}\n"
-    "    }")
-  cmake_language(EXIT 77)
+  message(STATUS "The entry to add to ${BASELINE_JSON}:\n${paste}")
+  llvmdsdl_decline("${BASELINE_JSON} holds no instruction-count baseline for '${arch}'")
+endif()
+string(JSON baseline_cargo ERROR_VARIABLE cargo_error GET "${arch_entry}" cargo)
+if(cargo_error OR NOT "${baseline_cargo}" STREQUAL "${cargo_version}")
+  message(STATUS "The entry to replace in ${BASELINE_JSON}:\n${paste}")
+  string(CONCAT reason
+    "the '${arch}' baseline was taken with cargo ${baseline_cargo}, and this is cargo ${cargo_version}; "
+    "re-baseline in the change that moves the toolchain")
+  llvmdsdl_decline("${reason}")
 endif()
 
 set(failures "")
