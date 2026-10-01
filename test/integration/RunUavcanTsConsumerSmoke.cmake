@@ -53,11 +53,11 @@ file(WRITE
   "${gen_dir}/consumer_smoke.ts"
   "import { uavcan_node_heartbeat_1_0, uavcan_primitive_empty_1_0 } from \"./index\";\n"
   "\n"
-  "const heartbeatName: string = uavcan_node_heartbeat_1_0.DSDL_FULL_NAME;\n"
-  "const emptyName: string = uavcan_primitive_empty_1_0.DSDL_FULL_NAME;\n"
-  "const heartbeatMajor: number = uavcan_node_heartbeat_1_0.DSDL_VERSION_MAJOR;\n"
+  "const heartbeatName: string = uavcan_node_heartbeat_1_0.Heartbeat_1_0.FULL_NAME;\n"
+  "const emptyName: string = uavcan_primitive_empty_1_0.Empty_1_0.FULL_NAME;\n"
+  "const heartbeatVersion: string = uavcan_node_heartbeat_1_0.Heartbeat_1_0.FULL_NAME_AND_VERSION;\n"
   "\n"
-  "export const smokeSummary: string = `${heartbeatName}:${emptyName}:${heartbeatMajor}`;\n"
+  "export const smokeSummary: string = `${heartbeatName}:${emptyName}:${heartbeatVersion}`;\n"
 )
 
 file(WRITE

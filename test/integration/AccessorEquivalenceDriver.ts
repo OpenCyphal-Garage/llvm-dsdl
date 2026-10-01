@@ -1,16 +1,16 @@
 // An accessor against the body it stands in for: a getter answers what deserialise puts in the
 // field, on a full buffer and on a short one, and a setter writes what deserialise reads back.
 // Values are compared with Object.is, so a NaN meets itself; an integer round trip is also exact.
-import { makeVersion, deserializeVersionFrom, getVersionMajor, setVersionMajor, getVersionMinor, setVersionMinor } from "./uavcan/node/version_1_0";
-import { makeInteger16, deserializeInteger16From, getInteger16Value, setInteger16Value } from "./uavcan/primitive/scalar/integer16_1_0";
-import { makeNatural64, deserializeNatural64From, getNatural64Value, setNatural64Value } from "./uavcan/primitive/scalar/natural64_1_0";
-import { makeReal16, deserializeReal16From, getReal16Value, setReal16Value } from "./uavcan/primitive/scalar/real16_1_0";
-import { makeReal64, deserializeReal64From, getReal64Value, setReal64Value } from "./uavcan/primitive/scalar/real64_1_0";
-import { makeScalar, deserializeScalarFrom, getScalarKelvin, setScalarKelvin } from "./uavcan/si/unit/temperature/scalar_1_0";
-import { makeError, deserializeErrorFrom, getErrorValue, setErrorValue } from "./uavcan/file/error_1_0";
-import { makeQuaternion, deserializeQuaternionFrom, getQuaternionWxyz, setQuaternionWxyz } from "./uavcan/si/unit/angle/quaternion_1_0";
-import { makeScalar as makeSample, deserializeScalarFrom as deserializeSampleFrom, getScalarTimestamp, getScalarKelvin as getSampleKelvin, setScalarKelvin as setSampleKelvin } from "./uavcan/si/sample/temperature/scalar_1_0";
-import { getSynchronizedTimestampMicrosecond } from "./uavcan/time/synchronized_timestamp_1_0";
+import { Version } from "./uavcan/node/version_1_0";
+import { Integer16 } from "./uavcan/primitive/scalar/integer16_1_0";
+import { Natural64 } from "./uavcan/primitive/scalar/natural64_1_0";
+import { Real16 } from "./uavcan/primitive/scalar/real16_1_0";
+import { Real64 } from "./uavcan/primitive/scalar/real64_1_0";
+import { Scalar } from "./uavcan/si/unit/temperature/scalar_1_0";
+import { Error as FileError } from "./uavcan/file/error_1_0";
+import { Quaternion } from "./uavcan/si/unit/angle/quaternion_1_0";
+import { Scalar as Sample } from "./uavcan/si/sample/temperature/scalar_1_0";
+import { SynchronizedTimestamp } from "./uavcan/time/synchronized_timestamp_1_0";
 
 let rng = 0x9e3779b9;
 function fill(buffer: Uint8Array): void {
@@ -100,33 +100,33 @@ function report(name: string, same: boolean): void {
 }
 
 report("uavcan.node.Version",
-  checkField(2, makeVersion, deserializeVersionFrom, getVersionMajor, setVersionMajor, (o) => o.major, true) &&
-  checkField(2, makeVersion, deserializeVersionFrom, getVersionMinor, setVersionMinor, (o) => o.minor, true));
+  checkField(2, Version.create, Version.deserializeFrom, Version.getMajor, Version.setMajor, (o) => o.major, true) &&
+  checkField(2, Version.create, Version.deserializeFrom, Version.getMinor, Version.setMinor, (o) => o.minor, true));
 report("uavcan.primitive.scalar.Integer16",
-  checkField(2, makeInteger16, deserializeInteger16From, getInteger16Value, setInteger16Value, (o) => o.value, true));
+  checkField(2, Integer16.create, Integer16.deserializeFrom, Integer16.getValue, Integer16.setValue, (o) => o.value, true));
 report("uavcan.primitive.scalar.Natural64",
-  checkField(8, makeNatural64, deserializeNatural64From, getNatural64Value, setNatural64Value, (o) => o.value, true));
+  checkField(8, Natural64.create, Natural64.deserializeFrom, Natural64.getValue, Natural64.setValue, (o) => o.value, true));
 report("uavcan.primitive.scalar.Real16",
-  checkField(2, makeReal16, deserializeReal16From, getReal16Value, setReal16Value, (o) => o.value, false));
+  checkField(2, Real16.create, Real16.deserializeFrom, Real16.getValue, Real16.setValue, (o) => o.value, false));
 report("uavcan.primitive.scalar.Real64",
-  checkField(8, makeReal64, deserializeReal64From, getReal64Value, setReal64Value, (o) => o.value, false));
+  checkField(8, Real64.create, Real64.deserializeFrom, Real64.getValue, Real64.setValue, (o) => o.value, false));
 report("uavcan.si.unit.temperature.Scalar",
-  checkField(4, makeScalar, deserializeScalarFrom, getScalarKelvin, setScalarKelvin, (o) => o.kelvin, false));
+  checkField(4, Scalar.create, Scalar.deserializeFrom, Scalar.getKelvin, Scalar.setKelvin, (o) => o.kelvin, false));
 report("uavcan.file.Error",
-  checkField(2, makeError, deserializeErrorFrom, getErrorValue, setErrorValue, (o) => o.value, true));
+  checkField(2, FileError.create, FileError.deserializeFrom, FileError.getValue, FileError.setValue, (o) => o.value, true));
 report("uavcan.si.unit.angle.Quaternion",
-  checkElement(16, 4, makeQuaternion, deserializeQuaternionFrom, getQuaternionWxyz, setQuaternionWxyz, (o, i) => o.wxyz[i], 0));
+  checkElement(16, 4, Quaternion.create, Quaternion.deserializeFrom, Quaternion.getWxyz, Quaternion.setWxyz, (o, i) => o.wxyz[i], 0));
 // A nested composite, through the buffer its getter answers: the nested type's own getter on it
 // agrees with deserialise on the full buffer and on one cut inside the nested field.
 {
   const wire = new Uint8Array(11);
   fill(wire);
-  const obj = makeSample();
-  let same = deserializeSampleFrom(obj, wire) >= 0 && getSynchronizedTimestampMicrosecond(getScalarTimestamp(wire)) === obj.timestamp.microsecond;
-  const short = makeSample();
-  const stamp = getScalarTimestamp(wire.subarray(0, 3));
-  same = same && deserializeSampleFrom(short, wire.subarray(0, 3)) >= 0 && stamp.length === 3 && getSynchronizedTimestampMicrosecond(stamp) === short.timestamp.microsecond;
-  same = same && checkField(11, makeSample, deserializeSampleFrom, getSampleKelvin, setSampleKelvin, (o) => o.kelvin, false);
+  const obj = Sample.create();
+  let same = Sample.deserializeFrom(obj, wire) >= 0 && SynchronizedTimestamp.getMicrosecond(Sample.getTimestamp(wire)) === obj.timestamp.microsecond;
+  const short = Sample.create();
+  const stamp = Sample.getTimestamp(wire.subarray(0, 3));
+  same = same && Sample.deserializeFrom(short, wire.subarray(0, 3)) >= 0 && stamp.length === 3 && SynchronizedTimestamp.getMicrosecond(stamp) === short.timestamp.microsecond;
+  same = same && checkField(11, Sample.create, Sample.deserializeFrom, Sample.getKelvin, Sample.setKelvin, (o) => o.kelvin, false);
   report("uavcan.si.sample.temperature.Scalar", same);
 }
 if (failures !== 0) { throw new Error(`${failures} type(s) differ`); }

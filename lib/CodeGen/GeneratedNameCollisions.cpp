@@ -85,19 +85,19 @@ void forEachGeneratedName(const LanguageTraits&                              lan
     const Composition&       composition = language.composition;
     const FreeFunctionNames& free        = composition.freeFunctions;
 
-    if (composition.constants == ConstantsScope::Enclosing)
+    if (language.classification.typeConstants == ConstantsScope::Enclosing)
     {
         for (const llvm::StringRef token : codegenGeneratedConstantTokens())
         {
             claim(renderEnclosedConstantName(typeName, token.str() + composition.generatedConstantSuffix.str()));
         }
         for (const std::string& name :
-             makeSectionConstantScope(language.language, section, {}, declaredTypeName).assigned())
+             makeSectionConstantScope(language.language, section, declaredTypeName).assigned())
         {
             claim(renderEnclosedConstantName(typeName, name));
         }
     }
-    if (composition.constants == ConstantsScope::Package)
+    if (language.classification.typeConstants == ConstantsScope::Package)
     {
         for (const std::string& name : makeGoConstantScope(section, typeName).assigned())
         {
@@ -174,7 +174,7 @@ void forEachServiceName(const LanguageTraits&                              langu
     {
         for (const llvm::StringRef token : codegenGeneratedConstantTokens())
         {
-            claim((composition.constants == ConstantsScope::Package)
+            claim((language.classification.typeConstants == ConstantsScope::Package)
                       ? goConstantName({baseTypeName, token})
                       : renderEnclosedConstantName(baseTypeName,
                                                    token.str() + composition.generatedConstantSuffix.str()));

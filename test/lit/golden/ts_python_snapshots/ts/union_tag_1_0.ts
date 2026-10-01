@@ -3,15 +3,6 @@
 
 import * as dsdlRuntime from "../../dsdl_runtime";
 
-export const LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>";
-export const DSDL_FULL_NAME = "fixtures.vendor.UnionTag";
-export const DSDL_IS_DEPRECATED = false;
-export const DSDL_VERSION_MAJOR = 1;
-export const DSDL_VERSION_MINOR = 0;
-export const DSDL_HAS_FIXED_PORT_ID = false;
-export const DSDL_WIRE_FLAT = false;
-export const DSDL_WIRE_FLAT_REASON = "union-type";
-
 function capacityCheck(p0: bigint): number {
   const v0 = p0 < 24n;
   const v1 = v0 ? -3 : 0;
@@ -62,148 +53,159 @@ export type UnionTag =
   | { _tag: 0; first: number; }
   | { _tag: 1; second: number; };
 
-export function makeUnionTag(): UnionTag {
-  return { _tag: 0, first: 0 };
-}
+export const UnionTag = {
+  FULL_NAME: "fixtures.vendor.UnionTag",
+  IS_DEPRECATED: false,
+  FULL_NAME_AND_VERSION: "fixtures.vendor.UnionTag.1.0",
+  EXTENT_BYTES: 3,
+  SERIALIZATION_BUFFER_SIZE_BYTES: 3,
+  WIRE_FLAT: false,
+  WIRE_FLAT_REASON: "union-type",
+  HAS_FIXED_PORT_ID: false,
+  UNION_OPTION_COUNT: 2,
+  FIRST_OPTION_TAG: 0,
+  SECOND_OPTION_TAG: 1,
 
-export const UNION_TAG_FIRST_OPTION_TAG = 0;
-export const UNION_TAG_SECOND_OPTION_TAG = 1;
+  create(): UnionTag {
+    return { _tag: 0, first: 0 };
+  },
 
-export function serializeUnionTagInto(obj: UnionTag, buffer: Uint8Array): number {
-  const size = BigInt(buffer.length);
-  let err: number;
-  let v0: number;
-  if (obj == null) {
-    err = -2;
-    v0 = 0;
-  } else {
-    const v1 = size * 8n;
-    const err2 = capacityCheck(v1);
-    const tag = dsdlRuntime.toBigIntValue(obj._tag);
-    const tag2 = unionTagSer(tag);
-    const err3 = validateUnionTag(tag2);
-    const v2 = err2 === 0;
-    const v3 = v2 ? err3 : err2;
-    const v4 = v3 === 0;
-    let err4: number;
-    if (v4) {
-      const err5 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
-      err4 = err5;
+  serializeInto(obj: UnionTag, buffer: Uint8Array): number {
+    const size = BigInt(buffer.length);
+    let err: number;
+    let v0: number;
+    if (obj == null) {
+      err = -2;
+      v0 = 0;
     } else {
-      err4 = v3;
-    }
-    const v5 = tag2 === 0n;
-    const v6 = v5 ? 16n : 8n;
-    let err6: number;
-    if (v5) {
-      const v7 = err4 === 0;
-      let err7: number;
-      if (v7) {
-        const firstValue = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
-        const value = scalarUnsigned0Ser(firstValue);
-        const err8 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 8, value, false);
-        err7 = err8;
+      const v1 = size * 8n;
+      const err2 = capacityCheck(v1);
+      const tag = dsdlRuntime.toBigIntValue(obj._tag);
+      const tag2 = unionTagSer(tag);
+      const err3 = validateUnionTag(tag2);
+      const v2 = err2 === 0;
+      const v3 = v2 ? err3 : err2;
+      const v4 = v3 === 0;
+      let err4: number;
+      if (v4) {
+        const err5 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 8, tag2, false);
+        err4 = err5;
       } else {
-        err7 = err4;
+        err4 = v3;
       }
-      err6 = err7;
-    } else {
-      err6 = err4;
-    }
-    const v8 = tag2 === 1n;
-    const v9 = v8 ? 24n : v6;
-    let err9: number;
-    if (v8) {
-      const v10 = err4 === 0;
-      let err10: number;
-      if (v10) {
-        const secondValue = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
-        const value2 = scalarUnsigned1Ser(secondValue);
-        const err11 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 16, value2, false);
-        err10 = err11;
+      const v5 = tag2 === 0n;
+      const v6 = v5 ? 16n : 8n;
+      let err6: number;
+      if (v5) {
+        const v7 = err4 === 0;
+        let err7: number;
+        if (v7) {
+          const firstValue = dsdlRuntime.toBigIntValue((obj as { first: number }).first);
+          const value = scalarUnsigned0Ser(firstValue);
+          const err8 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 8, value, false);
+          err7 = err8;
+        } else {
+          err7 = err4;
+        }
+        err6 = err7;
       } else {
-        err10 = err4;
+        err6 = err4;
       }
-      err9 = err10;
+      const v8 = tag2 === 1n;
+      const v9 = v8 ? 24n : v6;
+      let err9: number;
+      if (v8) {
+        const v10 = err4 === 0;
+        let err10: number;
+        if (v10) {
+          const secondValue = dsdlRuntime.toBigIntValue((obj as { second: number }).second);
+          const value2 = scalarUnsigned1Ser(secondValue);
+          const err11 = dsdlRuntime.writeUnsigned(buffer, Number(8n), 16, value2, false);
+          err10 = err11;
+        } else {
+          err10 = err4;
+        }
+        err9 = err10;
+      } else {
+        err9 = err6;
+      }
+      const v11 = v9 / 8n;
+      const v12 = Number(v11);
+      err = err9;
+      v0 = v12;
+    }
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return v0;
+  },
+
+  deserializeFrom(obj: UnionTag, buffer: Uint8Array): number {
+    const size = BigInt(buffer.length);
+    let err: number;
+    let v0: number;
+    if (obj == null) {
+      err = -2;
+      v0 = 0;
     } else {
-      err9 = err6;
+      const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 8);
+      const tag = unionTagDeser(value);
+      const err2 = validateUnionTag(tag);
+      const v1 = err2 === 0;
+      if (v1) {
+        (obj as { _tag: number })._tag = Number(tag);
+      }
+      const v2 = tag === 0n;
+      const v3 = v2 ? 16n : 8n;
+      if (v2) {
+        const value2 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 8);
+        const value3 = scalarUnsigned0Deser(value2);
+        (obj as { first: number }).first = Number(value3);
+      }
+      const v4 = tag === 1n;
+      const v5 = v4 ? 24n : v3;
+      if (v4) {
+        const value4 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 16);
+        const value5 = scalarUnsigned1Deser(value4);
+        (obj as { second: number }).second = Number(value5);
+      }
+      const v6 = v5 + 7n;
+      const v7 = v6 / 8n;
+      const v8 = v7 * 8n;
+      const v9 = size * 8n;
+      const v10 = v8 < v9;
+      const v11 = v10 ? v8 : v9;
+      const v12 = v11 / 8n;
+      const v13 = Number(v12);
+      err = err2;
+      v0 = v13;
     }
-    const v11 = v9 / 8n;
-    const v12 = Number(v11);
-    err = err9;
-    v0 = v12;
-  }
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return v0;
-}
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return v0;
+  },
 
-export function deserializeUnionTagFrom(obj: UnionTag, buffer: Uint8Array): number {
-  const size = BigInt(buffer.length);
-  let err: number;
-  let v0: number;
-  if (obj == null) {
-    err = -2;
-    v0 = 0;
-  } else {
-    const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 8);
-    const tag = unionTagDeser(value);
-    const err2 = validateUnionTag(tag);
-    const v1 = err2 === 0;
-    if (v1) {
-      (obj as { _tag: number })._tag = Number(tag);
+  serialize(value: UnionTag): Uint8Array {
+    const v0 = new Uint8Array(Number(3n));
+    const size = UnionTag.serializeInto(value, v0);
+    const err = size < 0 ? size : 0;
+    const v1 = err === 0;
+    const v2 = BigInt(size);
+    const v3 = v1 ? v2 : 0n;
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
     }
-    const v2 = tag === 0n;
-    const v3 = v2 ? 16n : 8n;
-    if (v2) {
-      const value2 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 8);
-      const value3 = scalarUnsigned0Deser(value2);
-      (obj as { first: number }).first = Number(value3);
-    }
-    const v4 = tag === 1n;
-    const v5 = v4 ? 24n : v3;
-    if (v4) {
-      const value4 = dsdlRuntime.readUnsignedBigInt(buffer, Number(8n), 16);
-      const value5 = scalarUnsigned1Deser(value4);
-      (obj as { second: number }).second = Number(value5);
-    }
-    const v6 = v5 + 7n;
-    const v7 = v6 / 8n;
-    const v8 = v7 * 8n;
-    const v9 = size * 8n;
-    const v10 = v8 < v9;
-    const v11 = v10 ? v8 : v9;
-    const v12 = v11 / 8n;
-    const v13 = Number(v12);
-    err = err2;
-    v0 = v13;
-  }
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return v0;
-}
+    return v0.subarray(0, Number(v3));
+  },
 
-export function serializeUnionTag(value: UnionTag): Uint8Array {
-  const v0 = new Uint8Array(Number(3n));
-  const size = serializeUnionTagInto(value, v0);
-  const err = size < 0 ? size : 0;
-  const v1 = err === 0;
-  const v2 = BigInt(size);
-  const v3 = v1 ? v2 : 0n;
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return v0.subarray(0, Number(v3));
-}
-
-export function deserializeUnionTag(bytes: Uint8Array): { value: UnionTag; consumed: number } {
-  const v0 = makeUnionTag();
-  const size = deserializeUnionTagFrom(v0, bytes);
-  const err = size < 0 ? size : 0;
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return { value: v0, consumed: size };
-}
+  deserialize(bytes: Uint8Array): { value: UnionTag; consumed: number } {
+    const v0 = UnionTag.create();
+    const size = UnionTag.deserializeFrom(v0, bytes);
+    const err = size < 0 ? size : 0;
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return { value: v0, consumed: size };
+  },
+} as const;

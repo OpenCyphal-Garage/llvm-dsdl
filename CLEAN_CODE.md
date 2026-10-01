@@ -1238,6 +1238,18 @@ suppression. The six left stay: five by the decision C++ took on an empty sectio
 and one `ArrayBound` in the runtime's bit copy, which assumes a whole byte and a partial one in a
 copy of at most eight bits.
 
+TypeScript's row then took its target. Each section is an interface and a `const` of the same name,
+and the `const` holds the type's facts, a union's option tags, the DSDL constants, the factory
+`create`, the bodies `serializeInto` and `deserializeFrom`, the entry points `serialize` and
+`deserialize`, and the accessors: `Heartbeat.deserialize(bytes)`, `Heartbeat.MAX_PUBLICATION_PERIOD`.
+A method reaches its own type's members through the `const`, and another definition's through the
+`const` it imports, which brings the interface with it. A service's own facts stay beside its
+sections, named after it, and its name stands for its request's interface and `const`, as in Python.
+A body reaches a global through `globalThis` where its module binds the global's name, as
+`uavcan.file.Error`'s does. The judge accepts an exported `const` in PascalCase, the name of the
+type it belongs to, and holds at zero. Every row now declares a type's constants where its language
+does, so the row states that once, in the classification.
+
 Only phase 3 touches a plan body, and it moves what emitters decide into the IR they translate. The
 wire is fixed by the round-trip, parity and cross-language equivalence lanes throughout, and a phase
 that moves a wire byte has failed.

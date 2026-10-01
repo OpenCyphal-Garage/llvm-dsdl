@@ -2082,18 +2082,8 @@ int runDsdlc(int argc, char** argv)
                     const std::string&          declaredTypeName = plan.scopes[held.typeScope].name;
                     const llvmdsdl::NamingScope fieldScope =
                         llvmdsdl::makeSectionFieldScope(language.language, section, declaredTypeName);
-                    // The same prefix the emitter puts in front of this section's constants, which is
-                    // what decides whether they are in reach of the module's own names. A scope built
-                    // without it would report the name a constant would have had rather than the one
-                    // written.
                     const llvmdsdl::NamingScope constScope =
-                        llvmdsdl::makeSectionConstantScope(language.language,
-                                                           section,
-                                                           llvmdsdl::codegenProjectIdentifier(language.language,
-                                                                                              llvmdsdl::IdentifierRole::
-                                                                                                  ConstantName,
-                                                                                              held.typeName),
-                                                           declaredTypeName);
+                        llvmdsdl::makeSectionConstantScope(language.language, section, declaredTypeName);
 
                     const auto reportOne = [&](const llvmdsdl::NamingScope&   scope,
                                                const char* const              what,

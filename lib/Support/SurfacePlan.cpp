@@ -141,9 +141,6 @@ bool states(const GeneratedFact                fact,
     case GeneratedFact::Initialize:
     case GeneratedFact::WireImage:
     case GeneratedFact::FromWireImage:
-    case GeneratedFact::GeneratorVersion:
-    case GeneratedFact::VersionMajor:
-    case GeneratedFact::VersionMinor:
     case GeneratedFact::MemoryResource:
         break;
     }
@@ -260,7 +257,6 @@ public:
             plan_.scopes[space].path = directory + row_.composition.namespaceFile.str();
         }
         allocateFileGuards(names, definition.ref, file);
-        allocateModuleConstants(names, definition, file);
 
         const bool deprecated = definition.deprecated;
         if (definition.service && (row_.composition.sectionEnclosure == SectionEnclosure::ServiceType))
@@ -410,7 +406,7 @@ private:
             return false;
         }
         const LanguageNamingPolicy& policy          = codegenNamingPolicy(row_.language);
-        const bool                  constantsInType = row_.composition.constants == ConstantsScope::Type;
+        const bool                  constantsInType = row_.classification.typeConstants == ConstantsScope::Type;
         return llvm::is_contained(policy.runtimeOwned(IdentifierRole::FieldName), typeName) ||
                (constantsInType && llvm::is_contained(policy.runtimeOwned(IdentifierRole::ConstantName), typeName));
     }
@@ -464,7 +460,7 @@ private:
             allocateDataMembers(section, parts, of, allocateProfileMembers(section, parts, of));
         }
         allocateTypeMembers(section, parts, of, sectionName.empty() ? names.fixedPortId : std::nullopt);
-        if (row_.composition.constants == ConstantsScope::Package)
+        if (row_.classification.typeConstants == ConstantsScope::Package)
         {
             allocatePackageConstants(section, parent, parts, of);
         }
@@ -573,7 +569,7 @@ private:
         const Language    language  = row_.language;
         const NameClass   nameClass = row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value;
         const bool        message   = section.section.empty();
-        const std::size_t scope     = (row_.composition.constants == ConstantsScope::Type)
+        const std::size_t scope     = (row_.classification.typeConstants == ConstantsScope::Type)
                                           ? section.typeScope
                                           : *plan_.scopes[section.typeScope].parent;
         for (const GeneratedName& member : generatedTypeMembers(language))
@@ -616,7 +612,7 @@ private:
             if (states(member.fact, parts, message, fixedPortId))
             {
                 (void) declare(scope,
-                               (row_.composition.constants == ConstantsScope::Package)
+                               (row_.classification.typeConstants == ConstantsScope::Package)
                                    ? makeGoConstantScope(parts, section.typeName)
                                          .get(IdentifierRole::ConstantName,
                                               goGeneratedConstantKey(section.typeName, member.name))
@@ -672,41 +668,6 @@ private:
                            SurfaceEntity{names.key, "", "", ""},
                            SurfaceVisibility::Public,
                            guard.fact);
-        }
-    }
-
-    /// @brief Declares the constants a language declares in a definition's module: those the
-    ///        definition states, and those each of its sections does.
-    void allocateModuleConstants(const DefinitionNames& names,
-                                 const DefinitionParts& definition,
-                                 const std::size_t      file)
-    {
-        for (const ModuleConstantName& constant : generatedModuleConstants(row_.language))
-        {
-            bool stated = false;
-            if (!constant.section)
-            {
-                stated = (constant.fact != GeneratedFact::FixedPortId) || names.fixedPortId.has_value();
-            }
-            else if (constant.section->empty())
-            {
-                stated = !definition.service;
-            }
-            else
-            {
-                stated = definition.service && ((*constant.section == "request") || definition.response.has_value());
-            }
-            if (stated)
-            {
-                (void) declare(file,
-                               constant.name.str(),
-                               SurfaceDeclKind::Constant,
-                               NameClass::Value,
-                               NameOrigin::Generated,
-                               SurfaceEntity{names.key, constant.section.value_or("").str(), "", ""},
-                               SurfaceVisibility::Public,
-                               constant.fact);
-            }
         }
     }
 
@@ -776,8 +737,7 @@ private:
                     if (inSection(body) && (body.plan.function == entry.function))
                     {
                         (void) declare(entry.beside ? names.fileScope : section.typeScope,
-                                       entry.beside ? entry.name.str() + section.typeName + entry.suffix.str()
-                                                    : entry.name.str(),
+                                       entry.beside ? entry.name.str() + section.typeName : entry.name.str(),
                                        SurfaceDeclKind::Entry,
                                        NameClass::Value,
                                        NameOrigin::Generated,
@@ -1050,15 +1010,12 @@ private:
     template <typename Of>
     void allocateConstants(SectionNames& section, const std::size_t file, const SectionParts& parts, const Of& of)
     {
-        const Language    language  = row_.language;
-        const std::size_t scope     = (row_.composition.constants == ConstantsScope::Type) ? section.typeScope : file;
+        const Language    language = row_.language;
+        const std::size_t scope =
+            (row_.classification.typeConstants == ConstantsScope::Type) ? section.typeScope : file;
         const NameClass   nameClass = row_.composition.constantsAreMacros ? NameClass::Macro : NameClass::Value;
-        const NamingScope pool =
-            makeSectionConstantScope(language,
-                                     parts,
-                                     codegenProjectIdentifier(language, IdentifierRole::ConstantName, section.typeName),
-                                     plan_.scopes[section.typeScope].name);
-        const auto declared = [&](const std::string& allocated) {
+        const NamingScope pool      = makeSectionConstantScope(language, parts, plan_.scopes[section.typeScope].name);
+        const auto        declared  = [&](const std::string& allocated) {
             return renderDeclaredConstantName(language, section.typeName, allocated);
         };
         if (row_.composition.arrayMetadataConstants)
@@ -1310,9 +1267,6 @@ private:
         case ImportNaming::Package:
             allocatePackageImports(definition, file, composites);
             return;
-        case ImportNaming::TypeAndFunctions:
-            allocateTypeAndFunctionImports(definition, file, composites);
-            return;
         case ImportNaming::None:
             return;
         }
@@ -1360,81 +1314,6 @@ private:
                            NameOrigin::Definition,
                            SurfaceEntity{key, "", "", ""},
                            SurfaceVisibility::Private);
-        }
-    }
-
-    /// @brief Declares the local names the file imports each definition's type, and the entry points
-    ///        beside it, under. An import of a type brings the entry points named after it, so a
-    ///        clash is judged on them all, against what the file declares, which is reserved first.
-    void allocateTypeAndFunctionImports(const DefinitionParts&                      definition,
-                                        const std::size_t                           file,
-                                        const std::map<std::string, DefinitionRef>& composites)
-    {
-        // The entry points another definition's bodies reach: a nested call's and a nested
-        // initialiser's. No body calls another definition's wire image.
-        std::vector<EntryPointName> entries;
-        for (const EntryPointName& entry : entryPointNames(row_.language))
-        {
-            if ((entry.function == PlanFunction::Serialize) || (entry.function == PlanFunction::Deserialize) ||
-                (entry.function == PlanFunction::Initialize))
-            {
-                entries.push_back(entry);
-            }
-        }
-        const auto beside = [](const std::string& type, const EntryPointName& entry) {
-            return entry.name.str() + type + entry.suffix.str();
-        };
-        ImportNameScope scope(row_.language, [&](const std::string& type) {
-            std::vector<std::string> brought{type};
-            for (const EntryPointName& entry : entries)
-            {
-                brought.push_back(beside(type, entry));
-            }
-            return brought;
-        });
-        for (const SurfaceItem& item : plan_.scopes[file].items)
-        {
-            scope.reserve(item.scope ? plan_.scopes[item.index].name : plan_.decls[item.index].name);
-        }
-        const std::string own = renderDefinitionKey(definition.ref);
-        for (const auto& [order, ref] : composites)
-        {
-            const std::string key = renderDefinitionKey(ref);
-            // The tree names a definition the module holds, and a definition does not import itself.
-            if ((key == own) || !deprecated_.contains(key))
-            {
-                continue;
-            }
-            const std::string local = scope.claim(ref,
-                                                  renderDefinitionTypeName(row_.language,
-                                                                           ref.namespaceComponents,
-                                                                           ref.shortName,
-                                                                           ref.majorVersion,
-                                                                           ref.minorVersion,
-                                                                           options_.versioning),
-                                                  false);
-            (void) declare(file,
-                           local,
-                           SurfaceDeclKind::Import,
-                           NameClass::Type,
-                           NameOrigin::Definition,
-                           SurfaceEntity{key, "", "", ""},
-                           SurfaceVisibility::Private);
-            PlanSymbol function;
-            function.schema = SchemaSymbol{.fullName = llvm::join(ref.namespaceComponents, ".") + "." + ref.shortName,
-                                           .major    = ref.majorVersion,
-                                           .minor    = ref.minorVersion};
-            for (const EntryPointName& entry : entries)
-            {
-                function.function = entry.function;
-                (void) declare(file,
-                               beside(local, entry),
-                               SurfaceDeclKind::Import,
-                               NameClass::Value,
-                               NameOrigin::Generated,
-                               SurfaceEntity{key, "", "", renderPlanSymbol(function)},
-                               SurfaceVisibility::Private);
-            }
         }
     }
 

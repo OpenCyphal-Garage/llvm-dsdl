@@ -68,13 +68,13 @@ file(WRITE
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.FloatType_1_0 = { f32: 1.5, f64: -2.25 };\n"
-  "const outBytes = ${ts_type_module}.serializeFloatType_1_0(inObj);\n"
+  "const outBytes = ${ts_type_module}.FloatType_1_0.serialize(inObj);\n"
   "if (outBytes.length !== 12) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(Array.from(outBytes).join(\" \"));\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeFloatType_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.FloatType_1_0.deserialize(outBytes);\n"
   "console.log(decoded.value.f32 + \" \" + decoded.value.f64 + \" \" + decoded.consumed);\n"
 )
 

@@ -1,0 +1,21 @@
+# A type's facts and its DSDL constants are one scope: a Python class's attributes, and the
+# properties of a TypeScript type's `const`. A constant named as a fact is escaped past it, and one
+# named as no fact keeps its spelling.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language ts %S/fixtures_type_facts --outdir %t/ts > /dev/null
+# RUN: cat %t/ts/fixtures_type_facts/ns/msg_1_0.ts | FileCheck %s --check-prefix=TS
+# TS:      WIRE_FLAT: true,
+# TS:      WIRE_FLAT_: 1,
+# TS-NEXT: REQUEST_WIRE_FLAT: 2,
+
+# A service's section states its facts as a message does.
+# RUN: cat %t/ts/fixtures_type_facts/ns/svc_1_0.ts | FileCheck %s --check-prefix=TS_SERVICE
+# TS_SERVICE: WIRE_FLAT: true,
+# TS_SERVICE: WIRE_FLAT_: 3,
+
+# RUN: %dsdlc --target-language python %S/fixtures_type_facts --outdir %t/py > /dev/null
+# RUN: cat %t/py/*/fixtures_type_facts/ns/msg_1_0.py | FileCheck %s --check-prefix=PY
+# PY:      WIRE_FLAT: ClassVar[bool] = True
+# PY:      WIRE_FLAT_: ClassVar[int] = 1
+# PY-NEXT: REQUEST_WIRE_FLAT: ClassVar[int] = 2

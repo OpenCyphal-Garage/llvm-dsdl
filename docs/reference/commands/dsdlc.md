@@ -159,9 +159,9 @@ carries two versions of one type — which the newest-version default prevents:
 ## Deprecation
 
 A definition marked `@deprecated` generates a `Deprecated: …` notice in its documentation comment and
-an `IS_DEPRECATED` metadata constant (`DSDL_IS_DEPRECATED` in TypeScript, `<TYPE>_IS_DEPRECATED_`
-in C), in every language. Go recognises the `Deprecated: ` doc paragraph, and
-TypeScript is additionally given a `/** @deprecated … */` JSDoc block.
+an `IS_DEPRECATED` metadata constant (`<TYPE>_IS_DEPRECATED_` in C), in every language. Go
+recognises the `Deprecated: ` doc paragraph, and TypeScript is additionally given a
+`/** @deprecated … */` JSDoc block.
 
 C, C++, and Rust additionally get a language-native attribute — `__attribute__((deprecated))`,
 `[[deprecated]]`, and `#[deprecated(note = …)]` respectively — so naming the type produces a compiler
@@ -224,8 +224,9 @@ a setter answers the runtime's error, refusing such an index, a buffer too short
 and in C a null buffer: a code in C, C++, TypeScript and Python, `Result<(), Error>` in Rust and an
 `error` in Go. C spells them `<type>__get_<field>_` and
 `<type>__set_<field>_`, C++ as static members `get_<field>` and `set_<field>`, Rust as associated
-functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as
-`get<Type><Field>` and `set<Type><Field>`, Python as static methods `get_<field>` and `set_<field>`.
+functions of the same names, Go as `<Type>Get<Field>` and `<Type>Set<Field>`, TypeScript as methods
+`get<Field>` and `set<Field>` of the type's `const`, Python as static methods `get_<field>` and
+`set_<field>`.
 
 A union whose options are all flat and of one length, sealed, has its tag at a fixed offset and
 every option at the offset after it, so it has the same accessors: the tag as a member named

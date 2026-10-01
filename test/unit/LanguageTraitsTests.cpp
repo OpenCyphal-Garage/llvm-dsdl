@@ -21,7 +21,6 @@
 
 #include <cstddef>
 #include <iostream>
-#include <set>
 #include <string>
 #include <utility>
 
@@ -179,8 +178,6 @@ std::string render(const AccessorNaming value)
         return "joined";
     case AccessorNaming::Concatenated:
         return "concatenated";
-    case AccessorNaming::VerbFirst:
-        return "verb-first";
     }
     return "?";
 }
@@ -253,8 +250,6 @@ std::string render(const llvmdsdl::ImportNaming value)
         return "package";
     case llvmdsdl::ImportNaming::Type:
         return "type";
-    case llvmdsdl::ImportNaming::TypeAndFunctions:
-        return "type-and-functions";
     }
     return "?";
 }
@@ -313,7 +308,7 @@ std::string render(const LanguageTraits& row)
            "' imports=" + render(d.imports) + " helpers=" + render(d.helpers) +
 
            " file-directory-module=" + flag(d.fileAndDirectoryAreOneModule) +
-           " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) + " constants=" + render(d.constants) +
+           " namespace-type-scope=" + flag(d.namespaceAndTypeShareScope) +
            " service-constants=" + render(d.serviceConstants) + " constant-macros=" + flag(d.constantsAreMacros) +
            " generated-suffix='" + d.generatedConstantSuffix.str() +
            "' array-metadata=" + flag(d.arrayMetadataConstants) +
@@ -355,7 +350,7 @@ bool runLanguageTraitsTests()
          "extension='.h' directories-projected=0 source='' package-directory=0 namespace-file='' root-file='' "
          "imports=none "
          "helpers=module "
-         "file-directory-module=0 namespace-type-scope=0 constants=enclosing service-constants=enclosing "
+         "file-directory-module=0 namespace-type-scope=0 service-constants=enclosing "
          "constant-macros=1 generated-suffix='_' "
          "array-metadata=1 "
          "deprecated-apart=0 free-entry-join='__' free-init=1 free-accessors=joined free-union-options=1 "
@@ -372,7 +367,7 @@ bool runLanguageTraitsTests()
          "package-directory=0 namespace-file='' root-file='' imports=none helpers=type "
          "file-directory-module=0 "
          "namespace-type-scope=1 "
-         "constants=type service-constants=type "
+         "service-constants=type "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=1 "
          "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
@@ -387,7 +382,7 @@ bool runLanguageTraitsTests()
          "extension='.rs' directories-projected=1 source='src/' package-directory=0 namespace-file='mod.rs' "
          "root-file='lib.rs' imports=type "
          "helpers=module "
-         "file-directory-module=1 namespace-type-scope=0 constants=type service-constants=module constant-macros=0 "
+         "file-directory-module=1 namespace-type-scope=0 service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=1 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
@@ -402,7 +397,7 @@ bool runLanguageTraitsTests()
          "namespace-file='doc.go' root-file='' imports=package helpers=package "
          "file-directory-module=0 "
          "namespace-type-scope=0 "
-         "constants=package service-constants=package "
+         "service-constants=package "
          "constant-macros=0 generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=concatenated free-union-options=0 "
@@ -415,12 +410,12 @@ bool runLanguageTraitsTests()
          "namespace-join='' "
          "version-in-name=1 name-reaches-type=1 section-join='' sections=none namespace-shared=0 namespaces=module "
          "extension='.ts' directories-projected=1 source='' package-directory=0 namespace-file='' root-file='index.ts' "
-         "imports=type-and-functions "
+         "imports=type "
          "helpers=module "
-         "file-directory-module=0 namespace-type-scope=0 constants=module service-constants=module constant-macros=0 "
+         "file-directory-module=0 namespace-type-scope=0 service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "
-         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=verb-first free-union-options=0 "
+         "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
          "free-bodies-apart=0 line-length=0"},
         {Language::Python,
          "python: scopes=010 nested=1 methods=member internal=underscore-prefix errors=exception constants=type "
@@ -432,7 +427,7 @@ bool runLanguageTraitsTests()
          "extension='.py' directories-projected=1 source='' package-directory=1 namespace-file='__init__.py' "
          "root-file='__init__.py' imports=type "
          "helpers=type "
-         "file-directory-module=1 namespace-type-scope=0 constants=type service-constants=module constant-macros=0 "
+         "file-directory-module=1 namespace-type-scope=0 service-constants=module constant-macros=0 "
          "generated-suffix='' "
          "array-metadata=0 "
          "deprecated-apart=0 free-entry-join='' free-init=0 free-accessors=none free-union-options=0 "
@@ -477,19 +472,6 @@ bool runLanguageTraitsTests()
                      !row.composition.definitionName.namespaceJoin.empty(),
                  row.name.str() + ": a joined namespace has a separator, and only a joined one");
     }
-
-    // Where the output declares a type's constants somewhere other than its language would. The
-    // phase that takes each of these languages removes it from this list.
-    std::set<std::string> departures;
-    for (const LanguageTraits& row : llvmdsdl::allLanguageTraits())
-    {
-        if (row.composition.constants != row.classification.typeConstants)
-        {
-            departures.insert(row.name.str());
-        }
-    }
-    t.expect(departures == std::set<std::string>{"ts"},
-             "the languages whose constants are not yet where the language declares them");
 
     return t.ok;
 }

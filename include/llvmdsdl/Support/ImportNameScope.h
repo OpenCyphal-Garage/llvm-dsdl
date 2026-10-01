@@ -19,11 +19,9 @@
 #ifndef LLVMDSDL_SUPPORT_IMPORT_NAME_SCOPE_H
 #define LLVMDSDL_SUPPORT_IMPORT_NAME_SCOPE_H
 
-#include <functional>
 #include <map>
 #include <set>
 #include <string>
-#include <vector>
 
 #include <llvm/ADT/StringRef.h>
 
@@ -44,13 +42,8 @@ namespace llvmdsdl
 class ImportNameScope final
 {
 public:
-    /// @brief The names a local type name brings into the file: the name itself, and in a language
-    ///        whose import of a type brings functions named after it, those.
-    using Brought = std::function<std::vector<std::string>(const std::string& local)>;
-
     /// @param[in] language The language whose type-name projection composes a qualified name.
-    /// @param[in] brought The names a local type name brings; the name alone where it is unset.
-    explicit ImportNameScope(Language language, Brought brought = {});
+    explicit ImportNameScope(Language language);
 
     /// @brief Reserves @p name, which the file declares itself.
     void reserve(llvm::StringRef name);
@@ -65,11 +58,9 @@ public:
     [[nodiscard]] std::string localName(const DefinitionRef& ref, const std::string& exported) const;
 
 private:
-    [[nodiscard]] std::vector<std::string> broughtBy(const std::string& local) const;
-    [[nodiscard]] bool                     taken(const std::string& local) const;
+    [[nodiscard]] bool taken(const std::string& local) const;
 
     Language                           language_;
-    Brought                            brought_;
     std::set<std::string>              declared_;
     std::set<std::string>              imported_;
     std::map<std::string, std::string> claims_;

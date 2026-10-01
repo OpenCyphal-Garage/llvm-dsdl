@@ -44,7 +44,8 @@ namespace
 bool constantsShareTheFieldScope(const Language language)
 {
     const LanguageTraits& traits = languageTraits(language);
-    return (traits.composition.constants == ConstantsScope::Type) && !traits.classification.nameClasses.fieldsApart;
+    return (traits.classification.typeConstants == ConstantsScope::Type) &&
+           !traits.classification.nameClasses.fieldsApart;
 }
 
 /// @brief The names a scope of a type's members claims in @p language: the type's own, where the
@@ -120,68 +121,13 @@ void declareUnionOptionTags(NamingScope& scope, const SectionParts& section, con
     }
 }
 
-/// @brief The names a module declares for the definition itself, where a section's constants are
-///        the module's too.
-///
-/// They sit in the module's scope, which is also where a section's constants are declared, so a
-/// type whose constant prefix is `DSDL` or `LLVMDSDL` can reach them.
-std::vector<llvm::StringRef> moduleMetadataNames(const Language language)
-{
-    std::vector<llvm::StringRef> names;
-    for (const ModuleConstantName& constant : generatedModuleConstants(language))
-    {
-        names.push_back(constant.name);
-    }
-    return names;
-}
-
-/// @brief The module names @p typeConstantPrefix puts a section constant in reach of.
-///
-/// A module name is reachable only when the type's constant prefix is the whole of its first
-/// component: for `DSDL.1.0` the prefix is `DSDL`, so `DSDL_FULL_NAME` is `FULL_NAME` behind that
-/// prefix and a DSDL constant of that name reaches it. For every other type nothing here is
-/// reachable and nothing is reserved, which keeps this from renaming constants on types that were
-/// never at risk.
-///
-/// These are reserved rather than declared: the scope treats a second `declare` of one source name
-/// as the same entry, which is right for a caller that walks a section twice and wrong here, where
-/// the module owns the name and the DSDL constant is the one that has to move.
-std::vector<std::string> reachableModuleMetadata(const Language language, const llvm::StringRef typeConstantPrefix)
-{
-    std::vector<std::string> out;
-    if (typeConstantPrefix.empty())
-    {
-        return out;
-    }
-    for (const llvm::StringRef name : moduleMetadataNames(language))
-    {
-        if (name.starts_with(typeConstantPrefix) && (name.size() > typeConstantPrefix.size()) &&
-            (name[typeConstantPrefix.size()] == '_'))
-        {
-            const llvm::StringRef remainder = name.substr(typeConstantPrefix.size() + 1);
-            // A name the module writes for one payload of a service is reached through that
-            // payload's own prefix, which carries the qualifier: `DSDL_REQUEST` reaches
-            // `DSDL_REQUEST_WIRE_FLAT` as `WIRE_FLAT`. Reaching the same name from the bare type
-            // name would reserve `REQUEST_WIRE_FLAT` on a message, whose module writes no such
-            // name, and rename a constant that collides with nothing.
-            if (remainder.starts_with("REQUEST_") || remainder.starts_with("RESPONSE_"))
-            {
-                continue;
-            }
-            out.push_back(remainder.str());
-        }
-    }
-    return out;
-}
-
 /// @brief Declares everything @p language puts in one region with @p section's constants.
 ///
 /// The order is what decides which name moves when two collide, and it runs from least to most
 /// willing to move. Fields are first because a field's identifier is the ABI a caller writes against
 /// and has to be predictable from the DSDL alone; the generated array metadata and union option tags
 /// are next; DSDL constants are last; of the four, only they can be renamed without changing the
-/// wire format or breaking a field access. The module's own names sit outside this order: they are
-/// reserved before the scope is opened, so nothing declared here can take one.
+/// wire format or breaking a field access.
 void declareConstantRegion(NamingScope& scope, const SectionParts& section, const Language language)
 {
     if (emitsArrayMetadata(language))
@@ -350,20 +296,15 @@ std::vector<std::pair<std::string, std::string>> poolClassConstantNames(const La
 
 NamingScope makeSectionConstantScope(const Language        language,
                                      const SectionParts&   section,
-                                     const llvm::StringRef typeConstantPrefix,
                                      const llvm::StringRef declaredTypeName)
 {
     if (constantsShareTheFieldScope(language))
     {
         return makeSectionFieldScope(language, section, declaredTypeName);
     }
-    // The module's own names are reserved before anything is declared, so a DSDL constant that
-    // reaches one is escaped past it rather than redefining it.
-    const std::vector<std::string>     reserved = reachableModuleMetadata(language, typeConstantPrefix);
-    const std::vector<llvm::StringRef> reservedRefs(reserved.begin(), reserved.end());
-    const bool                         inType = languageTraits(language).composition.constants == ConstantsScope::Type;
+    const bool  inType = languageTraits(language).classification.typeConstants == ConstantsScope::Type;
     NamingScope scope(language,
-                      reservedRefs,
+                      {},
                       inType ? typeMemberClaims(language, declaredTypeName) : std::vector<llvm::StringRef>{});
     declareConstantRegion(scope, section, language);
     return scope;

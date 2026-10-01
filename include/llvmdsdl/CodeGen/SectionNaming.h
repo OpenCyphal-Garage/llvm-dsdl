@@ -59,12 +59,10 @@ namespace llvmdsdl
 /// @brief @ref makeSectionConstantScope over the parts of @p section.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose constants are being named.
-/// @param[in] typeConstantPrefix As @ref makeSectionConstantScope takes it.
 /// @param[in] declaredTypeName The name the section's type is declared under.
 /// @return A scope with every constant declared.
 [[nodiscard]] NamingScope makeSectionConstantScope(Language               language,
                                                    const SemanticSection& section,
-                                                   llvm::StringRef        typeConstantPrefix,
                                                    llvm::StringRef        declaredTypeName);
 
 /// @brief @ref makeGoConstantScope over the parts of @p section.

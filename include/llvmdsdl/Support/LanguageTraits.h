@@ -258,10 +258,6 @@ enum class AccessorNaming
 
     /// @brief The type's name, the verb in title case and the member: `ListRequestGetPath`.
     Concatenated,
-
-    /// @brief The verb, the type's name and the member's words in PascalCase: `getListRequestPath`,
-    ///        and `getEntryNodeId` for a member `node_id`.
-    VerbFirst,
 };
 
 /// @brief How the free functions declared beside a section's type are named.
@@ -381,10 +377,6 @@ enum class ImportNaming
 
     /// @brief It imports the definition's type under a local name.
     Type,
-
-    /// @brief It imports the definition's type under a local name, with the functions named after
-    ///        the type.
-    TypeAndFunctions,
 };
 
 /// @brief How the output composes a language's declarations today.
@@ -447,16 +439,13 @@ struct Composition final
     /// C++ declares `namespace Foo` beside `struct Foo`, and the two may not share a name.
     bool namespaceAndTypeShareScope{};
 
-    /// @brief Where a type's constants are declared.
-    ConstantsScope constants{};
+    /// @brief Whether a type's constants, its array metadata and its option tags are macros.
+    bool constantsAreMacros{};
 
     /// @brief Where a service's own constants are declared: in the type that encloses its sections,
     ///        named as a type's constants are, or beside its section types, named after the service
     ///        as a constant of that scope is named after its type's.
     ConstantsScope serviceConstants{};
-
-    /// @brief Whether a type's constants, its array metadata and its option tags are macros.
-    bool constantsAreMacros{};
 
     /// @brief What ends the name of a constant the generator composes, such as `_OPTION_TAG`.
     ///

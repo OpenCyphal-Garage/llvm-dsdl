@@ -203,9 +203,6 @@ std::string renderAccessorName(const Language        language,
         return typeName.str() + names.entryPointJoin.str() + joined.str() + "_" + member.str() + "_";
     case AccessorNaming::Concatenated:
         return typeName.str() + concatenated.str() + member.str();
-    case AccessorNaming::VerbFirst:
-        return joined.str() + typeName.str() +
-               (member.empty() ? std::string{} : codegenToPascalCaseIdentifier(language, member));
     case AccessorNaming::None:
         break;
     }
@@ -232,7 +229,7 @@ std::string renderDeclaredConstantName(const Language        language,
                                        const llvm::StringRef sectionTypeName,
                                        const llvm::StringRef allocated)
 {
-    switch (languageTraits(language).composition.constants)
+    switch (languageTraits(language).classification.typeConstants)
     {
     case ConstantsScope::Type:
         return allocated.str();

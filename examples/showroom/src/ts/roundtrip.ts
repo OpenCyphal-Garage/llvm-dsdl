@@ -8,11 +8,7 @@
 // the whole TypeScript story in one line -- see the recipe pages for why. dsdlc emits TypeScript
 // *source*, so it joins your program as source.
 
-import {
-  deserializeSystemHealth_1_0,
-  serializeSystemHealth_1_0,
-  type SystemHealth_1_0,
-} from "../../generated/lanyard/health/system_health_1_0";
+import { SystemHealth_1_0 } from "../../generated/lanyard/health/system_health_1_0";
 import type { SubsystemReport_1_0 } from "../../generated/lanyard/health/subsystem_report_1_0";
 
 const SUBSYSTEMS = ["gnss", "esc.3", "imu.0"];
@@ -40,8 +36,8 @@ const original: SystemHealth_1_0 = {
   })),
 };
 
-const bytes = serializeSystemHealth_1_0(original);
-const { value: restored } = deserializeSystemHealth_1_0(bytes);
+const bytes = SystemHealth_1_0.serialize(original);
+const { value: restored } = SystemHealth_1_0.deserialize(bytes);
 
 if (show(restored) !== show(original)) {
   fail(`round-trip changed the value\n  sent:     ${show(original)}\n  received: ${show(restored)}`);

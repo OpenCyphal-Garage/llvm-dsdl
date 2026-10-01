@@ -320,24 +320,6 @@ struct GeneratedName final
 /// @return The constants, valid for the process lifetime.
 [[nodiscard]] llvm::ArrayRef<GeneratedName> generatedServiceConstants(Language language);
 
-/// @brief A constant the generator declares in a definition's module, and the fact it states.
-struct ModuleConstantName final
-{
-    GeneratedFact fact{};
-
-    llvm::StringRef name;
-
-    /// @brief The section whose fact the constant states: empty for a message's, and none for one
-    ///        the definition states whatever its sections.
-    std::optional<llvm::StringRef> section;
-};
-
-/// @brief The constants the generator declares in each definition's module, where a language
-///        declares a type's constants in the module.
-/// @param[in] language Naming language.
-/// @return The constants, valid for the process lifetime.
-[[nodiscard]] llvm::ArrayRef<ModuleConstantName> generatedModuleConstants(Language language);
-
 /// @brief A macro the generator guards a file with, and the fact it states.
 struct GuardName final
 {
@@ -372,9 +354,6 @@ struct EntryPointName final
 
     /// @brief The entry point's name; beside the type, what comes before the type's name.
     llvm::StringRef name;
-
-    /// @brief Beside the type, what comes after the type's name.
-    llvm::StringRef suffix;
 
     /// @brief Whether the entry point is a function beside the type rather than a member of it.
     bool beside{};

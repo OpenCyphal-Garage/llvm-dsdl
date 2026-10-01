@@ -1,11 +1,11 @@
 // The default is the factory; the spec's definition is deserialising nothing over it.
-import { makeHeartbeat, deserializeHeartbeatFrom, serializeHeartbeatInto } from "./uavcan/node/heartbeat_1_0";
-import { makeFrame, deserializeFrameFrom, serializeFrameInto } from "./uavcan/metatransport/can/frame_0_2";
-import { makeReal32, deserializeReal32From, serializeReal32Into } from "./uavcan/primitive/array/real32_1_0";
-import { makeSubjectIDList, deserializeSubjectIDListFrom, serializeSubjectIDListInto } from "./uavcan/node/port/subject_id_list_1_0";
-import { makeNodeIDAllocationData, deserializeNodeIDAllocationDataFrom, serializeNodeIDAllocationDataInto } from "./uavcan/pnp/node_id_allocation_data_2_0";
-import { makeRecord, deserializeRecordFrom, serializeRecordInto } from "./uavcan/diagnostic/record_1_1";
-import { makeSynchronizedTimestamp, deserializeSynchronizedTimestampFrom, serializeSynchronizedTimestampInto } from "./uavcan/time/synchronized_timestamp_1_0";
+import { Heartbeat } from "./uavcan/node/heartbeat_1_0";
+import { Frame } from "./uavcan/metatransport/can/frame_0_2";
+import { Real32 } from "./uavcan/primitive/array/real32_1_0";
+import { SubjectIDList } from "./uavcan/node/port/subject_id_list_1_0";
+import { NodeIDAllocationData } from "./uavcan/pnp/node_id_allocation_data_2_0";
+import { Record as DiagnosticRecord } from "./uavcan/diagnostic/record_1_1";
+import { SynchronizedTimestamp } from "./uavcan/time/synchronized_timestamp_1_0";
 
 let failures = 0;
 function check<T>(name: string, make: () => T, deser: (o: T, b: Uint8Array) => number, ser: (o: T, b: Uint8Array) => number): void {
@@ -21,13 +21,13 @@ function check<T>(name: string, make: () => T, deser: (o: T, b: Uint8Array) => n
   if (!same) { failures += 1; }
 }
 
-check("uavcan.node.Heartbeat", makeHeartbeat, deserializeHeartbeatFrom, serializeHeartbeatInto);
-check("uavcan.metatransport.can.Frame", makeFrame, deserializeFrameFrom, serializeFrameInto);
-check("uavcan.primitive.array.Real32", makeReal32, deserializeReal32From, serializeReal32Into);
-check("uavcan.node.port.SubjectIDList", makeSubjectIDList, deserializeSubjectIDListFrom, serializeSubjectIDListInto);
-check("uavcan.pnp.NodeIDAllocationData", makeNodeIDAllocationData, deserializeNodeIDAllocationDataFrom, serializeNodeIDAllocationDataInto);
-check("uavcan.diagnostic.Record", makeRecord, deserializeRecordFrom, serializeRecordInto);
-check("uavcan.time.SynchronizedTimestamp", makeSynchronizedTimestamp, deserializeSynchronizedTimestampFrom, serializeSynchronizedTimestampInto);
+check("uavcan.node.Heartbeat", Heartbeat.create, Heartbeat.deserializeFrom, Heartbeat.serializeInto);
+check("uavcan.metatransport.can.Frame", Frame.create, Frame.deserializeFrom, Frame.serializeInto);
+check("uavcan.primitive.array.Real32", Real32.create, Real32.deserializeFrom, Real32.serializeInto);
+check("uavcan.node.port.SubjectIDList", SubjectIDList.create, SubjectIDList.deserializeFrom, SubjectIDList.serializeInto);
+check("uavcan.pnp.NodeIDAllocationData", NodeIDAllocationData.create, NodeIDAllocationData.deserializeFrom, NodeIDAllocationData.serializeInto);
+check("uavcan.diagnostic.Record", DiagnosticRecord.create, DiagnosticRecord.deserializeFrom, DiagnosticRecord.serializeInto);
+check("uavcan.time.SynchronizedTimestamp", SynchronizedTimestamp.create, SynchronizedTimestamp.deserializeFrom, SynchronizedTimestamp.serializeInto);
 if (failures !== 0) {
   throw new Error(`${failures} default(s) differ from the specification's`);
 }

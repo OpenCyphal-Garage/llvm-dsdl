@@ -3,17 +3,7 @@
 
 import * as dsdlRuntime from "../../dsdl_runtime";
 
-import { deserializeDelimitedFrom, makeDelimited, serializeDelimitedInto } from "./delimited_1_0";
-import type { Delimited } from "./delimited_1_0";
-
-export const LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>";
-export const DSDL_FULL_NAME = "fixtures.vendor.UsesDelimited";
-export const DSDL_IS_DEPRECATED = false;
-export const DSDL_VERSION_MAJOR = 1;
-export const DSDL_VERSION_MINOR = 0;
-export const DSDL_HAS_FIXED_PORT_ID = false;
-export const DSDL_WIRE_FLAT = false;
-export const DSDL_WIRE_FLAT_REASON = "nested-not-flat";
+import { Delimited } from "./delimited_1_0";
 
 function capacityCheck(p0: bigint): number {
   const v0 = p0 < 96n;
@@ -33,129 +23,140 @@ export interface UsesDelimited {
   nested: Delimited;
 }
 
-export function makeUsesDelimited(): UsesDelimited {
-  return {
-    nested: makeDelimited(),
-  };
-}
+export const UsesDelimited = {
+  FULL_NAME: "fixtures.vendor.UsesDelimited",
+  IS_DEPRECATED: false,
+  FULL_NAME_AND_VERSION: "fixtures.vendor.UsesDelimited.1.0",
+  EXTENT_BYTES: 12,
+  SERIALIZATION_BUFFER_SIZE_BYTES: 12,
+  WIRE_FLAT: false,
+  WIRE_FLAT_REASON: "nested-not-flat",
+  HAS_FIXED_PORT_ID: false,
 
-export function serializeUsesDelimitedInto(obj: UsesDelimited, buffer: Uint8Array): number {
-  const size = BigInt(buffer.length);
-  let err: number;
-  if (obj == null) {
-    err = -2;
-  } else {
-    const v0 = size * 8n;
-    const err2 = capacityCheck(v0);
-    const v1 = err2 === 0;
-    let err3: number;
-    if (v1) {
-      const v2 = size - 4n;
-      const v3 = err2 === 0;
-      let err4: number;
-      if (v3) {
-        const nestedBuf = buffer.subarray(Math.min(Number(4n), buffer.length));
-        const nestedErr = Math.min(serializeDelimitedInto(obj.nested, nestedBuf.subarray(0, Number(v2))), 0);
-        const err5 = validateDelimiterHeader1(1n, v2);
-        const v4 = nestedErr === 0;
-        const v5 = v4 ? err5 : nestedErr;
-        const v6 = v5 === 0;
-        let err6: number;
-        if (v6) {
-          const err7 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 32, 1n, false);
-          const v7 = v5 === 0;
-          const v8 = v7 ? err7 : v5;
-          err6 = v8;
+  create(): UsesDelimited {
+    return {
+      nested: Delimited.create(),
+    };
+  },
+
+  serializeInto(obj: UsesDelimited, buffer: Uint8Array): number {
+    const size = BigInt(buffer.length);
+    let err: number;
+    if (obj == null) {
+      err = -2;
+    } else {
+      const v0 = size * 8n;
+      const err2 = capacityCheck(v0);
+      const v1 = err2 === 0;
+      let err3: number;
+      if (v1) {
+        const v2 = size - 4n;
+        const v3 = err2 === 0;
+        let err4: number;
+        if (v3) {
+          const nestedBuf = buffer.subarray(Math.min(Number(4n), buffer.length));
+          const nestedErr = Math.min(Delimited.serializeInto(obj.nested, nestedBuf.subarray(0, Number(v2))), 0);
+          const err5 = validateDelimiterHeader1(1n, v2);
+          const v4 = nestedErr === 0;
+          const v5 = v4 ? err5 : nestedErr;
+          const v6 = v5 === 0;
+          let err6: number;
+          if (v6) {
+            const err7 = dsdlRuntime.writeUnsigned(buffer, Number(0n), 32, 1n, false);
+            const v7 = v5 === 0;
+            const v8 = v7 ? err7 : v5;
+            err6 = v8;
+          } else {
+            err6 = v5;
+          }
+          err4 = err6;
         } else {
-          err6 = v5;
+          err4 = err2;
         }
-        err4 = err6;
+        err3 = err4;
       } else {
-        err4 = err2;
+        err3 = err2;
       }
-      err3 = err4;
-    } else {
-      err3 = err2;
+      err = err3;
     }
-    err = err3;
-  }
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return 5;
-}
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return 5;
+  },
 
-export function deserializeUsesDelimitedFrom(obj: UsesDelimited, buffer: Uint8Array): number {
-  const size = BigInt(buffer.length);
-  let err: number;
-  let v0: number;
-  if (obj == null) {
-    err = -2;
-    v0 = 0;
-  } else {
-    const nestedAddr = (obj.nested ??= {} as Delimited);
-    const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 32);
-    const v1 = size > 4n;
-    const v2 = v1 ? 4n : size;
-    const v3 = size - v2;
-    const err2 = validateDelimiterHeader1(value, v3);
-    const v4 = err2 === 0;
-    let offset: bigint;
-    let err3: number;
-    if (v4) {
-      const nestedBuf = buffer.subarray(Math.min(Number(v2), buffer.length));
-      const nestedErr = Math.min(deserializeDelimitedFrom(nestedAddr, nestedBuf.subarray(0, Number(value))), 0);
-      const v5 = nestedErr === 0;
-      let v6: bigint;
-      if (v5) {
-        const v7 = value * 8n;
-        const v8 = v7 + 32n;
-        v6 = v8;
+  deserializeFrom(obj: UsesDelimited, buffer: Uint8Array): number {
+    const size = BigInt(buffer.length);
+    let err: number;
+    let v0: number;
+    if (obj == null) {
+      err = -2;
+      v0 = 0;
+    } else {
+      const nestedAddr = (obj.nested ??= {} as Delimited);
+      const value = dsdlRuntime.readUnsignedBigInt(buffer, Number(0n), 32);
+      const v1 = size > 4n;
+      const v2 = v1 ? 4n : size;
+      const v3 = size - v2;
+      const err2 = validateDelimiterHeader1(value, v3);
+      const v4 = err2 === 0;
+      let offset: bigint;
+      let err3: number;
+      if (v4) {
+        const nestedBuf = buffer.subarray(Math.min(Number(v2), buffer.length));
+        const nestedErr = Math.min(Delimited.deserializeFrom(nestedAddr, nestedBuf.subarray(0, Number(value))), 0);
+        const v5 = nestedErr === 0;
+        let v6: bigint;
+        if (v5) {
+          const v7 = value * 8n;
+          const v8 = v7 + 32n;
+          v6 = v8;
+        } else {
+          v6 = 32n;
+        }
+        offset = v6;
+        err3 = nestedErr;
       } else {
-        v6 = 32n;
+        offset = 32n;
+        err3 = err2;
       }
-      offset = v6;
-      err3 = nestedErr;
-    } else {
-      offset = 32n;
-      err3 = err2;
+      const v9 = offset + 7n;
+      const v10 = v9 / 8n;
+      const v11 = v10 * 8n;
+      const v12 = size * 8n;
+      const v13 = v11 < v12;
+      const v14 = v13 ? v11 : v12;
+      const v15 = v14 / 8n;
+      const v16 = Number(v15);
+      err = err3;
+      v0 = v16;
     }
-    const v9 = offset + 7n;
-    const v10 = v9 / 8n;
-    const v11 = v10 * 8n;
-    const v12 = size * 8n;
-    const v13 = v11 < v12;
-    const v14 = v13 ? v11 : v12;
-    const v15 = v14 / 8n;
-    const v16 = Number(v15);
-    err = err3;
-    v0 = v16;
-  }
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return v0;
-}
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return v0;
+  },
 
-export function serializeUsesDelimited(value: UsesDelimited): Uint8Array {
-  const v0 = new Uint8Array(Number(12n));
-  const size = serializeUsesDelimitedInto(value, v0);
-  const err = size < 0 ? size : 0;
-  const v1 = err === 0;
-  const v2 = BigInt(size);
-  const v3 = v1 ? v2 : 0n;
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return v0.subarray(0, Number(v3));
-}
+  serialize(value: UsesDelimited): Uint8Array {
+    const v0 = new Uint8Array(Number(12n));
+    const size = UsesDelimited.serializeInto(value, v0);
+    const err = size < 0 ? size : 0;
+    const v1 = err === 0;
+    const v2 = BigInt(size);
+    const v3 = v1 ? v2 : 0n;
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return v0.subarray(0, Number(v3));
+  },
 
-export function deserializeUsesDelimited(bytes: Uint8Array): { value: UsesDelimited; consumed: number } {
-  const v0 = makeUsesDelimited();
-  const size = deserializeUsesDelimitedFrom(v0, bytes);
-  const err = size < 0 ? size : 0;
-  if (err !== 0) {
-    throw new Error(dsdlRuntime.errorMessage(err));
-  }
-  return { value: v0, consumed: size };
-}
+  deserialize(bytes: Uint8Array): { value: UsesDelimited; consumed: number } {
+    const v0 = UsesDelimited.create();
+    const size = UsesDelimited.deserializeFrom(v0, bytes);
+    const err = size < 0 ? size : 0;
+    if (err !== 0) {
+      throw new Error(dsdlRuntime.errorMessage(err));
+    }
+    return { value: v0, consumed: size };
+  },
+} as const;

@@ -182,12 +182,6 @@ mlir::dsdl::GeneratedFact irGeneratedFact(const GeneratedFact fact)
         return mlir::dsdl::GeneratedFact::WireImage;
     case GeneratedFact::FromWireImage:
         return mlir::dsdl::GeneratedFact::FromWireImage;
-    case GeneratedFact::GeneratorVersion:
-        return mlir::dsdl::GeneratedFact::GeneratorVersion;
-    case GeneratedFact::VersionMajor:
-        return mlir::dsdl::GeneratedFact::VersionMajor;
-    case GeneratedFact::VersionMinor:
-        return mlir::dsdl::GeneratedFact::VersionMinor;
     case GeneratedFact::MemoryResource:
         break;
     }
@@ -256,12 +250,6 @@ GeneratedFact generatedFactOf(const mlir::dsdl::GeneratedFact fact)
         return GeneratedFact::WireImage;
     case mlir::dsdl::GeneratedFact::FromWireImage:
         return GeneratedFact::FromWireImage;
-    case mlir::dsdl::GeneratedFact::GeneratorVersion:
-        return GeneratedFact::GeneratorVersion;
-    case mlir::dsdl::GeneratedFact::VersionMajor:
-        return GeneratedFact::VersionMajor;
-    case mlir::dsdl::GeneratedFact::VersionMinor:
-        return GeneratedFact::VersionMinor;
     case mlir::dsdl::GeneratedFact::MemoryResource:
         break;
     }

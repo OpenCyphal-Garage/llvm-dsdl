@@ -153,13 +153,13 @@ file(WRITE
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.Widget_1_0 = { foo: 0x12, bar: 0x3456 };\n"
-  "const outBytes = ${ts_type_module}.serializeWidget_1_0(inObj);\n"
+  "const outBytes = ${ts_type_module}.Widget_1_0.serialize(inObj);\n"
   "if (outBytes.length !== 3) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(outBytes[0] + \" \" + outBytes[1] + \" \" + outBytes[2]);\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeWidget_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.Widget_1_0.deserialize(outBytes);\n"
   "console.log(decoded.value.foo + \" \" + decoded.value.bar + \" \" + decoded.consumed);\n"
 )
 

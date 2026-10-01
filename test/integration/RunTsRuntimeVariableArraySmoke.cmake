@@ -68,13 +68,13 @@ file(WRITE
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.VarArray_1_0 = { values: [1, 6, 7], tail: 31 };\n"
-  "const outBytes = ${ts_type_module}.serializeVarArray_1_0(inObj);\n"
+  "const outBytes = ${ts_type_module}.VarArray_1_0.serialize(inObj);\n"
   "if (outBytes.length !== 3) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(outBytes[0] + \" \" + outBytes[1] + \" \" + outBytes[2]);\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeVarArray_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.VarArray_1_0.deserialize(outBytes);\n"
   "console.log(decoded.value.values.join(\" \") + \" \" + decoded.value.tail + \" \" + decoded.consumed);\n"
 )
 

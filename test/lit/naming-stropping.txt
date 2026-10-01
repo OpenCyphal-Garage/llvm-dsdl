@@ -284,16 +284,14 @@
 # C_CLAIMED: #define fixtures_naming__naming__Claimed_FIXED_PORT_ID (10)
 
 # ---------------------------------------------------------------------------------------------
-# The module's own names. TypeScript declares a definition's facts at module scope under a fixed
-# prefix, and a section constant lands in the same scope behind the type's prefix, so a type named
-# DSDL is the one case where the two are in reach of each other. A Python class holds the facts
-# beside the constants, and the projection escapes a constant that reaches one.
+# A type's facts. A Python class and a TypeScript type's `const` hold the facts beside the
+# constants, and the projection escapes a constant that reaches one.
 # ---------------------------------------------------------------------------------------------
 
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/dsdl_1_0.py | FileCheck %s --check-prefix=PY_MODULE
 # RUN: cat %t/ts/fixtures_naming/naming/dsdl_1_0.ts | FileCheck %s --check-prefix=TS_MODULE
 
-# The module keeps its names and the DSDL constants move past them. `FIXED_PORT_ID` is reserved even
+# The facts keep their names and the DSDL constants move past them. `FIXED_PORT_ID` is reserved even
 # though this definition has none, for the reason the rest of the claimed names are: what a constant
 # is called should not depend on whether a later revision was given a port-ID.
 # PY_MODULE: FULL_NAME: ClassVar[str] = "fixtures_naming.naming.DSDL"
@@ -302,22 +300,16 @@
 # PY_MODULE: HAS_FIXED_PORT_ID_: ClassVar[int] = 2
 # PY_MODULE: FIXED_PORT_ID_: ClassVar[int] = 3
 # PY_MODULE: VERSION_MAJOR: ClassVar[int] = 4
+# TS_MODULE: FULL_NAME: "fixtures_naming.naming.DSDL",
+# TS_MODULE: HAS_FIXED_PORT_ID: false,
+# TS_MODULE: FULL_NAME_: 1,
+# TS_MODULE: HAS_FIXED_PORT_ID_: 2,
+# TS_MODULE: FIXED_PORT_ID_: 3,
+# TS_MODULE: VERSION_MAJOR: 4,
 
-# The list of module-owned names is a second copy of what the two emitters write, and a fixture can
-# only pin the names that exist when it is written. This pins the property that list exists to hold,
-# over every type in the corpus, so a name added to an emitter and forgotten there is caught.
+# A fixture can only pin the names that exist when it is written. This pins the property itself,
+# over every type in the corpus, so a name added to an emitter and claimed nowhere is caught.
 # RUN: %{python} %S/check_no_duplicate_module_constants.py %t/py/naming_freeze %t/ts
-
-# The repair is said out loud, which it is only when the CLI builds the same scope the emitter did.
-# RUN: %dsdlc --target-language ts %S/fixtures_naming --ts-module naming_freeze --outdir %t/tsnote 2>&1 | FileCheck %s --check-prefix=TS_MODULE_NOTE
-# TS_MODULE_NOTE-DAG: note: constant 'FULL_NAME' is emitted as 'FULL_NAME_2' for target language 'ts'
-# TS_MODULE_NOTE-DAG: note: constant 'HAS_FIXED_PORT_ID' is emitted as 'HAS_FIXED_PORT_ID_2' for target language 'ts'
-
-# A duplicate `export const` is not a shadowing in TypeScript, it is a module that does not compile.
-# TS_MODULE: export const DSDL_FULL_NAME = "fixtures_naming.naming.DSDL";
-# TS_MODULE: export const DSDL_HAS_FIXED_PORT_ID = false;
-# TS_MODULE: export const DSDL_FULL_NAME_2 = 1;
-# TS_MODULE: export const DSDL_HAS_FIXED_PORT_ID_2 = 2;
 
 # ---------------------------------------------------------------------------------------------
 # A union option's tag constant, and what it collides with. OptionTags.1.0 has two options whose
@@ -359,8 +351,8 @@
 # PY_OPTION_TAGS: FOO_BAR_OPTION_TAG: ClassVar[int] = 0
 # PY_OPTION_TAGS: FOO_BAR_OPTION_TAG_2: ClassVar[int] = 1
 
-# TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG = 0;
-# TS_OPTION_TAGS: export const OPTION_TAGS_FOO_BAR_OPTION_TAG_2 = 1;
+# TS_OPTION_TAGS: FOO_BAR_OPTION_TAG: 0,
+# TS_OPTION_TAGS: FOO_BAR_OPTION_TAG_2: 1,
 
 # A C++ struct holds the option tags with the fields and the DSDL constants, so all three compete.
 # CPP_OPTION_TAGS: static constexpr std::uint8_t FOOBAR_OPTION_TAG = 0U;

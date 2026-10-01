@@ -64,8 +64,8 @@
 # GO: func ChoiceGetReal(buffer []byte) float32 {
 # RUN: %dsdlc --target-language ts %S/fixtures_union --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/ts/fixtures_union/vendor/choice_1_0.ts | FileCheck %s --check-prefix=TS
-# TS: export function getChoiceTag(buffer: Uint8Array): number {
-# TS: export function getChoiceReal(buffer: Uint8Array): number {
+# TS: {{^}}  getTag(buffer: Uint8Array): number {
+# TS: {{^}}  getReal(buffer: Uint8Array): number {
 # RUN: %dsdlc --target-language python %S/fixtures_union --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/python/dsdl_gen/fixtures_union/vendor/choice_1_0.py | FileCheck %s --check-prefix=PY
 # PY: def get_tag_(buffer: memoryview) -> int:

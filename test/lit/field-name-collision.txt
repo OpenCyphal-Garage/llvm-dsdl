@@ -27,8 +27,8 @@
 # TS-DAG: foo_bar: number;
 # TS-DAG: foo_bar_2: number;
 # TS-DAG: obj.foo_bar_2 =
-# TS-DAG: C_BAR_BAZ = 1;
-# TS-DAG: C_BAR_BAZ_2 = 2;
+# TS-DAG: BAR_BAZ: 1,
+# TS-DAG: BAR_BAZ_2: 2,
 
 # Python: two distinct dataclass attributes (no silent merge).
 # RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py

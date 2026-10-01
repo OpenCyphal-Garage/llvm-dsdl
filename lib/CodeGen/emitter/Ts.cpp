@@ -34,6 +34,7 @@
 #include <cctype>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -64,6 +65,7 @@
 #include "llvmdsdl/Support/LanguageTraits.h"
 #include "llvmdsdl/Support/PlanSymbol.h"
 #include "llvmdsdl/Support/SurfacePlan.h"
+#include "llvmdsdl/Support/SurfaceLookup.h"
 #include "llvmdsdl/Support/Language.h"
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -133,6 +135,18 @@ std::string bodyOf(const SemanticTypeRef& ref, const PlanFunction function)
 
 /// @brief The names TypeScript's output declares and the files it writes, as the surface declares
 ///        them.
+/// @brief The globals a body or a factory reaches by name.
+llvm::ArrayRef<llvm::StringRef> tsGlobals()
+{
+    static const llvm::StringRef names[] = {"Array",        "BigInt",       "Boolean",    "DataView",    "Error",
+                                            "Float32Array", "Float64Array", "Infinity",   "JSON",        "Map",
+                                            "Math",         "NaN",          "Number",     "Object",      "Set",
+                                            "String",       "Symbol",       "Uint8Array", "Uint16Array", "Uint32Array",
+                                            "globalThis",   "isFinite",     "isNaN",      "parseFloat",  "parseInt",
+                                            "undefined"};
+    return names;
+}
+
 class TsSurface final
 {
 public:
@@ -164,17 +178,6 @@ public:
         return tree_.scope(tree_.typeScope(key, section)).name;
     }
 
-    /// @brief The name of the declaration of @p kind in the definition's module for @p member of
-    ///        @p section, stating @p fact.
-    [[nodiscard]] const std::string& declared(const llvm::StringRef              key,
-                                              const SurfaceDeclKind              kind,
-                                              const llvm::StringRef              section,
-                                              const llvm::StringRef              member = {},
-                                              const std::optional<GeneratedFact> fact   = std::nullopt) const
-    {
-        return tree_.nameOf(file(key), kind, SurfaceEntity{key.str(), section.str(), member.str(), {}}, fact);
-    }
-
     /// @brief The name of the property of @p section's type that @p member is, or that states
     ///        @p fact; empty where the type declares none, as in an accessors-only run.
     [[nodiscard]] std::string member(const llvm::StringRef              key,
@@ -189,22 +192,47 @@ public:
         return (decl != nullptr) ? decl->name : std::string{};
     }
 
-    /// @brief The name of the declaration of @p kind that stands for the lowered function @p symbol,
-    ///        stating @p fact.
-    [[nodiscard]] const std::string& function(const llvm::StringRef              symbol,
-                                              const SurfaceDeclKind              kind,
-                                              const std::optional<GeneratedFact> fact = std::nullopt) const
+    /// @brief The local name the definition keyed @p key imports the type of the one keyed
+    ///        @p imported under; null where it imports none.
+    [[nodiscard]] const SurfaceDecl* import(const llvm::StringRef key, const llvm::StringRef imported) const
     {
-        return tree_.nameOf(symbol, kind, fact);
+        return tree_.find(file(key), SurfaceDeclKind::Import, SurfaceEntity{imported.str(), {}, {}, {}});
     }
 
-    /// @brief The local name the definition keyed @p key imports the type of the one keyed
-    ///        @p imported under, or its body @p function; null where it imports none.
-    [[nodiscard]] const SurfaceDecl* import(const llvm::StringRef key,
-                                            const llvm::StringRef imported,
-                                            const llvm::StringRef function = {}) const
+    /// @brief The declaration of @p kind the lowered function @p symbol is, as code written in the
+    ///        scope @p site, which is to that scope's type what @p relation says, reaches it.
+    [[nodiscard]] std::string reference(const std::size_t     site,
+                                        const SiteRelation    relation,
+                                        const llvm::StringRef symbol,
+                                        const SurfaceDeclKind kind) const
     {
-        return tree_.find(file(key), SurfaceDeclKind::Import, SurfaceEntity{imported.str(), {}, {}, function.str()});
+        const std::optional<std::size_t> index = tree_.declarationIndex(symbol, kind);
+        if (!index)
+        {
+            llvm::report_fatal_error(llvm::Twine("TypeScript backend: the surface declares nothing for ") + symbol);
+        }
+        std::optional<std::string> spelling = spellReference(languageTraits(Language::TypeScript),
+                                                             tree_.plan(),
+                                                             SurfaceSite{.scope = site, .relation = relation},
+                                                             SurfaceItem{.scope = false, .index = *index});
+        if (!spelling)
+        {
+            llvm::report_fatal_error(llvm::Twine("TypeScript backend: no spelling reaches ") + symbol);
+        }
+        return std::move(*spelling);
+    }
+
+    /// @brief Every name the module of the definition keyed @p key binds in its own scope: its
+    ///        types, each a value too through its `const`, and what it declares and imports.
+    [[nodiscard]] std::vector<std::string> moduleNames(const llvm::StringRef key) const
+    {
+        const SurfacePlan&       plan = tree_.plan();
+        std::vector<std::string> out;
+        for (const SurfaceItem& item : plan.scopes[file(key)].items)
+        {
+            out.push_back(item.scope ? plan.scopes[item.index].name : plan.decls[item.index].name);
+        }
+        return out;
     }
 
 private:
@@ -259,6 +287,20 @@ public:
         , imports_(imports)
         , ownKey_(std::move(ownKey))
     {
+        for (const std::string& name : ctx.names().moduleNames(ownKey_))
+        {
+            if (llvm::is_contained(tsGlobals(), name))
+            {
+                captured_.insert(name);
+            }
+        }
+    }
+
+    /// @brief The global @p name, through `globalThis` where the module binds the name itself: a type
+    ///        named `Error` is a value too, through its `const`.
+    [[nodiscard]] std::string global(const llvm::StringRef name) const
+    {
+        return captured_.contains(name.str()) ? "globalThis." + name.str() : name.str();
     }
 
     [[nodiscard]] const EmitterContext& context() const
@@ -293,28 +335,37 @@ public:
                                ImportUse::Type);
     }
 
-    /// @brief The function the body @p symbol of the definition keyed @p key is, imported as
-    ///        @ref type imports its interface.
-    [[nodiscard]] std::string function(const llvm::StringRef key, const llvm::StringRef symbol) const
+    /// @brief The entry point the body @p symbol is, as code written in the scope @p site reaches it:
+    ///        through its type's `const`, which the module imports as a value where the type is
+    ///        another definition's.
+    [[nodiscard]] std::string entry(const llvm::StringRef symbol,
+                                    const std::size_t     site,
+                                    const SiteRelation    relation) const
     {
-        const TsSurface&   names = ctx_.names();
-        const std::string& name  = names.function(symbol, SurfaceDeclKind::Entry);
-        if (key == ownKey_)
+        const std::optional<PlanSymbol> plan = parsePlanSymbol(symbol);
+        if (!plan)
         {
-            return name;
+            llvm::report_fatal_error(llvm::Twine("TypeScript backend: a function that is no body: ") + symbol);
         }
-        const SurfaceDecl* const local = names.import(ownKey_, key, symbol);
-        return imports_.member(ImportOrigin::Definition,
-                               relativeImportPath(ownPath(), names.path(key)),
-                               name,
-                               (local != nullptr) ? local->name : name,
-                               ImportUse::Value);
+        const TsSurface&  names = ctx_.names();
+        const std::string key   = renderSchemaSymbol(plan->schema);
+        if (key != ownKey_)
+        {
+            const std::string&       name  = names.typeName(key, {});
+            const SurfaceDecl* const local = names.import(ownKey_, key);
+            (void) imports_.member(ImportOrigin::Definition,
+                                   relativeImportPath(ownPath(), names.path(key)),
+                                   name,
+                                   (local != nullptr) ? local->name : name,
+                                   ImportUse::Value);
+        }
+        return names.reference(site, relation, symbol, SurfaceDeclKind::Entry);
     }
 
-    /// @brief The factory of the definition @p ref.
-    [[nodiscard]] std::string make(const SemanticTypeRef& ref) const
+    /// @brief The factory of the definition @p ref, as the section type scope @p site reaches it.
+    [[nodiscard]] std::string make(const SemanticTypeRef& ref, const std::size_t site) const
     {
-        return function(keyOf(ref), bodyOf(ref, PlanFunction::Initialize));
+        return entry(bodyOf(ref, PlanFunction::Initialize), site, SiteRelation::Static);
     }
 
 private:
@@ -326,6 +377,7 @@ private:
     const EmitterContext& ctx_;
     ImportSet&            imports_;
     std::string           ownKey_;
+    std::set<std::string> captured_;
 };
 
 /// @brief The imports of a TypeScript file that names @p imports: the runtime as a namespace, then a
@@ -475,18 +527,6 @@ public:
         return names_.member(key_, section_, {}, fact);
     }
 
-    /// @brief The name of the constant holding the tag value of the union option @p member.
-    [[nodiscard]] const std::string& option(const llvm::StringRef member) const
-    {
-        return names_.declared(key_, SurfaceDeclKind::Option, section_, member);
-    }
-
-    /// @brief The name of the constant the DSDL constant @p member is.
-    [[nodiscard]] const std::string& constant(const llvm::StringRef member) const
-    {
-        return names_.declared(key_, SurfaceDeclKind::Constant, section_, member);
-    }
-
     [[nodiscard]] const TsSurface& names() const
     {
         return names_;
@@ -497,29 +537,6 @@ private:
     std::string      key_;
     std::string      section_;
 };
-
-/// @brief Declares the tag value that selects each of a union's options.
-void emitUnionOptionTags(SourceWriter& w, const TsSection& names, const SectionMetadata& metadata)
-{
-    if (!metadata.isUnion)
-    {
-        return;
-    }
-    for (const auto& option : metadata.unionOptions)
-    {
-        w.line("export const " + names.option(option.name) + " = " + std::to_string(option.tag) + ";");
-    }
-}
-
-void emitSectionConstants(SourceWriter& w, const TsSection& names, const SemanticSection& section)
-{
-    for (const auto& constant : section.constants)
-    {
-        emitAttachedDocTs(w, constant.doc);
-        w.line("export const " + names.constant(constant.name) + " = " + tsConstValue(constant.type, constant.value) +
-               ";");
-    }
-}
 
 void emitDeprecationJsDocTs(SourceWriter&       w,
                             const bool          deprecated,
@@ -676,12 +693,13 @@ public:
     TsSpelling(mlir::dsdl::SchemaOp schema, const TsSurface& names, const TsFileNames& file)
         : file_(file)
         , names_(names)
+        , key_(schema.getSymName().str())
     {
         if (schema.getBody().empty())
         {
             return;
         }
-        const std::string key = schema.getSymName().str();
+        const std::string& key = key_;
         for (mlir::dsdl::SerializationPlanOp plan : schema.getBody().front().getOps<mlir::dsdl::SerializationPlanOp>())
         {
             const llvm::StringRef section = plan.getSection().value_or(llvm::StringRef{});
@@ -720,6 +738,20 @@ public:
         deserialize_         = direction.has_value() && *direction == "deserialize";
         accessor_            = Accessor::None;
         cannotFail_          = fn->hasAttr("llvmdsdl.infallible");
+        // A body is a member of its section's `const`, reaching the type's other members through
+        // it; a helper is a function of the module.
+        member_ = direction.has_value();
+        if (member_)
+        {
+            const auto section = fn->getAttrOfType<mlir::StringAttr>("llvmdsdl.section");
+            site_              = names_.tree().typeScope(key_, section ? section.getValue() : llvm::StringRef{});
+            relation_          = SiteRelation::Static;
+        }
+        else
+        {
+            site_     = names_.file(key_);
+            relation_ = SiteRelation::Free;
+        }
         if (direction && (*direction == "get" || *direction == "set"))
         {
             return openAccessor(w, fn, *direction == "get");
@@ -750,7 +782,8 @@ public:
         return {"obj", "buffer"};
     }
 
-    /// @brief The signature of @p fn, declared as @p name.
+    /// @brief The signature of @p fn, declared as @p name: a helper's as a function of the module, and
+    ///        any other's as a method of its section's `const`.
     [[nodiscard]] std::string signature(mlir::func::FuncOp fn, const std::string& name) const
     {
         const auto direction = planBodyDirection(fn);
@@ -770,21 +803,21 @@ public:
         }
         if (*direction == "wire_image")
         {
-            return "export function " + name + "(value: " + planOf(fn.getArgument(0)).typeName + "): Uint8Array";
+            return name + "(value: " + planOf(fn.getArgument(0)).typeName + "): Uint8Array";
         }
         if (*direction == "from_wire_image")
         {
             const std::string& type = planOf(fn.getResultTypes().front()).typeName;
-            return "export function " + name + "(bytes: Uint8Array): " +
+            return name + "(bytes: Uint8Array): " +
                    ((fn.getNumResults() == 3) ? "{ value: " + type + "; consumed: number }" : type);
         }
-        return "export function " + name + "(obj: " + planOf(fn.getArgument(0)).typeName +
-               ", buffer: Uint8Array): number";
+        return name + "(obj: " + planOf(fn.getArgument(0)).typeName + ", buffer: Uint8Array): number";
     }
 
     void closeFunction(SourceWriter& w, mlir::func::FuncOp /*fn*/) const override
     {
-        w.close("}");
+        // A method is one property of the object literal its `const` is.
+        w.close(member_ ? "}," : "}");
     }
 
     [[nodiscard]] std::string valueName(const ValueRole       role,
@@ -798,40 +831,18 @@ public:
     {
         // A body constructs bigints and typed arrays and clamps through Math, each by its global
         // name. The lower-cased ones matter most: a camel-cased role lands in that shape.
-        static const llvm::StringRef names[] = {"Array",
-                                                "BigInt",
-                                                "Boolean",
-                                                "DataView",
-                                                "Error",
-                                                "Float32Array",
-                                                "Float64Array",
-                                                "Infinity",
-                                                "JSON",
-                                                "Map",
-                                                "Math",
-                                                "NaN",
-                                                "Number",
-                                                "Object",
-                                                "Set",
-                                                "String",
-                                                "Symbol",
-                                                "Uint8Array",
-                                                "Uint16Array",
-                                                "Uint32Array",
-                                                "globalThis",
-                                                "isFinite",
-                                                "isNaN",
-                                                "parseFloat",
-                                                "parseInt",
-                                                "undefined",
-                                                // The runtime module, reached by its import name.
-                                                "dsdlRuntime"};
+        static const std::vector<llvm::StringRef> names = [] {
+            std::vector<llvm::StringRef> all(tsGlobals().begin(), tsGlobals().end());
+            // The runtime module, reached by its import name.
+            all.emplace_back("dsdlRuntime");
+            return all;
+        }();
         return names;
     }
 
     [[nodiscard]] std::string functionName(const llvm::StringRef callee) const override
     {
-        return names_.function(callee, SurfaceDeclKind::Helper);
+        return names_.reference(site_, relation_, callee, SurfaceDeclKind::Helper);
     }
 
     // Statements.
@@ -862,8 +873,8 @@ public:
         w.line("void " + expr.str() + ";");
     }
 
-    /// @brief A getter's or a setter's signature: an exported function named after the type and the
-    ///        member, as the bodies are, speaking the member's own type.
+    /// @brief A getter's or a setter's signature: a method of the section's `const`, speaking the
+    ///        member's own type.
     [[nodiscard]] std::string accessorSignature(mlir::func::FuncOp fn, const std::string& name, const bool getter) const
     {
         const Accessed    a       = accessed(fn);
@@ -874,14 +885,14 @@ public:
         if (getter && mlir::isa<mlir::dsdl::PtrType>(fn.getResultTypes().front()))
         {
             // The nested type's buffer, as a subarray, which carries its own length.
-            return "export function " + name + "(buffer: Uint8Array" + index + "): Uint8Array";
+            return name + "(buffer: Uint8Array" + index + "): Uint8Array";
         }
         if (getter)
         {
-            return "export function " + name + "(buffer: Uint8Array" + index + "): " + elementTsType(*a.member);
+            return name + "(buffer: Uint8Array" + index + "): " + elementTsType(*a.member);
         }
-        return "export function " + name + "(buffer: Uint8Array" + index + ", " +
-               (rebind ? "memberValue: " : "value: ") + elementTsType(*a.member) + "): void";
+        return name + "(buffer: Uint8Array" + index + ", " + (rebind ? "memberValue: " : "value: ") +
+               elementTsType(*a.member) + "): void";
     }
 
     /// @brief Opens a getter or a setter. The plan holds an integer in a `bigint`: the size is the
@@ -907,17 +918,17 @@ public:
                 returnCast_ = "boolean";
             }
         }
-        std::vector<std::string> parameters{"buffer", "BigInt(buffer.length)"};
+        std::vector<std::string> parameters{"buffer", file_.global("BigInt") + "(buffer.length)"};
         if (indexed)
         {
-            w.line("const index: bigint = BigInt(elementIndex);");
+            w.line("const index: bigint = " + file_.global("BigInt") + "(elementIndex);");
             parameters.emplace_back("index");
         }
         if (!getter)
         {
             if (storage == Storage::Number)
             {
-                w.line("const value: bigint = BigInt(memberValue);");
+                w.line("const value: bigint = " + file_.global("BigInt") + "(memberValue);");
             }
             else if (storage == Storage::Boolean)
             {
@@ -935,7 +946,7 @@ public:
         {
             if (returnCast_ == "Number")
             {
-                w.line("return Number(" + expr.str() + ");");
+                w.line("return " + file_.global("Number") + "(" + expr.str() + ");");
             }
             else if (returnCast_ == "boolean")
             {
@@ -972,13 +983,13 @@ public:
             return;
         }
         w.open("if (" + code.str() + " !== 0) {");
-        w.line("throw new Error(" + file_.runtime() + ".errorMessage(" + code.str() + "));");
+        w.line("throw new " + file_.global("Error") + "(" + file_.runtime() + ".errorMessage(" + code.str() + "));");
         w.close("}");
     }
 
     [[nodiscard]] std::string bufferLength(mlir::dsdl::BufferLengthOp op, const ValueNames& names) const override
     {
-        return "BigInt(" + names(op.getBuffer()) + ".length)";
+        return file_.global("BigInt") + "(" + names(op.getBuffer()) + ".length)";
     }
 
     void openIf(SourceWriter& w, const llvm::StringRef condition) const override
@@ -1043,7 +1054,7 @@ public:
             const double number = real.getValueAsDouble();
             if (std::isnan(number))
             {
-                return "Number.NaN";
+                return file_.global("Number") + ".NaN";
             }
             if (std::isinf(number))
             {
@@ -1078,7 +1089,7 @@ public:
         // A bigint's arithmetic is the plan's; a number's division is rounded to the integer.
         if (!isBig(type) && (op == BinaryOperator::DivU || op == BinaryOperator::DivS))
         {
-            return "Math.trunc(" + lhs.str() + " / " + rhs.str() + ")";
+            return file_.global("Math") + ".trunc(" + lhs.str() + " / " + rhs.str() + ")";
         }
         return lhs.str() + " " + operatorToken(op) + " " + rhs.str();
     }
@@ -1109,8 +1120,8 @@ public:
             // negative literal reads both as the unsigned 64-bit values the plan compares.
             if (isBig(type) && (lhs.starts_with("-") || rhs.starts_with("-")))
             {
-                a = "BigInt.asUintN(64, " + a + ")";
-                b = "BigInt.asUintN(64, " + b + ")";
+                a = file_.global("BigInt") + ".asUintN(64, " + a + ")";
+                b = file_.global("BigInt") + ".asUintN(64, " + b + ")";
             }
             break;
         default:
@@ -1193,7 +1204,8 @@ public:
     {
         // The plan bounds its reads and writes itself; the subarray is clamped to the buffer.
         const std::string buffer = names(op.getBuffer());
-        return buffer + ".subarray(Math.min(" + asNumber(op.getByteOffset(), names) + ", " + buffer + ".length))";
+        return buffer + ".subarray(" + file_.global("Math") + ".min(" + asNumber(op.getByteOffset(), names) + ", " +
+               buffer + ".length))";
     }
 
     [[nodiscard]] std::string loadScalar(mlir::dsdl::LoadScalarOp /*op*/, const ValueNames& /*names*/) const override
@@ -1278,15 +1290,15 @@ public:
 
     [[nodiscard]] std::string arrayLength(mlir::dsdl::ArrayLengthOp op, const ValueNames& names) const override
     {
-        return "BigInt(" + containerAccess(op.getObject(), op.getMember(), names) + ".length)";
+        return file_.global("BigInt") + "(" + containerAccess(op.getObject(), op.getMember(), names) + ".length)";
     }
 
     void setArrayLength(SourceWriter& w, mlir::dsdl::SetArrayLengthOp op, const ValueNames& names) const override
     {
         // Sized to the count the plan validated, for the plan to store into.
         const Member member = memberOf(op.getObject(), op.getMember());
-        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = new Array<" + elementTsType(member) + ">(" +
-               asNumber(op.getValue(), names) + ");");
+        w.line(memberAccess(op.getObject(), op.getMember(), names) + " = new " + file_.global("Array") + "<" +
+               elementTsType(member) + ">(" + asNumber(op.getValue(), names) + ");");
     }
 
     [[nodiscard]] std::string unionTag(mlir::dsdl::UnionTagOp op, const ValueNames& names) const override
@@ -1387,14 +1399,15 @@ public:
 
     [[nodiscard]] std::string viewSize(mlir::dsdl::LoadViewOp op, const ValueNames& names) const override
     {
-        return "BigInt(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + ".length)";
+        return file_.global("BigInt") + "(" + viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) +
+               ".length)";
     }
 
     void storeView(SourceWriter& w, mlir::dsdl::StoreViewOp op, const ValueNames& names) const override
     {
         const std::string bytes = names(op.getBytes());
-        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes +
-               ".subarray(0, Math.min(" + asNumber(op.getSizeBytes(), names) + ", " + bytes + ".length));");
+        w.line(viewTarget(op.getObject(), op.getMember(), op.getIndex(), names) + " = " + bytes + ".subarray(0, " +
+               file_.global("Math") + ".min(" + asNumber(op.getSizeBytes(), names) + ", " + bytes + ".length));");
     }
 
     void clearView(SourceWriter& w, mlir::dsdl::ClearViewOp op, const ValueNames& names) const override
@@ -1403,8 +1416,9 @@ public:
         mlir::dsdl::IOOp io = memberOf(op.getObject(), op.getMember()).io;
         w.line(memberAccess(op.getObject(), op.getMember(), names) + " = " +
                ((io.getArrayKind() == "fixed")
-                    ? "Array.from({ length: " + std::to_string(io.getArrayCapacity()) + " }, () => new Uint8Array(0))"
-                    : "new Uint8Array(0)") +
+                    ? file_.global("Array") + ".from({ length: " + std::to_string(io.getArrayCapacity()) +
+                          " }, () => new " + file_.global("Uint8Array") + "(0))"
+                    : "new " + file_.global("Uint8Array") + "(0)") +
                ";");
     }
 
@@ -1416,8 +1430,8 @@ public:
         const std::string source      = names(op.getSource());
         const std::string width       = std::to_string(op.getBytes());
         const std::string copied      = fresh("copied");
-        w.line("const " + copied + " = Math.min(" + asNumber(op.getSourceSizeBytes(), names) + ", " + source +
-               ".length, " + width + ");");
+        w.line("const " + copied + " = " + file_.global("Math") + ".min(" + asNumber(op.getSourceSizeBytes(), names) +
+               ", " + source + ".length, " + width + ");");
         w.line(destination + ".set(" + source + ".subarray(0, " + copied + "), 0);");
         w.line(destination + ".fill(0, " + copied + ", " + width + ");");
     }
@@ -1462,7 +1476,7 @@ public:
         }
         if (consumed.empty())
         {
-            declare(w, op.getError().getType(), error, "Math.min(" + call + ", 0)");
+            declare(w, op.getError().getType(), error, file_.global("Math") + ".min(" + call + ", 0)");
             return;
         }
         declare(w, op.getConsumed().getType(), consumed, call);
@@ -1481,12 +1495,12 @@ public:
 
     [[nodiscard]] std::string bytesZeroed(mlir::dsdl::BytesZeroedOp op, const ValueNames& names) const override
     {
-        return "new Uint8Array(" + asNumber(op.getLength(), names) + ")";
+        return "new " + file_.global("Uint8Array") + "(" + asNumber(op.getLength(), names) + ")";
     }
 
     [[nodiscard]] std::string bytesLength(mlir::dsdl::BytesLengthOp op, const ValueNames& names) const override
     {
-        return "BigInt(" + names(op.getBytes()) + ".length)";
+        return file_.global("BigInt") + "(" + names(op.getBytes()) + ".length)";
     }
 
     [[nodiscard]] std::string bytesGrow(mlir::dsdl::BytesGrowOp op, const ValueNames& /*names*/) const override
@@ -1515,7 +1529,7 @@ public:
 
     [[nodiscard]] std::string makeObject(mlir::dsdl::MakeObjectOp op, const ValueNames& /*names*/) const override
     {
-        return names_.function(op.getInitializer(), SurfaceDeclKind::Entry) + "()";
+        return file_.entry(op.getInitializer(), site_, relation_) + "()";
     }
 
     void returnImage(SourceWriter& w, const llvm::StringRef bytes, const llvm::StringRef error) const override
@@ -1581,12 +1595,7 @@ private:
     /// @brief The body function of the nested type a call names.
     std::string nestedFunction(mlir::dsdl::CallSerdesSizedOp op) const
     {
-        const std::optional<PlanSymbol> callee = parsePlanSymbol(op.getCallee());
-        if (!callee)
-        {
-            llvm::report_fatal_error("TypeScript spelling: a nested call to a function that is no body");
-        }
-        return file_.function(renderSchemaSymbol(callee->schema), op.getCallee());
+        return file_.entry(op.getCallee(), site_, relation_);
     }
 
     /// @brief The member as the object declares it; an option through the object cast to its shape.
@@ -1699,10 +1708,11 @@ private:
             }
             return isBig(type) ? "(" + access + " ? 1n : 0n)" : "(" + access + " ? 1 : 0)";
         case Storage::BigInt:
-            return isBig(type) ? access : "Number(" + access + ")";
+            return isBig(type) ? access : file_.global("Number") + "(" + access + ")";
         case Storage::Number:
             // A number a caller stored may be no integer; the runtime rounds it to one.
-            return isBig(type) ? file_.runtime() + ".toBigIntValue(" + access + ")" : "Math.trunc(" + access + ")";
+            return isBig(type) ? file_.runtime() + ".toBigIntValue(" + access + ")"
+                               : file_.global("Math") + ".trunc(" + access + ")";
         case Storage::Float:
         case Storage::Object:
             break;
@@ -1711,7 +1721,7 @@ private:
     }
 
     /// @brief @p value, of @p type, converted for storage in @p member.
-    static std::string storedValue(const std::string& value, const mlir::Type type, const Member& member)
+    [[nodiscard]] std::string storedValue(const std::string& value, const mlir::Type type, const Member& member) const
     {
         switch (storageOf(member))
         {
@@ -1722,11 +1732,11 @@ private:
             }
             return isBig(type) ? value + " !== 0n" : value + " !== 0";
         case Storage::BigInt:
-            return isBig(type) ? value : "BigInt(" + value + ")";
+            return isBig(type) ? value : file_.global("BigInt") + "(" + value + ")";
         case Storage::Number:
             if (isBig(type))
             {
-                return "Number(" + value + ")";
+                return file_.global("Number") + "(" + value + ")";
             }
             return isBool(type) ? "(" + value + " ? 1 : 0)" : value;
         case Storage::Float:
@@ -1750,7 +1760,7 @@ private:
     }
 
     /// @brief @p value, of @p from, as a value of @p to.
-    static std::string cast(const std::string& value, const mlir::Type from, const mlir::Type to)
+    [[nodiscard]] std::string cast(const std::string& value, const mlir::Type from, const mlir::Type to) const
     {
         if (from == to)
         {
@@ -1762,7 +1772,7 @@ private:
         }
         if (isBig(to))
         {
-            return isBool(from) ? "(" + value + " ? 1n : 0n)" : "BigInt(" + value + ")";
+            return isBool(from) ? "(" + value + " ? 1n : 0n)" : file_.global("BigInt") + "(" + value + ")";
         }
         if (isBool(from))
         {
@@ -1770,13 +1780,15 @@ private:
         }
         if (isBig(from))
         {
-            return to.isInteger(8) ? "Number(BigInt.asIntN(8, " + value + "))" : "Number(" + value + ")";
+            return to.isInteger(8)
+                       ? file_.global("Number") + "(" + file_.global("BigInt") + ".asIntN(8, " + value + "))"
+                       : file_.global("Number") + "(" + value + ")";
         }
         return value;
     }
 
     /// @brief @p value as a number, which an offset, a size and an index are.
-    static std::string asNumber(const mlir::Value value, const ValueNames& names)
+    [[nodiscard]] std::string asNumber(const mlir::Value value, const ValueNames& names) const
     {
         return cast(names(value), value.getType(), mlir::IndexType::get(value.getContext()));
     }
@@ -1872,6 +1884,7 @@ private:
 
     const TsFileNames&    file_;
     const TsSurface&      names_;
+    std::string           key_;
     llvm::StringMap<Plan> plans_;
     /// @brief The tag steps of the union plans, which belong to no plan and live here.
     std::vector<mlir::OwningOpRef<mlir::dsdl::IOOp>> tagSteps_;
@@ -1922,6 +1935,12 @@ private:
     /// @brief Whether the function being spelt is marked unable to fail, by `dsdl-mark-infallible-bodies`.
     mutable bool     cannotFail_{false};
     mutable unsigned fresh_{0};
+
+    /// @brief Where the function being spelt is written, what it is to that scope's type, and
+    ///        whether it is a method of its section's `const`.
+    mutable std::size_t  site_{};
+    mutable SiteRelation relation_{SiteRelation::Free};
+    mutable bool         member_{false};
 };
 
 /// @brief The literal a stored constant is, for a member of @p type.
@@ -1951,10 +1970,13 @@ std::string tsStoredLiteral(const SemanticFieldType& type, const mlir::TypedAttr
 }
 
 /// @brief The value a member takes in the factory's literal, as the initialise body states it.
-std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& entry, const TsFileNames& file)
+std::string tsDefaultFromBody(const SemanticField& field,
+                              const MemberDefault& entry,
+                              const TsFileNames&   file,
+                              const std::size_t    site)
 {
     const auto& type   = field.resolvedType;
-    const auto  nested = [&]() { return type.compositeType ? file.make(*type.compositeType) + "()" : "{}"; };
+    const auto  nested = [&]() { return type.compositeType ? file.make(*type.compositeType, site) + "()" : "{}"; };
     switch (entry.kind)
     {
     case MemberDefault::Kind::Scalar:
@@ -1964,24 +1986,26 @@ std::string tsDefaultFromBody(const SemanticField& field, const MemberDefault& e
     case MemberDefault::Kind::FixedScalarArray: {
         SemanticFieldType element = type;
         element.arrayKind         = ArrayKind::None;
-        return "new Array<" + tsFieldType(element, file) + ">(" + std::to_string(entry.count) + ").fill(" +
-               tsStoredLiteral(type, entry.value) + ")";
+        return "new " + file.global("Array") + "<" + tsFieldType(element, file) + ">(" + std::to_string(entry.count) +
+               ").fill(" + tsStoredLiteral(type, entry.value) + ")";
     }
     case MemberDefault::Kind::BoolArray:
-        return "new Array<boolean>(" + std::to_string(entry.count) + ").fill(false)";
+        return "new " + file.global("Array") + "<boolean>(" + std::to_string(entry.count) + ").fill(false)";
     case MemberDefault::Kind::FixedCompositeArray:
-        return "Array.from({ length: " + std::to_string(entry.count) + " }, () => " + nested() + ")";
+        return file.global("Array") + ".from({ length: " + std::to_string(entry.count) + " }, () => " + nested() + ")";
     case MemberDefault::Kind::Composite:
         return nested();
     case MemberDefault::Kind::View:
         return (type.arrayKind == ArrayKind::Fixed)
-                   ? "Array.from({ length: " + std::to_string(type.arrayCapacity) + " }, () => new Uint8Array(0))"
-                   : "new Uint8Array(0)";
+                   ? file.global("Array") + ".from({ length: " + std::to_string(type.arrayCapacity) + " }, () => new " +
+                         file.global("Uint8Array") + "(0))"
+                   : "new " + file.global("Uint8Array") + "(0)";
     }
     return "undefined";
 }
 
-/// @brief The factory: the type at its defaults, as an object literal read off the initialise body.
+/// @brief The factory: the type at its defaults, as an object literal read off the initialise body,
+///        and a method of the section's `const`, whose type scope is @p site.
 ///
 /// A union is one arm, so the literal is the arm the body's tag selects at the default the body
 /// gives it; the other arms have no place in the value.
@@ -1990,7 +2014,8 @@ void emitMakeFunction(SourceWriter&           w,
                       const std::string&      make,
                       const SemanticSection&  section,
                       const InitializerShape& init,
-                      const TsFileNames&      file)
+                      const TsFileNames&      file,
+                      const std::size_t       site)
 {
     const std::string& typeName = names.typeName();
     const auto         entryOf  = [&](const SemanticField& field) -> const MemberDefault& {
@@ -2004,7 +2029,7 @@ void emitMakeFunction(SourceWriter&           w,
         llvm::report_fatal_error(llvm::Twine("TypeScript: the initialise body of ") + typeName + " does not set '" +
                                  field.name + "'");
     };
-    w.open("export function " + make + "(): " + typeName + " {");
+    w.open(make + "(): " + typeName + " {");
     if (section.isUnion)
     {
         std::string arm;
@@ -2012,7 +2037,7 @@ void emitMakeFunction(SourceWriter&           w,
         {
             if (!field.isPadding && std::cmp_equal(field.unionOptionIndex, init.unionTag))
             {
-                arm = ", " + names.field(field.name) + ": " + tsDefaultFromBody(field, entryOf(field), file);
+                arm = ", " + names.field(field.name) + ": " + tsDefaultFromBody(field, entryOf(field), file, site);
             }
         }
         w.line("return { " + names.dataMember(GeneratedFact::UnionTag) + ": " + std::to_string(init.unionTag) + arm +
@@ -2027,16 +2052,17 @@ void emitMakeFunction(SourceWriter&           w,
             {
                 continue;
             }
-            w.line(names.field(field.name) + ": " + tsDefaultFromBody(field, entryOf(field), file) + ",");
+            w.line(names.field(field.name) + ": " + tsDefaultFromBody(field, entryOf(field), file, site) + ",");
         }
         w.close("};");
     }
-    w.close("}");
+    w.close("},");
 }
 
 /// @brief One section: its type, its constants, its three bodies and the entry points that wrap them.
-/// @brief TypeScript's layout: a module per definition, holding its facts and helpers, then each
-///        section's interface, factory, constants and functions, then a service's alias.
+/// @brief TypeScript's layout: a module per definition, holding a service's facts and the helpers,
+///        then each section's interface and the `const` of the same name that holds its facts,
+///        constants, factory and functions, then a service's alias.
 const DeclarationLayout& tsLayout()
 {
     static const DeclarationLayout layout{
@@ -2046,10 +2072,7 @@ const DeclarationLayout& tsLayout()
                      LayoutPart::HelperDefinitions,
                      LayoutPart::Sections,
                      LayoutPart::Alias}},
-        .section = {LayoutPart::Type,
-                    LayoutPart::Methods,
-                    LayoutPart::SectionConstants,
-                    LayoutPart::SectionDefinitions},
+        .section = {LayoutPart::Type, LayoutPart::Methods, LayoutPart::SectionDefinitions, LayoutPart::TypeEnd},
         .indent  = IndentPolicy::spaces(2),
     };
     return layout;
@@ -2087,28 +2110,16 @@ public:
             return;
         }
         case LayoutPart::DefinitionConstants:
-            definitionConstants(site);
+            serviceConstants(site);
             return;
         case LayoutPart::Type:
-            if (!file_.context().accessorsOnly())
-            {
-                const DiscoveredDefinition& info = site.facts().definition().info;
-                emitSectionType(site.writer(),
-                                sectionOf(site),
-                                site.facts().section(*site.section()),
-                                site.facts().definition().doc,
-                                file_,
-                                info.fullName,
-                                info.majorVersion,
-                                info.minorVersion);
-            }
+            type(site);
             return;
         case LayoutPart::Methods:
             factory(site);
             return;
-        case LayoutPart::SectionConstants:
-            emitUnionOptionTags(site.writer(), sectionOf(site), site.facts().metadata(*site.section()));
-            emitSectionConstants(site.writer(), sectionOf(site), site.facts().section(*site.section()));
+        case LayoutPart::TypeEnd:
+            site.writer().close("} as const;");
             return;
         case LayoutPart::Alias:
             alias(site);
@@ -2152,33 +2163,130 @@ private:
         return TsSection(file_.context().names(), site.facts().key(), *site.section());
     }
 
-    /// @brief The definition's facts at the top of its module. Aliasability is a property of a
-    ///        payload, so a service answers for each of its two and a message answers once, under the
-    ///        name of the thing the verdict is about.
-    void definitionConstants(DeclarationSite& site) const
+    /// @brief The facts a service states of itself at the top of its module, since its name is an
+    ///        alias of its request's type.
+    static void serviceConstants(DeclarationSite& site)
     {
-        const TsSurface&          names = file_.context().names();
-        const std::string&        key   = site.facts().key();
-        const SemanticDefinition& def   = site.facts().definition();
-        SourceWriter&             w     = site.writer();
-        const auto constant             = [&names, &key](const GeneratedFact fact, const llvm::StringRef section = {}) {
-            return "export const " + names.declared(key, SurfaceDeclKind::Constant, section, {}, fact) + " = ";
-        };
-        w.line(constant(GeneratedFact::GeneratorVersion) + "\"" + std::string(llvmdsdl::kVersionString) + "\";");
-        w.line(constant(GeneratedFact::FullName) + "\"" + def.info.fullName + "\";");
-        w.line(constant(GeneratedFact::IsDeprecated) + std::string(def.request.deprecated ? "true" : "false") + ";");
-        w.line(constant(GeneratedFact::VersionMajor) + std::to_string(def.info.majorVersion) + ";");
-        w.line(constant(GeneratedFact::VersionMinor) + std::to_string(def.info.minorVersion) + ";");
-        w.line(constant(GeneratedFact::HasFixedPortId) + std::string(def.info.fixedPortId ? "true" : "false") + ";");
-        if (def.info.fixedPortId)
+        const auto& def = site.facts().definition();
+        for (const SurfaceDecl* const decl : site.fileDeclarations(SurfaceDeclKind::Constant))
         {
-            w.line(constant(GeneratedFact::FixedPortId) + std::to_string(*def.info.fixedPortId) + ";");
+            if (!decl->fact)
+            {
+                continue;
+            }
+            switch (*decl->fact)
+            {
+            case GeneratedFact::HasFixedPortId:
+                site.writer().line("export const " + decl->name + " = " + (def.info.fixedPortId ? "true" : "false") +
+                                   ";");
+                break;
+            case GeneratedFact::FixedPortId:
+                site.writer().line("export const " + decl->name + " = " + std::to_string(*def.info.fixedPortId) + ";");
+                break;
+            default:
+                llvm::report_fatal_error(llvm::Twine("TypeScript: a module states no fact '") + decl->name + "'");
+            }
         }
-        for (const std::string& section : site.facts().sections())
+    }
+
+    /// @brief The section's interface, which an accessors-only run does not emit, then the opening of
+    ///        the `const` of the same name and its properties.
+    void type(DeclarationSite& site) const
+    {
+        const SemanticDefinition& def     = site.facts().definition();
+        const SemanticSection&    section = site.facts().section(*site.section());
+        const TsSection           names   = sectionOf(site);
+        SourceWriter&             w       = site.writer();
+        if (!file_.context().accessorsOnly())
         {
-            const AliasVerdict flat = wireFlatVerdict(site.facts().plan(section));
-            w.line(constant(GeneratedFact::WireFlat, section) + std::string(flat.holds ? "true" : "false") + ";");
-            w.line(constant(GeneratedFact::WireFlatReason, section) + "\"" + flat.reason + "\";");
+            emitSectionType(w,
+                            names,
+                            section,
+                            def.doc,
+                            file_,
+                            def.info.fullName,
+                            def.info.majorVersion,
+                            def.info.minorVersion);
+            w.blank();
+        }
+        else
+        {
+            emitAttachedDocTs(w, def.doc);
+        }
+        emitDeprecationJsDocTs(w, section.deprecated, def.info.fullName, def.info.majorVersion, def.info.minorVersion);
+        w.open("export const " + names.typeName() + " = {");
+        properties(site);
+    }
+
+    /// @brief The properties of the section's `const`, in the order the tree declares them: the facts
+    ///        it states of itself, a union's option tags, and its DSDL constants, each under its doc.
+    static void properties(DeclarationSite& site)
+    {
+        const SectionMetadata& metadata  = site.facts().metadata(*site.section());
+        const auto&            constants = site.facts().section(*site.section()).constants;
+        const auto             boolean   = [](const bool value) { return std::string(value ? "true" : "false"); };
+        const auto             quoted    = [](const std::string& text) { return "\"" + text + "\""; };
+        const auto             property  = [&](const std::string& name, const std::string& value) {
+            site.writer().line(name + ": " + value + ",");
+        };
+        for (const SurfaceDecl* const decl : site.declarations(SurfaceDeclKind::Constant))
+        {
+            if (!decl->fact)
+            {
+                continue;
+            }
+            switch (*decl->fact)
+            {
+            case GeneratedFact::FullName:
+                property(decl->name, quoted(metadata.fullName));
+                break;
+            case GeneratedFact::IsDeprecated:
+                property(decl->name, boolean(metadata.deprecated));
+                break;
+            case GeneratedFact::FullNameAndVersion:
+                property(decl->name,
+                         quoted(metadata.fullName + "." + std::to_string(metadata.majorVersion) + "." +
+                                std::to_string(metadata.minorVersion)));
+                break;
+            case GeneratedFact::ExtentBytes:
+                property(decl->name, std::to_string(metadata.extentBytes));
+                break;
+            case GeneratedFact::SerializationBufferSizeBytes:
+                property(decl->name, std::to_string(metadata.serializationBufferSizeBytes));
+                break;
+            case GeneratedFact::WireFlat:
+                property(decl->name, boolean(metadata.wireFlat.holds));
+                break;
+            case GeneratedFact::WireFlatReason:
+                property(decl->name, quoted(metadata.wireFlat.reason));
+                break;
+            case GeneratedFact::HasFixedPortId:
+                property(decl->name, boolean(metadata.fixedPortId.has_value()));
+                break;
+            case GeneratedFact::FixedPortId:
+                property(decl->name, std::to_string(*metadata.fixedPortId));
+                break;
+            case GeneratedFact::UnionOptionCount:
+                property(decl->name, std::to_string(metadata.unionOptions.size()));
+                break;
+            default:
+                llvm::report_fatal_error(llvm::Twine("TypeScript: a type states no fact '") + decl->name + "'");
+            }
+        }
+        for (const SurfaceDecl* const option : site.declarations(SurfaceDeclKind::Option))
+        {
+            const auto found = std::ranges::find(metadata.unionOptions, option->of->member, &UnionOption::name);
+            property(option->name, std::to_string(found->tag));
+        }
+        for (const SurfaceDecl* const decl : site.declarations(SurfaceDeclKind::Constant))
+        {
+            if (decl->fact || decl->of->member.empty())
+            {
+                continue;
+            }
+            const auto constant = std::ranges::find(constants, decl->of->member, &SemanticConstant::name);
+            emitAttachedDocTs(site.writer(), constant->doc);
+            property(decl->name, tsConstValue(constant->type, constant->value));
         }
     }
 
@@ -2196,27 +2304,31 @@ private:
             const std::optional<PlanSymbol> symbol = parsePlanSymbol(entry->of->function);
             if (symbol && (symbol->function == PlanFunction::Initialize))
             {
+                site.separate();
                 emitMakeFunction(site.writer(),
                                  section,
                                  entry->name,
                                  site.facts().section(*site.section()),
                                  found->second,
-                                 file_);
+                                 file_,
+                                 site.typeScope());
             }
         }
     }
 
-    /// @brief A service's alias for its request's type, which an accessors-only run does not emit.
+    /// @brief A service's alias for its request's type and its `const`, which an accessors-only run
+    ///        does not emit.
     void alias(DeclarationSite& site) const
     {
         if (file_.context().accessorsOnly() || !site.facts().definition().isService)
         {
             return;
         }
+        const std::string& request = TsSection(file_.context().names(), site.facts().key(), "request").typeName();
         for (const SurfaceDecl* const alias : site.fileDeclarations(SurfaceDeclKind::Alias))
         {
-            site.writer().line("export type " + alias->name + " = " +
-                               TsSection(file_.context().names(), site.facts().key(), "request").typeName() + ";");
+            site.writer().line("export type " + alias->name + " = " + request + ";");
+            site.writer().line("export const " + alias->name + " = " + request + ";");
         }
     }
 
