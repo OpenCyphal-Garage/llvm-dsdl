@@ -255,6 +255,9 @@ def main() -> int:
     if not arguments.skip_generate and (arguments.dsdlc is None or arguments.uavcan_root is None):
         parser.error("--dsdlc and --uavcan-root are required unless --skip-generate is given")
 
+    if not arguments.skip_generate:
+        # A module an earlier run generated and this one does not would otherwise still import.
+        shutil.rmtree(arguments.out_dir, ignore_errors=True)
     arguments.out_dir.mkdir(parents=True, exist_ok=True)
     if not arguments.skip_generate:
         generate(arguments.dsdlc, arguments.uavcan_root, arguments.out_dir)
