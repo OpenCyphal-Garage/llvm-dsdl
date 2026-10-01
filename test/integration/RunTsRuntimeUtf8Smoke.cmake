@@ -52,20 +52,12 @@ if(NOT ts_gen_result EQUAL 0)
   message(FATAL_ERROR "TypeScript generation failed for utf8 smoke")
 endif()
 
-set(ts_index "${ts_out}/index.ts")
-if(NOT EXISTS "${ts_index}")
-  message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
-endif()
-file(READ "${ts_index}" ts_index_content)
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]+\";" ts_type_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate exported TypeScript alias in ${ts_index}")
-endif()
-set(ts_type_module "${CMAKE_MATCH_1}")
+include("${CMAKE_CURRENT_LIST_DIR}/TsModulePath.cmake")
+llvmdsdl_ts_module("${ts_out}" "utf8type_1_0" ts_type_module)
 
 file(WRITE
   "${ts_out}/runtime_utf8_smoke.ts"
-  "import { ${ts_type_module} } from \"./index\";\n"
+  "import { ${TS_INDEX_IMPORTS} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.Utf8Type_1_0 = { ch: 65, text: [66, 67] };\n"
   "const outBytes = ${ts_type_module}.Utf8Type_1_0.serialize(inObj);\n"

@@ -95,35 +95,15 @@ if(NOT ts_gen_result EQUAL 0)
   message(FATAL_ERROR "fixture TypeScript generation failed")
 endif()
 
-set(ts_index "${ts_out}/index.ts")
-if(NOT EXISTS "${ts_index}")
-  message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
-endif()
-file(READ "${ts_index}" ts_index_content)
+include("${CMAKE_CURRENT_LIST_DIR}/TsModulePath.cmake")
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*scalar_1_0\";" scalar_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate scalar_1_0 export alias in ${ts_index}")
-endif()
-set(ts_scalar_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "scalar_1_0" ts_scalar_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*vector_1_0\";" vector_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate vector_1_0 export alias in ${ts_index}")
-endif()
-set(ts_vector_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "vector_1_0" ts_vector_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*composite_1_0\";" composite_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate composite_1_0 export alias in ${ts_index}")
-endif()
-set(ts_composite_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "composite_1_0" ts_composite_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*svc_1_0\";" svc_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate svc_1_0 export alias in ${ts_index}")
-endif()
-set(ts_svc_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "svc_1_0" ts_svc_module)
 
 set(c_harness_src "${work_dir}/c_truncated_decode_parity_harness.c")
 file(WRITE
@@ -287,7 +267,7 @@ endif()
 
 file(WRITE
   "${ts_out}/runtime_truncated_decode_parity.ts"
-  "import { ${ts_scalar_module}, ${ts_vector_module}, ${ts_composite_module}, ${ts_svc_module} } from \"./index\";\n"
+  "import { ${TS_INDEX_IMPORTS} } from \"./index\";\n"
   "\n"
   "const scalarFull = ${ts_scalar_module}.Scalar_1_0.serialize({ value: 0x3456 });\n"
   "const scalarShort = scalarFull.subarray(0, scalarFull.length - 1);\n"

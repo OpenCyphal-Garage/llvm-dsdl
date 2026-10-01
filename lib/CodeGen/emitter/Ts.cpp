@@ -31,7 +31,6 @@
 #include <algorithm>
 #include <cassert>
 #include <llvm/ADT/StringRef.h>
-#include <cctype>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -47,7 +46,6 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/Support/DefinitionNaming.h"
-#include "llvmdsdl/Support/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/SchemaLookup.h"
 #include "llvmdsdl/CodeGen/InitializerRender.h"
 #include "llvmdsdl/CodeGen/TypeMetadata.h"
@@ -475,26 +473,6 @@ std::string relativeImportPath(const std::filesystem::path& fromFile, const std:
         importPath = "./" + importPath;
     }
     return importPath;
-}
-
-std::string moduleAliasFromPath(const std::string& modulePath)
-{
-    std::string alias;
-    alias.reserve(modulePath.size() + 8);
-    for (char const c : modulePath)
-    {
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
-        {
-            alias.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-        }
-        else
-        {
-            alias.push_back('_');
-        }
-    }
-    // Not a role: the alias comes from --ts-module, so it is a token this generator was handed
-    // rather than a DSDL name, and must not pick up a role's case projection.
-    return codegenSanitizeIdentifier(Language::TypeScript, alias.empty() ? "module" : alias);
 }
 
 /// @brief One section's names, as the surface declares them.
@@ -2456,77 +2434,97 @@ llvm::Error emit(const SemanticModule& semantic, mlir::ModuleOp module, const Op
     const TsSurface      names(*tree);
     const EmitterContext ctx(semantic, names, options.accessorsOnly);
 
-    std::vector<const SemanticDefinition*> ordered;
-    ordered.reserve(semantic.definitions.size());
+    std::vector<const SemanticDefinition*> selected;
+    selected.reserve(semantic.definitions.size());
     for (const auto& def : semantic.definitions)
     {
         if (!shouldEmitDefinition(def.info, selectedTypeKeys, options.supportGeneration))
         {
             continue;
         }
-        ordered.push_back(&def);
+        selected.push_back(&def);
     }
-    std::ranges::sort(ordered, [](const auto* lhs, const auto* rhs) {
-        if (lhs->info.fullName != rhs->info.fullName)
-        {
-            return lhs->info.fullName < rhs->info.fullName;
-        }
-        if (lhs->info.majorVersion != rhs->info.majorVersion)
-        {
-            return lhs->info.majorVersion < rhs->info.majorVersion;
-        }
-        return lhs->info.minorVersion < rhs->info.minorVersion;
-    });
 
-    std::vector<std::string> generatedRelativePaths;
-    generatedRelativePaths.reserve(ordered.size());
-    PlanBodyLookups lookups(module);
+    // The scopes along the path to each written definition, whose index files re-export it.
+    std::set<std::size_t> declared;
+    PlanBodyLookups       lookups(module);
 
-    for (const auto* def : ordered)
+    for (const auto* def : selected)
     {
         const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
-        const std::string&             relPath = names.path(keyOf(def->info));
-        generatedRelativePaths.push_back(relPath);
-
-        const auto fullPath = outRoot / relPath;
-        auto       rendered = renderDefinitionFile(*def, ctx, module, lookups);
+        const std::size_t              scope = names.file(keyOf(def->info));
+        for (const std::size_t enclosing : names.tree().pathTo(scope))
+        {
+            declared.insert(enclosing);
+        }
+        auto rendered = renderDefinitionFile(*def, ctx, module, lookups);
         if (!rendered)
         {
             return rendered.takeError();
         }
-
-        if (auto err = writeGeneratedFile(fullPath, *rendered, options.writePolicy, requiredTypeKeys))
+        if (auto err = writeGeneratedFile(outRoot / names.tree().scope(scope).path,
+                                          *rendered,
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }
     }
 
-    std::ostringstream index;
-    SourceWriter       indexW = makeTsWriter(index);
-    indexW.line(generatedCommentLine("TypeScript backend index"));
-    std::map<std::string, unsigned> aliasUseCount;
-    for (const auto& relPath : generatedRelativePaths)
-    {
-        std::string modulePath = relPath;
-        if (modulePath.size() >= 3 && modulePath.ends_with(".ts"))
+    // The index of each directory, which re-exports its namespaces' indexes and then its modules,
+    // each under its own name: a consumer reaches `uavcan.node.heartbeat_1_0`.
+    const auto writeIndex = [&](const std::size_t scope) -> llvm::Error {
+        // A namespace is re-exported from its own index; a definition's module is a file.
+        std::set<std::pair<std::string, std::string>> namespaces;
+        std::set<std::pair<std::string, std::string>> modules;
+        for (const SurfaceItem& item : names.tree().scope(scope).items)
         {
-            modulePath.resize(modulePath.size() - 3);
+            if (item.scope && declared.contains(item.index))
+            {
+                const SurfaceScope& child = names.tree().scope(item.index);
+                if (child.kind == SurfaceScopeKind::Namespace)
+                {
+                    namespaces.emplace(child.name, child.name + "/index");
+                }
+                else
+                {
+                    modules.emplace(child.name, child.name);
+                }
+            }
         }
-        std::string alias    = moduleAliasFromPath(modulePath);
-        unsigned&   useCount = aliasUseCount[alias];
-        if (useCount > 0)
+        std::ostringstream index;
+        SourceWriter       indexW = makeTsWriter(index);
+        indexW.line(generatedCommentLine("TypeScript backend index"));
+        for (const auto* const exports : {&namespaces, &modules})
         {
-            alias += "_" + std::to_string(useCount);
+            for (const auto& [name, target] : *exports)
+            {
+                std::string line = "export * as ";
+                line += name;
+                line += " from \"./";
+                line += target;
+                line += "\";";
+                indexW.line(line);
+            }
         }
-        ++useCount;
-
-        // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
-        indexW.line("export * as " + alias + " from \"./" + modulePath + "\";");
-    }
-
-    if (auto err = writeGeneratedFile(outRoot / "index.ts", index.str(), options.writePolicy, options.selectedTypeKeys))
+        return writeGeneratedFile(outRoot / names.tree().scope(scope).path,
+                                  index.str(),
+                                  options.writePolicy,
+                                  options.selectedTypeKeys);
+    };
+    if (auto err = writeIndex(0))
     {
         return err;
+    }
+    for (const std::size_t scope : declared)
+    {
+        if (names.tree().scope(scope).kind == SurfaceScopeKind::Namespace)
+        {
+            if (auto err = writeIndex(scope))
+            {
+                return err;
+            }
+        }
     }
 
     return llvm::Error::success();

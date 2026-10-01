@@ -78,23 +78,11 @@ if(NOT ts_gen_result EQUAL 0)
   message(FATAL_ERROR "failed to generate signed_narrow TypeScript output for C/TS parity")
 endif()
 
-set(ts_index "${ts_out}/index.ts")
-if(NOT EXISTS "${ts_index}")
-  message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
-endif()
-file(READ "${ts_index}" ts_index_content)
+include("${CMAKE_CURRENT_LIST_DIR}/TsModulePath.cmake")
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*int3sat_1_0\";" sat_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate int3_sat_1_0 export alias in ${ts_index}")
-endif()
-set(ts_sat_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "int3sat_1_0" ts_sat_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*int3trunc_1_0\";" trunc_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate int3_trunc_1_0 export alias in ${ts_index}")
-endif()
-set(ts_trunc_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "int3trunc_1_0" ts_trunc_module)
 
 set(c_harness_src "${work_dir}/signed_narrow_c_ts_parity_harness.c")
 file(WRITE
@@ -423,7 +411,7 @@ endif()
 
 set(ts_harness_template
   [=[
-import { @ts_sat_module@, @ts_trunc_module@ } from "./index";
+import { @TS_INDEX_IMPORTS@ } from "./index";
 
 const iterations = @ITERATIONS@;
 

@@ -1,0 +1,20 @@
+# Each directory's index re-exports its namespaces' indexes and then its modules, each under its own
+# name, so a consumer reaches a module by its DSDL path: `ns.inner.deep_1_0`.
+
+# RUN: rm -rf %t && mkdir -p %t/dsdl/ns/inner
+# RUN: printf 'uint8 a\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
+# RUN: printf 'uint8 b\n@sealed\n' > %t/dsdl/ns/inner/Deep.1.0.dsdl
+# RUN: %dsdlc --target-language ts %t/dsdl/ns --outdir %t/ts
+# RUN: FileCheck %s --check-prefix=ROOT < %t/ts/index.ts
+# RUN: FileCheck %s --check-prefix=NS < %t/ts/ns/index.ts
+# RUN: FileCheck %s --check-prefix=INNER < %t/ts/ns/inner/index.ts
+
+# ROOT:      export * as ns from "./ns/index";
+# ROOT-NOT:  export
+
+# NS:        export * as inner from "./inner/index";
+# NS-NEXT:   export * as msg_1_0 from "./msg_1_0";
+# NS-NOT:    export
+
+# INNER:     export * as deep_1_0 from "./deep_1_0";
+# INNER-NOT: export

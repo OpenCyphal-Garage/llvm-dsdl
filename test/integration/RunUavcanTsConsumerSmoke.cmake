@@ -40,22 +40,13 @@ if(NOT gen_result EQUAL 0)
   message(FATAL_ERROR "uavcan TypeScript generation failed")
 endif()
 
-file(READ "${gen_dir}/index.ts" ts_index)
-foreach(required_alias
-    "uavcan_node_heartbeat_1_0"
-    "uavcan_primitive_empty_1_0")
-  if(NOT ts_index MATCHES "export \\* as ${required_alias} from ")
-    message(FATAL_ERROR "Expected root TypeScript index.ts to export alias: ${required_alias}")
-  endif()
-endforeach()
-
 file(WRITE
   "${gen_dir}/consumer_smoke.ts"
-  "import { uavcan_node_heartbeat_1_0, uavcan_primitive_empty_1_0 } from \"./index\";\n"
+  "import { uavcan } from \"./index\";\n"
   "\n"
-  "const heartbeatName: string = uavcan_node_heartbeat_1_0.Heartbeat_1_0.FULL_NAME;\n"
-  "const emptyName: string = uavcan_primitive_empty_1_0.Empty_1_0.FULL_NAME;\n"
-  "const heartbeatVersion: string = uavcan_node_heartbeat_1_0.Heartbeat_1_0.FULL_NAME_AND_VERSION;\n"
+  "const heartbeatName: string = uavcan.node.heartbeat_1_0.Heartbeat_1_0.FULL_NAME;\n"
+  "const emptyName: string = uavcan.primitive.empty_1_0.Empty_1_0.FULL_NAME;\n"
+  "const heartbeatVersion: string = uavcan.node.heartbeat_1_0.Heartbeat_1_0.FULL_NAME_AND_VERSION;\n"
   "\n"
   "export const smokeSummary: string = `${heartbeatName}:${emptyName}:${heartbeatVersion}`;\n"
 )

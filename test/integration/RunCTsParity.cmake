@@ -137,47 +137,19 @@ if(NOT ts_gen_result EQUAL 0)
   message(FATAL_ERROR "failed to generate TypeScript output for C/TS parity harness")
 endif()
 
-set(ts_index "${ts_out}/index.ts")
-if(NOT EXISTS "${ts_index}")
-  message(FATAL_ERROR "generated TypeScript index missing: ${ts_index}")
-endif()
-file(READ "${ts_index}" ts_index_content)
+include("${CMAKE_CURRENT_LIST_DIR}/TsModulePath.cmake")
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*scalar_1_0\";" scalar_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate scalar_1_0 export alias in ${ts_index}")
-endif()
-set(ts_scalar_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "scalar_1_0" ts_scalar_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*vector_1_0\";" vector_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate vector_1_0 export alias in ${ts_index}")
-endif()
-set(ts_vector_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "vector_1_0" ts_vector_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*union_tag_1_0\";" union_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate union_tag_1_0 export alias in ${ts_index}")
-endif()
-set(ts_union_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "union_tag_1_0" ts_union_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*uses_delimited_1_0\";" delimited_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate uses_delimited_1_0 export alias in ${ts_index}")
-endif()
-set(ts_delimited_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "uses_delimited_1_0" ts_delimited_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*svc_1_0\";" svc_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate svc_1_0 export alias in ${ts_index}")
-endif()
-set(ts_svc_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "svc_1_0" ts_svc_module)
 
-string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*deep_outer_1_0\";" deep_outer_export "${ts_index_content}")
-if("${CMAKE_MATCH_1}" STREQUAL "")
-  message(FATAL_ERROR "failed to locate deep_outer_1_0 export alias in ${ts_index}")
-endif()
-set(ts_deep_outer_module "${CMAKE_MATCH_1}")
+llvmdsdl_ts_module("${ts_out}" "deep_outer_1_0" ts_deep_outer_module)
 
 set(c_harness_src "${work_dir}/c_ts_parity_harness.c")
 file(WRITE
@@ -722,7 +694,7 @@ endif()
 
 set(ts_harness_template
   [=[
-import { @ts_scalar_module@, @ts_vector_module@, @ts_union_module@, @ts_delimited_module@, @ts_svc_module@, @ts_deep_outer_module@ } from "./index";
+import { @TS_INDEX_IMPORTS@ } from "./index";
 
 const randomIterations = @random_iterations@;
 
