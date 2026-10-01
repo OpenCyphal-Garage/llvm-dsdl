@@ -58,12 +58,18 @@ if(NOT VALGRIND_EXECUTABLE OR NOT CG_ANNOTATE_EXECUTABLE)
   llvmdsdl_decline("valgrind or cg_annotate is not installed")
 endif()
 
-# The rustc cargo builds with. Two builds of one release can generate code with different LLVMs, so
-# the release alone does not identify what was measured.
-get_filename_component(cargo_dir "${CARGO_EXECUTABLE}" DIRECTORY)
-find_program(RUSTC_EXECUTABLE rustc HINTS "${cargo_dir}")
-if(NOT RUSTC_EXECUTABLE)
-  message(FATAL_ERROR "no rustc beside ${CARGO_EXECUTABLE}")
+# The compiler that builds the harness: RUSTC where the environment names one, as cargo reads it, and
+# otherwise the rustc beside cargo. The build below is handed this compiler, so the identity recorded
+# is the compiler that generated the instructions counted. Two builds of one release can generate
+# code with different LLVMs, so the release alone does not identify it.
+if(DEFINED ENV{RUSTC} AND NOT "$ENV{RUSTC}" STREQUAL "")
+  set(RUSTC_EXECUTABLE "$ENV{RUSTC}")
+else()
+  get_filename_component(cargo_dir "${CARGO_EXECUTABLE}" DIRECTORY)
+  find_program(RUSTC_EXECUTABLE rustc HINTS "${cargo_dir}")
+  if(NOT RUSTC_EXECUTABLE)
+    message(FATAL_ERROR "no rustc beside ${CARGO_EXECUTABLE}")
+  endif()
 endif()
 execute_process(
   COMMAND "${RUSTC_EXECUTABLE}" --version --verbose
@@ -129,7 +135,7 @@ configure_file(
 
 execute_process(
   COMMAND
-    "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${OUT_DIR}/cargo-target"
+    "${CMAKE_COMMAND}" -E env "CARGO_TARGET_DIR=${OUT_DIR}/cargo-target" "RUSTC=${RUSTC_EXECUTABLE}"
       "${CARGO_EXECUTABLE}" build --quiet --release --manifest-path "${OUT_DIR}/Cargo.toml"
   RESULT_VARIABLE build_result
   OUTPUT_VARIABLE build_stdout
