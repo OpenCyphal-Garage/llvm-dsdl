@@ -10,10 +10,9 @@
 An emitter spells the operation it is handed. When it looks past that operation -- at a value's
 uses, at the operation that defined an operand, at every return of the function, at the block an
 operation sits in -- it is deciding what the body means, and each emitter that needs the answer
-decides it again. `CLEAN_CODE.md`'s *Discipline* found four such decisions answered in the emitters:
-whether a body can fail, a nested call's adaptation to a callee that answers its size or an error, a
-bool array's run of bits, and whether a size or a parameter is read. Phase 3 states them once, in the
-IR or the shared translator.
+decides it again. Such a decision is stated once, in the IR or the shared translator: whether a
+body can fail, a nested call's adaptation to a callee that answers its size or an error, a bool
+array's run of bits, and whether a size or a parameter is read.
 
 These are the queries counted, per emitter:
 
@@ -28,7 +27,7 @@ not queries of this kind.
 The inventory in `test/integration/emitter-ir-queries.json` is the tree as it stands, and the
 comparison is exact. A count that rises is a new decision in an emitter, which belongs in the IR
 instead. A count that falls is a decision moved out, which is the point, and is retaken with --update
-so the inventory stays the tree's. Phase 3 is done when the inventory is empty.
+so the inventory stays the tree's. The inventory is empty.
 
     python3 tools/check_emitter_ir_queries.py
     python3 tools/check_emitter_ir_queries.py --update

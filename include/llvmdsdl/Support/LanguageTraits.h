@@ -10,11 +10,10 @@
 /// @file
 /// The classification: one row per language dsdlc generates.
 ///
-/// A row states three things. What the language can express, which is the table in
-/// `CLEAN_CODE.md` and a claim about the language rather than about this compiler. What the
-/// generated interface hands a body, which the lowering folds against. And how the output composes
-/// its declarations today, which the per-language phases of `CLEAN_CODE.md` move towards what the
-/// language can express; where the two differ, the difference is that work.
+/// A row states three things. What the language can express, which is a claim about the language
+/// rather than about this compiler. What the generated interface hands a body, which the lowering
+/// folds against. And how the output composes its declarations where the language leaves a choice.
+/// `docs/development/generated-surface.md` sets the rows out.
 ///
 /// Code that needs any of these reads the row. A language compared by name anywhere else is what
 /// `tools/check_language_classification.py` refuses.
@@ -211,8 +210,9 @@ struct Lookup final
 
 /// @brief What a language can express.
 ///
-/// The table in `CLEAN_CODE.md`, *Language classification*. A column grows here when a phase needs
-/// to read it; a preference, such as which containers a profile uses, stays with the profile.
+/// The table in `docs/development/generated-surface.md`, *Language classification*. A column grows
+/// here when a backend needs to read it; a preference, such as which containers a profile uses,
+/// stays with the profile.
 struct Classification final
 {
     /// @brief The scopes the language opens below the file.
@@ -312,10 +312,7 @@ struct DefinitionNamePolicy final
     ///
     /// C is false because its namespace is joined into the identifier, so the namespace the manifest
     /// reports beside the name would double it; the manifest reports C's joined name as
-    /// `qualified_type_name`. C++ is false as it always has been, and the reason
-    /// once given for it -- that its emitter builds a namespace-qualified symbol of its own -- is not
-    /// what `cppTypeName` does. Whether C++ should report is a question for the phase that takes C++;
-    /// see `CLEAN_CODE.md`.
+    /// `qualified_type_name`. C++ is false.
     bool typeNameReachesTheType{true};
 };
 
@@ -379,7 +376,7 @@ enum class ImportNaming
     Type,
 };
 
-/// @brief How the output composes a language's declarations today.
+/// @brief How the output composes a language's declarations where the language leaves a choice.
 struct Composition final
 {
     /// @brief How a definition's type name is composed.
@@ -485,7 +482,7 @@ struct LanguageTraits final
     /// @brief What its generated interface hands a body.
     BodyInterface body{};
 
-    /// @brief How the output composes its declarations today.
+    /// @brief How the output composes its declarations where the language leaves a choice.
     Composition composition{};
 };
 

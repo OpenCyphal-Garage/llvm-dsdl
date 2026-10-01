@@ -45,6 +45,10 @@ Steps 1 to 4 are the `lower-dsdl-bodies` pipeline, defined once in `lib/Transfor
 with `dsdl-opt` under that name. [Backend Translation](backend-translation.md) records the work of
 bringing every backend onto it.
 
+The declarations around the bodies come from the surface tree `project-dsdl-surface` writes for the
+target, which names and places every type, function and file the output declares;
+[Generated Surface](generated-surface.md) is the design.
+
 ### Boundary guarantees
 
 - Raw or unlowered IR reaching a backend is caught by a contract version and producer-identity guard.

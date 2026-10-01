@@ -50,7 +50,8 @@
 # Naming
 # ------
 #
-# readability-identifier-naming states the design in CLEAN_CODE.md. C has no
+# readability-identifier-naming states the design in
+# docs/development/generated-surface.md. C has no
 # scope a type can open, so an identifier composed for a type carries the
 # type's path: the namespace components, then the short name with its version
 # where the name carries one, then the service section, joined by `__` and each

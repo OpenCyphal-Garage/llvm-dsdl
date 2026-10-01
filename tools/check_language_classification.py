@@ -11,8 +11,7 @@
 language can express, what its generated interface hands a body, and how the output composes its
 declarations. Code that needs one of those facts reads the row. Code that compares a language
 instead answers the question again, and a language added later has to be found in every such
-place -- which is how `CLEAN_CODE.md`'s *Discipline* found capabilities decided in the driver and
-five naming files.
+place.
 
 So the compiler's sources may name a language as a value but may not decide on one:
 

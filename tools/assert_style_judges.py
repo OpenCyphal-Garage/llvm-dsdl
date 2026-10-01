@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Assert the container carries every style judge, and report the versions it found.
 
-`CLEAN_CODE.md` phase 1 points each language's own style judge at the generated code, because a
-compiler accepts an un-idiomatic name by design. A judge the container lacks would let its lane pass
-by finding nothing rather than by there being nothing to find, which is how a missing toolchain
-sheds a language's tests.
+Each language's own style judge reads the generated code (docs/development/generated-surface.md),
+because a compiler accepts an un-idiomatic name by design. A judge the container lacks would let its
+lane pass by finding nothing rather than by there being nothing to find, which is how a missing
+toolchain sheds a language's tests.
 
 This installs nothing. A judge that is not here belongs in the toolshed image.
 """
@@ -208,7 +208,7 @@ def main() -> int:
         return 0
 
     marker = "::error::" if os.environ.get("GITHUB_ACTIONS") == "true" else ""
-    print(f"{marker}the container is missing a style judge CLEAN_CODE.md phase 1 needs:", file=sys.stderr)
+    print(f"{marker}the container is missing a style judge:", file=sys.stderr)
     for item in missing:
         print(f"{marker}  {item}", file=sys.stderr)
     print("These belong in the toolshed image rather than being installed per run.", file=sys.stderr)
