@@ -19,8 +19,7 @@ two specialisations measured in the same process on the same machine, so it is
 invariant to how fast that machine happens to be. An absolute second is not: it
 encodes the host's CPU, its standard library, and in the Python case the exact
 interpreter build. So the Rust thresholds are calibrated on one developer machine
-and enforced nowhere else, and the Python benchmark holds none: its gate counts
-instructions.
+and enforced nowhere else, and the gates on both languages count instructions.
 
 The C comparison against Nunavut is reported in instructions, which is a property
 of the code rather than of the runner, and its ratios can therefore be read
@@ -322,15 +321,15 @@ def main(argv: list[str]) -> int:
     out.append(
         "Reported, not enforced. The Rust benchmark's checked-in thresholds are calibrated on one "
         "developer machine (macOS/arm64) and do not describe this runner; see "
-        "`.github/workflows/ci.yml` for what turning them on requires. The Python benchmark holds "
-        "none."
+        "`.github/workflows/ci.yml` for what turning them on requires."
     )
     out.append("")
     out.append(
         "Regressions in the generated Rust and Python *are* gated, by "
         "`llvmdsdl-fixtures-rust-runtime-instructions` and `llvmdsdl-uavcan-python-runtime-instructions` "
-        "in the main suite, which count instructions under cachegrind instead of seconds and so need "
-        "no calibration. Nothing on this page fails a build."
+        "in the main suite, which count instructions under cachegrind instead of seconds against a "
+        "checked-in baseline per architecture and toolchain, so no runner needs calibrating. Nothing on "
+        "this page fails a build."
     )
     out.append("")
     _render_rust(rust, out)

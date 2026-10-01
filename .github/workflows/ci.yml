@@ -751,7 +751,7 @@ jobs:
     # seconds, carry no `bench` label, and gate in the `linux` job. A count is deterministic --
     # repeated runs, idle and oversubscribed, agree to the instruction -- so it needs no calibration
     # beyond a baseline per architecture and toolchain. Where valgrind or that baseline is missing,
-    # each gate skips off CI and fails on CI. The Python benchmark holds no wall-clock thresholds.
+    # each gate skips off CI and fails on CI.
     #
     # The C comparison against Nunavut counts instructions too, and is here rather than in `linux`
     # for a different reason: it is a ratio against a peer implementation. Nunavut is corroboration
