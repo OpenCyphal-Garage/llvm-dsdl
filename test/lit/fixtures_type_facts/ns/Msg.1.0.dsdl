@@ -1,0 +1,6 @@
+# A message whose constants reach the names of its type's facts. WIRE_FLAT is one of them;
+# REQUEST_WIRE_FLAT is no fact's name.
+uint8 WIRE_FLAT = 1
+uint8 REQUEST_WIRE_FLAT = 2
+uint8 v
+@sealed

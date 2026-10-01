@@ -1,8 +1,8 @@
 # The field accessors of a wire-flat section, as each language spells them. All six speak the
 # member's own type; the plan holds an integer in a 64-bit one, and the cast is at the boundary
 # and nowhere else. The names follow each language's placement: a static member in C++, a function
-# named after the type in C, Go and TypeScript, an associated function in Rust, a static method in
-# Python.
+# named after the type in C and Go, an associated function in Rust, a static method in Python, and a
+# method of the type's `const` in TypeScript.
 
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language c %S/fixtures_host_image --outdir %t/c > /dev/null
@@ -75,9 +75,9 @@
 # GO:      func PaddedSetB(buffer []byte, memberValue uint16) error {
 # GO-NEXT: value := uint64(memberValue)
 
-# TS:      export function getPaddedB(buffer: Uint8Array): number {
+# TS:      {{^}}  getB(buffer: Uint8Array): number {
 # TS:      return Number(
-# TS:      export function setPaddedB(buffer: Uint8Array, memberValue: number): void {
+# TS:      {{^}}  setB(buffer: Uint8Array, memberValue: number): void {
 # TS-NEXT: const value: bigint = BigInt(memberValue);
 
 # PY:      @staticmethod
@@ -99,7 +99,7 @@
 # RUST_ELEMENT: pub fn set_head(buffer: &mut [u8], index: usize, value: u8) -> core::result::Result<(), crate::dsdl_runtime::Error> {
 # GO_ELEMENT:   func ArrGetHead(buffer []byte, elementIndex int) uint8 {
 # GO_ELEMENT:   func ArrSetHead(buffer []byte, elementIndex int, memberValue uint8) error {
-# TS_ELEMENT:   export function getArrHead(buffer: Uint8Array, elementIndex: number): number {
-# TS_ELEMENT:   export function setArrHead(buffer: Uint8Array, elementIndex: number, memberValue: number): void {
+# TS_ELEMENT:   {{^}}  getHead(buffer: Uint8Array, elementIndex: number): number {
+# TS_ELEMENT:   {{^}}  setHead(buffer: Uint8Array, elementIndex: number, memberValue: number): void {
 # PY_ELEMENT:   def get_head(buffer: memoryview, index: int) -> int:
 # PY_ELEMENT:   def set_head(buffer: memoryview, index: int, value: int) -> None:

@@ -157,13 +157,13 @@ file(WRITE
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.Utf8Type_1_0 = { ch: 65, text: [66, 67] };\n"
-  "const outBytes = ${ts_type_module}.serializeUtf8Type_1_0(inObj);\n"
+  "const outBytes = ${ts_type_module}.Utf8Type_1_0.serialize(inObj);\n"
   "if (outBytes.length !== 3) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(outBytes[0] + \" \" + outBytes[1] + \" \" + outBytes[2]);\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeUtf8Type_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.Utf8Type_1_0.deserialize(outBytes);\n"
   "console.log(decoded.value.ch + \" \" + decoded.value.text[0] + \" \" + decoded.value.text[1] + \" \" + decoded.consumed);\n"
 )
 

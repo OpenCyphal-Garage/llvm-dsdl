@@ -87,17 +87,18 @@
 # GO_ONLY: pose_1_0.go
 # GO_ONLY-NOT: host_image
 
-# TypeScript: exported accessors and no interface, factory or entry point. A file of composite
-# getters refers to nothing in the runtime and imports nothing.
+# TypeScript: the type's `const` holds the accessors, and there is no interface, factory or entry
+# point. A file of composite getters refers to nothing in the runtime and imports nothing.
 # RUN: cat %t/ts/fixtures_aliasable/vendor/vec3_1_0.ts | FileCheck %s --check-prefix=TS_VEC3
 # TS_VEC3: import * as dsdlRuntime from "../../dsdl_runtime";
 # TS_VEC3-NOT: export interface Vec3
-# TS_VEC3-NOT: export function makeVec3
-# TS_VEC3: export function getVec3X(buffer: Uint8Array): number {
-# TS_VEC3-NOT: export function serializeVec3Into
+# TS_VEC3: export const Vec3 = {
+# TS_VEC3-NOT: create(
+# TS_VEC3: {{^}}  getX(buffer: Uint8Array): number {
+# TS_VEC3-NOT: serializeInto(
 # RUN: cat %t/ts/fixtures_aliasable/vendor/pose_1_0.ts | FileCheck %s --check-prefix=TS_POSE
 # TS_POSE-NOT: import
-# TS_POSE: export function getPosePosition(buffer: Uint8Array): Uint8Array {
+# TS_POSE: {{^}}  getPosition(buffer: Uint8Array): Uint8Array {
 # TS_POSE-NOT: import
 
 # Python: a bare class of the type's facts and static methods, and no import of the nested type. A

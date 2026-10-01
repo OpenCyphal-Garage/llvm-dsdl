@@ -9,11 +9,8 @@
 
 #include <cstddef>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 
 #include "llvmdsdl/Support/DefinitionNaming.h"
@@ -23,9 +20,8 @@
 namespace llvmdsdl
 {
 
-ImportNameScope::ImportNameScope(const Language language, Brought brought)
+ImportNameScope::ImportNameScope(const Language language)
     : language_(language)
-    , brought_(std::move(brought))
 {
 }
 
@@ -64,10 +60,7 @@ std::string ImportNameScope::claim(const DefinitionRef& ref, const std::string& 
     {
         local = compose(ref.shortName + "_" + std::to_string(ordinal));
     }
-    for (std::string& name : broughtBy(local))
-    {
-        imported_.insert(std::move(name));
-    }
+    imported_.insert(local);
     claims_[key] = local;
     return local;
 }
@@ -78,15 +71,9 @@ std::string ImportNameScope::localName(const DefinitionRef& ref, const std::stri
     return (found == claims_.end()) ? exported : found->second;
 }
 
-std::vector<std::string> ImportNameScope::broughtBy(const std::string& local) const
-{
-    return brought_ ? brought_(local) : std::vector<std::string>{local};
-}
-
 bool ImportNameScope::taken(const std::string& local) const
 {
-    return llvm::any_of(broughtBy(local),
-                        [&](const std::string& name) { return declared_.contains(name) || imported_.contains(name); });
+    return declared_.contains(local) || imported_.contains(local);
 }
 
 }  // namespace llvmdsdl

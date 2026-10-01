@@ -87,6 +87,8 @@ def generate(dsdlc: Path, language: str, corpus: Path, outdir: Path, module: str
         raise SystemExit(1)
 
 
+# A type's `const` takes the type's own name, so an exported `const` may be PascalCase as well as a
+# constant's UPPER_CASE.
 ESLINT_CONFIG = """import tseslint from "typescript-eslint";
 
 export default [
@@ -99,6 +101,7 @@ export default [
         { selector: "typeLike", format: ["PascalCase"] },
         { selector: "function", format: ["camelCase"] },
         { selector: "variable", format: ["camelCase", "UPPER_CASE"], leadingUnderscore: "allow" },
+        { selector: "variable", modifiers: ["const", "exported"], format: ["camelCase", "UPPER_CASE", "PascalCase"] },
       ],
     },
   },

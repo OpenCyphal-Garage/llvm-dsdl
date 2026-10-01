@@ -74,15 +74,5 @@ bool runImportNameScopeTests()
         ok = expect(scope.claim(refTo({"ns"}, "Ver", 1), "Ver", false), "NsVer", "the second version") && ok;
         ok = expect(scope.claim(refTo({"ns"}, "Ver", 2), "Ver", false), "Ver2", "the third version") && ok;
     }
-
-    // A type that brings functions named after it clashes on any of them: `serializeFooInto` is the
-    // body function of an imported `Foo` and the entry point of a declared `FooInto`.
-    {
-        ImportNameScope scope(Language::TypeScript, [](const std::string& type) {
-            return std::vector<std::string>{type, "make" + type, "serialize" + type + "Into"};
-        });
-        scope.reserve("serializeFooInto");
-        ok = expect(scope.claim(refTo({"ns"}, "Foo"), "Foo", false), "NsFoo", "a clash on a brought name") && ok;
-    }
     return ok;
 }

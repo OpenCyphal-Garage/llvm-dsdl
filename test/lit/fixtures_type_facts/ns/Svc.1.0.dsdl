@@ -1,0 +1,7 @@
+# A service whose request has a constant named as one of the request's facts.
+uint8 WIRE_FLAT = 3
+uint8 v
+@sealed
+---
+uint8 w
+@sealed

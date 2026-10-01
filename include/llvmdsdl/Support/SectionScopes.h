@@ -180,24 +180,12 @@ enum class ArrayMetadataKind : std::uint8_t
 /// the type, or behind a macro prefix -- and get a scope of their own.
 /// @param[in] language Naming language.
 /// @param[in] section The section whose constants are being named.
-/// @param[in] typeConstantPrefix The prefix the language puts in front of a section constant, where
-///            it uses one. Python and TypeScript declare a definition's own facts at module scope
-///            under a fixed prefix of their own, and a section constant lands in that same scope
-///            behind the type's prefix, so a type whose prefix is one of theirs puts the two in
-///            reach of each other -- `DSDL.1.0` with a constant `FULL_NAME` reaches
-///            `DSDL_FULL_NAME`. Passing the prefix is what lets the scope see that. The other four
-///            languages put the two in different scopes and pass an empty prefix.
-///
-///            There is no default. A caller that leaves it out gets a scope that disagrees with the
-///            one the emitter built, and the names it reads back are then names nothing writes --
-///            a silent wrong answer rather than a missing one.
 /// @param[in] declaredTypeName The name the section's type is declared under, which the scope
 ///            claims where the language declares the constants in the type and puts the type's own
 ///            name among its members' names.
 /// @return A scope with every constant declared.
 [[nodiscard]] NamingScope makeSectionConstantScope(Language            language,
                                                    const SectionParts& section,
-                                                   llvm::StringRef     typeConstantPrefix,
                                                    llvm::StringRef     declaredTypeName);
 
 /// @brief The scope a Go section's package-level constants are declared into.

@@ -2386,49 +2386,24 @@ private:
     ///        alias of its request's class.
     static void moduleConstants(DeclarationSite& site)
     {
-        const auto  boolean = [](const bool value) { return std::string(value ? "True" : "False"); };
-        const auto  quoted  = [](const std::string& text) { return "\"" + text + "\""; };
-        const auto& def     = site.facts().definition();
+        const auto& def = site.facts().definition();
         for (const SurfaceDecl* const decl : site.fileDeclarations(SurfaceDeclKind::Constant))
         {
-            if (!decl->fact || !decl->of->member.empty())
+            if (!decl->fact)
             {
                 continue;
             }
-            std::string value;
             switch (*decl->fact)
             {
-            case GeneratedFact::GeneratorVersion:
-                value = quoted(llvmdsdl::kVersionString);
-                break;
-            case GeneratedFact::FullName:
-                value = quoted(def.info.fullName);
-                break;
-            case GeneratedFact::IsDeprecated:
-                value = boolean(def.request.deprecated);
-                break;
-            case GeneratedFact::VersionMajor:
-                value = std::to_string(def.info.majorVersion);
-                break;
-            case GeneratedFact::VersionMinor:
-                value = std::to_string(def.info.minorVersion);
-                break;
             case GeneratedFact::HasFixedPortId:
-                value = boolean(def.info.fixedPortId.has_value());
+                site.writer().line(decl->name + " = " + (def.info.fixedPortId ? "True" : "False"));
                 break;
             case GeneratedFact::FixedPortId:
-                value = std::to_string(*def.info.fixedPortId);
-                break;
-            case GeneratedFact::WireFlat:
-                value = boolean(wireFlatVerdict(site.facts().plan(decl->of->section)).holds);
-                break;
-            case GeneratedFact::WireFlatReason:
-                value = quoted(wireFlatVerdict(site.facts().plan(decl->of->section)).reason);
+                site.writer().line(decl->name + " = " + std::to_string(*def.info.fixedPortId));
                 break;
             default:
-                continue;
+                llvm::report_fatal_error(llvm::Twine("Python: a module states no fact '") + decl->name + "'");
             }
-            site.writer().line(decl->name + " = " + value);
         }
     }
 

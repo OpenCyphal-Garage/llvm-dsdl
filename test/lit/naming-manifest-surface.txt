@@ -78,15 +78,13 @@
 # GO:      response/accessors/ok/get = AskResponseGetOk
 # GO-NEXT: response/accessors/ok/set = AskResponseSetOk
 #
-# TS:      imports/ns.Msg.1.0/deserialize = deserializeMsgFrom
-# TS-NEXT: imports/ns.Msg.1.0/initialize = makeMsg
-# TS-NEXT: imports/ns.Msg.1.0/serialize = serializeMsgInto
-# TS-NEXT: imports/ns.Msg.1.0/type = Msg
-# TS:      message/entry_points/from_wire_image = deserializeHold
-# TS-NEXT: message/entry_points/initialize = makeHold
-# TS-NEXT: message/entry_points/serialize = serializeHoldInto
-# TS-NEXT: message/entry_points/wire_image = serializeHold
-# TS:      message/generated/generator_version = LLVMDSDL_GENERATOR_VERSION
+# TS:      imports/ns.Msg.1.0/type = Msg
+# TS:      message/entry_points/deserialize = deserializeFrom
+# TS-NEXT: message/entry_points/from_wire_image = deserialize
+# TS-NEXT: message/entry_points/initialize = create
+# TS-NEXT: message/entry_points/serialize = serializeInto
+# TS-NEXT: message/entry_points/wire_image = serialize
+# TS:      message/generated/full_name = FULL_NAME
 # TS-NOT:  wrappers
 #
 # PY:      file = dsdl_gen/ns/old_1_0.py

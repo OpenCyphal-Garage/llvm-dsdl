@@ -27,7 +27,8 @@ import sys
 DEFINITIONS = {
     "c": (r"^#define NAME\b", (".h",)),
     "go": (r"^\s*(?:const\s+)?NAME\b[^=\n]*=", (".go",)),
-    "ts": (r"^export const NAME\b", (".ts",)),
+    # A module's constant, or a property of a type's `const`.
+    "ts": (r"^(?:export const NAME\b|  NAME:)", (".ts",)),
     "python": (r"^\s*NAME\s*(?::[^=\n]+)?=", (".py",)),
 }
 
@@ -161,21 +162,16 @@ def main() -> int:
     for language, root in written.items():
         failures += undefined_constants(language, languages[language], root)
 
-    # A type named DSDL is the one case where a section constant is in reach of the module's own
-    # names in TypeScript, and a Python class holds the type's facts beside its constants. The
+    # A Python class and a TypeScript type's `const` hold the type's facts beside its constants. The
     # manifest reports what is written, so it has to report the moved name; reporting the unescaped
     # one would name a constant the module does not define.
-    sources = ("FULL_NAME", "HAS_FIXED_PORT_ID", "FIXED_PORT_ID", "VERSION_MAJOR")
     moved = {
-        "ts": {source: "DSDL_" + source + "_2" for source in sources},
-        "python": {
-            "FULL_NAME": "FULL_NAME_",
-            "HAS_FIXED_PORT_ID": "HAS_FIXED_PORT_ID_",
-            "FIXED_PORT_ID": "FIXED_PORT_ID_",
-            "VERSION_MAJOR": "VERSION_MAJOR",
-        },
+        "FULL_NAME": "FULL_NAME_",
+        "HAS_FIXED_PORT_ID": "HAS_FIXED_PORT_ID_",
+        "FIXED_PORT_ID": "FIXED_PORT_ID_",
+        "VERSION_MAJOR": "VERSION_MAJOR",
     }
-    for language, names in moved.items():
+    for language, names in (("ts", moved), ("python", moved)):
         constants = (
             manifest["languages"][language]
             .get("fixtures_naming.naming.DSDL.1.0", {})

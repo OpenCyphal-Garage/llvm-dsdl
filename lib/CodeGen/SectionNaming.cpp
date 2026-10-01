@@ -93,10 +93,9 @@ NamingScope makeSectionFieldScope(const Language         language,
 
 NamingScope makeSectionConstantScope(const Language         language,
                                      const SemanticSection& section,
-                                     const llvm::StringRef  typeConstantPrefix,
                                      const llvm::StringRef  declaredTypeName)
 {
-    return makeSectionConstantScope(language, sectionParts(section), typeConstantPrefix, declaredTypeName);
+    return makeSectionConstantScope(language, sectionParts(section), declaredTypeName);
 }
 
 NamingScope makeGoConstantScope(const SemanticSection& section, const llvm::StringRef typeName)

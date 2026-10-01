@@ -126,15 +126,20 @@
 # GO_OK-NOT: Deprecated:
 
 # TypeScript needs a JSDoc block; this backend's ordinary doc comments are `//` lines, which tsc
-# ignores, so the tag is emitted as its own `/** */` block instead of being appended to the doc.
-# TS_DEP: DSDL_IS_DEPRECATED = true;
+# ignores, so the tag is emitted as its own `/** */` block instead of being appended to the doc. The
+# interface and the `const` of its name each carry it.
 # The JSDoc block is wrapped rather than emitted as one line: the notice is a full sentence, and a
 # single-line block would be more than twice the width of the code it sits above.
 # TS_DEP: {{^}}/**
 # TS_DEP-NEXT: * @deprecated dep.Retired.1.0 is marked @deprecated
+# TS_DEP: export interface RetiredRequest
+# TS_DEP: {{^}}/**
+# TS_DEP-NEXT: * @deprecated dep.Retired.1.0 is marked @deprecated
+# TS_DEP: export const RetiredRequest = {
+# TS_DEP: IS_DEPRECATED: true,
 # TS_DEP-NOT: // Deprecated:
 
-# TS_OK: DSDL_IS_DEPRECATED = false;
+# TS_OK: IS_DEPRECATED: false,
 # TS_OK-NOT: @deprecated
 
 # PY_DEP: # Deprecated: dep.Retired.1.0 is marked @deprecated

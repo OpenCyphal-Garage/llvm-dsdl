@@ -78,7 +78,7 @@ function prefix32RejectsAboveCapacity(prefix: number): void {
   expectRejected(
     "prefix32_rejects_above_capacity",
     BigInt(prefix),
-    () => prefix32.deserializePrefix32@V1_0@From(obj, buffer),
+    () => prefix32.Prefix32@V1_0@.deserializeFrom(obj, buffer),
     () => obj.payload.length,
   );
 }
@@ -89,7 +89,7 @@ function prefix32AcceptsCapacity(): void {
   const buffer = withPrefix(BigInt(capacity), 4, capacity);
   let rc: number;
   try {
-    rc = prefix32.deserializePrefix32@V1_0@From(obj, buffer);
+    rc = prefix32.Prefix32@V1_0@.deserializeFrom(obj, buffer);
   } catch (error) {
     outcome("FAIL", "prefix32_accepts_capacity", BigInt(capacity), `threw ${String(error)}`);
     return;
@@ -109,7 +109,7 @@ function prefix64RejectsAboveCapacity(prefix: bigint): void {
   expectRejected(
     "prefix64_rejects_above_capacity",
     prefix,
-    () => prefix64.deserializePrefix64@V1_0@From(obj, buffer),
+    () => prefix64.Prefix64@V1_0@.deserializeFrom(obj, buffer),
     () => obj.flags.length,
   );
 }
@@ -120,7 +120,7 @@ function prefix64RejectsBeyondIndex(prefix: bigint): void {
   expectRejected(
     "prefix64_rejects_beyond_index",
     prefix,
-    () => prefix64.deserializePrefix64@V1_0@From(obj, buffer),
+    () => prefix64.Prefix64@V1_0@.deserializeFrom(obj, buffer),
     () => obj.flags.length,
   );
 }
@@ -131,7 +131,7 @@ function prefix64AcceptsSmallLength(): void {
   buffer[8] = 0x05;
   let rc: number;
   try {
-    rc = prefix64.deserializePrefix64@V1_0@From(obj, buffer);
+    rc = prefix64.Prefix64@V1_0@.deserializeFrom(obj, buffer);
   } catch (error) {
     outcome("FAIL", "prefix64_accepts_small_length", 3n, `threw ${String(error)}`);
     return;

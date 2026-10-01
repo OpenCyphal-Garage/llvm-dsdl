@@ -1,9 +1,5 @@
-# A type whose own name is the prefix TypeScript puts its module-level metadata under.
-#
-# TypeScript declares a definition's facts at module scope as `DSDL_FULL_NAME` and the rest, and a
-# section constant lands in that same scope as `<TYPE>_<CONSTANT>`. For this type and no other the
-# two are in reach of each other, so the DSDL constants below have to move past names the module
-# already owns. A duplicate `export const` does not compile at all.
+# A type whose constants are named as its facts, which a Python class and a TypeScript type's
+# `const` hold beside them, so the DSDL constants below move past the facts' names.
 uint8 FULL_NAME = 1
 uint8 HAS_FIXED_PORT_ID = 2
 uint8 FIXED_PORT_ID = 3

@@ -73,13 +73,13 @@ file(WRITE
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.OuterVarArray_1_0 = { items: [{ x: 17 }, { x: 34 }], tail: 42 };\n"
-  "const outBytes = ${ts_type_module}.serializeOuterVarArray_1_0(inObj);\n"
+  "const outBytes = ${ts_type_module}.OuterVarArray_1_0.serialize(inObj);\n"
   "if (outBytes.length !== 4) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(outBytes[0] + \" \" + outBytes[1] + \" \" + outBytes[2] + \" \" + outBytes[3]);\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeOuterVarArray_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.OuterVarArray_1_0.deserialize(outBytes);\n"
   "console.log(decoded.value.items.length + \" \" + decoded.value.items[0].x + \" \" + decoded.value.items[1].x + \" \" + decoded.value.tail + \" \" + decoded.consumed);\n"
 )
 

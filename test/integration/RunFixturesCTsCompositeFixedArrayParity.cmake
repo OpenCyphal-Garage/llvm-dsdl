@@ -164,13 +164,13 @@ file(WRITE
   "import { ${ts_type_module} } from \"./index\";\n"
   "\n"
   "const inObj: ${ts_type_module}.OuterArray_1_0 = { items: [{ x: 17 }, { x: 34 }], tail: 42 };\n"
-  "const outBytes = ${ts_type_module}.serializeOuterArray_1_0(inObj);\n"
+  "const outBytes = ${ts_type_module}.OuterArray_1_0.serialize(inObj);\n"
   "if (outBytes.length !== 3) {\n"
   "  throw new Error(\"unexpected serialized size \" + outBytes.length);\n"
   "}\n"
   "console.log(outBytes[0] + \" \" + outBytes[1] + \" \" + outBytes[2]);\n"
   "\n"
-  "const decoded = ${ts_type_module}.deserializeOuterArray_1_0(outBytes);\n"
+  "const decoded = ${ts_type_module}.OuterArray_1_0.deserialize(outBytes);\n"
   "console.log(decoded.value.items[0].x + \" \" + decoded.value.items[1].x + \" \" + decoded.value.tail + \" \" + decoded.consumed);\n"
 )
 

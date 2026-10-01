@@ -116,15 +116,6 @@ enum class GeneratedFact : std::uint8_t
     /// @brief Reads an object from its wire image.
     FromWireImage,
 
-    /// @brief The version of the generator that wrote the output.
-    GeneratorVersion,
-
-    /// @brief The definition's major version.
-    VersionMajor,
-
-    /// @brief The definition's minor version.
-    VersionMinor,
-
     /// @brief The memory resource an object's storage is allocated from.
     MemoryResource,
 };

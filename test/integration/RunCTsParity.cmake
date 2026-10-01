@@ -762,8 +762,8 @@ function runScalarRandom(iterations: number): number {
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterations; ++i) {
     const value = prngNext(state) & 0xffff;
-    const bytes = @ts_scalar_module@.serializeScalar_1_0({ value });
-    const decoded = @ts_scalar_module@.deserializeScalar_1_0(bytes);
+    const bytes = @ts_scalar_module@.Scalar_1_0.serialize({ value });
+    const decoded = @ts_scalar_module@.Scalar_1_0.deserialize(bytes);
     if (decoded.value.value !== value || decoded.consumed !== bytes.length) {
       throw new Error("scalar random mismatch");
     }
@@ -784,8 +784,8 @@ function runVectorRandom(iterations: number): number {
     for (let j = 0; j < count; ++j) {
       values.push(prngNext(state) & 0xff);
     }
-    const bytes = @ts_vector_module@.serializeVector_1_0({ values });
-    const decoded = @ts_vector_module@.deserializeVector_1_0(bytes);
+    const bytes = @ts_vector_module@.Vector_1_0.serialize({ values });
+    const decoded = @ts_vector_module@.Vector_1_0.deserialize(bytes);
     if (decoded.value.values.length !== values.length || decoded.consumed !== bytes.length) {
       throw new Error("vector random size mismatch");
     }
@@ -818,8 +818,8 @@ function runUnionRandom(iterations: number): number {
     } else {
       value = { _tag: 2, third: prngNext(state) & 0xff };
     }
-    const bytes = @ts_union_module@.serializeUnionTag_1_0(value);
-    const decoded = @ts_union_module@.deserializeUnionTag_1_0(bytes);
+    const bytes = @ts_union_module@.UnionTag_1_0.serialize(value);
+    const decoded = @ts_union_module@.UnionTag_1_0.deserialize(bytes);
     if (decoded.value._tag !== value._tag || decoded.consumed !== bytes.length) {
       throw new Error("union random tag mismatch");
     }
@@ -853,8 +853,8 @@ function runDelimitedRandom(iterations: number): number {
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterations; ++i) {
     const value: @ts_delimited_module@.UsesDelimited_1_0 = { nested: { value: prngNext(state) & 0xff } };
-    const bytes = @ts_delimited_module@.serializeUsesDelimited_1_0(value);
-    const decoded = @ts_delimited_module@.deserializeUsesDelimited_1_0(bytes);
+    const bytes = @ts_delimited_module@.UsesDelimited_1_0.serialize(value);
+    const decoded = @ts_delimited_module@.UsesDelimited_1_0.deserialize(bytes);
     if (decoded.value.nested.value !== value.nested.value || decoded.consumed !== bytes.length) {
       throw new Error("delimited random mismatch");
     }
@@ -871,8 +871,8 @@ function runSvcRequestRandom(iterations: number): number {
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterations; ++i) {
     const value: @ts_svc_module@.Svc_1_0Request = { x: prngNext(state) & 0xffff };
-    const bytes = @ts_svc_module@.serializeSvc_1_0Request(value);
-    const decoded = @ts_svc_module@.deserializeSvc_1_0Request(bytes);
+    const bytes = @ts_svc_module@.Svc_1_0Request.serialize(value);
+    const decoded = @ts_svc_module@.Svc_1_0Request.deserialize(bytes);
     if (decoded.value.x !== value.x || decoded.consumed !== bytes.length) {
       throw new Error("svc request random mismatch");
     }
@@ -889,8 +889,8 @@ function runSvcResponseRandom(iterations: number): number {
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterations; ++i) {
     const value: @ts_svc_module@.Svc_1_0Response = { y: prngNext(state) & 0xff };
-    const bytes = @ts_svc_module@.serializeSvc_1_0Response(value);
-    const decoded = @ts_svc_module@.deserializeSvc_1_0Response(bytes);
+    const bytes = @ts_svc_module@.Svc_1_0Response.serialize(value);
+    const decoded = @ts_svc_module@.Svc_1_0Response.deserialize(bytes);
     if (decoded.value.y !== value.y || decoded.consumed !== bytes.length) {
       throw new Error("svc response random mismatch");
     }
@@ -903,9 +903,9 @@ function runSvcResponseRandom(iterations: number): number {
 }
 
 function runScalarTruncatedInput(): number {
-  const full = @ts_scalar_module@.serializeScalar_1_0({ value: 0x3456 });
+  const full = @ts_scalar_module@.Scalar_1_0.serialize({ value: 0x3456 });
   const short = full.subarray(0, 1);
-  const decoded = @ts_scalar_module@.deserializeScalar_1_0(short);
+  const decoded = @ts_scalar_module@.Scalar_1_0.deserialize(short);
   if (decoded.value.value !== 0x56 || decoded.consumed !== 1) {
     throw new Error("scalar truncated mismatch");
   }
@@ -916,9 +916,9 @@ function runScalarTruncatedInput(): number {
 }
 
 function runSvcRequestTruncatedInput(): number {
-  const full = @ts_svc_module@.serializeSvc_1_0Request({ x: 0x4567 });
+  const full = @ts_svc_module@.Svc_1_0Request.serialize({ x: 0x4567 });
   const short = full.subarray(0, 1);
-  const decoded = @ts_svc_module@.deserializeSvc_1_0Request(short);
+  const decoded = @ts_svc_module@.Svc_1_0Request.deserialize(short);
   if (decoded.value.x !== 0x67 || decoded.consumed !== 1) {
     throw new Error("svc request truncated mismatch");
   }
@@ -931,7 +931,7 @@ function runSvcRequestTruncatedInput(): number {
 function runVectorInvalidLengthDeserialize(): number {
   let rejected = false;
   try {
-    @ts_vector_module@.deserializeVector_1_0(new Uint8Array([0x07]));
+    @ts_vector_module@.Vector_1_0.deserialize(new Uint8Array([0x07]));
   } catch (_err) {
     rejected = true;
   }
@@ -946,7 +946,7 @@ function runVectorInvalidLengthDeserialize(): number {
 function runVectorInvalidLengthSerialize(): number {
   let rejected = false;
   try {
-    @ts_vector_module@.serializeVector_1_0({ values: [0, 1, 2, 3, 4, 5] });
+    @ts_vector_module@.Vector_1_0.serialize({ values: [0, 1, 2, 3, 4, 5] });
   } catch (_err) {
     rejected = true;
   }
@@ -961,7 +961,7 @@ function runVectorInvalidLengthSerialize(): number {
 function runUnionInvalidTagDeserialize(): number {
   let rejected = false;
   try {
-    @ts_union_module@.deserializeUnionTag_1_0(new Uint8Array([0x03]));
+    @ts_union_module@.UnionTag_1_0.deserialize(new Uint8Array([0x03]));
   } catch (_err) {
     rejected = true;
   }
@@ -974,7 +974,7 @@ function runUnionInvalidTagDeserialize(): number {
 }
 
 function runDelimiterBadHeaderDeserialize(): number {
-  const valid = @ts_delimited_module@.serializeUsesDelimited_1_0({ nested: { value: 171 } });
+  const valid = @ts_delimited_module@.UsesDelimited_1_0.serialize({ nested: { value: 171 } });
   const invalid = new Uint8Array(valid);
   invalid[0] = 6;
   invalid[1] = 0;
@@ -982,7 +982,7 @@ function runDelimiterBadHeaderDeserialize(): number {
   invalid[3] = 0;
   let rejected = false;
   try {
-    @ts_delimited_module@.deserializeUsesDelimited_1_0(invalid);
+    @ts_delimited_module@.UsesDelimited_1_0.deserialize(invalid);
   } catch (_err) {
     rejected = true;
   }
@@ -1004,7 +1004,7 @@ function runDeepOuterInvalidLengthSerialize(): number {
   };
   let rejected = false;
   try {
-    @ts_deep_outer_module@.serializeDeepOuter_1_0(value);
+    @ts_deep_outer_module@.DeepOuter_1_0.serialize(value);
   } catch (_err) {
     rejected = true;
   }

@@ -679,10 +679,14 @@ llvm::ArrayRef<llvm::StringRef> runtimeOwnedNames(const Language language, const
         return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
                                                       : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::TypeScript:
-        // A property named `constructor` or `prototype` shadows the one every object has. Constants
-        // are safe: the generated ones take a different prefix.
-        return (role == IdentifierRole::FieldName) ? llvm::ArrayRef<llvm::StringRef>(kTsProperties)
-                                                   : llvm::ArrayRef<llvm::StringRef>(kNone);
+        // A property named `constructor` or `prototype` shadows the one every object has. The type's
+        // `const` holds its constants beside the generated facts.
+        if (role == IdentifierRole::FieldName)
+        {
+            return kTsProperties;
+        }
+        return (role == IdentifierRole::ConstantName) ? llvm::ArrayRef<llvm::StringRef>(kMetadata)
+                                                      : llvm::ArrayRef<llvm::StringRef>(kNone);
     case Language::C:
         // `ConstantName` and `MacroName` are one thing in C -- both name a `<Type>_<TOKEN>` macro --
         // so both are claimed against the same list. Fields need nothing: C adds one member of its
@@ -923,7 +927,8 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
          GeneratedName{GeneratedFact::FixedPortId, "FIXED_PORT_ID_"},
          GeneratedName{GeneratedFact::UnionOptionCount, "UNION_OPTION_COUNT_"}};
     // Go's are constants of the package, each named by the type's name and the fact's token; C++'s
-    // are static members of the type, and Python's are class attributes.
+    // are static members of the type, Python's are class attributes, and TypeScript's are properties
+    // of the type's `const`.
     static constexpr std::array<GeneratedName, 12> kFacts =
         {GeneratedName{GeneratedFact::FullName, "FULL_NAME"},
          GeneratedName{GeneratedFact::IsDeprecated, "IS_DEPRECATED"},
@@ -946,9 +951,8 @@ llvm::ArrayRef<GeneratedName> generatedTypeMembers(const Language language)
     case Language::Go:
     case Language::Cpp:
     case Language::Python:
-        return kFacts;
     case Language::TypeScript:
-        break;
+        return kFacts;
     }
     return {};
 }
@@ -977,8 +981,8 @@ llvm::ArrayRef<GeneratedName> generatedDataMembers(const Language language)
 
 llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
 {
-    // A service is named by an alias of its request, and a Rust, Go or Python alias carries none of
-    // the service's own facts, so they are constants beside it.
+    // A service is named by an alias of its request, and a Rust, Go, Python or TypeScript alias
+    // carries none of the service's own facts, so they are constants beside it.
     static constexpr std::array<GeneratedName, 2> kAliased = {GeneratedName{GeneratedFact::HasFixedPortId,
                                                                             "HAS_FIXED_PORT_ID"},
                                                               GeneratedName{GeneratedFact::FixedPortId,
@@ -1005,13 +1009,12 @@ llvm::ArrayRef<GeneratedName> generatedServiceConstants(const Language language)
     case Language::Rust:
     case Language::Go:
     case Language::Python:
+    case Language::TypeScript:
         return kAliased;
     case Language::C:
         return kC;
     case Language::Cpp:
         return kCpp;
-    case Language::TypeScript:
-        break;
     }
     return {};
 }
@@ -1020,48 +1023,39 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
 {
     // Rust initialises through `Default`, a trait's method, which the type's own items do not hold.
     static constexpr std::array<EntryPointName, 4> kRust =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::WireImage, .name = "to_bytes", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::FromWireImage, .name = "from_bytes", .suffix = "", .beside = false}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .beside = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "to_bytes", .beside = false},
+         EntryPointName{.function = PlanFunction::FromWireImage, .name = "from_bytes", .beside = false}};
     // Go's zero value is its type's; a type whose initialiser stores anything else has a constructor.
     // The wire image's bodies are the encoding package's BinaryAppender, BinaryMarshaler and
     // BinaryUnmarshaler.
     static constexpr std::array<EntryPointName, 6> kGo =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .suffix = "", .beside = true},
-         EntryPointName{.function = PlanFunction::AppendWireImage,
-                        .name     = "AppendBinary",
-                        .suffix   = "",
-                        .beside   = false},
-         EntryPointName{.function = PlanFunction::WireImage, .name = "MarshalBinary", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::ReadWireImage,
-                        .name     = "UnmarshalBinary",
-                        .suffix   = "",
-                        .beside   = false}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "Serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "Deserialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Initialize, .name = "New", .beside = true},
+         EntryPointName{.function = PlanFunction::AppendWireImage, .name = "AppendBinary", .beside = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "MarshalBinary", .beside = false},
+         EntryPointName{.function = PlanFunction::ReadWireImage, .name = "UnmarshalBinary", .beside = false}};
     // Python's bodies are the class's own methods: the pair over a buffer, then the wire image's.
     static constexpr std::array<EntryPointName, 4> kPython =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize,
-                        .name     = "_deserialize_from",
-                        .suffix   = "",
-                        .beside   = false},
-         EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .suffix = "", .beside = false}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "_serialize_into", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "_deserialize_from", .beside = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .beside = false}};
     // TypeScript's bodies, the factory its initialiser is read into, and the wire image's bodies are
     // functions of the module.
     static constexpr std::array<EntryPointName, 5> kTypeScript =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "Into", .beside = true},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "From", .beside = true},
-         EntryPointName{.function = PlanFunction::Initialize, .name = "make", .suffix = "", .beside = true},
-         EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .suffix = "", .beside = true},
-         EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .suffix = "", .beside = true}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serializeInto", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserializeFrom", .beside = false},
+         EntryPointName{.function = PlanFunction::Initialize, .name = "create", .beside = false},
+         EntryPointName{.function = PlanFunction::WireImage, .name = "serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::FromWireImage, .name = "deserialize", .beside = false}};
     // C++'s bodies are the structure's own members; its initialiser is read into the member
     // initialisers.
     static constexpr std::array<EntryPointName, 2> kCpp =
-        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .suffix = "", .beside = false},
-         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .suffix = "", .beside = false}};
+        {EntryPointName{.function = PlanFunction::Serialize, .name = "serialize", .beside = false},
+         EntryPointName{.function = PlanFunction::Deserialize, .name = "deserialize", .beside = false}};
     switch (language)
     {
     case Language::Rust:
@@ -1078,28 +1072,6 @@ llvm::ArrayRef<EntryPointName> entryPointNames(const Language language)
         break;
     }
     return {};
-}
-
-llvm::ArrayRef<ModuleConstantName> generatedModuleConstants(const Language language)
-{
-    // A service's layout verdicts are each section's, since aliasability is a property of a payload.
-    static constexpr std::array<ModuleConstantName, 13> kModule =
-        {ModuleConstantName{GeneratedFact::GeneratorVersion, "LLVMDSDL_GENERATOR_VERSION", std::nullopt},
-         ModuleConstantName{GeneratedFact::FullName, "DSDL_FULL_NAME", std::nullopt},
-         ModuleConstantName{GeneratedFact::IsDeprecated, "DSDL_IS_DEPRECATED", std::nullopt},
-         ModuleConstantName{GeneratedFact::VersionMajor, "DSDL_VERSION_MAJOR", std::nullopt},
-         ModuleConstantName{GeneratedFact::VersionMinor, "DSDL_VERSION_MINOR", std::nullopt},
-         ModuleConstantName{GeneratedFact::HasFixedPortId, "DSDL_HAS_FIXED_PORT_ID", std::nullopt},
-         ModuleConstantName{GeneratedFact::FixedPortId, "DSDL_FIXED_PORT_ID", std::nullopt},
-         ModuleConstantName{GeneratedFact::WireFlat, "DSDL_WIRE_FLAT", ""},
-         ModuleConstantName{GeneratedFact::WireFlatReason, "DSDL_WIRE_FLAT_REASON", ""},
-         ModuleConstantName{GeneratedFact::WireFlat, "DSDL_REQUEST_WIRE_FLAT", "request"},
-         ModuleConstantName{GeneratedFact::WireFlatReason, "DSDL_REQUEST_WIRE_FLAT_REASON", "request"},
-         ModuleConstantName{GeneratedFact::WireFlat, "DSDL_RESPONSE_WIRE_FLAT", "response"},
-         ModuleConstantName{GeneratedFact::WireFlatReason, "DSDL_RESPONSE_WIRE_FLAT_REASON", "response"}};
-    return (languageTraits(language).composition.constants == ConstantsScope::Module)
-               ? llvm::ArrayRef<ModuleConstantName>(kModule)
-               : llvm::ArrayRef<ModuleConstantName>{};
 }
 
 llvm::ArrayRef<GuardName> generatedFileGuards(const Language language)
@@ -1148,6 +1120,7 @@ std::optional<AccessorVerbs> memberAccessorVerbs(const Language language)
                              .keyedByDeclaredName    = false,
                              .joinedBeforeUnderscore = false};
     case Language::Python:
+    case Language::TypeScript:
         return AccessorVerbs{.getter                 = "get",
                              .setter                 = "set",
                              .tagFirst               = false,
@@ -1155,7 +1128,6 @@ std::optional<AccessorVerbs> memberAccessorVerbs(const Language language)
                              .joinedBeforeUnderscore = true};
     case Language::C:
     case Language::Go:
-    case Language::TypeScript:
         break;
     }
     return std::nullopt;

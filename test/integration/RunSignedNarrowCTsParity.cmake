@@ -466,8 +466,8 @@ function runInt3SatRandom(iterCount: number): number {
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterCount; ++i) {
     const value = toI8(prngNext(state));
-    const bytes = @ts_sat_module@.serializeInt3Sat_1_0({ value });
-    const decoded = @ts_sat_module@.deserializeInt3Sat_1_0(bytes);
+    const bytes = @ts_sat_module@.Int3Sat_1_0.serialize({ value });
+    const decoded = @ts_sat_module@.Int3Sat_1_0.deserialize(bytes);
     if (decoded.consumed !== bytes.length) {
       throw new Error("int3sat random consumed mismatch");
     }
@@ -484,8 +484,8 @@ function runInt3TruncRandom(iterCount: number): number {
   let hash = 0x811c9dc5 >>> 0;
   for (let i = 0; i < iterCount; ++i) {
     const value = toI8(prngNext(state));
-    const bytes = @ts_trunc_module@.serializeInt3Trunc_1_0({ value });
-    const decoded = @ts_trunc_module@.deserializeInt3Trunc_1_0(bytes);
+    const bytes = @ts_trunc_module@.Int3Trunc_1_0.serialize({ value });
+    const decoded = @ts_trunc_module@.Int3Trunc_1_0.deserialize(bytes);
     if (decoded.consumed !== bytes.length) {
       throw new Error("int3trunc random consumed mismatch");
     }
@@ -498,7 +498,7 @@ function runInt3TruncRandom(iterCount: number): number {
 }
 
 function serializeSatExpect(value: number, expected: number): number {
-  const out = @ts_sat_module@.serializeInt3Sat_1_0({ value });
+  const out = @ts_sat_module@.Int3Sat_1_0.serialize({ value });
   if (out.length !== 1 || out[0] !== expected) {
     throw new Error("int3sat directed serialize mismatch");
   }
@@ -508,7 +508,7 @@ function serializeSatExpect(value: number, expected: number): number {
 }
 
 function serializeTruncExpect(value: number, expected: number): number {
-  const out = @ts_trunc_module@.serializeInt3Trunc_1_0({ value });
+  const out = @ts_trunc_module@.Int3Trunc_1_0.serialize({ value });
   if (out.length !== 1 || out[0] !== expected) {
     throw new Error("int3trunc directed serialize mismatch");
   }
@@ -518,7 +518,7 @@ function serializeTruncExpect(value: number, expected: number): number {
 }
 
 function deserializeSatExpect(sample: number, expected: number): number {
-  const decoded = @ts_sat_module@.deserializeInt3Sat_1_0(new Uint8Array([sample]));
+  const decoded = @ts_sat_module@.Int3Sat_1_0.deserialize(new Uint8Array([sample]));
   if (decoded.consumed !== 1 || decoded.value.value !== expected) {
     throw new Error("int3sat sign extension mismatch");
   }
@@ -529,7 +529,7 @@ function deserializeSatExpect(sample: number, expected: number): number {
 }
 
 function deserializeTruncExpect(sample: number, expected: number): number {
-  const decoded = @ts_trunc_module@.deserializeInt3Trunc_1_0(new Uint8Array([sample]));
+  const decoded = @ts_trunc_module@.Int3Trunc_1_0.deserialize(new Uint8Array([sample]));
   if (decoded.consumed !== 1 || decoded.value.value !== expected) {
     throw new Error("int3trunc sign extension mismatch");
   }
@@ -540,7 +540,7 @@ function deserializeTruncExpect(sample: number, expected: number): number {
 }
 
 function truncatedSatExpect(): number {
-  const decoded = @ts_sat_module@.deserializeInt3Sat_1_0(new Uint8Array());
+  const decoded = @ts_sat_module@.Int3Sat_1_0.deserialize(new Uint8Array());
   if (decoded.consumed !== 0 || decoded.value.value !== 0) {
     throw new Error("int3sat truncated input mismatch");
   }
@@ -551,7 +551,7 @@ function truncatedSatExpect(): number {
 }
 
 function truncatedTruncExpect(): number {
-  const decoded = @ts_trunc_module@.deserializeInt3Trunc_1_0(new Uint8Array());
+  const decoded = @ts_trunc_module@.Int3Trunc_1_0.deserialize(new Uint8Array());
   if (decoded.consumed !== 0 || decoded.value.value !== 0) {
     throw new Error("int3trunc truncated input mismatch");
   }

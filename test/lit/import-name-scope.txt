@@ -12,16 +12,16 @@
 # RUN: %dsdlc --target-language ts %S/fixtures_ts_alias/collide --ts-module collide_demo --outdir %t/ts >/dev/null 2>&1
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=TS
 
-# The type and both bodies take one local name, so they cannot disagree, and the body and the
+# The type and its `const` take one local name, so they cannot disagree, and the body and the
 # factory refer to it.
-# TS: import { deserializeVecFrom, makeVec, serializeVecInto } from "./alpha/vec_1_0";
-# TS: import { deserializeVecFrom as deserializeBetaVecFrom, makeVec as makeBetaVec, serializeVecInto as serializeBetaVecInto } from "./beta/vec_1_0";
-# TS: import type { Vec } from "./alpha/vec_1_0";
-# TS: import type { Vec as BetaVec } from "./beta/vec_1_0";
+# TS: import { Vec } from "./alpha/vec_1_0";
+# TS: import { Vec as BetaVec } from "./beta/vec_1_0";
 # TS: from_alpha: Vec;
 # TS: from_beta: BetaVec;
-# TS: from_alpha: makeVec(),
-# TS: from_beta: makeBetaVec(),
+# TS: from_alpha: Vec.create(),
+# TS: from_beta: BetaVec.create(),
+# TS: Vec.serializeInto(obj.from_alpha,
+# TS: BetaVec.serializeInto(obj.from_beta,
 
 # RUN: %dsdlc --target-language python %S/fixtures_ts_alias/collide --outdir %t/py >/dev/null 2>&1
 # RUN: cat %t/py/dsdl_gen/collide/uses_1_0.py | FileCheck %s --check-prefix=PY
@@ -36,8 +36,7 @@
 # RUN: printf 'adv.inner.Owner.1.0 inner\n@sealed\n' > %t/shadow/adv/outer/Owner.1.0.dsdl
 # RUN: %dsdlc --target-language ts %t/shadow/adv --ts-module shadow --outdir %t/shadow-ts >/dev/null 2>&1
 # RUN: cat %t/shadow-ts/adv/outer/owner_1_0.ts | FileCheck %s --check-prefix=TS_SHADOW
-# TS_SHADOW:      import { deserializeOwnerFrom as deserializeInnerOwnerFrom, makeOwner as makeInnerOwner, serializeOwnerInto as serializeInnerOwnerInto } from "../inner/owner_1_0";
-# TS_SHADOW:      import type { Owner as InnerOwner } from "../inner/owner_1_0";
+# TS_SHADOW:      import { Owner as InnerOwner } from "../inner/owner_1_0";
 # TS_SHADOW:      export interface Owner {
 # TS_SHADOW-NEXT: inner: InnerOwner;
 # RUN: %dsdlc --target-language python %t/shadow/adv --outdir %t/shadow-py >/dev/null 2>&1

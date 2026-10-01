@@ -164,7 +164,7 @@
 # TS_HELPERS: capacityCheck(
 # Widget is a message, so it carries one verdict, not a request/response pair.
 # An object here has no byte image, so only the wire verdict is stated.
-# TS_TYPE: export const DSDL_WIRE_FLAT = true;
+# TS_TYPE: WIRE_FLAT: true,
 # TS_TYPE-NOT: HOST_IMAGE
 
 # TS_FAST_SUMMARY: Run summary:
