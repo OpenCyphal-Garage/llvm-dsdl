@@ -10,7 +10,8 @@
 
 The tree and the manifest both come from `allocateSurface`, so every name the manifest reports for a
 definition is a name the tree declares for it: the type names, the file stem, the namespace, and each
-field, constant and union option tag.
+field, constant and union option tag. A qualified type name is the type's name qualified by the
+namespaces and the type that enclose it in the tree.
 
     check_surface_manifest.py MANIFEST LANGUAGE TREE
 """
@@ -28,6 +29,10 @@ OF = re.compile(r'of = @([\w.]+)')
 SECTION = re.compile(r'section = "([^"]*)"')
 MEMBER = re.compile(r'member = "([^"]*)"')
 ORIGIN = re.compile(r'origin = (\w+)')
+
+# What joins a qualifier to the name it qualifies, in each language whose manifest reports a type's
+# name qualified, as the language's row states it.
+SEPARATOR = {"c": "", "cpp": "::"}
 
 
 def parse(text: str) -> list[dict]:
@@ -77,10 +82,22 @@ def main() -> int:
 
     for key, entry in sorted(definitions.items()):
         types = named(key, "", scope=True, kind="type") + named(key, "", scope=False, kind="alias")
+        # A type declared apart is published under its alias, which is the name that qualifies it.
+        aliases = [item["name"] for item in types if item["kind"] == "alias"]
+        public = aliases[0] if aliases else next((item["name"] for item in types), "")
+
+        def qualified(item: dict) -> str:
+            """@p item's name, qualified by the namespaces and the type that enclose it in the tree."""
+            parts = [public if parent["kind"] == "type" else parent["name"] for parent in item["parents"]
+                     if parent["kind"] in ("namespace", "module", "package", "type")]
+            return SEPARATOR.get(language, "").join(parts + [item["name"]])
+
         type_names = {item["name"] for item in types}
-        for type_key in ("type_name", "qualified_type_name"):
-            if type_key in entry and entry[type_key] not in type_names:
-                failures.append(f"{key}: the tree declares no type {entry[type_key]!r}, only {sorted(type_names)}")
+        if "type_name" in entry and entry["type_name"] not in type_names:
+            failures.append(f"{key}: the tree declares no type {entry['type_name']!r}, only {sorted(type_names)}")
+        if "qualified_type_name" in entry and entry["qualified_type_name"] not in {qualified(item) for item in types}:
+            failures.append(f"{key}: the tree declares no type {entry['qualified_type_name']!r}, "
+                            f"only {sorted(qualified(item) for item in types)}")
 
         sections = [s for s in ("message", "request", "response") if s in entry]
         for section_key in sections:
@@ -98,12 +115,12 @@ def main() -> int:
                           and p is not file_scope]
             if namespaces and namespaces != entry["namespace"]:
                 failures.append(f"{key}: the tree's namespace is {namespaces}, the manifest's {entry['namespace']}")
-            for type_key in ("type_name", "qualified_type_name"):
-                if type_key in reported:
-                    names = {item["name"] for item in section_types} | {
-                        item["name"] for item in named(key, section, scope=False, kind="alias")}
-                    if reported[type_key] not in names:
-                        failures.append(f"{key} {section_key}: the tree declares no type {reported[type_key]!r}")
+            section_names = section_types + named(key, section, scope=False, kind="alias")
+            if "type_name" in reported and reported["type_name"] not in {item["name"] for item in section_names}:
+                failures.append(f"{key} {section_key}: the tree declares no type {reported['type_name']!r}")
+            if "qualified_type_name" in reported and reported["qualified_type_name"] not in {
+                    qualified(item) for item in section_names}:
+                failures.append(f"{key} {section_key}: the tree declares no type {reported['qualified_type_name']!r}")
             for dsdl, name in reported.get("fields", {}).items():
                 found = [item["name"] for item in named(key, section, scope=False, kind="field", member=dsdl)]
                 if found != [name]:

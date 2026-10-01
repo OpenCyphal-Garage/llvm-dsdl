@@ -129,6 +129,24 @@ def main() -> int:
     if "type_name" in c_call:
         failures.append("C joins the namespace into the type name and should report no type_name")
 
+    # C++ declares a service's sections in the service's struct, so it reports a type's name qualified
+    # by the namespaces and the type that enclose it, under the key C reports its joined name under.
+    cpp_call = languages["cpp"].get("fixtures_naming.naming.Call.1.0", {})
+    got = (
+        cpp_call.get("qualified_type_name"),
+        cpp_call.get("request", {}).get("qualified_type_name"),
+        cpp_call.get("response", {}).get("qualified_type_name"),
+    )
+    expected_cpp = (
+        "fixtures_naming::naming::Call",
+        "fixtures_naming::naming::Call::Request",
+        "fixtures_naming::naming::Call::Response",
+    )
+    if got != expected_cpp:
+        failures.append(f"expected the C++ type names of Call to be {expected_cpp!r}, got {got!r}")
+    if "type_name" in cpp_call:
+        failures.append("C++ reaches a section through its service's struct and should report no type_name")
+
     brk = go.get("fixtures_naming.naming.Break.1.0", {})
     if brk.get("file_stem") != "break_1_0":
         failures.append(f"expected Break to take the stem break_1_0, got {brk.get('file_stem')!r}")
