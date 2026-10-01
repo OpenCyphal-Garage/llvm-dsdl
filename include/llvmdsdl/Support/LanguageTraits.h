@@ -305,16 +305,18 @@ struct DefinitionNamePolicy final
 
     /// @brief Whether a consumer can reach the generated type from this name and the namespace.
     ///
-    /// The naming manifest reports the type name as `type_name` where this holds, and otherwise as
-    /// `qualified_type_name`, qualified by every scope that encloses it; the naming golden pins it, so
-    /// the answer is stated once here rather than by each of them. It is true where the language
-    /// carries the namespace itself and the name is the definition's own: Rust in a module, Go,
-    /// TypeScript and Python in a per-namespace one.
+    /// The naming manifest reports the type name as `type_name` where `typeNameReachesTheType` holds,
+    /// and otherwise as `qualified_type_name`, qualified by every scope that encloses it. The naming
+    /// golden reads `typeNameReachesTheType` too, so the answer is stated once here rather than by each
+    /// of them. `typeNameReachesTheType` is true where the language carries the namespace itself and
+    /// the name is the definition's own: Rust in a module, Go, TypeScript and Python in a
+    /// per-namespace one.
     ///
-    /// C is false because its namespace is joined into the identifier, so the namespace the manifest
-    /// reports beside the name would double it; C's qualified name is the identifier it joins. C++ is
-    /// false because a service's sections are declared in the service's struct, which the namespace
-    /// beside a section's name does not reach: `uavcan::file::List::Request`.
+    /// `typeNameReachesTheType` is false for C, whose namespace is joined into the identifier, so the
+    /// namespace the manifest reports beside the name would double it; C's qualified name is the
+    /// identifier it joins. `typeNameReachesTheType` is false for C++, which declares a service's
+    /// sections in the service's struct, so the namespace beside a section's name does not reach the
+    /// section: `uavcan::file::List::Request`.
     bool typeNameReachesTheType{true};
 };
 
