@@ -20,9 +20,9 @@
 #   * The count is per ARCHITECTURE. amd64 and arm64 execute different instruction streams for the
 #     same source, so the baseline file is keyed by processor, and no machine is measured against
 #     another machine's number.
-#   * The count moves when the COMPILER moves, so each entry records the cargo it was taken with. A
-#     toolchain bump is a deliberate, visible re-baseline rather than a flake -- and it tells you
-#     what the upgrade cost.
+#   * The count moves when the COMPILER moves, so each entry records the rustc build it was taken
+#     with, and the LLVM it generates code with. A toolchain bump is a deliberate, visible re-baseline
+#     rather than a flake -- and it tells you what the upgrade cost.
 #
 # Off CI, a missing valgrind, architecture or toolchain is a skip, since none of them is a verdict on
 # the generated code. On CI each is a failure: the image pins the toolchain and carries valgrind, so
@@ -58,15 +58,23 @@ if(NOT VALGRIND_EXECUTABLE OR NOT CG_ANNOTATE_EXECUTABLE)
   llvmdsdl_decline("valgrind or cg_annotate is not installed")
 endif()
 
+# The rustc cargo builds with. Two builds of one release can generate code with different LLVMs, so
+# the release alone does not identify what was measured.
+get_filename_component(cargo_dir "${CARGO_EXECUTABLE}" DIRECTORY)
+find_program(RUSTC_EXECUTABLE rustc HINTS "${cargo_dir}")
+if(NOT RUSTC_EXECUTABLE)
+  message(FATAL_ERROR "no rustc beside ${CARGO_EXECUTABLE}")
+endif()
 execute_process(
-  COMMAND "${CARGO_EXECUTABLE}" --version
-  OUTPUT_VARIABLE cargo_version_text
+  COMMAND "${RUSTC_EXECUTABLE}" --version --verbose
+  OUTPUT_VARIABLE rustc_text
+  OUTPUT_STRIP_TRAILING_WHITESPACE
   COMMAND_ERROR_IS_FATAL ANY
 )
-if(NOT cargo_version_text MATCHES "^cargo ([0-9]+\\.[0-9]+\\.[0-9]+)")
-  message(FATAL_ERROR "cannot read a version from `cargo --version`: ${cargo_version_text}")
+string(REGEX MATCH "^[^\n]*" toolchain "${rustc_text}")
+if(rustc_text MATCHES "\nLLVM version: ([^\n]*)")
+  string(APPEND toolchain ", LLVM ${CMAKE_MATCH_1}")
 endif()
-set(cargo_version "${CMAKE_MATCH_1}")
 
 if(NOT DEFINED BENCH_ITERATIONS_SMALL OR "${BENCH_ITERATIONS_SMALL}" STREQUAL "")
   set(BENCH_ITERATIONS_SMALL 2000)
@@ -188,7 +196,7 @@ endif()
 
 # CMAKE_SYSTEM_PROCESSOR is not set in script mode, so ask the host directly.
 cmake_host_system_information(RESULT arch QUERY OS_PLATFORM)
-message(STATUS "Rust instruction counts (${arch}, cargo ${cargo_version}, ${mode}, "
+message(STATUS "Rust instruction counts (${arch}, ${toolchain}, ${mode}, "
                "iterations ${BENCH_ITERATIONS_SMALL}/${BENCH_ITERATIONS_MEDIUM}/${BENCH_ITERATIONS_LARGE}):")
 message(STATUS "  deserialize = ${deserialize_ir}")
 message(STATUS "  serialize   = ${serialize_ir}")
@@ -202,7 +210,7 @@ endif()
 # What to paste where this machine has no baseline to compare against.
 set(paste
   "    \"${arch}\": {\n"
-  "      \"cargo\": \"${cargo_version}\",\n"
+  "      \"rustc\": \"${toolchain}\",\n"
   "      \"deserialize\": ${deserialize_ir},\n"
   "      \"serialize\": ${serialize_ir}\n"
   "    }")
@@ -211,11 +219,11 @@ if(arch_error OR "${arch_entry}" STREQUAL "")
   message(STATUS "The entry to add to ${BASELINE_JSON}:\n${paste}")
   llvmdsdl_decline("${BASELINE_JSON} holds no instruction-count baseline for '${arch}'")
 endif()
-string(JSON baseline_cargo ERROR_VARIABLE cargo_error GET "${arch_entry}" cargo)
-if(cargo_error OR NOT "${baseline_cargo}" STREQUAL "${cargo_version}")
+string(JSON baseline_toolchain ERROR_VARIABLE toolchain_error GET "${arch_entry}" rustc)
+if(toolchain_error OR NOT "${baseline_toolchain}" STREQUAL "${toolchain}")
   message(STATUS "The entry to replace in ${BASELINE_JSON}:\n${paste}")
   string(CONCAT reason
-    "the '${arch}' baseline was taken with cargo ${baseline_cargo}, and this is cargo ${cargo_version}; "
+    "the '${arch}' baseline was taken with ${baseline_toolchain}, and this is ${toolchain}; "
     "re-baseline in the change that moves the toolchain")
   llvmdsdl_decline("${reason}")
 endif()

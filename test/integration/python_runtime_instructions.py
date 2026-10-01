@@ -14,8 +14,8 @@ attributed to a generated function; the interpreter is run twice instead, at N a
 iterations of a payload family, and the difference is N iterations with start-up, imports and
 teardown cancelled.
 
-A count belongs to an architecture and an interpreter, so the baseline is keyed by the first and
-records the second. Off CI, a missing valgrind, a missing baseline or another interpreter is a
+A count belongs to an architecture and an interpreter build, so the baseline is keyed by the first
+and records the second as `sys.version` states it: the release, the build's date and its compiler. Off CI, a missing valgrind, a missing baseline or another interpreter is a
 skip, since none of them is a verdict on the generated code. On CI each is a failure: the image
 pins the interpreter and carries valgrind, so a gate that skipped there would be no gate.
 """
@@ -262,8 +262,10 @@ def main() -> int:
     if valgrind is None:
         return decline("valgrind is not installed")
 
+    # Two builds of one release execute different instructions, so the release alone does not
+    # identify what was measured.
     interpreter = subprocess.run(
-        [arguments.python, "-c", "import platform; print(platform.python_version())"],
+        [arguments.python, "-c", "import sys; print(' '.join(sys.version.split()))"],
         check=True,
         capture_output=True,
         text=True,
@@ -291,8 +293,8 @@ def main() -> int:
     if expected["python"] != interpreter:
         print(paste, flush=True)
         return decline(
-            f"the {architecture} baseline was taken with Python {expected['python']}, and this is {interpreter}; "
-            "re-baseline in the change that moves the interpreter"
+            f"the {architecture} baseline was taken with Python {expected['python']}, and this is Python "
+            f"{interpreter}; re-baseline in the change that moves the interpreter"
         )
 
     failures = compare(observed, expected, float(baseline["meta"]["budget_percent"]))
