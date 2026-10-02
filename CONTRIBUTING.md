@@ -249,6 +249,10 @@ keyed by architecture and recording the toolchain. Off CI, a missing valgrind, a
 toolchain skips and prints the entry to add; on CI it fails. A change that moves a count
 re-baselines in the same PR.
 
+Skipped tests. ctest counts a test that skipped as passed, so each CI job that runs ctest reads its
+JUnit report with `tools/check_test_skips.py` and fails on any test that did not run. A test that
+must skip in a job is allowed in that job's step, by name and with the reason.
+
 Style judges. `llvmdsdl-uavcan-<language>-style-judge` points each language's own linter at the
 generated code and holds its count per rule to
 [`test/integration/judge-baselines/`](./test/integration/judge-baselines/). A baseline is valid only
