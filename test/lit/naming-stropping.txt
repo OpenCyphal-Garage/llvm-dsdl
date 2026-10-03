@@ -14,15 +14,15 @@
 
 # RUN: cat %t/c/fixtures_naming/naming/Constants_1_0.h | FileCheck %s --check-prefix=C_CONSTANTS
 
-# RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: %dsdlc --target-language cpp --experimental-languages %S/fixtures_naming --cpp-profile std --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/cpp/fixtures_naming/naming/Keywords_1_0.hpp | FileCheck %s --check-prefix=CPP_KEYWORDS
 # RUN: test -f %t/cpp/fixtures_naming/naming/Break_1_0.hpp
 
-# RUN: %dsdlc --target-language rust %S/fixtures_naming --rust-crate-name naming_freeze --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: %dsdlc --target-language rust --experimental-languages %S/fixtures_naming --rust-crate-name naming_freeze --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/rust/src/fixtures_naming/naming/keywords_1_0.rs | FileCheck %s --check-prefix=RUST_KEYWORDS
 # RUN: test -f %t/rust/src/fixtures_naming/naming/break_1_0.rs
 
-# RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/go 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/go 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/go/fixturesnaming/naming/keywords_1_0.go | FileCheck %s --check-prefix=GO_KEYWORDS
 # RUN: cat %t/go/fixturesnaming/naming/case_folds_1_0.go | FileCheck %s --check-prefix=GO_FOLDS
 # RUN: test -f %t/go/fixturesnaming/naming/break_1_0.go
@@ -30,13 +30,13 @@
 # A namespace component that is a Go keyword is escaped in both the directory and the package clause.
 # RUN: cat %t/go/fixturesnaming/naming/map_/nested_1_0.go | FileCheck %s --check-prefix=GO_NAMESPACE
 
-# RUN: %dsdlc --target-language ts %S/fixtures_naming --ts-module naming_freeze --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_naming --ts-module naming_freeze --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/ts/fixtures_naming/naming/keywords_1_0.ts | FileCheck %s --check-prefix=TS_KEYWORDS
 # RUN: cat %t/ts/fixtures_naming/naming/case_folds_1_0.ts | FileCheck %s --check-prefix=TS_FOLDS
 # RUN: cat %t/ts/fixtures_naming/naming/underscores_1_0.ts | FileCheck %s --check-prefix=TS_UNDERSCORES
 # RUN: test -f %t/ts/fixtures_naming/naming/break_1_0.ts
 
-# RUN: %dsdlc --target-language python %S/fixtures_naming --py-package naming_freeze --outdir %t/py 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures_naming --py-package naming_freeze --outdir %t/py 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/keywords_1_0.py | FileCheck %s --check-prefix=PY_KEYWORDS
 # RUN: cat %t/py/naming_freeze/fixtures_naming/naming/case_folds_1_0.py | FileCheck %s --check-prefix=PY_FOLDS
 # RUN: test -f %t/py/naming_freeze/fixtures_naming/naming/break_1_0.py
@@ -64,7 +64,7 @@
 # RUN: cat %t/go/fixturesnaming/naming/member_pool_1_0.go | FileCheck %s --check-prefix=GO_POOL
 
 # Every repair is reported.
-# RUN: %dsdlc --target-language cpp %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
+# RUN: %dsdlc --target-language cpp --experimental-languages %S/fixtures_naming --cpp-profile std --outdir %t/noted 2>&1 | FileCheck %s --check-prefix=NOTES
 
 # RUN: cat %t/cpp/fixtures_naming/naming/Claimed_1_0.hpp | FileCheck %s --check-prefix=CPP_CLAIMED
 # RUN: cat %t/cpp/fixtures_naming/naming/ClaimedUnion_1_0.hpp | FileCheck %s --check-prefix=CPP_UNION
@@ -155,11 +155,11 @@
 # RESERVED_C-NOT: field 'foo__bar'
 
 # C++ reserves a double underscore anywhere, so it rejects one C accepts.
-# RUN: not %dsdlc --target-language cpp %S/fixtures_naming_reserved --cpp-profile std --outdir %t/reserved-cpp 2>&1 | FileCheck %s --check-prefix=RESERVED_CPP
+# RUN: not %dsdlc --target-language cpp --experimental-languages %S/fixtures_naming_reserved --cpp-profile std --outdir %t/reserved-cpp 2>&1 | FileCheck %s --check-prefix=RESERVED_CPP
 # RESERVED_CPP-DAG: error: field 'foo__bar' is a reserved identifier for target language 'cpp'
 
 # Go has no such namespace, so the same definitions generate without complaint.
-# RUN: %dsdlc --target-language go %S/fixtures_naming_reserved --go-module demo/reserved --outdir %t/reserved-go
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_naming_reserved --go-module demo/reserved --outdir %t/reserved-go
 
 # The escape hatch generates, and the encoding is injective: `_Foo` and `__bar` stay distinct.
 # RUN: %dsdlc --target-language c %S/fixtures_naming_reserved --outdir %t/reserved-enc --encode-reserved-identifiers
@@ -211,7 +211,7 @@
 
 # Both stems reach `break_1_0` -- the snake projection folds `Break_`'s trailing underscore into
 # the separator before the version; unchecked, the second type would silently overwrite the first.
-# RUN: not %dsdlc --target-language go %t/collide/root --go-module x --outdir %t/collide/go 2>&1 | FileCheck %s --check-prefix=STEM_COLLIDE
+# RUN: not %dsdlc --target-language go --experimental-languages %t/collide/root --go-module x --outdir %t/collide/go 2>&1 | FileCheck %s --check-prefix=STEM_COLLIDE
 # STEM_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
 
 # Decision 7.1: C names headers after the raw DSDL short name, so the same pair is not a collision
@@ -233,7 +233,7 @@
 # RUN: rm -rf %t/typecollide && mkdir -p %t/typecollide/root/ns
 # RUN: printf 'uint8 a\n@sealed\n' > %t/typecollide/root/ns/_foo.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/typecollide/root/ns/foo_.1.0.dsdl
-# RUN: not %dsdlc --target-language go %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
+# RUN: not %dsdlc --target-language go --experimental-languages %t/typecollide/root --go-module x --outdir %t/typecollide/go 2>&1 | FileCheck %s --check-prefix=TYPE_COLLIDE
 # TYPE_COLLIDE: error: type name collision in generated output: {{.*}} map to the same output file name for target language 'go'
 
 # The same pair under an AST dump reports the four backends it affects -- C and C++ name a header
@@ -368,7 +368,7 @@
 # and the name emitted is what has to be asserted.
 # RUN: rm -rf %t/stdns && mkdir -p %t/stdns/std
 # RUN: printf 'uint8 a\n@sealed\n' > %t/stdns/std/Held.1.0.dsdl
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/stdns/std --outdir %t/stdns/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/stdns/std --outdir %t/stdns/cpp
 # RUN: cat %t/stdns/cpp/std/Held_1_0.hpp | FileCheck %s --check-prefix=STDNS
 # STDNS: namespace std_ {
 # STDNS-NOT: namespace std {
@@ -380,7 +380,7 @@
 # A path-level rename is reported without being asked for; a rename inside a file is not. A stem is
 # projected from the versioned name, so `Break` reaches `break_1_0` without escaping and takes no
 # note: the fold to lower case is what every stem gets, and reporting it would bury the escapes.
-# RUN: %dsdlc --target-language go %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/note 2>&1 | FileCheck %s --check-prefix=RENAME_NOTE
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_naming --go-module demo/naming_freeze --outdir %t/note 2>&1 | FileCheck %s --check-prefix=RENAME_NOTE
 # RENAME_NOTE-DAG: note: 'map' is emitted as 'map_' for target language 'go'
 # RENAME_NOTE-NOT: note: 'break' is emitted as
 # RENAME_NOTE-NOT: note: 'Break' is emitted as

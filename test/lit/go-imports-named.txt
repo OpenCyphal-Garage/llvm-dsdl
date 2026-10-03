@@ -3,7 +3,7 @@
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf '# Named in prose, bytes.Clone( and dsdlruntime.SetBit( are not imports.\nuint8 value\n@sealed\n' > %t/dsdl/ns/Quiet.1.0.dsdl
-# RUN: %dsdlc --target-language go %t/dsdl/ns --outdir %t/go --go-module m
+# RUN: %dsdlc --target-language go --experimental-languages %t/dsdl/ns --outdir %t/go --go-module m
 # RUN: cat %t/go/ns/quiet_1_0.go | FileCheck %s
 #
 # CHECK:      import (

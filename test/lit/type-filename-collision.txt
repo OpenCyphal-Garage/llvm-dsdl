@@ -18,7 +18,7 @@
 # RUN: rm -rf %t/ok && mkdir -p %t/ok/ns
 # RUN: printf 'uint8 a\n@sealed\n' > %t/ok/ns/foobar.1.0.dsdl
 # RUN: printf 'uint8 a\n@sealed\n' > %t/ok/ns/foo_bar.1.0.dsdl
-# RUN: %dsdlc --target-language go %t/ok --outdir %t/go --go-module ok
+# RUN: %dsdlc --target-language go --experimental-languages %t/ok --outdir %t/go --go-module ok
 # RUN: ls %t/go/ok/ns | FileCheck %s --check-prefix=OK
 # OK-DAG: foobar_1_0.go
 # OK-DAG: foo_bar_1_0.go

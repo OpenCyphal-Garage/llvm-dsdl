@@ -27,7 +27,7 @@ set(fast_out "${OUT_DIR}/ts-fast")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --experimental-languages
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${portable_out}"
@@ -45,7 +45,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --experimental-languages
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${fast_out}"

@@ -67,7 +67,7 @@ set(legs "")
 # Generates the fixtures for one language. ARGN holds the language's own options.
 function(_guard_generate language out_dir)
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} "${fixture_root}" --outdir "${out_dir}" ${ARGN}
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages "${fixture_root}" --outdir "${out_dir}" ${ARGN}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
     ERROR_VARIABLE gen_stderr

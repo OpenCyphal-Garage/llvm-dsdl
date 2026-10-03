@@ -81,7 +81,8 @@ class CommandShapes(unittest.TestCase):
 
     def test_dsdlc_covers_every_root_from_the_checkout_alone(self) -> None:
         command = gen.dsdlc_command(pathlib.Path("/bin/dsdlc"), "c", self.ROOTS, pathlib.Path("/o/c"))
-        self.assertEqual(command[:4], ["/bin/dsdlc", "--target-language", "c", "--no-embedded-uavcan"])
+        self.assertEqual(command[:5],
+                         ["/bin/dsdlc", "--experimental-languages", "--target-language", "c", "--no-embedded-uavcan"])
         self.assertEqual(command.count("--lookup-dir"), 2)
         self.assertEqual(command[command.index("--lookup-dir") + 1], "/c/reg")
         self.assertIn("/c/reg", command[-4:])
@@ -92,7 +93,7 @@ class CommandShapes(unittest.TestCase):
         command = gen.dsdlc_command(
             pathlib.Path("/bin/dsdlc"), "c", self.ROOTS, pathlib.Path("/o/c"), ("--optimize-lowered-serdes",)
         )
-        self.assertEqual(command[4], "--optimize-lowered-serdes")
+        self.assertEqual(command[5], "--optimize-lowered-serdes")
         self.assertEqual(command[-2:], ["--outdir", "/o/c"])
 
     def test_nnvg_runs_one_job_with_experimental_languages(self) -> None:

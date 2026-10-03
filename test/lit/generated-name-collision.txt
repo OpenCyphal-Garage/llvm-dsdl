@@ -51,27 +51,27 @@
 # Go: a package constant, an accessor, and the accessor of a union's tag.
 # RUN: mkdir -p %t/goconst/ns && printf 'uint8 a\n@sealed\n' > %t/goconst/ns/Msg.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/goconst/ns/MsgExtentBytes.1.0.dsdl
-# RUN: not %dsdlc --target-language go --go-module m %t/goconst/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOCONST
+# RUN: not %dsdlc --target-language go --experimental-languages --go-module m %t/goconst/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOCONST
 # GOCONST: 'ns.MsgExtentBytes' and a name generated for 'ns.Msg' both emit 'MsgExtentBytes' for target language 'go'
 
 # RUN: mkdir -p %t/goacc/ns && printf 'uint8 a\n@sealed\n' > %t/goacc/ns/Msg.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/goacc/ns/MsgGetA.1.0.dsdl
-# RUN: not %dsdlc --target-language go --go-module m %t/goacc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOACC
+# RUN: not %dsdlc --target-language go --experimental-languages --go-module m %t/goacc/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOACC
 # GOACC: 'ns.MsgGetA' and a name generated for 'ns.Msg' both emit 'MsgGetA' for target language 'go'
 
 # RUN: mkdir -p %t/gotag/ns && printf '@union\nuint8 x\nuint8 y\n@sealed\n' > %t/gotag/ns/U.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/gotag/ns/UGetTag.1.0.dsdl
-# RUN: not %dsdlc --target-language go --go-module m %t/gotag/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOTAG
+# RUN: not %dsdlc --target-language go --experimental-languages --go-module m %t/gotag/ns --outdir %t/o 2>&1 | FileCheck %s --check-prefix=GOTAG
 # GOTAG: 'ns.UGetTag' and a name generated for 'ns.U' both emit 'UGetTag' for target language 'go'
 
 # A pair is rejected only for the language that declares both in one scope.
-# RUN: %dsdlc --target-language rust %t/goconst/ns --outdir %t/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/goconst/ns --outdir %t/rust
 # RUN: %dsdlc --target-language c %t/goconst/ns --outdir %t/c
-# RUN: %dsdlc --target-language go --go-module m %t/cmacro/ns --outdir %t/go
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m %t/cmacro/ns --outdir %t/go
 # RUN: mkdir -p %t/entry/ns && printf 'uint8 a\n@sealed\n' > %t/entry/ns/Foo.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/entry/ns/Foo_serialize_.1.0.dsdl
-# RUN: %dsdlc --target-language python %t/entry/ns --outdir %t/py
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/entry/ns --outdir %t/cpp
+# RUN: %dsdlc --target-language python --experimental-languages %t/entry/ns --outdir %t/py
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/entry/ns --outdir %t/cpp
 # RUN: mkdir -p %t/svc/ns && printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/svc/ns/Svc.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/svc/ns/Svc_FULL_NAME.1.0.dsdl
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/svc/ns --outdir %t/cppsvc
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/svc/ns --outdir %t/cppsvc

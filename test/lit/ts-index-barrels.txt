@@ -4,7 +4,7 @@
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns/inner
 # RUN: printf 'uint8 a\n@sealed\n' > %t/dsdl/ns/Msg.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/dsdl/ns/inner/Deep.1.0.dsdl
-# RUN: %dsdlc --target-language ts %t/dsdl/ns --outdir %t/ts
+# RUN: %dsdlc --target-language ts --experimental-languages %t/dsdl/ns --outdir %t/ts
 # RUN: FileCheck %s --check-prefix=ROOT < %t/ts/index.ts
 # RUN: FileCheck %s --check-prefix=NS < %t/ts/ns/index.ts
 # RUN: FileCheck %s --check-prefix=INNER < %t/ts/ns/inner/index.ts

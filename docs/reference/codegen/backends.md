@@ -30,7 +30,7 @@ Renames that change a **path** â€” an output file name or a package directory â€
 being asked for:
 
 ```console
-$ dsdlc --target-language go my_dsdl --go-module example.com/m --outdir out
+$ dsdlc --target-language go --experimental-languages my_dsdl --go-module example.com/m --outdir out
 my_dsdl/ns/Break.1.0.dsdl:1:1: note: 'Break' is emitted as 'break_' for target language 'go'
 ```
 

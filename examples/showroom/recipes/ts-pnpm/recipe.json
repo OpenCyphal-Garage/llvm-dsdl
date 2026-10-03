@@ -24,6 +24,7 @@
       "name": "generate",
       "run": [
         "{dsdlc}",
+        "--experimental-languages",
         "--target-language",
         "ts",
         "--versioned-type-names",

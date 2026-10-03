@@ -9,19 +9,19 @@
 # RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.h | FileCheck %s --check-prefix=C
 # RUN: cat %t/c/fixtures_host_image/vendor/Padded_1_0.c | FileCheck %s --check-prefix=C_BODY
 # RUN: cat %t/c/fixtures_host_image/vendor/Arr_1_0.h | FileCheck %s --check-prefix=C_ELEMENT
-# RUN: %dsdlc --target-language cpp --cpp-profile std %S/fixtures_host_image --outdir %t/cpp > /dev/null
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %S/fixtures_host_image --outdir %t/cpp > /dev/null
 # RUN: cat %t/cpp/fixtures_host_image/vendor/Padded_1_0.hpp | FileCheck %s --check-prefix=CPP
 # RUN: cat %t/cpp/fixtures_host_image/vendor/Arr_1_0.hpp | FileCheck %s --check-prefix=CPP_ELEMENT
-# RUN: %dsdlc --target-language rust %S/fixtures_host_image --rust-crate-name accessors --outdir %t/rust > /dev/null
+# RUN: %dsdlc --target-language rust --experimental-languages %S/fixtures_host_image --rust-crate-name accessors --outdir %t/rust > /dev/null
 # RUN: cat %t/rust/src/fixtures_host_image/vendor/padded_1_0.rs | FileCheck %s --check-prefix=RUST
 # RUN: cat %t/rust/src/fixtures_host_image/vendor/arr_1_0.rs | FileCheck %s --check-prefix=RUST_ELEMENT
-# RUN: %dsdlc --target-language go %S/fixtures_host_image --outdir %t/go > /dev/null
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_host_image --outdir %t/go > /dev/null
 # RUN: cat %t/go/fixtureshostimage/vendor/padded_1_0.go | FileCheck %s --check-prefix=GO
 # RUN: cat %t/go/fixtureshostimage/vendor/arr_1_0.go | FileCheck %s --check-prefix=GO_ELEMENT
-# RUN: %dsdlc --target-language ts %S/fixtures_host_image --outdir %t/ts > /dev/null
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_host_image --outdir %t/ts > /dev/null
 # RUN: cat %t/ts/fixtures_host_image/vendor/padded_1_0.ts | FileCheck %s --check-prefix=TS
 # RUN: cat %t/ts/fixtures_host_image/vendor/arr_1_0.ts | FileCheck %s --check-prefix=TS_ELEMENT
-# RUN: %dsdlc --target-language python %S/fixtures_host_image --outdir %t/py > /dev/null
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures_host_image --outdir %t/py > /dev/null
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/padded_1_0.py | FileCheck %s --check-prefix=PY
 # RUN: cat %t/py/dsdl_gen/fixtures_host_image/vendor/arr_1_0.py | FileCheck %s --check-prefix=PY_ELEMENT
 

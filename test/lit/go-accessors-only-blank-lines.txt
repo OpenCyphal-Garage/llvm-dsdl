@@ -4,7 +4,7 @@
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf '@aliasable\nuint8 speed\n@sealed\n' > %t/dsdl/ns/Flat.1.0.dsdl
 # RUN: printf '@aliasable\nuint8 a\n@sealed\n---\n@aliasable\nuint8 b\n@sealed\n' > %t/dsdl/ns/Svc.1.0.dsdl
-# RUN: %dsdlc --target-language go %t/dsdl/ns --aliasable-only --go-module m --outdir %t/go
+# RUN: %dsdlc --target-language go --experimental-languages %t/dsdl/ns --aliasable-only --go-module m --outdir %t/go
 # RUN: cat %t/go/ns/flat_1_0.go | FileCheck %s --check-prefix=MSG
 # RUN: cat %t/go/ns/svc_1_0.go | FileCheck %s --check-prefix=SVC
 #

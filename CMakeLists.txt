@@ -1293,45 +1293,45 @@ if(LLVMDSDL_UAVCAN_ROOT)
                                     c)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-std
                                      cpp-std
-                                     --target-language cpp --cpp-profile std)
+                                     --target-language cpp --experimental-languages --cpp-profile std)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-pmr
                                      cpp-pmr
-                                     --target-language cpp --cpp-profile pmr)
+                                     --target-language cpp --experimental-languages --cpp-profile pmr)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-autosar
                                      cpp-autosar
-                                     --target-language cpp --cpp-profile autosar
+                                     --target-language cpp --experimental-languages --cpp-profile autosar
                                      --vocabulary "${LLVMDSDL_SOURCE_DIR}/examples/vocabulary/cpp-autosar-cetl.yaml")
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-both
                                      cpp-both
-                                     --target-language cpp --cpp-profile both)
+                                     --target-language cpp --experimental-languages --cpp-profile both)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-std
                                      rust-std
-                                     --target-language rust --rust-profile std --rust-crate-name
+                                     --target-language rust --experimental-languages --rust-profile std --rust-crate-name
                                      uavcan_dsdl_generated)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-no-std-alloc
                                      rust-no-std-alloc
-                                     --target-language rust --rust-profile no-std-alloc --rust-crate-name
+                                     --target-language rust --experimental-languages --rust-profile no-std-alloc --rust-crate-name
                                      uavcan_dsdl_generated_no_std)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-runtime-fast
                                      rust-runtime-fast
-                                     --target-language rust --rust-runtime-specialization fast --rust-profile std --rust-crate-name
+                                     --target-language rust --experimental-languages --rust-runtime-specialization fast --rust-profile std --rust-crate-name
                                      uavcan_dsdl_generated_fast)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-no-std-runtime-fast
                                      rust-no-std-runtime-fast
-                                     --target-language rust --rust-profile no-std-alloc --rust-runtime-specialization fast --rust-crate-name
+                                     --target-language rust --experimental-languages --rust-profile no-std-alloc --rust-runtime-specialization fast --rust-crate-name
                                      uavcan_dsdl_generated_no_std_fast)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-go
                                      go
-                                     --target-language go --go-module uavcan_dsdl_generated)
+                                     --target-language go --experimental-languages --go-module uavcan_dsdl_generated)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-ts
                                      ts
-                                     --target-language ts --ts-module uavcan_dsdl_generated_ts)
+                                     --target-language ts --experimental-languages --ts-module uavcan_dsdl_generated_ts)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-ts-runtime-fast
                                      ts-runtime-fast
-                                     --target-language ts --ts-module uavcan_dsdl_generated_ts_fast --ts-runtime-specialization fast)
+                                     --target-language ts --experimental-languages --ts-module uavcan_dsdl_generated_ts_fast --ts-runtime-specialization fast)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-python
                                      python
-                                     --target-language python --py-package ${LLVMDSDL_UAVCAN_PY_PACKAGE})
+                                     --target-language python --experimental-languages --py-package ${LLVMDSDL_UAVCAN_PY_PACKAGE})
 
   add_custom_target(stage-uavcan-python-runtime-accelerator
     COMMAND

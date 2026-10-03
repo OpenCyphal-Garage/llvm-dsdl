@@ -20,6 +20,7 @@
       "name": "generate",
       "run": [
         "{dsdlc}",
+        "--experimental-languages",
         "--target-language",
         "python",
         "--versioned-type-names",

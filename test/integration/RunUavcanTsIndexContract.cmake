@@ -19,7 +19,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --experimental-languages
       "${UAVCAN_ROOT}"
       --outdir "${OUT_DIR}"
       --ts-module "uavcan_dsdl_generated_ts"

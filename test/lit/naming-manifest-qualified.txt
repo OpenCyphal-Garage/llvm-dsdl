@@ -45,7 +45,7 @@
 # VERSIONED-NEXT: ns.Ask.1.0 request ns::Ask_1_0::Request
 
 # A deprecated type is reached through the alias that marks it deprecated.
-# RUN: %dsdlc --target-language cpp --cpp-profile both %t/ns %t/std --outdir %t/cpp 2> /dev/null
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile both %t/ns %t/std --outdir %t/cpp 2> /dev/null
 # RUN: %{python} %S/print_qualified_type_names.py %t/names.json cpp --probe %t/cpp/std > %t/probe-std.cpp
 # RUN: %cxx -std=c++20 -Wall -Wextra -Werror -Wno-deprecated-declarations -fsyntax-only -I %t/cpp/std %t/probe-std.cpp
 # RUN: %{python} %S/print_qualified_type_names.py %t/names.json cpp --probe %t/cpp/pmr > %t/probe-pmr.cpp

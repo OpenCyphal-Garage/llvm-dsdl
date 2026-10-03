@@ -80,7 +80,7 @@ foreach(mode IN LISTS mode_list)
 
   execute_process(
     COMMAND
-      "${DSDLC}" --target-language rust
+      "${DSDLC}" --target-language rust --experimental-languages
         # The harness below is written against versioned type names.
         --versioned-type-names
         "${RUST_BENCH_ROOT}"

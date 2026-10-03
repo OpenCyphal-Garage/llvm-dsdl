@@ -34,22 +34,22 @@
 # RUN: not test -f %t.bare3/dsdl_runtime.h
 
 # Every source-emitting backend honours it. Each names its own scaffolding.
-# RUN: rm -rf %t.rust && %dsdlc --target-language rust --generate-support only --outdir %t.rust >/dev/null 2>&1
+# RUN: rm -rf %t.rust && %dsdlc --target-language rust --experimental-languages --generate-support only --outdir %t.rust >/dev/null 2>&1
 # RUN: test -f %t.rust/Cargo.toml
 # RUN: test -f %t.rust/src/dsdl_runtime.rs
-# RUN: rm -rf %t.go && %dsdlc --target-language go --generate-support only --outdir %t.go >/dev/null 2>&1
+# RUN: rm -rf %t.go && %dsdlc --target-language go --experimental-languages --generate-support only --outdir %t.go >/dev/null 2>&1
 # RUN: test -f %t.go/go.mod
 # RUN: test -f %t.go/dsdlruntime/dsdl_runtime.go
-# RUN: rm -rf %t.ts && %dsdlc --target-language ts --generate-support only --outdir %t.ts >/dev/null 2>&1
+# RUN: rm -rf %t.ts && %dsdlc --target-language ts --experimental-languages --generate-support only --outdir %t.ts >/dev/null 2>&1
 # RUN: test -f %t.ts/package.json
 # RUN: test -f %t.ts/dsdl_runtime.ts
-# RUN: rm -rf %t.py && %dsdlc --target-language python --generate-support only --outdir %t.py >/dev/null 2>&1
+# RUN: rm -rf %t.py && %dsdlc --target-language python --experimental-languages --generate-support only --outdir %t.py >/dev/null 2>&1
 # RUN: test -f %t.py/pyproject.toml
-# RUN: rm -rf %t.cpp && %dsdlc --target-language cpp --generate-support only --outdir %t.cpp >/dev/null 2>&1
+# RUN: rm -rf %t.cpp && %dsdlc --target-language cpp --experimental-languages --generate-support only --outdir %t.cpp >/dev/null 2>&1
 # RUN: test -f %t.cpp/std/dsdl_runtime.hpp
 
 # Under `never` the Go module still gets its types, and no runtime beside them.
-# RUN: rm -rf %t.gonever && %dsdlc --target-language go --generate-support never --outdir %t.gonever +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
+# RUN: rm -rf %t.gonever && %dsdlc --target-language go --experimental-languages --generate-support never --outdir %t.gonever +uavcan.node.Heartbeat.1.0 >/dev/null 2>&1
 # RUN: not test -f %t.gonever/go.mod
 # RUN: not test -f %t.gonever/dsdlruntime/dsdl_runtime.go
 

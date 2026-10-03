@@ -2,7 +2,7 @@
 # (https://github.com/OpenCyphal/CETL). CETL's span has std::span's shape, so the binding names
 # the type and its header alone; the operations keep their standard spellings.
 #
-#     dsdlc --target-language cpp --cpp-profile autosar --vocabulary cpp-autosar-cetl.yaml ...
+#     dsdlc --target-language cpp --experimental-languages --cpp-profile autosar --vocabulary cpp-autosar-cetl.yaml ...
 #
 # The generated code compiles with CETL's include directory on the include path.
 vocabulary: 1

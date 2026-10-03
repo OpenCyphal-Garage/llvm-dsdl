@@ -105,7 +105,7 @@ def dsdlc_command(
     """One invocation over every root; dependencies resolve against the corpus alone, so the embedded
     uavcan catalogue cannot stand in for a definition the checkout carries. ``extra`` is passed to
     every language."""
-    command = [str(dsdlc), "--target-language", language, "--no-embedded-uavcan", *extra]
+    command = [str(dsdlc), "--experimental-languages", "--target-language", language, "--no-embedded-uavcan", *extra]
     for root in roots:
         command += ["--lookup-dir", str(root)]
     command += [str(root) for root in roots]

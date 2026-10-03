@@ -63,12 +63,15 @@ dsdlc --target-language <lang> [options] <root_namespace_or_files...>
 - `ast`
 - `mlir`
 - `c`
+- `obj`
+
+These languages are experimental and generate only with `--experimental-languages`:
+
 - `cpp`
 - `rust`
 - `go`
 - `ts`
 - `python`
-- `obj`
 
 ### See what it generates
 
@@ -111,19 +114,19 @@ Generate C++ output (`std`, `pmr`, `autosar`, or `both` where `both` means `std`
 `pmr` are C++20:
 
 ```bash
-dsdlc --target-language cpp path/to/root_namespace --cpp-profile both --outdir out/cpp
+dsdlc --target-language cpp --experimental-languages path/to/root_namespace --cpp-profile both --outdir out/cpp
 ```
 
 Generate AUTOSAR-oriented C++14 output, binding its span to [CETL](https://github.com/OpenCyphal/CETL)'s:
 
 ```bash
-dsdlc --target-language cpp path/to/root_namespace --cpp-profile autosar --vocabulary examples/vocabulary/cpp-autosar-cetl.yaml --outdir out/cpp-autosar
+dsdlc --target-language cpp --experimental-languages path/to/root_namespace --cpp-profile autosar --vocabulary examples/vocabulary/cpp-autosar-cetl.yaml --outdir out/cpp-autosar
 ```
 
 Generate Rust output:
 
 ```bash
-dsdlc --target-language rust path/to/root_namespace \
+dsdlc --target-language rust --experimental-languages path/to/root_namespace \
   --rust-crate-name my_dsdl_types \
   --rust-profile std \
   --outdir out/rust
@@ -132,7 +135,7 @@ dsdlc --target-language rust path/to/root_namespace \
 Generate Go output:
 
 ```bash
-dsdlc --target-language go path/to/root_namespace \
+dsdlc --target-language go --experimental-languages path/to/root_namespace \
   --go-module example.com/my/dsdl \
   --outdir out/go
 ```
@@ -140,7 +143,7 @@ dsdlc --target-language go path/to/root_namespace \
 Generate TypeScript output:
 
 ```bash
-dsdlc --target-language ts path/to/root_namespace \
+dsdlc --target-language ts --experimental-languages path/to/root_namespace \
   --ts-module my_dsdl_types \
   --outdir out/ts
 ```
@@ -148,7 +151,7 @@ dsdlc --target-language ts path/to/root_namespace \
 Generate Python output:
 
 ```bash
-dsdlc --target-language python path/to/root_namespace \
+dsdlc --target-language python --experimental-languages path/to/root_namespace \
   --py-package my_dsdl_types \
   --outdir out/python
 ```

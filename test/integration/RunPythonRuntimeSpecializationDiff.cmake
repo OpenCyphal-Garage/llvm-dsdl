@@ -29,7 +29,7 @@ string(REPLACE "." "/" py_package_path "${py_package_path}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language python
+    "${DSDLC}" --target-language python --experimental-languages
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${portable_out}"
@@ -47,7 +47,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language python
+    "${DSDLC}" --target-language python --experimental-languages
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${fast_out}"

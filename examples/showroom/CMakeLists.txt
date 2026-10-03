@@ -92,37 +92,37 @@ llvmdsdl_add_showroom_variant(c
 # polymorphic allocator, and autosar targets the AUTOSAR C++14 subset. Same DSDL, three surfaces.
 llvmdsdl_add_showroom_variant(cpp-std
   LANGUAGE cpp
-  OPTIONS --cpp-profile std)
+  OPTIONS --experimental-languages --cpp-profile std)
 
 llvmdsdl_add_showroom_variant(cpp-pmr
   LANGUAGE cpp
-  OPTIONS --cpp-profile pmr)
+  OPTIONS --experimental-languages --cpp-profile pmr)
 
 llvmdsdl_add_showroom_variant(cpp-autosar
   LANGUAGE cpp
-  OPTIONS --cpp-profile autosar
+  OPTIONS --experimental-languages --cpp-profile autosar
   VOCABULARY "${CMAKE_CURRENT_SOURCE_DIR}/../vocabulary/cpp-autosar-cetl.yaml")
 
 llvmdsdl_add_showroom_variant(rust-std
   LANGUAGE rust
-  OPTIONS --rust-profile std --rust-crate-name lanyard_showroom)
+  OPTIONS --experimental-languages --rust-profile std --rust-crate-name lanyard_showroom)
 
 # The no-std-alloc profile is what a flight-controller firmware build would use.
 llvmdsdl_add_showroom_variant(rust-no-std-alloc
   LANGUAGE rust
-  OPTIONS --rust-profile no-std-alloc --rust-crate-name lanyard_showroom)
+  OPTIONS --experimental-languages --rust-profile no-std-alloc --rust-crate-name lanyard_showroom)
 
 llvmdsdl_add_showroom_variant(go
   LANGUAGE go
-  OPTIONS --go-module github.com/lanyard/showroom)
+  OPTIONS --experimental-languages --go-module github.com/lanyard/showroom)
 
 llvmdsdl_add_showroom_variant(ts
   LANGUAGE ts
-  OPTIONS --ts-module lanyard-showroom)
+  OPTIONS --experimental-languages --ts-module lanyard-showroom)
 
 llvmdsdl_add_showroom_variant(python
   LANGUAGE python
-  OPTIONS --py-package lanyard_showroom)
+  OPTIONS --experimental-languages --py-package lanyard_showroom)
 
 # The MLIR module is not a target language, but it is where the wire-layout facts and the schema
 # attributes live.

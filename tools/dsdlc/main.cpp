@@ -104,6 +104,7 @@ struct CliOptions final
 
     bool helpRequested{false};
     bool versionRequested{false};
+    bool experimentalLanguages{false};
     bool noTargetNamespaces{false};
     bool noOverwrite{false};
     bool allowUnregulatedFixedPortId{false};
@@ -286,6 +287,8 @@ void printHelp(llvm::raw_ostream& os)
        << "\n"
        << "LANGUAGES\n"
        << "  " << llvmdsdl::dsdlc::renderTargetLanguages(" | ") << "\n"
+       << "  Experimental, generated only with --experimental-languages:\n"
+       << "  " << llvmdsdl::dsdlc::renderTargetLanguages(" | ", true) << "\n"
        << "\n"
        << "TARGET OPTIONS\n"
        << "  target_files_or_root_namespace\n"
@@ -300,6 +303,8 @@ void printHelp(llvm::raw_ostream& os)
        << "      Repeatable lookup roots for dependency resolution and target root inference.\n"
        << "  --target-language, -l <lang>\n"
        << "      (required) output mode selector.\n"
+       << "  --experimental-languages, --include-experimental-languages, -Xlang\n"
+       << "      Allow --target-language to select an experimental language.\n"
        << "\n"
        << "COMMON OPTIONS\n"
        << "  --help, -h\n"
@@ -736,6 +741,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
                 return value.takeError();
             }
             options.pruneManifest = *value;
+            continue;
+        }
+        if (arg == "--experimental-languages" || arg == "--include-experimental-languages" || arg == "-Xlang")
+        {
+            options.experimentalLanguages = true;
             continue;
         }
         if (arg == "--target-language" || arg == "-l")
@@ -1623,6 +1633,12 @@ int runDsdlc(int argc, char** argv)
     {
         llvm::errs() << "unknown --target-language value: " << options.targetLanguage << "\n";
         printUsage();
+        return 1;
+    }
+    if (llvmdsdl::dsdlc::isExperimentalLanguage(options.targetLanguage) && !options.experimentalLanguages)
+    {
+        llvm::errs() << "--target-language '" << options.targetLanguage
+                     << "' is experimental; pass --experimental-languages to generate it\n";
         return 1;
     }
 

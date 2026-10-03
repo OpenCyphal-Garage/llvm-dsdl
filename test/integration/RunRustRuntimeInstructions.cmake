@@ -105,7 +105,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --experimental-languages
       # The shared harness template names versioned types, like the timing benchmark's does.
       --versioned-type-names
       "${RUST_BENCH_ROOT}"

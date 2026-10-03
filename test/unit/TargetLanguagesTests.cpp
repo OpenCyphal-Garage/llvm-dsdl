@@ -87,6 +87,28 @@ bool runTargetLanguagesTests()
     }
     t.expect(renderTargetLanguages(" | ") == expected, "the help list renders every table entry in order");
 
+    // The experimental list is the table filtered by its mark.
+    std::string expectedExperimental;
+    for (const auto& entry : allTargetLanguages())
+    {
+        if (!entry.experimental)
+        {
+            continue;
+        }
+        if (!expectedExperimental.empty())
+        {
+            expectedExperimental += " | ";
+        }
+        expectedExperimental += entry.name;
+    }
+    t.expect(renderTargetLanguages(" | ", true) == expectedExperimental,
+             "the experimental help list renders exactly the marked entries in order");
+
+    // C, as source and as objects, and the dump lanes need no flag.
+    t.expect(!isExperimentalLanguage("c") && !isExperimentalLanguage("obj"), "the C lanes are not experimental");
+    t.expect(!isExperimentalLanguage("ast") && !isExperimentalLanguage("mlir"), "the dump lanes are not experimental");
+    t.expect(!isExperimentalLanguage("definitely-not-a-language"), "an unknown value is not experimental");
+
     // A dump lane emits no source tree, and an unknown value is nothing at all.
     t.expect(!isCodegenLanguage("ast") && !isCodegenLanguage("mlir"), "the dump lanes are not codegen");
     t.expect(!emitsSourceTree("obj"), "obj publishes artefacts rather than a source tree");

@@ -9,7 +9,7 @@
 # The first keeps its name and the second takes its namespace, as in Rust.
 
 # RUN: rm -rf %t && mkdir -p %t
-# RUN: %dsdlc --target-language ts %S/fixtures_ts_alias/collide --ts-module collide_demo --outdir %t/ts >/dev/null 2>&1
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_ts_alias/collide --ts-module collide_demo --outdir %t/ts >/dev/null 2>&1
 # RUN: cat %t/ts/collide/uses_1_0.ts | FileCheck %s --check-prefix=TS
 
 # The type and its `const` take one local name, so they cannot disagree, and the body and the
@@ -23,7 +23,7 @@
 # TS: Vec.serializeInto(obj.from_alpha,
 # TS: BetaVec.serializeInto(obj.from_beta,
 
-# RUN: %dsdlc --target-language python %S/fixtures_ts_alias/collide --outdir %t/py >/dev/null 2>&1
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures_ts_alias/collide --outdir %t/py >/dev/null 2>&1
 # RUN: cat %t/py/dsdl_gen/collide/uses_1_0.py | FileCheck %s --check-prefix=PY
 # PY:      from dsdl_gen.collide.alpha.vec_1_0 import Vec
 # PY-NEXT: from dsdl_gen.collide.beta.vec_1_0 import Vec as BetaVec
@@ -34,18 +34,18 @@
 # RUN: mkdir -p %t/shadow/adv/inner %t/shadow/adv/outer
 # RUN: printf 'uint8 value\n@sealed\n' > %t/shadow/adv/inner/Owner.1.0.dsdl
 # RUN: printf 'adv.inner.Owner.1.0 inner\n@sealed\n' > %t/shadow/adv/outer/Owner.1.0.dsdl
-# RUN: %dsdlc --target-language ts %t/shadow/adv --ts-module shadow --outdir %t/shadow-ts >/dev/null 2>&1
+# RUN: %dsdlc --target-language ts --experimental-languages %t/shadow/adv --ts-module shadow --outdir %t/shadow-ts >/dev/null 2>&1
 # RUN: cat %t/shadow-ts/adv/outer/owner_1_0.ts | FileCheck %s --check-prefix=TS_SHADOW
 # TS_SHADOW:      import { Owner as InnerOwner } from "../inner/owner_1_0";
 # TS_SHADOW:      export interface Owner {
 # TS_SHADOW-NEXT: inner: InnerOwner;
-# RUN: %dsdlc --target-language python %t/shadow/adv --outdir %t/shadow-py >/dev/null 2>&1
+# RUN: %dsdlc --target-language python --experimental-languages %t/shadow/adv --outdir %t/shadow-py >/dev/null 2>&1
 # RUN: cat %t/shadow-py/dsdl_gen/adv/outer/owner_1_0.py | FileCheck %s --check-prefix=PY_SHADOW
 # PY_SHADOW:      from dsdl_gen.adv.inner.owner_1_0 import Owner as InnerOwner
 # PY_SHADOW:      class Owner(CompositeObject):
 # PY_SHADOW:      inner: InnerOwner = field(default_factory=lambda: InnerOwner())
 
 # A file whose referenced names are already unique imports them under their own names.
-# RUN: %dsdlc --target-language ts %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/plain >/dev/null 2>&1
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/plain >/dev/null 2>&1
 # RUN: cat %t/plain/demo/commented_1_0.ts | FileCheck %s --check-prefix=PLAIN
 # PLAIN-NOT: {{\{[^}]* as }}

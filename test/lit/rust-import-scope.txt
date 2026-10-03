@@ -17,7 +17,7 @@
 # public API, and the import's name is private to the module -- so the import is what moves.
 # RUN: printf '@sealed\n' > %t/shadow/root/bar/Owner.1.0.dsdl
 # RUN: printf 'root.bar.Owner.1.0 inner\n@sealed\n' > %t/shadow/root/foo/Owner.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/shadow/root --rust-crate-name m --outdir %t/shadow/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/shadow/root --rust-crate-name m --outdir %t/shadow/rust
 # RUN: cat %t/shadow/rust/src/root/foo/owner_1_0.rs | FileCheck %s --check-prefix=SHADOW
 # SHADOW: use crate::root::bar::owner_1_0::Owner as BarOwner;
 # SHADOW: pub struct Owner {
@@ -36,7 +36,7 @@
 # RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.2.0.dsdl
 # RUN: printf '@sealed\n' > %t/exhaust/ns/Foo.3.0.dsdl
 # RUN: printf 'ns.Foo.1.0 a\nns.Foo.2.0 b\nns.Foo.3.0 c\n@sealed\n' > %t/exhaust/ns/Holder.1.0.dsdl
-# RUN: %dsdlc --target-language rust --all-type-versions %t/exhaust/ns --rust-crate-name m --outdir %t/exhaust/rust
+# RUN: %dsdlc --target-language rust --experimental-languages --all-type-versions %t/exhaust/ns --rust-crate-name m --outdir %t/exhaust/rust
 # RUN: cat %t/exhaust/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=EXHAUST
 # EXHAUST-DAG: use crate::ns::foo_1_0::Foo;
 # EXHAUST-DAG: use crate::ns::foo_2_0::Foo as NsFoo;
@@ -52,7 +52,7 @@
 # emitted; the service's own constants are.
 # RUN: mkdir -p %t/selfalias/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/selfalias/ns/Request.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust
 # RUN: cat %t/selfalias/rust/src/ns/request_1_0.rs | FileCheck %s --check-prefix=SELF
 # SELF-DAG: pub struct Request {
 # SELF-DAG: pub struct Response {
@@ -61,7 +61,7 @@
 
 # A service whose name is not a section's keeps the alias.
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/selfalias/ns/Query.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust2
+# RUN: %dsdlc --target-language rust --experimental-languages %t/selfalias/ns --rust-crate-name m --outdir %t/selfalias/rust2
 # RUN: cat %t/selfalias/rust2/src/ns/query_1_0.rs | FileCheck %s --check-prefix=ALIAS
 # ALIAS: pub type Query = Request;
 
@@ -77,7 +77,7 @@
 # RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.2.0.dsdl
 # RUN: printf '@deprecated\n@sealed\n' > %t/depord/ns/Foo.3.0.dsdl
 # RUN: printf 'ns.Foo.1.0 a\nns.Foo.2.0 b\nns.Foo.3.0 c\n@sealed\n' > %t/depord/ns/Holder.1.0.dsdl
-# RUN: %dsdlc --target-language rust --all-type-versions %t/depord/ns --rust-crate-name m --outdir %t/depord/rust
+# RUN: %dsdlc --target-language rust --experimental-languages --all-type-versions %t/depord/ns --rust-crate-name m --outdir %t/depord/rust
 # RUN: cat %t/depord/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=DEPORD
 # DEPORD-DAG: use crate::ns::foo_1_0::Foo_;
 # DEPORD-DAG: use crate::ns::foo_2_0::Foo_ as NsFoo_;
@@ -94,7 +94,7 @@
 # onto one identifier. The tag is declared first and keeps its accessors; the option moves.
 # RUN: mkdir -p %t/tagclash/vendor
 # RUN: printf '@union\nuint32 tag_\nfloat32 real\n@sealed\n' > %t/tagclash/vendor/Clash.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/tagclash --rust-crate-name m --outdir %t/tagclash/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/tagclash --rust-crate-name m --outdir %t/tagclash/rust
 # RUN: cat %t/tagclash/rust/src/tagclash/vendor/clash_1_0.rs | FileCheck %s --check-prefix=TAGCLASH
 # TAGCLASH-DAG: pub fn get_tag_(buffer: &[u8]) -> u8 {
 # TAGCLASH-DAG: pub fn set_tag_(buffer: &mut [u8], value: u8) -> core::result::Result<(), crate::dsdl_runtime::Error> {
@@ -109,7 +109,7 @@
 # `Response` declares that name as its response, and the alias would declare it again.
 # RUN: mkdir -p %t/rsp/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/rsp/ns/Response.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/rsp/ns --rust-crate-name m --outdir %t/rsp/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/rsp/ns --rust-crate-name m --outdir %t/rsp/rust
 # RUN: cat %t/rsp/rust/src/ns/response_1_0.rs | FileCheck %s --check-prefix=RSP
 # RSP-DAG: pub struct Request {
 # RSP-DAG: pub struct Response {
@@ -128,7 +128,7 @@
 # RUN: printf '@sealed\n' > %t/prelude/ns/Ok.1.0.dsdl
 # RUN: printf '@sealed\n' > %t/prelude/ns/Err.1.0.dsdl
 # RUN: printf 'ns.Default.1.0 d\nns.Ok.1.0 o\nns.Err.1.0 e\n@sealed\n' > %t/prelude/ns/Holder.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust
 # RUN: cat %t/prelude/rust/src/ns/default_1_0.rs | FileCheck %s --check-prefix=PRELUDE
 # PRELUDE: #[derive(Clone, Debug, Default, PartialEq)]
 # PRELUDE-NEXT: pub struct Default_ {
@@ -140,7 +140,7 @@
 # A derive macro is resolved in the macro namespace, so a definition named `Clone` reaches the
 # derive list without shadowing it and is not claimed.
 # RUN: printf 'uint8 a\n@sealed\n' > %t/prelude/ns/Clone.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust2
+# RUN: %dsdlc --target-language rust --experimental-languages %t/prelude/ns --rust-crate-name m --outdir %t/prelude/rust2
 # RUN: cat %t/prelude/rust2/src/ns/clone_1_0.rs | FileCheck %s --check-prefix=DERIVE
 # DERIVE: #[derive(Clone, Debug, Default, PartialEq)]
 # DERIVE-NEXT: pub struct Clone {
@@ -159,7 +159,7 @@
 # RUN: printf '@sealed\n' > %t/nsclaim/root/default/Foo.1.0.dsdl
 # RUN: printf '@sealed\n' > %t/nsclaim/root/other/Foo.1.0.dsdl
 # RUN: printf 'root.alpha.Foo.1.0 a\nroot.default.Foo.1.0 b\nroot.other.Foo.1.0 c\n@sealed\n' > %t/nsclaim/root/Holder.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/nsclaim/root --rust-crate-name m --outdir %t/nsclaim/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/nsclaim/root --rust-crate-name m --outdir %t/nsclaim/rust
 # RUN: cat %t/nsclaim/rust/src/root/holder_1_0.rs | FileCheck %s --check-prefix=NSCLAIM
 # NSCLAIM-DAG: use crate::root::alpha::foo_1_0::Foo;
 # NSCLAIM-DAG: use crate::root::default::foo_1_0::Foo as DefaultFoo;
@@ -176,7 +176,7 @@
 # language does not have, and renamed the getter alone, since only the getter's name met the field's.
 # RUN: mkdir -p %t/accscope/vendor
 # RUN: printf 'uint8 get_foo\nuint8 foo\n@sealed\n' > %t/accscope/vendor/Acc.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/accscope --rust-crate-name m --outdir %t/accscope/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/accscope --rust-crate-name m --outdir %t/accscope/rust
 # RUN: cat %t/accscope/rust/src/accscope/vendor/acc_1_0.rs | FileCheck %s --check-prefix=ACCSCOPE
 # ACCSCOPE-DAG: pub get_foo: u8,
 # ACCSCOPE-DAG: pub fn get_get_foo(buffer: &[u8]) -> u8 {
@@ -193,7 +193,7 @@
 # `pub mod` of one name is a crate rustc refuses, so the two are claimed and the namespace escapes.
 # RUN: mkdir -p %t/rootclash/dsdlRuntime
 # RUN: printf 'uint8 a\n@sealed\n' > %t/rootclash/dsdlRuntime/Foo.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/rootclash/dsdlRuntime --rust-crate-name m --outdir %t/rootclash/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/rootclash/dsdlRuntime --rust-crate-name m --outdir %t/rootclash/rust
 # RUN: cat %t/rootclash/rust/src/lib.rs | FileCheck %s --check-prefix=ROOTCLASH
 # ROOTCLASH: pub mod dsdl_runtime;
 # ROOTCLASH-NEXT: pub mod dsdl_runtime_;
@@ -209,7 +209,7 @@
 # the no-std half of this could have found it.
 # RUN: mkdir -p %t/crates/alloc
 # RUN: printf 'uint8 a\n@sealed\n' > %t/crates/alloc/Foo.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/crates/alloc --rust-crate-name m --outdir %t/crates/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/crates/alloc --rust-crate-name m --outdir %t/crates/rust
 # RUN: cat %t/crates/rust/src/lib.rs | FileCheck %s --check-prefix=CRATES
 # CRATES: extern crate alloc;
 # CRATES: pub mod dsdl_runtime;

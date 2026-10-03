@@ -117,7 +117,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp ${other_scheme_args}
+    "${DSDLC}" --target-language cpp --experimental-languages ${other_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       ${dsdlc_profile_args}

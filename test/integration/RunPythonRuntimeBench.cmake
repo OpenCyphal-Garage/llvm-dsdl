@@ -68,7 +68,7 @@ foreach(spec IN LISTS BENCH_SPECIALIZATIONS)
   set(package_root "${spec_out}/${py_package_path}")
 
   execute_process(
-    COMMAND "${DSDLC}" --target-language python --versioned-type-names
+    COMMAND "${DSDLC}" --target-language python --experimental-languages --versioned-type-names
       "${source_root}"
       --outdir "${spec_out}"
       --py-package "${py_package}"

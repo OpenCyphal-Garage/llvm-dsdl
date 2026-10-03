@@ -112,7 +112,7 @@ llvmdsdl_run_or_fail("C compile of every generated header in one unit under -Wer
 # collide with the generated statics is compiled rather than merely emitted.
 
 llvmdsdl_run_or_fail("dsdlc C++ generation"
-  "${DSDLC}" --target-language cpp ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
+  "${DSDLC}" --target-language cpp --experimental-languages ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
 
 file(GLOB_RECURSE _cpp_headers RELATIVE "${WORK_DIR}/cpp" "${WORK_DIR}/cpp/*.hpp")
 if(_cpp_headers STREQUAL "")
@@ -135,7 +135,7 @@ llvmdsdl_run_or_fail("C++ compile of the naming corpus under -Werror"
 # omission there is invisible to the std run above.
 
 llvmdsdl_run_or_fail("dsdlc C++ PMR generation"
-  "${DSDLC}" --target-language cpp ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile pmr --outdir "${WORK_DIR}/cpp_pmr")
+  "${DSDLC}" --target-language cpp --experimental-languages ${_scheme_args} "${FIXTURE_ROOT}" --cpp-profile pmr --outdir "${WORK_DIR}/cpp_pmr")
 
 file(GLOB_RECURSE _pmr_headers RELATIVE "${WORK_DIR}/cpp_pmr" "${WORK_DIR}/cpp_pmr/*.hpp")
 if(_pmr_headers STREQUAL "")
@@ -157,7 +157,7 @@ llvmdsdl_run_or_fail("C++ PMR compile of the naming corpus under -Werror"
 # Rust
 
 llvmdsdl_run_or_fail("dsdlc Rust generation"
-  "${DSDLC}" --target-language rust ${_scheme_args} "${FIXTURE_ROOT}" --rust-profile std
+  "${DSDLC}" --target-language rust --experimental-languages ${_scheme_args} "${FIXTURE_ROOT}" --rust-profile std
              --rust-crate-name naming_corpus --outdir "${WORK_DIR}/rust")
 
 if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE MATCHES "NOTFOUND")
@@ -173,7 +173,7 @@ endif()
 # field sharing a name with a generated method, stops the whole package building.
 
 llvmdsdl_run_or_fail("dsdlc Go generation"
-  "${DSDLC}" --target-language go ${_scheme_args} "${FIXTURE_ROOT}" --go-module llvmdsdl/naming_corpus
+  "${DSDLC}" --target-language go --experimental-languages ${_scheme_args} "${FIXTURE_ROOT}" --go-module llvmdsdl/naming_corpus
              --outdir "${WORK_DIR}/go")
 
 if(GO_EXECUTABLE AND NOT GO_EXECUTABLE MATCHES "NOTFOUND")
@@ -192,7 +192,7 @@ endif()
 # TypeScript
 
 llvmdsdl_run_or_fail("dsdlc TypeScript generation"
-  "${DSDLC}" --target-language ts ${_scheme_args} "${FIXTURE_ROOT}" --ts-module naming_corpus
+  "${DSDLC}" --target-language ts --experimental-languages ${_scheme_args} "${FIXTURE_ROOT}" --ts-module naming_corpus
              --outdir "${WORK_DIR}/ts")
 
 if(TSC_EXECUTABLE AND NOT TSC_EXECUTABLE MATCHES "NOTFOUND")
@@ -219,7 +219,7 @@ endif()
 # byte-compiling every module reaches all of them without needing the runtime on sys.path.
 
 llvmdsdl_run_or_fail("dsdlc Python generation"
-  "${DSDLC}" --target-language python ${_scheme_args} "${FIXTURE_ROOT}" --py-package naming_corpus
+  "${DSDLC}" --target-language python --experimental-languages ${_scheme_args} "${FIXTURE_ROOT}" --py-package naming_corpus
              --outdir "${WORK_DIR}/py")
 
 if(PYTHON_EXECUTABLE AND NOT PYTHON_EXECUTABLE MATCHES "NOTFOUND")

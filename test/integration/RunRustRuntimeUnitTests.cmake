@@ -63,7 +63,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --experimental-languages
       "${vendor_root}"
       --outdir "${OUT_DIR}"
       --rust-crate-name "llvmdsdl_runtime_unit"

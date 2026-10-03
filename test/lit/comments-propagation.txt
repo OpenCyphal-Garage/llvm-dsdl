@@ -9,15 +9,15 @@
 # is generated code somebody has to work around.
 # RUN: %dsdlc --target-language c %S/fixtures_docs/delimiters --outdir %t/delims >/dev/null 2>&1
 # RUN: cat %t/delims/delimiters/CommentDelimiters_1_0.h | FileCheck %s --check-prefix=C_DELIMS
-# RUN: %dsdlc --target-language cpp %S/fixtures_docs/demo --outdir %t/cpp >/dev/null 2>&1
+# RUN: %dsdlc --target-language cpp --experimental-languages %S/fixtures_docs/demo --outdir %t/cpp >/dev/null 2>&1
 # RUN: cat %t/cpp/std/demo/Commented_1_0.hpp | FileCheck %s --check-prefix=CPP_DOC
-# RUN: %dsdlc --target-language rust %S/fixtures_docs/demo --rust-crate-name comments_fixture --outdir %t/rust >/dev/null 2>&1
+# RUN: %dsdlc --target-language rust --experimental-languages %S/fixtures_docs/demo --rust-crate-name comments_fixture --outdir %t/rust >/dev/null 2>&1
 # RUN: cat %t/rust/src/demo/commented_1_0.rs | FileCheck %s --check-prefix=RUST_DOC
-# RUN: %dsdlc --target-language go %S/fixtures_docs/demo --go-module demo/comments --outdir %t/go >/dev/null 2>&1
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_docs/demo --go-module demo/comments --outdir %t/go >/dev/null 2>&1
 # RUN: cat %t/go/demo/commented_1_0.go | FileCheck %s --check-prefix=GO_DOC
-# RUN: %dsdlc --target-language ts %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/ts >/dev/null 2>&1
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_docs/demo --ts-module demo_comments --outdir %t/ts >/dev/null 2>&1
 # RUN: cat %t/ts/demo/commented_1_0.ts | FileCheck %s --check-prefix=TS_DOC
-# RUN: %dsdlc --target-language python %S/fixtures_docs/demo --py-package demo_comments --outdir %t/py >/dev/null 2>&1
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures_docs/demo --py-package demo_comments --outdir %t/py >/dev/null 2>&1
 # RUN: cat %t/py/demo_comments/demo/commented_1_0.py | FileCheck %s --check-prefix=PY_DOC
 
 # MLIR_DOC: dsdl.schema

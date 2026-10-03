@@ -67,7 +67,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts --versioned-type-names
+    "${DSDLC}" --target-language ts --experimental-languages --versioned-type-names
       "${fixture_root}"
       --outdir "${ts_out}"
       --ts-module "fixture_ts_service_parity"

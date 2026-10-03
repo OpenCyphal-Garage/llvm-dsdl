@@ -37,7 +37,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 # check by eye.
 
 execute_process(
-  COMMAND "${DSDLC}" --target-language python --all-type-versions
+  COMMAND "${DSDLC}" --target-language python --experimental-languages --all-type-versions
     "${UAVCAN_ROOT}"
     --outdir "${OUT_DIR}"
     --py-package "${PY_PACKAGE}"

@@ -41,7 +41,7 @@
 # C_A_B: #define LLVMDSDL_SELECTED_NS_A_B_1_0{{$}}
 # C_A_B: int8_t ns__A__B_1_0__serialize_(
 
-# RUN: %dsdlc --target-language cpp --cpp-profile std --no-embedded-uavcan %t/ns --outdir %t/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std --no-embedded-uavcan %t/ns --outdir %t/cpp
 # RUN: cat %t/cpp/ns/A/B_1_0.hpp | FileCheck %s --check-prefix=CPP_A_B
 # RUN: cat %t/cpp/ns/A_B_1_0.hpp | FileCheck %s --check-prefix=CPP_AB
 # CPP_A_B: #ifndef LLVMDSDL_NS_A_B_1_0_HPP{{$}}
@@ -50,7 +50,7 @@
 # CPP_AB-NOT: LLVMDSDL_SELECTED_
 
 # RUN: %dsdlc --target-language obj --no-embedded-uavcan %t/ns --outdir %t/obj
-# RUN: %dsdlc --target-language rust --no-embedded-uavcan %t/ns --outdir %t/rust
-# RUN: %dsdlc --target-language go --go-module m --no-embedded-uavcan %t/ns --outdir %t/go
-# RUN: %dsdlc --target-language ts --no-embedded-uavcan %t/ns --outdir %t/ts
-# RUN: %dsdlc --target-language python --no-embedded-uavcan %t/ns --outdir %t/py
+# RUN: %dsdlc --target-language rust --experimental-languages --no-embedded-uavcan %t/ns --outdir %t/rust
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m --no-embedded-uavcan %t/ns --outdir %t/go
+# RUN: %dsdlc --target-language ts --experimental-languages --no-embedded-uavcan %t/ns --outdir %t/ts
+# RUN: %dsdlc --target-language python --experimental-languages --no-embedded-uavcan %t/ns --outdir %t/py

@@ -10,25 +10,25 @@
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=c" %t/in.mlir > %t/c.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/c.mlir %t/c
 #
-# RUN: %dsdlc --target-language cpp --cpp-profile std --outdir %t/cpp %S/fixtures_naming
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std --outdir %t/cpp %S/fixtures_naming
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=cpp profiles=std" %t/in.mlir > %t/cpp.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/cpp.mlir %t/cpp
-# RUN: %dsdlc --target-language cpp --cpp-profile both --outdir %t/cpp-both %S/fixtures_naming
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile both --outdir %t/cpp-both %S/fixtures_naming
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=cpp profiles=std,pmr" %t/in.mlir > %t/cpp-both.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/cpp-both.mlir %t/cpp-both
 #
-# RUN: %dsdlc --target-language rust --rust-crate-name m --outdir %t/rust %S/fixtures_naming
+# RUN: %dsdlc --target-language rust --experimental-languages --rust-crate-name m --outdir %t/rust %S/fixtures_naming
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=rust package=m" %t/in.mlir > %t/rust.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/rust.mlir %t/rust
 #
-# RUN: %dsdlc --target-language go --go-module m --outdir %t/go %S/fixtures_naming
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m --outdir %t/go %S/fixtures_naming
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=go package=m" %t/in.mlir > %t/go.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/go.mlir %t/go
 #
-# RUN: %dsdlc --target-language ts --ts-module m --outdir %t/ts %S/fixtures_naming
+# RUN: %dsdlc --target-language ts --experimental-languages --ts-module m --outdir %t/ts %S/fixtures_naming
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=ts package=m" %t/in.mlir > %t/ts.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/ts.mlir %t/ts
 #
-# RUN: %dsdlc --target-language python --py-package top.pkg --outdir %t/python %S/fixtures_naming
+# RUN: %dsdlc --target-language python --experimental-languages --py-package top.pkg --outdir %t/python %S/fixtures_naming
 # RUN: %dsdl-opt --lower-dsdl-bodies="target=python package=top.pkg" %t/in.mlir > %t/python.mlir
 # RUN: %{python} %S/check_surface_paths.py %t/python.mlir %t/python

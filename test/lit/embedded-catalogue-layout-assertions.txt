@@ -9,7 +9,7 @@
 # C: DSDL_RUNTIME_STATIC_ASSERT(sizeof(struct uavcan__si__unit__angle__Quaternion) == 16U,
 # C: DSDL_RUNTIME_STATIC_ASSERT(offsetof(struct uavcan__si__unit__angle__Quaternion, wxyz) == 0U,
 
-# RUN: %dsdlc --target-language cpp %S/fixtures_embedded_layout/demo --outdir %t/cpp >/dev/null 2>&1
+# RUN: %dsdlc --target-language cpp --experimental-languages %S/fixtures_embedded_layout/demo --outdir %t/cpp >/dev/null 2>&1
 # RUN: cat %t/cpp/std/uavcan/si/unit/angle/Quaternion_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP: static constexpr bool HOST_IMAGE = true;
 # CPP: static_assert(std::is_standard_layout_v<Quaternion>,

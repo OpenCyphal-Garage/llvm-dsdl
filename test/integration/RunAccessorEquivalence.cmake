@@ -46,7 +46,7 @@ set(legs "")
 # Generates the regulated types for one language. ARGN holds the language's own options.
 function(_equivalence_generate language out_dir)
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} "${UAVCAN_ROOT}" --outdir "${out_dir}" ${ARGN}
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages "${UAVCAN_ROOT}" --outdir "${out_dir}" ${ARGN}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
     ERROR_VARIABLE gen_stderr

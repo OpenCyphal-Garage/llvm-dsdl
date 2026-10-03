@@ -15,13 +15,13 @@
 # RUN: %dsdlc --target-language c --target-triple powerpc64-unknown-linux-gnu %S/fixtures_host_image --outdir %t/c-be > /dev/null
 # RUN: cat %t/c-be/fixtures_host_image/vendor/Nested_1_0.c | FileCheck %s --check-prefix=C_BIG_ENDIAN_BODY
 # RUN: cat %t/c-be/fixtures_host_image/vendor/Nested_1_0.h | FileCheck %s --check-prefix=C_BIG_ENDIAN_HEADER
-# RUN: %dsdlc --target-language cpp %S/fixtures_host_image --outdir %t/cpp > /dev/null
+# RUN: %dsdlc --target-language cpp --experimental-languages %S/fixtures_host_image --outdir %t/cpp > /dev/null
 # RUN: cat %t/cpp/std/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=CPP_NESTED
 # RUN: cat %t/cpp/pmr/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=CPP_NESTED
 # RUN: cat %t/cpp/pmr/fixtures_host_image/vendor/Nested_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
-# RUN: %dsdlc --target-language rust %S/fixtures_host_image --rust-crate-name host_image --outdir %t/rust > /dev/null
+# RUN: %dsdlc --target-language rust --experimental-languages %S/fixtures_host_image --rust-crate-name host_image --outdir %t/rust > /dev/null
 # RUN: cat %t/rust/src/fixtures_host_image/vendor/nested_1_0.rs | FileCheck %s --check-prefix=RUST_NESTED
-# RUN: %dsdlc --target-language go %S/fixtures_host_image --outdir %t/go > /dev/null
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_host_image --outdir %t/go > /dev/null
 # RUN: cat %t/go/fixtureshostimage/vendor/nested_1_0.go | FileCheck %s --check-prefix=GO_NESTED
 # RUN: cat %t/go/fixtureshostimage/vendor/nested_1_0_host_image.go | FileCheck %s --check-prefix=GO_GUARD
 # RUN: cat %t/go/fixtureshostimage/vendor/padded_1_0.go | FileCheck %s --check-prefix=GO_PADDED

@@ -123,6 +123,7 @@ def generate(dsdlc: Path, uavcan_root: Path, out_dir: Path) -> None:
         subprocess.run(
             [
                 str(dsdlc),
+                "--experimental-languages",
                 "--target-language",
                 "python",
                 "--versioned-type-names",

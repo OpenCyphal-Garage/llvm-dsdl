@@ -17,6 +17,8 @@ This repo ships three user-facing tools:
 - [`dsdld`](tools/dsdld/main.cpp): language server for editor workflows.
 
 Supported `dsdlc --target-language` values are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, `python`, and `obj`.
+`cpp`, `rust`, `go`, `ts`, and `python` are experimental: `dsdlc` generates them only with
+`--experimental-languages`. The mark lives in the tool's own language table and nowhere below it.
 
 ## 2. Realised Architecture
 

@@ -30,7 +30,7 @@ set(fast_out "${OUT_DIR}/rust-fast")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --experimental-languages
       "${UAVCAN_ROOT}"
       --outdir "${portable_out}"
       --rust-crate-name "uavcan_dsdl_generated"
@@ -48,7 +48,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --experimental-languages
       "${UAVCAN_ROOT}"
       --outdir "${fast_out}"
       --rust-crate-name "uavcan_dsdl_generated"

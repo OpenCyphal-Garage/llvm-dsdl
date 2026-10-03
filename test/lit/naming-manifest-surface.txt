@@ -15,19 +15,19 @@
 # RUN: %dsdlc --target-language c --outdir %t/c %t/dsdl/ns --naming-manifest %t/c.json
 # RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/c.json
 # RUN: %{python} %S/check_manifest_layers.py flat %t/c.json c ns.Ask.1.0 | FileCheck %s --check-prefix=C
-# RUN: %dsdlc --target-language cpp --cpp-profile both --outdir %t/cpp %t/dsdl/ns --naming-manifest %t/cpp.json
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile both --outdir %t/cpp %t/dsdl/ns --naming-manifest %t/cpp.json
 # RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/cpp.json
 # RUN: %{python} %S/check_manifest_layers.py flat %t/cpp.json cpp ns.Msg.1.0 | FileCheck %s --check-prefix=CPP
-# RUN: %dsdlc --target-language rust --outdir %t/rust %t/dsdl/ns --naming-manifest %t/rust.json
+# RUN: %dsdlc --target-language rust --experimental-languages --outdir %t/rust %t/dsdl/ns --naming-manifest %t/rust.json
 # RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/rust.json
 # RUN: %{python} %S/check_manifest_layers.py flat %t/rust.json rust ns.Hold.1.0 | FileCheck %s --check-prefix=RUST
-# RUN: %dsdlc --target-language go --go-module m --outdir %t/go %t/dsdl/ns --naming-manifest %t/go.json
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m --outdir %t/go %t/dsdl/ns --naming-manifest %t/go.json
 # RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/go.json
 # RUN: %{python} %S/check_manifest_layers.py flat %t/go.json go ns.Ask.1.0 | FileCheck %s --check-prefix=GO
-# RUN: %dsdlc --target-language ts --ts-module m --outdir %t/ts %t/dsdl/ns --naming-manifest %t/ts.json
+# RUN: %dsdlc --target-language ts --experimental-languages --ts-module m --outdir %t/ts %t/dsdl/ns --naming-manifest %t/ts.json
 # RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/ts.json
 # RUN: %{python} %S/check_manifest_layers.py flat %t/ts.json ts ns.Hold.1.0 | FileCheck %s --check-prefix=TS
-# RUN: %dsdlc --target-language python --outdir %t/python %t/dsdl/ns --naming-manifest %t/python.json
+# RUN: %dsdlc --target-language python --experimental-languages --outdir %t/python %t/dsdl/ns --naming-manifest %t/python.json
 # RUN: %{python} %S/check_manifest_layers.py subset %t/ast.json %t/python.json
 # RUN: %{python} %S/check_manifest_layers.py flat %t/python.json python ns.Old.1.0 | FileCheck %s --check-prefix=PY
 #

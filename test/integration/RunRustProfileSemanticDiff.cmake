@@ -27,7 +27,7 @@ set(no_std_out "${OUT_DIR}/rust-no-std-alloc")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --experimental-languages
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${std_out}"
@@ -45,7 +45,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust
+    "${DSDLC}" --target-language rust --experimental-languages
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${no_std_out}"

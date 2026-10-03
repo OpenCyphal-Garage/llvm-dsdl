@@ -16,7 +16,7 @@
 # RUN: printf 'uint8 serialize\nvoid8\nuint8 deserialize\n@sealed\n' > %t/dsdl/mf/M.1.0.dsdl
 
 # Go: fields escaped, methods intact, references consistent.
-# RUN: %dsdlc --target-language go %t/dsdl --outdir %t/go --go-module mf
+# RUN: %dsdlc --target-language go --experimental-languages %t/dsdl --outdir %t/go --go-module mf
 # RUN: cat %t/go/dsdl/mf/m_1_0.go | FileCheck %s --check-prefix=GO
 # GO-DAG: Serialize_ uint8
 # GO-DAG: Deserialize_ uint8
@@ -26,7 +26,7 @@
 # GO-DAG: m.Deserialize_
 
 # Python: attribute escaped so it does not shadow the class's own method.
-# RUN: %dsdlc --target-language python %t/dsdl --outdir %t/py
+# RUN: %dsdlc --target-language python --experimental-languages %t/dsdl --outdir %t/py
 # RUN: cat %t/py/dsdl_gen/dsdl/mf/m_1_0.py | FileCheck %s --check-prefix=PY
 # PY-DAG: class M(CompositeObject):
 # PY-DAG: serialize_: int = 0
@@ -35,7 +35,7 @@
 # C++ was in the "unaffected" list above until the claimed-name policy was written and the case was
 # generated: `serialize` and `deserialize` are member functions of the generated struct, so
 # a field of either name did not compile.
-# RUN: %dsdlc --target-language cpp %t/dsdl --cpp-profile std --outdir %t/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages %t/dsdl --cpp-profile std --outdir %t/cpp
 # RUN: cat %t/cpp/dsdl/mf/M_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP-DAG: std::uint8_t serialize_{};
 # CPP-DAG: std::uint8_t deserialize_{};

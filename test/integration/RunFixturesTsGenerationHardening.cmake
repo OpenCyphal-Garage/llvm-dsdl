@@ -19,7 +19,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts
+    "${DSDLC}" --target-language ts --experimental-languages
       "${FIXTURES_ROOT}"
       --outdir "${OUT_DIR}"
       --ts-module "fixtures_dsdl_generated_ts"

@@ -32,4 +32,4 @@
 # SVC: error: type name collision in generated output: 'ns.Svc.Request' and the request section of 'ns.Svc' both emit 'ns__Svc__Request' for target language 'c'; pass --versioned-type-names, or rename one of them
 
 # Go puts each namespace in a package of its own.
-# RUN: %dsdlc --target-language go --go-module m %t/join/ns --outdir %t/go
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m %t/join/ns --outdir %t/go

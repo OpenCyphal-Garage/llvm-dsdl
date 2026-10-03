@@ -48,7 +48,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      --target-language cpp
+      --target-language cpp --experimental-languages
       "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
       --cpp-profile std
       --outdir "${LLVMDSDL_YAKUT_DEMO_GEN_DIR}"
@@ -101,7 +101,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      --target-language go
+      --target-language go --experimental-languages
       "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
       --go-module cyphal_yakut_demo_generated
       --outdir "${LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR}"
@@ -134,7 +134,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      --target-language rust
+      --target-language rust --experimental-languages
       "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
       --rust-profile std
       --rust-crate-name cyphal_yakut_demo_generated_rust

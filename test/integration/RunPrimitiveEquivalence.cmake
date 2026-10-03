@@ -173,7 +173,7 @@ if(DEFINED TSC_EXECUTABLE AND EXISTS "${TSC_EXECUTABLE}"
   file(MAKE_DIRECTORY "${ts_dir}")
   set(uavcan_root "${SOURCE_ROOT}/submodules/public_regulated_data_types/uavcan")
   execute_process(
-    COMMAND "${DSDLC}" --target-language ts -I "${uavcan_root}"
+    COMMAND "${DSDLC}" --target-language ts --experimental-languages -I "${uavcan_root}"
       --outdir "${ts_dir}" "${uavcan_root}/primitive/scalar/Real32.1.0.dsdl" --omit-dependencies
     RESULT_VARIABLE ts_gen_rc OUTPUT_VARIABLE ts_gen_out ERROR_VARIABLE ts_gen_err)
   if(NOT ts_gen_rc EQUAL 0 OR NOT EXISTS "${ts_dir}/dsdl_runtime.ts")
