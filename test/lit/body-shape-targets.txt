@@ -1,0 +1,28 @@
+# The serialise and deserialise code each language is meant to generate for uavcan.node.Heartbeat.1.0,
+# written by hand under golden/body_shape. Each is today's output with its serdes code in the shape
+# issue #133 asks for: early returns, no helper that changes nothing, helpers named for what they do,
+# no cast on a constant, and no null test or error check the language's types already exclude.
+#
+# Every comparison is --pending until the change that reaches its target drops the flag.
+
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --target-language c +uavcan.node.Heartbeat.1.0 --outdir %t/c
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std +uavcan.node.Heartbeat.1.0 --outdir %t/cpp
+# RUN: %dsdlc --target-language rust --experimental-languages +uavcan.node.Heartbeat.1.0 --outdir %t/rust
+# RUN: %dsdlc --target-language go --experimental-languages +uavcan.node.Heartbeat.1.0 --outdir %t/go
+# RUN: %dsdlc --target-language ts --experimental-languages +uavcan.node.Heartbeat.1.0 --outdir %t/ts
+# RUN: %dsdlc --target-language python --experimental-languages +uavcan.node.Heartbeat.1.0 --outdir %t/python
+
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %t/c/uavcan/node/Heartbeat_1_0.c %S/golden/body_shape/c/Heartbeat_1_0.c
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %t/cpp/uavcan/node/Heartbeat_1_0.hpp %S/golden/body_shape/cpp/Heartbeat_1_0.hpp
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %t/rust/src/uavcan/node/heartbeat_1_0.rs %S/golden/body_shape/rust/heartbeat_1_0.rs
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %t/go/uavcan/node/heartbeat_1_0.go %S/golden/body_shape/go/heartbeat_1_0.go
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %t/ts/uavcan/node/heartbeat_1_0.ts %S/golden/body_shape/ts/heartbeat_1_0.ts
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %t/python/dsdl_gen/uavcan/node/heartbeat_1_0.py %S/golden/body_shape/python/heartbeat_1_0.py
+
+# The comparator's two modes, held to a target it has and has not reached.
+# RUN: %{python} %S/compare_codegen_snapshot.py --pending %S/golden/body_shape/c/Heartbeat_1_0.c %t/c/uavcan/node/Heartbeat_1_0.c
+# RUN: not %{python} %S/compare_codegen_snapshot.py --pending %S/golden/body_shape/c/Heartbeat_1_0.c %S/golden/body_shape/c/Heartbeat_1_0.c 2>&1 | FileCheck %s --check-prefix=REACHED
+
+# REACHED: target reached:
+# REACHED-NEXT: drop --pending from its comparison
