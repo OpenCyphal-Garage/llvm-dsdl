@@ -69,9 +69,9 @@ file(WRITE
   "${parallel_script}"
   "#!/bin/sh\n"
   "set -eu\n"
-  "env LC_ALL=C TZ=UTC PYTHONHASHSEED=0 \"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
+  "env LC_ALL=C TZ=UTC PYTHONHASHSEED=0 \"${DSDLC}\" --target-language rust --experimental-languages \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
   "pid_a=$!\n"
-  "env LC_ALL=C.UTF-8 TZ=Asia/Tokyo PYTHONHASHSEED=13 \"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
+  "env LC_ALL=C.UTF-8 TZ=Asia/Tokyo PYTHONHASHSEED=13 \"${DSDLC}\" --target-language rust --experimental-languages \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
   "pid_b=$!\n"
   "wait \"$pid_a\"\n"
   "wait \"$pid_b\"\n")

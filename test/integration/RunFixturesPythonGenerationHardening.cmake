@@ -25,7 +25,7 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 set(dsdlc_args
-  --target-language python
+  --target-language python --experimental-languages
   "${FIXTURES_ROOT}"
   --outdir "${OUT_DIR}"
   --py-package "${PY_PACKAGE}"

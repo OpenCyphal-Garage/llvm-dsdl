@@ -14,22 +14,22 @@
 # RUN: printf 'uint8 c\n@sealed\n' > %t/dsdl/ns/FooRequest.1.0.dsdl
 
 # Go shares a package across the types in it, so this is a redeclaration and is rejected.
-# RUN: not %dsdlc --target-language go --go-module m %t/dsdl/ns --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GO
+# RUN: not %dsdlc --target-language go --experimental-languages --go-module m %t/dsdl/ns --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GO
 # GO: type name collision in generated output: 'ns.FooRequest' and the request section of 'ns.Foo' both emit 'FooRequest' for target language 'go'; pass --versioned-type-names, or rename one of them
 
 # Versioned names put the version where it separates the two, so the same corpus generates.
-# RUN: %dsdlc --target-language go --go-module m --versioned-type-names %t/dsdl/ns --outdir %t/gov
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m --versioned-type-names %t/dsdl/ns --outdir %t/gov
 # RUN: cat %t/gov/ns/foo_1_0.go %t/gov/ns/foo_request_1_0.go | FileCheck %s --check-prefix=VERSIONED
 # VERSIONED-DAG: type Foo_1_0Request struct {
 # VERSIONED-DAG: type FooRequest_1_0 struct {
 
 # Rust gives every definition its own module, and C++ declares a service's sections in the service's
 # struct, so the repeat is unreachable in both and must not be reported.
-# RUN: %dsdlc --target-language rust --rust-crate-name m %t/dsdl/ns --outdir %t/rust
+# RUN: %dsdlc --target-language rust --experimental-languages --rust-crate-name m %t/dsdl/ns --outdir %t/rust
 # RUN: cat %t/rust/src/ns/foo_1_0.rs %t/rust/src/ns/foo_request_1_0.rs | FileCheck %s --check-prefix=RUST
 # RUST-DAG: pub struct FooRequest {
 # RUST-DAG: pub struct Request {
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl/ns --outdir %t/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/dsdl/ns --outdir %t/cpp
 # RUN: cat %t/cpp/ns/Foo_1_0.hpp %t/cpp/ns/FooRequest_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP-DAG: struct Foo {
 # CPP-DAG: struct Request {
@@ -40,21 +40,21 @@
 # RUN: rm -rf %t/skew && mkdir -p %t/skew/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/skew/ns/Foo.1.0.dsdl
 # RUN: printf 'uint8 c\n@sealed\n' > %t/skew/ns/FooRequest.2.0.dsdl
-# RUN: not %dsdlc --target-language go --go-module m %t/skew/ns --outdir %t/skewout 2>&1 | FileCheck %s --check-prefix=SKEW
+# RUN: not %dsdlc --target-language go --experimental-languages --go-module m %t/skew/ns --outdir %t/skewout 2>&1 | FileCheck %s --check-prefix=SKEW
 # SKEW: and the request section of 'ns.Foo' both emit 'FooRequest' for target language 'go'
 
 # The response section is checked too, and against a service's own sibling rather than only a message.
 # RUN: rm -rf %t/resp && mkdir -p %t/resp/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/resp/ns/Bar.1.0.dsdl
 # RUN: printf 'uint8 c\n@sealed\n' > %t/resp/ns/BarResponse.1.0.dsdl
-# RUN: not %dsdlc --target-language go --go-module m %t/resp/ns --outdir %t/respout 2>&1 | FileCheck %s --check-prefix=RESP
+# RUN: not %dsdlc --target-language go --experimental-languages --go-module m %t/resp/ns --outdir %t/respout 2>&1 | FileCheck %s --check-prefix=RESP
 # RESP: the response section of 'ns.Bar' both emit 'BarResponse' for target language 'go'
 
 # A service beside an ordinary sibling that does not collide must still generate.
 # RUN: rm -rf %t/ok && mkdir -p %t/ok/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/ok/ns/Svc.1.0.dsdl
 # RUN: printf 'uint8 c\n@sealed\n' > %t/ok/ns/Other.1.0.dsdl
-# RUN: %dsdlc --target-language go --go-module m %t/ok/ns --outdir %t/okout
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m %t/ok/ns --outdir %t/okout
 # RUN: ls %t/okout/ns | FileCheck %s --check-prefix=OK
 # OK-DAG: svc_1_0.go
 # OK-DAG: other_1_0.go
@@ -64,7 +64,7 @@
 # RUN: rm -rf %t/twover && mkdir -p %t/twover/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/twover/ns/Dup.1.0.dsdl
 # RUN: printf 'uint8 a\nuint8 b\n@sealed\n---\nuint8 c\n@sealed\n' > %t/twover/ns/Dup.2.0.dsdl
-# RUN: %dsdlc --target-language go --go-module m %t/twover/ns --outdir %t/twoverout
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m %t/twover/ns --outdir %t/twoverout
 
 # A deprecated definition's C++ struct is declared as `<name>_`, with `<name>` a deprecated alias of
 # it, so a sibling called `<name>_` meets it there. C keeps the deprecated typedef under its own name
@@ -72,7 +72,7 @@
 # RUN: rm -rf %t/declared && mkdir -p %t/declared/ns
 # RUN: printf '@deprecated\nuint8 a\n@sealed\n' > %t/declared/ns/Old.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/declared/ns/Old_.1.0.dsdl
-# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/declared/ns --outdir %t/declaredout 2>&1 | FileCheck %s --check-prefix=DECLARED
+# RUN: not %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/declared/ns --outdir %t/declaredout 2>&1 | FileCheck %s --check-prefix=DECLARED
 # DECLARED: type name collision in generated output: {{.*}} both emit 'Old_' for target language 'cpp'
 # RUN: %dsdlc --target-language c %t/declared/ns --outdir %t/declaredc
 
@@ -80,14 +80,14 @@
 # RUN: rm -rf %t/declsvc && mkdir -p %t/declsvc/ns
 # RUN: printf '@deprecated\nuint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/declsvc/ns/Svc.1.0.dsdl
 # RUN: printf 'uint8 c\n@sealed\n' > %t/declsvc/ns/Svc_.1.0.dsdl
-# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/declsvc/ns --outdir %t/declsvcout 2>&1 | FileCheck %s --check-prefix=DECLARED_SVC
+# RUN: not %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/declsvc/ns --outdir %t/declsvcout 2>&1 | FileCheck %s --check-prefix=DECLARED_SVC
 # DECLARED_SVC: type name collision in generated output: {{.*}} both emit 'Svc_' for target language 'cpp'
 
 # A C++ class's members may not take its name, so a service whose section would is declared apart and
 # published under an alias, as a deprecated one is: `Request::Request` still names its request.
 # RUN: rm -rf %t/named && mkdir -p %t/named/ns
 # RUN: printf 'uint8 a\n@sealed\n---\nuint8 b\n@sealed\n' > %t/named/ns/Request.1.0.dsdl
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/named/ns --outdir %t/namedout
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/named/ns --outdir %t/namedout
 # RUN: FileCheck %s --check-prefix=NAMED < %t/namedout/ns/Request_1_0.hpp
 # NAMED: struct Request_ {
 # NAMED: struct Request {

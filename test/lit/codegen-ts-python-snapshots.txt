@@ -1,7 +1,7 @@
 # RUN: rm -rf %t && mkdir -p %t
 
-# RUN: %dsdlc --target-language ts %S/fixtures --outdir %t/ts-a --ts-module fixtures_snapshot_ts
-# RUN: %dsdlc --target-language ts %S/fixtures --outdir %t/ts-b --ts-module fixtures_snapshot_ts
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures --outdir %t/ts-a --ts-module fixtures_snapshot_ts
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures --outdir %t/ts-b --ts-module fixtures_snapshot_ts
 # RUN: cmp -s %t/ts-a/fixtures/vendor/helpers_1_0.ts %t/ts-b/fixtures/vendor/helpers_1_0.ts
 # RUN: cmp -s %t/ts-a/fixtures/vendor/union_tag_1_0.ts %t/ts-b/fixtures/vendor/union_tag_1_0.ts
 # RUN: cmp -s %t/ts-a/fixtures/vendor/uses_delimited_1_0.ts %t/ts-b/fixtures/vendor/uses_delimited_1_0.ts
@@ -9,8 +9,8 @@
 # RUN: python3 %S/compare_codegen_snapshot.py %t/ts-a/fixtures/vendor/union_tag_1_0.ts %S/golden/ts_python_snapshots/ts/union_tag_1_0.ts
 # RUN: python3 %S/compare_codegen_snapshot.py %t/ts-a/fixtures/vendor/uses_delimited_1_0.ts %S/golden/ts_python_snapshots/ts/uses_delimited_1_0.ts
 
-# RUN: %dsdlc --target-language python %S/fixtures --outdir %t/py-a --py-package fixtures_snapshot_py --py-runtime-specialization portable
-# RUN: %dsdlc --target-language python %S/fixtures --outdir %t/py-b --py-package fixtures_snapshot_py --py-runtime-specialization portable
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures --outdir %t/py-a --py-package fixtures_snapshot_py --py-runtime-specialization portable
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures --outdir %t/py-b --py-package fixtures_snapshot_py --py-runtime-specialization portable
 # RUN: cmp -s %t/py-a/fixtures_snapshot_py/fixtures/vendor/helpers_1_0.py %t/py-b/fixtures_snapshot_py/fixtures/vendor/helpers_1_0.py
 # RUN: cmp -s %t/py-a/fixtures_snapshot_py/fixtures/vendor/union_tag_1_0.py %t/py-b/fixtures_snapshot_py/fixtures/vendor/union_tag_1_0.py
 # RUN: cmp -s %t/py-a/fixtures_snapshot_py/fixtures/vendor/uses_delimited_1_0.py %t/py-b/fixtures_snapshot_py/fixtures/vendor/uses_delimited_1_0.py

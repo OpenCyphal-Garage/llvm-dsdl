@@ -4,11 +4,11 @@
 
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable --outdir %t/c 2>&1 | FileCheck %s --check-prefix=GEN
-# RUN: %dsdlc --target-language cpp --aliasable-only %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
-# RUN: %dsdlc --target-language rust --aliasable-only %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
-# RUN: %dsdlc --target-language go --aliasable-only %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
-# RUN: %dsdlc --target-language ts --aliasable-only %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
-# RUN: %dsdlc --target-language python --aliasable-only %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --experimental-languages --aliasable-only %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language rust --experimental-languages --aliasable-only %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language go --experimental-languages --aliasable-only %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language ts --experimental-languages --aliasable-only %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language python --experimental-languages --aliasable-only %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
 # GEN-NOT: error:
 # GEN: files generated
 
@@ -80,9 +80,9 @@
 # GO_VEC3-NOT: func (v *Vec3) Deserialize(
 
 # The endianness guard belongs to the folded bodies, so the mode's file set has no `_host_image.go`.
-# RUN: %dsdlc --target-language go --list-outputs %S/fixtures_aliasable --outdir %t/go-all 2>&1 | FileCheck %s --check-prefix=GO_ALL
+# RUN: %dsdlc --target-language go --experimental-languages --list-outputs %S/fixtures_aliasable --outdir %t/go-all 2>&1 | FileCheck %s --check-prefix=GO_ALL
 # GO_ALL: pose_1_0_host_image.go
-# RUN: %dsdlc --target-language go --aliasable-only --list-outputs %S/fixtures_aliasable --outdir %t/go-only 2>&1 | FileCheck %s --check-prefix=GO_ONLY
+# RUN: %dsdlc --target-language go --experimental-languages --aliasable-only --list-outputs %S/fixtures_aliasable --outdir %t/go-only 2>&1 | FileCheck %s --check-prefix=GO_ONLY
 # GO_ONLY-NOT: host_image
 # GO_ONLY: pose_1_0.go
 # GO_ONLY-NOT: host_image
@@ -135,7 +135,7 @@
 # serialisation. The mode emits no serialisation, so the wrappers go with it or the output names
 # functions that were never emitted.
 # RUN: %dsdlc --target-language c --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/csvc 2>&1 | FileCheck %s --check-prefix=GEN
-# RUN: %dsdlc --target-language cpp --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/cppsvc 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --experimental-languages --aliasable-only %S/fixtures_aliasable_service_flat --outdir %t/cppsvc 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/csvc/fixtures_aliasable_service_flat/vendor/Probe_1_0.h | FileCheck %s --check-prefix=C_SVC_HAS
 # C_SVC_HAS: fixtures_aliasable_service_flat__vendor__Probe__Request__get_code_
 # RUN: cat %t/csvc/fixtures_aliasable_service_flat/vendor/Probe_1_0.h | FileCheck %s --check-prefix=C_SVC_NONE
@@ -156,7 +156,7 @@
 
 # A nested type in another namespace is a package import in Go, and Go refuses an import nothing
 # uses. An accessors-only file names no nested type, so it imports none.
-# RUN: %dsdlc --target-language go --aliasable-only %S/fixtures_aliasable_xns --outdir %t/goxns 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language go --experimental-languages --aliasable-only %S/fixtures_aliasable_xns --outdir %t/goxns 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/goxns/fixturesaliasablexns/outer/holder_1_0.go | FileCheck %s --check-prefix=GO_XNS
 # GO_XNS-NOT: fixturesaliasablexns/inner
 # GO_XNS: func HolderGetV(buffer []byte)

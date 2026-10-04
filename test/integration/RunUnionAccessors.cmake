@@ -39,7 +39,7 @@ set(legs "")
 # Generates the fixture for one target under the mode. ARGN holds the target's own options.
 function(_union_generate language out)
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} "${fixture_root}"
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages "${fixture_root}"
       --outdir "${out}" ${ARGN}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
@@ -74,7 +74,7 @@ endfunction()
 function(_union_leg language label)
   set(out "${OUT_DIR}/${language}")
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} "${fixture_root}"
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages "${fixture_root}"
       --outdir "${out}"
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout

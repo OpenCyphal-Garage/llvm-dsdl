@@ -134,7 +134,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language rust ${other_scheme_args}
+    "${DSDLC}" --target-language rust --experimental-languages ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --rust-profile "${RUST_PROFILE}"

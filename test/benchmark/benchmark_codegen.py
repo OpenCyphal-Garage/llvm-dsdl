@@ -37,14 +37,22 @@ class LanguageSpec:
 
 DEFAULT_LANGUAGE_SPECS: list[LanguageSpec] = [
     LanguageSpec("c", ["--target-language", "c"]),
-    LanguageSpec("cpp", ["--target-language", "cpp", "--cpp-profile", "both"]),
+    LanguageSpec("cpp", ["--experimental-languages", "--target-language", "cpp", "--cpp-profile", "both"]),
     LanguageSpec(
         "rust",
-        ["--target-language", "rust", "--rust-profile", "std", "--rust-crate-name", "civildrone_bench"],
+        [
+            "--experimental-languages",
+            "--target-language",
+            "rust",
+            "--rust-profile",
+            "std",
+            "--rust-crate-name",
+            "civildrone_bench",
+        ],
     ),
-    LanguageSpec("go", ["--target-language", "go", "--go-module", "civildrone/bench"]),
-    LanguageSpec("ts", ["--target-language", "ts", "--ts-module", "civildrone_bench_ts"]),
-    LanguageSpec("python", ["--target-language", "python", "--py-package", "civildrone_bench_py"]),
+    LanguageSpec("go", ["--experimental-languages", "--target-language", "go", "--go-module", "civildrone/bench"]),
+    LanguageSpec("ts", ["--experimental-languages", "--target-language", "ts", "--ts-module", "civildrone_bench_ts"]),
+    LanguageSpec("python", ["--experimental-languages", "--target-language", "python", "--py-package", "civildrone_bench_py"]),
 ]
 
 EXPERIMENT_LANGUAGE_SPECS: list[LanguageSpec] = [

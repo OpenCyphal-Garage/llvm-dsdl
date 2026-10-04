@@ -3,7 +3,7 @@
 #
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf '# Named in prose, std::memcpy( and std::vector< are not includes.\nuint8 value\n@sealed\n' > %t/dsdl/ns/Quiet.1.0.dsdl
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl/ns --outdir %t/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/dsdl/ns --outdir %t/cpp
 # RUN: cat %t/cpp/ns/Quiet_1_0.hpp | FileCheck %s
 #
 # CHECK:      #include <cstddef>

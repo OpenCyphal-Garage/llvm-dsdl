@@ -96,7 +96,7 @@ foreach(_pass versioned unversioned)
   # C++ -- one translation unit including every header, so two namespaces meet in one scope.
 
   llvmdsdl_run_or_fail("dsdlc C++ generation (${_pass})"
-    "${DSDLC}" --target-language cpp --cpp-profile std ${_scheme} ${_root_args} --outdir "${_out}/cpp")
+    "${DSDLC}" --target-language cpp --experimental-languages --cpp-profile std ${_scheme} ${_root_args} --outdir "${_out}/cpp")
   file(GLOB_RECURSE _cpp_headers RELATIVE "${_out}/cpp" "${_out}/cpp/*.hpp")
   set(_cpp_probe "")
   foreach(_header IN LISTS _cpp_headers)
@@ -116,7 +116,7 @@ foreach(_pass versioned unversioned)
 
   if(CARGO_EXECUTABLE AND NOT CARGO_EXECUTABLE MATCHES "NOTFOUND")
     llvmdsdl_run_or_fail("dsdlc Rust generation (${_pass})"
-      "${DSDLC}" --target-language rust ${_scheme} ${_root_args}
+      "${DSDLC}" --target-language rust --experimental-languages ${_scheme} ${_root_args}
                  --rust-crate-name naming_adversarial --outdir "${_out}/rust")
     foreach(_features "" "--no-default-features")
       llvmdsdl_run_or_fail("generated Rust check (${_pass} ${_features})"
@@ -132,7 +132,7 @@ foreach(_pass versioned unversioned)
 
   if(GO_EXECUTABLE AND NOT GO_EXECUTABLE MATCHES "NOTFOUND")
     llvmdsdl_run_or_fail("dsdlc Go generation (${_pass})"
-      "${DSDLC}" --target-language go ${_scheme} ${_root_args}
+      "${DSDLC}" --target-language go --experimental-languages ${_scheme} ${_root_args}
                  --go-module llvmdsdl/naming_adversarial --outdir "${_out}/go")
     llvmdsdl_run_or_fail("generated Go build (${_pass})"
       "${CMAKE_COMMAND}" -E env "GOFLAGS=-mod=mod" "GOCACHE=${_out}/go/.gocache"
@@ -151,7 +151,7 @@ foreach(_pass versioned unversioned)
 
   if(TSC_EXECUTABLE AND NOT TSC_EXECUTABLE MATCHES "NOTFOUND")
     llvmdsdl_run_or_fail("dsdlc TypeScript generation (${_pass})"
-      "${DSDLC}" --target-language ts ${_scheme} ${_root_args}
+      "${DSDLC}" --target-language ts --experimental-languages ${_scheme} ${_root_args}
                  --ts-module naming_adversarial --outdir "${_out}/ts")
     file(WRITE "${_out}/ts/tsconfig-adversarial.json"
 "{
@@ -179,7 +179,7 @@ foreach(_pass versioned unversioned)
   # replacing another does.
 
   llvmdsdl_run_or_fail("dsdlc Python generation (${_pass})"
-    "${DSDLC}" --target-language python ${_scheme} ${_root_args} --outdir "${_out}/py")
+    "${DSDLC}" --target-language python --experimental-languages ${_scheme} ${_root_args} --outdir "${_out}/py")
   llvmdsdl_run_or_fail("generated Python byte-compile (${_pass})"
     "${PYTHON_EXECUTABLE}" -m compileall -q "${_out}/py")
   llvmdsdl_run_or_fail("generated Python import (${_pass})"

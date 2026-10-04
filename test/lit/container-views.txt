@@ -154,7 +154,7 @@
 
 # C++ holds the view in the profile's span, which the Pose's accessors take as it is held; the other
 # languages hold it in their own slice. None names the Pose: no import of it.
-# RUN: %dsdlc --target-language cpp --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --experimental-languages --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/cpp/std/fixtures_views/vendor/Frame_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP:       #include <span>
 # CPP-NOT:   #include "fixtures_aliasable/vendor/Pose_1_0.hpp"
@@ -182,7 +182,7 @@
 # CPP_PMR_TRACK:     std::pmr::vector<std::span<const std::uint8_t>> _sized0_(
 # CPP_PMR_TRACK-NOT: set_memory_resource(effective_memory_resource);
 # The autosar profile holds the span its vocabulary binds, in its bounded vector for the trail.
-# RUN: %dsdlc --target-language cpp --cpp-profile autosar --vocabulary %S/../../examples/vocabulary/cpp-autosar-cetl.yaml --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile autosar --vocabulary %S/../../examples/vocabulary/cpp-autosar-cetl.yaml --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/cpp-autosar/fixtures_views/vendor/Track_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR_TRACK
 # CPP_AUTOSAR_TRACK:     #include "cetl/pf20/span.hpp"
 # CPP_AUTOSAR_TRACK:     std::array<cetl::pf20::span<const std::uint8_t>, 2U> pair{};
@@ -193,7 +193,7 @@
 # RUN: cat %t/cpp/*/fixtures_views/vendor/*.hpp %t/cpp-autosar/fixtures_views/vendor/*.hpp | FileCheck %s --check-prefix=CPP_NO_C_VIEW
 # CPP_NO_C_VIEW-NOT: dsdl_runtime_view_t
 # Rust borrows the buffer: the holder, its impls and its deserialise carry the lifetime.
-# RUN: %dsdlc --target-language rust --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language rust --experimental-languages --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_views/vendor/frame_1_0.rs | FileCheck %s --check-prefix=RUST
 # RUST-NOT: use crate::fixtures_aliasable::vendor::pose_1_0
 # RUST:     #[derive(Clone, Debug, Default, PartialEq)]
@@ -211,7 +211,7 @@
 # RUST_TRACK:     self.pair[{{.*}} as usize] = { let _len = core::cmp::min(
 # RUST_TRACK:     self.trail[{{.*}} as usize] = { let _len = core::cmp::min(
 # RUST_TRACK-NOT: pose_1_0
-# RUN: %dsdlc --target-language go --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language go --experimental-languages --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/go/fixturesviews/vendor/frame_1_0.go | FileCheck %s --check-prefix=GO
 # GO:      "bytes"
 # GO-NOT:  "slices"
@@ -234,7 +234,7 @@
 # GO_TRACK:      Trail {{ *}}[][]byte
 # GO_TRACK:      t.Pair[int({{.*}})] = buf[:dsdlruntime.ChooseMin(
 # GO_TRACK:      t.Trail[int({{.*}})] = buf2[:dsdlruntime.ChooseMin(
-# RUN: %dsdlc --target-language ts --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language ts --experimental-languages --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/ts/fixtures_views/vendor/frame_1_0.ts | FileCheck %s --check-prefix=TS
 # TS-NOT:  pose_1_0
 # TS:      pose: Uint8Array;
@@ -249,7 +249,7 @@
 # TS_TRACK-NEXT: trail: [],
 # TS_TRACK:      obj.trail = new Array<Uint8Array>(
 # TS_TRACK-NOT:  pose_1_0
-# RUN: %dsdlc --target-language python --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language python --experimental-languages --aliasable-views %S/fixtures_views -I %S/fixtures_aliasable --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/python/dsdl_gen/fixtures_views/vendor/frame_1_0.py | FileCheck %s --check-prefix=PY
 # PY-NOT:  pose_1_0 import
 # PY:      pose: memoryview = field(default_factory=lambda: memoryview(b""))

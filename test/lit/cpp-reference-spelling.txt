@@ -10,7 +10,7 @@
 # RUN: printf 'ns.a.Inner.1.0 inner\nns.a.Inner.1.0 Inner\n@sealed\n' > %t/ns/a/Captured.1.0.dsdl
 # RUN: printf 'ns.a.Inner.1.0[<=2] inner\n@sealed\n' > %t/ns/b/Far.1.0.dsdl
 # RUN: printf 'uint8 ns\nns.a.Inner.1.0 inner\n@sealed\n' > %t/ns/b/Shadowed.1.0.dsdl
-# RUN: %dsdlc --target-language cpp --cpp-profile pmr %t/ns --outdir %t/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile pmr %t/ns --outdir %t/cpp
 
 # RUN: FileCheck %s --check-prefix=NEAR < %t/cpp/ns/a/Near_1_0.hpp
 # NEAR: {{^ *}}Inner inner{};

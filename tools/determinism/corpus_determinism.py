@@ -134,7 +134,8 @@ def digest_of(files, exit_code):
 def language_runs(dsdl_root):
     """The languages matrix: one run per text backend over one DSDL root."""
     return [
-        {"id": lang, "command": ["--target-language", lang, dsdl_root, *extra], "stdout": False}
+        {"id": lang, "command": ["--experimental-languages", "--target-language", lang, dsdl_root, *extra],
+         "stdout": False}
         for lang, extra in LANGUAGE_TARGETS.items()
     ]
 
@@ -158,8 +159,8 @@ def oracle_runs(corpora):
     for corpus, (roots, corpus_args, analysis_lookup) in corpora.items():
         for target, (language, target_args, stdout) in ORACLE_TARGETS.items():
             lookup = analysis_lookup if language == "ast" else []
-            command = ["--target-language", language, *target_args, *corpus_args, *lookup, *roots,
-                       "--naming-manifest", NAMING_MANIFEST]
+            command = ["--experimental-languages", "--target-language", language, *target_args, *corpus_args,
+                       *lookup, *roots, "--naming-manifest", NAMING_MANIFEST]
             runs.append({"id": f"{corpus}/{target}", "command": command, "stdout": stdout})
     return runs
 

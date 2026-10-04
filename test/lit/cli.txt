@@ -5,14 +5,14 @@
 # RUN: not %dsdlc --target-language ast --unknown %S/fixtures 2>&1 | FileCheck %s --check-prefix=UNKNOWN_ARG
 # RUN: not %dsdlc --target-language ast --no-target-namespaces %S/fixtures 2>&1 | FileCheck %s --check-prefix=NO_TARGET_NAMESPACES
 # RUN: not %dsdlc --target-language ast %S/does-not-exist 2>&1 | FileCheck %s --check-prefix=BAD_TARGET
-# RUN: not %dsdlc --target-language cpp --cpp-profile not-a-profile %S/fixtures --outdir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
+# RUN: not %dsdlc --target-language cpp --experimental-languages --cpp-profile not-a-profile %S/fixtures --outdir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc --target-language c --py-package bad %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_PY
 # RUN: not %dsdlc --target-language ast -MD %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_MD
 # RUN: %dsdlc --target-language ast --jobs 2 %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: %dsdlc --target-language ast -j 2 %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 # RUN: %dsdlc --target-language obj --outdir %t.obj %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ
 
-# RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
+# RUN: not %dsdlc --target-language cpp --experimental-languages --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
 # RUN: %dsdlc --target-language ast %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
 # HELP-DAG: SYNOPSIS

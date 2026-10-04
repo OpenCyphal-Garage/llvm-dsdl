@@ -23,7 +23,7 @@
 # C_SERVICE-NOT: fixtures_unregulated__PortedCall__Request_HAS_FIXED_PORT_ID_
 # C_SERVICE-NOT: fixtures_unregulated__PortedCall__Response_HAS_FIXED_PORT_ID_
 
-# RUN: %dsdlc --target-language cpp --cpp-profile std --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/cpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/cpp
 # RUN: cat %t/cpp/fixtures_unregulated/Unregulated_1_0.hpp | FileCheck %s --check-prefix=CPP_MESSAGE
 # RUN: cat %t/cpp/fixtures_unregulated/PortedCall_1_0.hpp | FileCheck %s --check-prefix=CPP_SERVICE
 
@@ -38,7 +38,7 @@
 # CPP_SERVICE: struct Request {
 # CPP_SERVICE-NOT: FIXED_PORT_ID
 
-# RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/go
+# RUN: %dsdlc --target-language go --experimental-languages --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/go
 # RUN: cat %t/go/fixturesunregulated/unregulated_1_0.go | FileCheck %s --check-prefix=GO_MESSAGE
 # RUN: cat %t/go/fixturesunregulated/ported_call_1_0.go | FileCheck %s --check-prefix=GO_SERVICE
 
@@ -48,7 +48,7 @@
 # GO_SERVICE: const PortedCallHasFixedPortID = true
 # GO_SERVICE: const PortedCallFixedPortID = 200
 
-# RUN: %dsdlc --target-language rust --rust-crate-name ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/rust
+# RUN: %dsdlc --target-language rust --experimental-languages --rust-crate-name ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/rust
 # RUN: cat %t/rust/src/fixtures_unregulated/unregulated_1_0.rs | FileCheck %s --check-prefix=RUST_MESSAGE
 # RUN: cat %t/rust/src/fixtures_unregulated/ported_call_1_0.rs | FileCheck %s --check-prefix=RUST_SERVICE
 
@@ -61,7 +61,7 @@
 # Python declares a message's pair on its class, and a service's beside its sections' classes,
 # named after the service, as Rust does. TypeScript does the same with the type's `const`.
 
-# RUN: %dsdlc --target-language python --py-package ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/py
+# RUN: %dsdlc --target-language python --experimental-languages --py-package ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/py
 # RUN: cat %t/py/ported/fixtures_unregulated/unregulated_1_0.py | FileCheck %s --check-prefix=PY_MESSAGE
 # RUN: cat %t/py/ported/fixtures_unregulated/ported_call_1_0.py | FileCheck %s --check-prefix=PY_SERVICE
 
@@ -71,7 +71,7 @@
 # PY_SERVICE: PORTED_CALL_HAS_FIXED_PORT_ID = True
 # PY_SERVICE: PORTED_CALL_FIXED_PORT_ID = 200
 
-# RUN: %dsdlc --target-language ts --ts-module ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/ts
+# RUN: %dsdlc --target-language ts --experimental-languages --ts-module ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/ts
 # RUN: cat %t/ts/fixtures_unregulated/unregulated_1_0.ts | FileCheck %s --check-prefix=TS_MESSAGE
 # RUN: cat %t/ts/fixtures_unregulated/ported_call_1_0.ts | FileCheck %s --check-prefix=TS_SERVICE
 
@@ -84,5 +84,5 @@
 # The manifest reports the port-ID too, so a build integration can route a transfer without reading
 # generated source. A service reports the service's, once, rather than one per section.
 
-# RUN: %dsdlc --target-language go --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/mani --naming-manifest %t/names.json
+# RUN: %dsdlc --target-language go --experimental-languages --go-module demo/ported --allow-unregulated-fixed-port-id %S/fixtures_unregulated --outdir %t/mani --naming-manifest %t/names.json
 # RUN: %{python} %S/check_port_id_manifest.py %t/names.json

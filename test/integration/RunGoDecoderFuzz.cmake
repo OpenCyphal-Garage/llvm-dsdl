@@ -42,7 +42,7 @@ llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "unversione
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go ${other_scheme_args}
+    "${DSDLC}" --target-language go --experimental-languages ${other_scheme_args}
       "${UAVCAN_ROOT}"
       --outdir "${OUT_DIR}"
       --go-module "uavcan_dsdl_generated"

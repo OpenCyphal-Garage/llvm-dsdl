@@ -17,15 +17,15 @@
 # PLAIN-NOT: type name collision
 
 # The versioned name keeps the plain pair apart, and meets the namespace that carries the version.
-# RUN: %dsdlc --target-language cpp --cpp-profile std --versioned-type-names %t/plain/ns --outdir %t/plaincpp
-# RUN: not %dsdlc --target-language cpp --cpp-profile std --versioned-type-names %t/versioned/ns --outdir %t/vcpp 2>&1 | FileCheck %s --check-prefix=VERSIONED
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std --versioned-type-names %t/plain/ns --outdir %t/plaincpp
+# RUN: not %dsdlc --target-language cpp --experimental-languages --cpp-profile std --versioned-type-names %t/versioned/ns --outdir %t/vcpp 2>&1 | FileCheck %s --check-prefix=VERSIONED
 # VERSIONED: error: type name collision in generated output: 'ns.Foo' and namespace 'ns.Foo_1_0', which holds 'ns.Foo_1_0.X', both emit 'Foo_1_0' for target language 'cpp'; rename one of them
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/versioned/ns --outdir %t/unversionedcpp
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/versioned/ns --outdir %t/unversionedcpp
 
 # A service is a type of the namespace too.
-# RUN: not %dsdlc --target-language cpp --cpp-profile std %t/svc/ns --outdir %t/svccpp 2>&1 | FileCheck %s --check-prefix=SVC
+# RUN: not %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/svc/ns --outdir %t/svccpp 2>&1 | FileCheck %s --check-prefix=SVC
 # SVC: error: type name collision in generated output: 'ns.Svc' and namespace 'ns.Svc', which holds 'ns.Svc.X', both emit 'Svc' for target language 'cpp'
 
 # Go puts a namespace in a package of its own, and C flattens it into the type name.
-# RUN: %dsdlc --target-language go --go-module m %t/plain/ns --outdir %t/go
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m %t/plain/ns --outdir %t/go
 # RUN: %dsdlc --target-language c %t/plain/ns --outdir %t/c

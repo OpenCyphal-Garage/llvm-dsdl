@@ -50,23 +50,23 @@
 # C_NONE-NOT: __get_
 
 # Each language names the tag's accessor after its own tag member.
-# RUN: %dsdlc --target-language cpp %S/fixtures_union --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language cpp --experimental-languages %S/fixtures_union --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/cpp/std/fixtures_union/vendor/Choice_1_0.hpp | FileCheck %s --check-prefix=CPP
 # CPP: static std::uint8_t get_tag_(const std::span<const std::uint8_t> buffer)
 # CPP: static float get_real(
-# RUN: %dsdlc --target-language rust %S/fixtures_union --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language rust --experimental-languages %S/fixtures_union --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/rust/src/fixtures_union/vendor/choice_1_0.rs | FileCheck %s --check-prefix=RUST
 # RUST: pub fn get_tag_(buffer: &[u8]) -> u8 {
 # RUST: pub fn get_quad(buffer: &[u8]) -> &[u8] {
-# RUN: %dsdlc --target-language go %S/fixtures_union --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language go --experimental-languages %S/fixtures_union --outdir %t/go 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/go/fixturesunion/vendor/choice_1_0.go | FileCheck %s --check-prefix=GO
 # GO: func ChoiceGetTag(buffer []byte) uint8 {
 # GO: func ChoiceGetReal(buffer []byte) float32 {
-# RUN: %dsdlc --target-language ts %S/fixtures_union --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_union --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/ts/fixtures_union/vendor/choice_1_0.ts | FileCheck %s --check-prefix=TS
 # TS: {{^}}  getTag(buffer: Uint8Array): number {
 # TS: {{^}}  getReal(buffer: Uint8Array): number {
-# RUN: %dsdlc --target-language python %S/fixtures_union --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures_union --outdir %t/python 2>&1 | FileCheck %s --check-prefix=GEN
 # RUN: cat %t/python/dsdl_gen/fixtures_union/vendor/choice_1_0.py | FileCheck %s --check-prefix=PY
 # PY: def get_tag_(buffer: memoryview) -> int:
 # PY: def get_real(buffer: memoryview) -> float:

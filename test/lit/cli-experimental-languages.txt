@@ -1,0 +1,33 @@
+# An experimental language generates only with --experimental-languages, under any of its three
+# spellings. The refusal writes nothing.
+
+# RUN: not %dsdlc --target-language cpp --outdir %t.cpp %S/fixtures 2>&1 | FileCheck %s --check-prefix=REFUSED -DLANG=cpp
+# RUN: not %dsdlc --target-language rust --outdir %t.rust %S/fixtures 2>&1 | FileCheck %s --check-prefix=REFUSED -DLANG=rust
+# RUN: not %dsdlc --target-language go --outdir %t.go %S/fixtures 2>&1 | FileCheck %s --check-prefix=REFUSED -DLANG=go
+# RUN: not %dsdlc --target-language ts --outdir %t.ts %S/fixtures 2>&1 | FileCheck %s --check-prefix=REFUSED -DLANG=ts
+# RUN: not %dsdlc --target-language python --outdir %t.python %S/fixtures 2>&1 | FileCheck %s --check-prefix=REFUSED -DLANG=python
+# RUN: test ! -e %t.cpp && test ! -e %t.rust && test ! -e %t.go && test ! -e %t.ts && test ! -e %t.python
+
+# RUN: %dsdlc --target-language cpp --experimental-languages --list-outputs --outdir %t.long %S/fixtures 2>/dev/null | FileCheck %s --check-prefix=LISTED
+# RUN: %dsdlc --include-experimental-languages --target-language cpp --list-outputs --outdir %t.include %S/fixtures 2>/dev/null | FileCheck %s --check-prefix=LISTED
+# RUN: %dsdlc -Xlang -l cpp --list-outputs --outdir %t.short %S/fixtures 2>/dev/null | FileCheck %s --check-prefix=LISTED
+
+# The flag permits; it does not require. C and the dumps accept it and run as without it.
+# RUN: %dsdlc --target-language c --experimental-languages --list-outputs --outdir %t.c %S/fixtures 2>/dev/null | FileCheck %s --check-prefix=LISTED_C
+# RUN: %dsdlc --target-language ast --experimental-languages %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
+
+# RUN: %dsdlc --help | FileCheck %s --check-prefix=HELP
+
+# REFUSED: --target-language '[[LANG]]' is experimental; pass --experimental-languages to generate it
+# REFUSED-NOT: files generated
+
+# LISTED: Widget_1_0.hpp
+
+# LISTED_C: Widget_1_0.h
+
+# SUMMARY: command: ast
+
+# HELP: LANGUAGES
+# HELP: Experimental, generated only with --experimental-languages:
+# HELP-NEXT: cpp | rust | go | ts | python
+# HELP: --experimental-languages, --include-experimental-languages, -Xlang

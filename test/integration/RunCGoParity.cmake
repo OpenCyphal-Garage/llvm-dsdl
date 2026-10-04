@@ -111,7 +111,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go ${other_scheme_args}
+    "${DSDLC}" --target-language go --experimental-languages ${other_scheme_args}
       "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --outdir "${go_out}"

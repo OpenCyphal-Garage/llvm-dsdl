@@ -42,7 +42,7 @@ set(legs "")
 # Generates the fixture for one target under the mode. ARGN holds the target's own options.
 function(_views_generate language out)
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} --aliasable-views "${fixture_root}" -I "${fixture_include}"
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages --aliasable-views "${fixture_root}" -I "${fixture_include}"
       --outdir "${out}" ${ARGN}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
@@ -77,7 +77,7 @@ endfunction()
 function(_views_leg language label)
   set(out "${OUT_DIR}/${language}")
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} --aliasable-views "${fixture_root}" -I "${fixture_include}"
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages --aliasable-views "${fixture_root}" -I "${fixture_include}"
       --outdir "${out}"
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout

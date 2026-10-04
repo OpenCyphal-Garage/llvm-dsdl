@@ -33,7 +33,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp --all-type-versions
+    "${DSDLC}" --target-language cpp --experimental-languages --all-type-versions
       "${UAVCAN_ROOT}"
       --cpp-profile both
       --outdir "${OUT_DIR}"
@@ -49,7 +49,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language cpp --all-type-versions
+    "${DSDLC}" --target-language cpp --experimental-languages --all-type-versions
       "${UAVCAN_ROOT}"
       --cpp-profile autosar
       --vocabulary "${CETL_VOCABULARY}"

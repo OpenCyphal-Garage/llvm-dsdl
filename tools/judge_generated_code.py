@@ -74,7 +74,8 @@ def run(command: list[str], cwd: Path | None = None, env: dict[str, str] | None 
 
 def generate(dsdlc: Path, language: str, corpus: Path, outdir: Path, module: str) -> None:
     """Generate @p language for @p corpus into @p outdir, or exit reporting why it could not."""
-    command = [str(dsdlc), "--target-language", language, str(corpus), "--outdir", str(outdir)]
+    command = [str(dsdlc), "--experimental-languages", "--target-language", language, str(corpus),
+               "--outdir", str(outdir)]
     if language == "go":
         command += ["--go-module", module]
     elif language == "ts":

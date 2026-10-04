@@ -13,29 +13,29 @@
 # ALL: error: type name collision in generated output: ns.File.1.0 and namespace ns.file_1_0, which holds ns.file_1_0.X, map to the same module name for target languages 'rust', 'ts', 'python'
 # ALL-NOT: type name collision
 
-# RUN: not %dsdlc --target-language rust %t/dsdl/ns --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=RUST
+# RUN: not %dsdlc --target-language rust --experimental-languages %t/dsdl/ns --outdir %t/rust 2>&1 | FileCheck %s --check-prefix=RUST
 # RUST: map to the same module name for target language 'rust'
-# RUN: not %dsdlc --target-language python %t/dsdl/ns --outdir %t/py 2>&1 | FileCheck %s --check-prefix=PY
+# RUN: not %dsdlc --target-language python --experimental-languages %t/dsdl/ns --outdir %t/py 2>&1 | FileCheck %s --check-prefix=PY
 # PY: map to the same module name for target language 'python'
-# RUN: not %dsdlc --target-language ts %t/dsdl/ns --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=TS
+# RUN: not %dsdlc --target-language ts --experimental-languages %t/dsdl/ns --outdir %t/ts 2>&1 | FileCheck %s --check-prefix=TS
 # TS: map to the same module name for target language 'ts'
 
 # RUN: %dsdlc --target-language c %t/dsdl/ns --outdir %t/c
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl/ns --outdir %t/cpp
-# RUN: %dsdlc --target-language go --go-module m %t/dsdl/ns --outdir %t/go
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/dsdl/ns --outdir %t/cpp
+# RUN: %dsdlc --target-language go --experimental-languages --go-module m %t/dsdl/ns --outdir %t/go
 
 # The namespace need not hold the definition directly: a deeper one reaches the directory as well.
 # RUN: rm -rf %t/deep && mkdir -p %t/deep/ns/file_1_0/inner
 # RUN: printf 'uint8 a\n@sealed\n' > %t/deep/ns/File.1.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/deep/ns/file_1_0/inner/Y.1.0.dsdl
-# RUN: not %dsdlc --target-language rust %t/deep/ns --outdir %t/deepout 2>&1 | FileCheck %s --check-prefix=DEEP
+# RUN: not %dsdlc --target-language rust --experimental-languages %t/deep/ns --outdir %t/deepout 2>&1 | FileCheck %s --check-prefix=DEEP
 # DEEP: ns.File.1.0 and namespace ns.file_1_0, which holds ns.file_1_0.inner.Y, map to the same module name
 
 # Another version of the definition has another file name, and generates.
 # RUN: rm -rf %t/other && mkdir -p %t/other/ns/file_1_0
 # RUN: printf 'uint8 a\n@sealed\n' > %t/other/ns/File.2.0.dsdl
 # RUN: printf 'uint8 b\n@sealed\n' > %t/other/ns/file_1_0/X.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/other/ns --outdir %t/otherout
+# RUN: %dsdlc --target-language rust --experimental-languages %t/other/ns --outdir %t/otherout
 # RUN: cat %t/otherout/src/ns/mod.rs | FileCheck %s --check-prefix=OTHER
 # OTHER-DAG: pub mod file_1_0;
 # OTHER-DAG: pub mod file_2_0;

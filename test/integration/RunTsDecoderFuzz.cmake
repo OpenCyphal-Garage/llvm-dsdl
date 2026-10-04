@@ -45,7 +45,7 @@ llvmdsdl_harness_naming_scheme(C_DEFAULT "unversioned" OTHER_DEFAULT "versioned"
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language ts ${other_scheme_args}
+    "${DSDLC}" --target-language ts --experimental-languages ${other_scheme_args}
       "${dsdl_root}"
       --outdir "${ts_out}"
       --ts-module dsdlgen

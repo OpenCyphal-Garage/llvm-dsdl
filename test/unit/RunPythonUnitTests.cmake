@@ -28,7 +28,7 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 function(generate_python_package out_dir package specialization)
   execute_process(
-    COMMAND "${DSDLC}" --target-language python
+    COMMAND "${DSDLC}" --target-language python --experimental-languages
       # The harness below is written against versioned type names.
       --versioned-type-names
       "${FIXTURES_ROOT}"

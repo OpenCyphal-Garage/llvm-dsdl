@@ -24,7 +24,7 @@ dsdlc_generate(lanyard
   LANGUAGE   cpp
   NAMESPACE  "${CMAKE_CURRENT_SOURCE_DIR}/dsdl/lanyard"
   VOCABULARY "${CMAKE_CURRENT_SOURCE_DIR}/vocabulary.yaml"
-  OPTIONS    --cpp-profile autosar)
+  OPTIONS    --experimental-languages --cpp-profile autosar)
 
 add_executable(roundtrip src/cpp/roundtrip.cpp)
 target_compile_features(roundtrip PRIVATE cxx_std_14)

@@ -7,7 +7,7 @@
 # RUN: printf 'uint8[33] over\nuint64 stamp\n@sealed\n' > %t/dsdl/ns/Wider.1.0.dsdl
 # RUN: printf 'uint8[<=4] items\n@sealed\n' > %t/dsdl/ns/Listed.1.0.dsdl
 # RUN: printf 'ns.Wide.1.0 wide\nuint16 count\n@sealed\n' > %t/dsdl/ns/Holder.1.0.dsdl
-# RUN: %dsdlc --target-language rust %t/dsdl/ns --rust-crate-name m --outdir %t/rust
+# RUN: %dsdlc --target-language rust --experimental-languages %t/dsdl/ns --rust-crate-name m --outdir %t/rust
 
 # The results of an `scf.if` are declared as its value, and each arm ends with what it yields.
 # RUN: cat %t/rust/src/ns/holder_1_0.rs | FileCheck %s --check-prefix=VALUED

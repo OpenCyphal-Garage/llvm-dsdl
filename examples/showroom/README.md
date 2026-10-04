@@ -30,11 +30,11 @@ Output lands in `<build-dir>/showroom/<variant>/`:
 | Variant | Command |
 |---|---|
 | `c` | `--target-language c` |
-| `cpp-std`, `cpp-pmr`, `cpp-autosar` | `--target-language cpp --cpp-profile <profile>` |
-| `rust-std`, `rust-no-std-alloc` | `--target-language rust --rust-profile <profile>` |
-| `go` | `--target-language go` |
-| `ts` | `--target-language ts` |
-| `python` | `--target-language python` |
+| `cpp-std`, `cpp-pmr`, `cpp-autosar` | `--target-language cpp --experimental-languages --cpp-profile <profile>` |
+| `rust-std`, `rust-no-std-alloc` | `--target-language rust --experimental-languages --rust-profile <profile>` |
+| `go` | `--target-language go --experimental-languages` |
+| `ts` | `--target-language ts --experimental-languages` |
+| `python` | `--target-language python --experimental-languages` |
 | `mlir` | `--target-language mlir` (the intermediate form, one file) |
 
 Nothing here is compiled -- correctness of the generated code is what `test/lit` and the integration

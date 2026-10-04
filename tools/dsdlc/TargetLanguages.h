@@ -13,6 +13,9 @@
 /// One table, read by the usage line, the help text, and the predicates that decide what a value
 /// means. Adding a lane is one row; nothing else in the tool spells the set out.
 ///
+/// A row marked experimental generates only when the run passes `--experimental-languages`. The mark
+/// is a statement about maturity made by the command line; nothing below the tool reads it.
+///
 /// This is CLI vocabulary and stays in the tool. A value names the language it generates, whose row
 /// in `llvmdsdl/Support/LanguageTraits.h` holds everything the tool needs to know about it; `ast`
 /// and `mlir` generate none, and `obj` generates C as objects. The unit tests hold this table
@@ -62,6 +65,9 @@ struct TargetLanguage final
 
     /// @brief The language the value generates, where it generates one.
     std::optional<Language> language;
+
+    /// @brief Whether the value is refused unless the run passes `--experimental-languages`.
+    bool experimental;
 };
 
 /// @brief Every accepted `--target-language` value, in the order the help text lists them.
@@ -69,27 +75,33 @@ struct TargetLanguage final
 [[nodiscard]] inline llvm::ArrayRef<TargetLanguage> allTargetLanguages()
 {
     static constexpr std::array<TargetLanguage, 9> kAll{{
-        {"ast", TargetLanguageKind::Dump, false, std::nullopt},
-        {"mlir", TargetLanguageKind::Dump, false, std::nullopt},
-        {"c", TargetLanguageKind::Codegen, true, Language::C},
-        {"cpp", TargetLanguageKind::Codegen, true, Language::Cpp},
-        {"rust", TargetLanguageKind::Codegen, true, Language::Rust},
-        {"go", TargetLanguageKind::Codegen, true, Language::Go},
-        {"ts", TargetLanguageKind::Codegen, true, Language::TypeScript},
-        {"python", TargetLanguageKind::Codegen, true, Language::Python},
-        {"obj", TargetLanguageKind::Codegen, false, Language::C},
+        {"ast", TargetLanguageKind::Dump, false, std::nullopt, false},
+        {"mlir", TargetLanguageKind::Dump, false, std::nullopt, false},
+        {"c", TargetLanguageKind::Codegen, true, Language::C, false},
+        {"cpp", TargetLanguageKind::Codegen, true, Language::Cpp, true},
+        {"rust", TargetLanguageKind::Codegen, true, Language::Rust, true},
+        {"go", TargetLanguageKind::Codegen, true, Language::Go, true},
+        {"ts", TargetLanguageKind::Codegen, true, Language::TypeScript, true},
+        {"python", TargetLanguageKind::Codegen, true, Language::Python, true},
+        {"obj", TargetLanguageKind::Codegen, false, Language::C, false},
     }};
     return kAll;
 }
 
 /// @brief The table's names joined for display.
 /// @param[in] separator Text placed between names.
+/// @param[in] experimentalOnly List only the rows marked experimental.
 /// @return The joined list.
-[[nodiscard]] inline std::string renderTargetLanguages(const llvm::StringRef separator)
+[[nodiscard]] inline std::string renderTargetLanguages(const llvm::StringRef separator,
+                                                       const bool            experimentalOnly = false)
 {
     std::string rendered;
     for (const auto& entry : allTargetLanguages())
     {
+        if (experimentalOnly && !entry.experimental)
+        {
+            continue;
+        }
         if (!rendered.empty())
         {
             rendered.append(separator.data(), separator.size());
@@ -124,6 +136,15 @@ struct TargetLanguage final
 {
     const auto* const entry = findTargetLanguage(language);
     return (entry != nullptr) && entry->kind == TargetLanguageKind::Codegen;
+}
+
+/// @brief Whether @p language generates only when the run passes `--experimental-languages`.
+/// @param[in] language Value as typed on the command line.
+/// @return True for the rows marked experimental.
+[[nodiscard]] inline bool isExperimentalLanguage(const llvm::StringRef language)
+{
+    const auto* const entry = findTargetLanguage(language);
+    return (entry != nullptr) && entry->experimental;
 }
 
 /// @brief Whether @p language writes a source tree the caller then builds.

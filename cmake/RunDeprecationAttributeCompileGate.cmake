@@ -197,10 +197,10 @@ endforeach()
 # C++
 
 llvmdsdl_run_or_fail("dsdlc C++ generation"
-  "${DSDLC}" --target-language cpp --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
+  "${DSDLC}" --target-language cpp --experimental-languages --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std --outdir "${WORK_DIR}/cpp")
 
 llvmdsdl_run_or_fail("dsdlc C++ generation with --no-deprecation-attributes"
-  "${DSDLC}" --target-language cpp --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std
+  "${DSDLC}" --target-language cpp --experimental-languages --all-type-versions "${UAVCAN_ROOT}" --cpp-profile std
              --no-deprecation-attributes --outdir "${WORK_DIR}/cpp-noattr")
 
 file(WRITE "${WORK_DIR}/cpp_include_probe.cpp"
@@ -261,11 +261,11 @@ endforeach()
 # unavailable rather than failing the gate.
 
 llvmdsdl_run_or_fail("dsdlc Rust generation"
-  "${DSDLC}" --target-language rust --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
+  "${DSDLC}" --target-language rust --experimental-languages --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
              --rust-crate-name deprecation_gate --outdir "${WORK_DIR}/rust")
 
 llvmdsdl_run_or_fail("dsdlc Rust generation with --no-deprecation-attributes"
-  "${DSDLC}" --target-language rust --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
+  "${DSDLC}" --target-language rust --experimental-languages --all-type-versions "${UAVCAN_ROOT}" --rust-profile std
              --rust-crate-name deprecation_gate --no-deprecation-attributes --outdir "${WORK_DIR}/rust-noattr")
 
 # User code naming a deprecated type: the section alias, and the service alias. Each is compiled

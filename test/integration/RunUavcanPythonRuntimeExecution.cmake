@@ -28,7 +28,7 @@ if(NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
 endif()
 
 set(dsdlc_args
-  --target-language python
+  --target-language python --experimental-languages
   # The harness below is written against versioned type names.
   --versioned-type-names
   "${UAVCAN_ROOT}"

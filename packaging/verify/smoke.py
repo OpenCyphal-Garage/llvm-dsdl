@@ -93,7 +93,7 @@ if dsdlc -l c -I ns -O gen_c ns/demo/Widget.1.0.dsdl >/dev/null 2>&1; then
 else
   echo "c_emit=no"
 fi
-if dsdlc -l go -I ns -O gen_go ns/demo/Widget.1.0.dsdl >/dev/null 2>&1; then
+if dsdlc -l go --experimental-languages -I ns -O gen_go ns/demo/Widget.1.0.dsdl >/dev/null 2>&1; then
   echo "go_emit=yes"
 else
   echo "go_emit=no"

@@ -42,7 +42,7 @@ file(WRITE "${dsdl_root}/wid/Holder.1.0.dsdl" "wire.wid.Inner.1.0 inner\nuint8 t
 
 function(dsdlc_generate language extra_args out_dir)
   execute_process(
-    COMMAND "${DSDLC}" --target-language "${language}" "${dsdl_root}" --outdir "${out_dir}" ${extra_args}
+    COMMAND "${DSDLC}" --target-language "${language}" --experimental-languages "${dsdl_root}" --outdir "${out_dir}" ${extra_args}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
     ERROR_VARIABLE gen_stderr

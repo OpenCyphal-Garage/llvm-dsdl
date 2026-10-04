@@ -3,7 +3,7 @@
 # named as no fact keeps its spelling.
 
 # RUN: rm -rf %t && mkdir -p %t
-# RUN: %dsdlc --target-language ts %S/fixtures_type_facts --outdir %t/ts > /dev/null
+# RUN: %dsdlc --target-language ts --experimental-languages %S/fixtures_type_facts --outdir %t/ts > /dev/null
 # RUN: cat %t/ts/fixtures_type_facts/ns/msg_1_0.ts | FileCheck %s --check-prefix=TS
 # TS:      WIRE_FLAT: true,
 # TS:      WIRE_FLAT_: 1,
@@ -14,7 +14,7 @@
 # TS_SERVICE: WIRE_FLAT: true,
 # TS_SERVICE: WIRE_FLAT_: 3,
 
-# RUN: %dsdlc --target-language python %S/fixtures_type_facts --outdir %t/py > /dev/null
+# RUN: %dsdlc --target-language python --experimental-languages %S/fixtures_type_facts --outdir %t/py > /dev/null
 # RUN: cat %t/py/*/fixtures_type_facts/ns/msg_1_0.py | FileCheck %s --check-prefix=PY
 # PY:      WIRE_FLAT: ClassVar[bool] = True
 # PY:      WIRE_FLAT_: ClassVar[int] = 1

@@ -5,7 +5,7 @@
 # RUN: rm -rf %t && mkdir -p %t/dsdl/ns
 # RUN: printf 'uint8 a\n@sealed\n' > %t/dsdl/ns/Inner.1.0.dsdl
 # RUN: printf '# %%s\nns.Inner.1.0[<=3] a_member_whose_name_runs_long_enough_to_push_its_statements_past_the_width\n@sealed\n' "A documentation line that the author wrote wider than the output keeps a line, which breaks between its words where it passes the width." > %t/dsdl/ns/Holder.1.0.dsdl
-# RUN: %dsdlc --target-language python %t/dsdl/ns --outdir %t/py
+# RUN: %dsdlc --target-language python --experimental-languages %t/dsdl/ns --outdir %t/py
 # RUN: FileCheck %s --check-prefix=PYPROJECT < %t/py/pyproject.toml
 # RUN: FileCheck %s --check-prefix=BROKEN < %t/py/dsdl_gen/ns/holder_1_0.py
 # RUN: %{python} -m py_compile %t/py/dsdl_gen/ns/holder_1_0.py

@@ -87,7 +87,7 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" --target-language go ${other_scheme_args}
+    "${DSDLC}" --target-language go --experimental-languages ${other_scheme_args}
       "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --go-module "signed_narrow_generated"

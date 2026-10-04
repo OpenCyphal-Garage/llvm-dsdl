@@ -9,7 +9,7 @@
 # RUN: printf 'uint8 LIMIT = 7\nuint8 value\n@sealed\n' > %t/dsdl/ns/LIMIT.1.0.dsdl
 # RUN: printf 'uint8 Request\n@sealed\n---\nuint8 Response\n@sealed\n' > %t/dsdl/ns/Pair.1.0.dsdl
 
-# RUN: %dsdlc --target-language cpp --cpp-profile std %t/dsdl --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=NOTES
+# RUN: %dsdlc --target-language cpp --experimental-languages --cpp-profile std %t/dsdl --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=NOTES
 # NOTES-DAG: note: field 'Foo' is emitted as 'Foo_' for target language 'cpp'; the type that holds it is named 'Foo'
 # NOTES-DAG: note: field 'Foo_' is emitted as 'Foo_2' for target language 'cpp'; another name in the same scope already takes 'Foo_'
 # NOTES-DAG: note: constant 'LIMIT' is emitted as 'LIMIT_' for target language 'cpp'; the type that holds it is named 'LIMIT'
@@ -39,6 +39,6 @@
 # RUN: %cxx -std=c++20 -Wall -Wextra -Werror -fsyntax-only -I %t/cpp %t/probe.cpp
 
 # Go keeps the name.
-# RUN: %dsdlc --target-language go %t/dsdl --go-module demo/self --outdir %t/go
+# RUN: %dsdlc --target-language go --experimental-languages %t/dsdl --go-module demo/self --outdir %t/go
 # RUN: FileCheck %s --check-prefix=GO < %t/go/dsdl/ns/foo_1_0.go
 # GO: Foo uint8

@@ -53,7 +53,7 @@ set(legs "")
 # Generates the fixture for one target in accessors-only mode. ARGN holds the target's own options.
 function(_aliasable_only_generate language out_dir)
   execute_process(
-    COMMAND "${DSDLC}" --target-language ${language} --aliasable-only ${fixture_roots} --outdir "${out_dir}" ${ARGN}
+    COMMAND "${DSDLC}" --target-language ${language} --experimental-languages --aliasable-only ${fixture_roots} --outdir "${out_dir}" ${ARGN}
     RESULT_VARIABLE gen_result
     OUTPUT_VARIABLE gen_stdout
     ERROR_VARIABLE gen_stderr
