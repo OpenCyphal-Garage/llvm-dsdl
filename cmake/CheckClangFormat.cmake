@@ -55,7 +55,7 @@ foreach(_file IN LISTS _llvmdsdl_format_files)
   if(_file MATCHES "^${_llvmdsdl_source_dir_regex}/examples/")
     continue()
   endif()
-  # A golden is dsdlc output compared byte for byte; formatting it would change what it holds.
+  # A golden is compared byte for byte with dsdlc output; formatting it would change what it holds.
   if(_file MATCHES "^${_llvmdsdl_source_dir_regex}/test/lit/golden/")
     continue()
   endif()
