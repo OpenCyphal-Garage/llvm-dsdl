@@ -1,0 +1,7 @@
+# Two fields of one narrow width, a variable-length array and a float.
+
+saturated uint7 low
+saturated uint7 high
+saturated uint16[<=8] samples
+float32 ratio
+@sealed
