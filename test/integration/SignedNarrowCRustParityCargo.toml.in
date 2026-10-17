@@ -1,7 +1,0 @@
-[package]
-name = "llvmdsdl_signed_narrow_c_rust_parity"
-version = "@LLVMDSDL_TOOL_VERSION@"
-edition = "2021"
-
-[dependencies]
-signed_narrow_generated = { path = "@RUST_OUT@"@RUST_DEP_FEATURES@ }

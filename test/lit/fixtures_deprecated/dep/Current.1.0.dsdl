@@ -1,5 +1,0 @@
-# A supported message that is not deprecated.
-
-uint16 value
-
-@sealed

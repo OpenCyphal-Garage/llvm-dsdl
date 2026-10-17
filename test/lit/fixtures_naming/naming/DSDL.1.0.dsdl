@@ -1,8 +1,0 @@
-# A type whose constants are named as its facts, which a Python class and a TypeScript type's
-# `const` hold beside them, so the DSDL constants below move past the facts' names.
-uint8 FULL_NAME = 1
-uint8 HAS_FIXED_PORT_ID = 2
-uint8 FIXED_PORT_ID = 3
-uint8 VERSION_MAJOR = 4
-uint8 value
-@sealed

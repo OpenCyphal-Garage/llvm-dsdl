@@ -1,3 +1,0 @@
-# Neither asserted nor nested by a type that asserts, and not flat either: the refusal names the field.
-uint2 value
-@sealed
