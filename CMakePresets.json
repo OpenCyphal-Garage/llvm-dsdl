@@ -31,7 +31,7 @@
     {
       "name": "dev-homebrew",
       "displayName": "Development (macOS Homebrew LLVM)",
-      "description": "Multi-config build with LLVM/MLIR from /opt/homebrew/opt/llvm.",
+      "description": "Multi-config build with LLVM/MLIR from Homebrew's llvm@22, the locked major.",
       "inherits": "base",
       "condition": {
         "type": "equals",
@@ -39,8 +39,10 @@
         "rhs": "Darwin"
       },
       "cacheVariables": {
-        "LLVM_DIR": "/opt/homebrew/opt/llvm/lib/cmake/llvm",
-        "MLIR_DIR": "/opt/homebrew/opt/llvm/lib/cmake/mlir",
+        "LLVM_DIR": "/opt/homebrew/opt/llvm@22/lib/cmake/llvm",
+        "MLIR_DIR": "/opt/homebrew/opt/llvm@22/lib/cmake/mlir",
+        "LLVMDSDL_CLANG_FORMAT_EXE": "/opt/homebrew/opt/llvm@22/bin/clang-format",
+        "LLVMDSDL_CLANG_TIDY_EXE": "/opt/homebrew/opt/llvm@22/bin/clang-tidy",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "26.0",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/dev-homebrew/install"
       }
