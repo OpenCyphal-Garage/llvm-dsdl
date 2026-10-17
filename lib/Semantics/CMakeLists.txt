@@ -12,7 +12,6 @@ add_library(llvmdsdlSemantics
   RunSet.cpp
   Evaluator.cpp
   Analyzer.cpp
-  AliasLayout.cpp
 )
 
 target_link_libraries(llvmdsdlSemantics

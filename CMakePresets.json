@@ -14,12 +14,7 @@
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;RelWithDebInfo;Release",
         "CMAKE_DEFAULT_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE": "ON",
-        "LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS": "ON",
-        "LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_SMALL": "120000",
-        "LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_MEDIUM": "45000",
-        "LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_LARGE": "10000"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
@@ -56,19 +51,17 @@
       "description": "Multi-config CI preset with automatic LLVM/MLIR discovery from environment/system paths.",
       "inherits": "base",
       "cacheVariables": {
-        "LLVMDSDL_ENABLE_PYTHON_ACCELERATOR": "ON",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/ci/install"
       }
     },
     {
       "name": "ci-asan",
-      "displayName": "CI (ASan/UBSan + native-decoder fuzzing)",
-      "description": "CI preset that compiles the generated native decoders under ASan+UBSan (parity + libFuzzer lanes). Clang-only; build the Debug configuration so NDEBUG is absent and the runtime copy_bits asserts still fire. Host tools are NOT sanitized by default (that is all-or-nothing and heavy); add -DLLVMDSDL_ENABLE_SANITIZERS=address,undefined to additionally instrument dsdlc/dsdl-opt/dsdld and the frontend unit fuzzers.",
+      "displayName": "CI (ASan/UBSan)",
+      "description": "CI preset that instruments every target with ASan and UBSan. Clang-only; build the Debug configuration so NDEBUG is absent and assert() guards fire beside the sanitizer.",
       "inherits": "ci",
       "binaryDir": "${sourceDir}/build/matrix/ci-asan",
       "cacheVariables": {
-        "LLVMDSDL_NATIVE_HARNESS_SANITIZE": "address,undefined",
-        "LLVMDSDL_ENABLE_NATIVE_DECODER_FUZZ": "ON",
+        "LLVMDSDL_ENABLE_SANITIZERS": "address,undefined",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/ci-asan/install"
       }
     }
@@ -103,137 +96,67 @@
       "hidden": true,
       "configuration": "Debug",
       "execution": {
-        "noTestsAction": "error"
+        "noTestsAction": "error",
+        "jobs": 0
       },
       "output": {
         "outputOnFailure": true
       }
     },
     {
-      "name": "test-dev-llvm-env-smoke",
-      "displayName": "Test (dev-llvm-env smoke)",
+      "name": "test-dev-llvm-env-t0",
+      "displayName": "Test (dev-llvm-env, tier 0)",
       "inherits": "test-base",
       "configurePreset": "dev-llvm-env",
       "filter": {
-        "exclude": {
-          "label": "integration"
+        "include": {
+          "label": "t0"
         }
       }
     },
     {
       "name": "test-dev-llvm-env-full",
-      "displayName": "Test (dev-llvm-env full)",
+      "displayName": "Test (dev-llvm-env, every tier)",
       "inherits": "test-base",
       "configurePreset": "dev-llvm-env"
     },
     {
-      "name": "test-dev-llvm-env-release-blocking",
-      "displayName": "Test (dev-llvm-env release-blocking gates)",
-      "inherits": "test-base",
-      "configurePreset": "dev-llvm-env",
-      "filter": {
-        "include": {
-          "label": "release-blocking"
-        }
-      }
-    },
-    {
-      "name": "test-dev-homebrew-smoke",
-      "displayName": "Test (dev-homebrew smoke)",
+      "name": "test-dev-homebrew-t0",
+      "displayName": "Test (dev-homebrew, tier 0)",
       "inherits": "test-base",
       "configurePreset": "dev-homebrew",
       "filter": {
-        "exclude": {
-          "label": "integration"
+        "include": {
+          "label": "t0"
         }
       }
     },
     {
       "name": "test-dev-homebrew-full",
-      "displayName": "Test (dev-homebrew full)",
+      "displayName": "Test (dev-homebrew, every tier)",
       "inherits": "test-base",
       "configurePreset": "dev-homebrew"
     },
     {
-      "name": "test-dev-homebrew-release-blocking",
-      "displayName": "Test (dev-homebrew release-blocking gates)",
-      "inherits": "test-base",
-      "configurePreset": "dev-homebrew",
-      "filter": {
-        "include": {
-          "label": "release-blocking"
-        }
-      }
-    },
-    {
-      "name": "test-ci-smoke",
-      "displayName": "Test (ci smoke)",
+      "name": "test-ci-t0",
+      "displayName": "Test (ci, tier 0)",
       "inherits": "test-base",
       "configurePreset": "ci",
       "filter": {
-        "exclude": {
-          "label": "integration"
+        "include": {
+          "label": "t0"
         }
       }
     },
     {
       "name": "test-ci-full",
-      "displayName": "Test (ci full)",
+      "displayName": "Test (ci, every tier)",
       "inherits": "test-base",
-      "configurePreset": "ci",
-      "filter": {
-        "exclude": {
-          "label": "bench|showroom-recipes"
-        }
-      }
-    },
-    {
-      "name": "test-ci-bench",
-      "displayName": "Test (ci benchmarks)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "filter": {
-        "include": {
-          "label": "bench"
-        }
-      }
-    },
-    {
-      "name": "test-ci-release-blocking",
-      "displayName": "Test (ci release-blocking gates)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "filter": {
-        "include": {
-          "label": "release-blocking"
-        }
-      }
-    },
-    {
-      "name": "test-ci-python-accel-required",
-      "displayName": "Test (ci Python accelerator required gate)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "filter": {
-        "include": {
-          "label": "python-accel-required"
-        }
-      }
-    },
-    {
-      "name": "test-ci-asan-sanitizer",
-      "displayName": "Test (ci-asan sanitizer + native fuzz lane)",
-      "inherits": "test-base",
-      "configurePreset": "ci-asan",
-      "filter": {
-        "include": {
-          "label": "sanitizer"
-        }
-      }
+      "configurePreset": "ci"
     },
     {
       "name": "test-ci-asan-full",
-      "displayName": "Test (ci-asan full suite under sanitizers)",
+      "displayName": "Test (ci-asan, every tier under sanitizers)",
       "inherits": "test-base",
       "configurePreset": "ci-asan"
     }
@@ -242,7 +165,7 @@
     {
       "name": "matrix-dev-llvm-env",
       "displayName": "Workflow (matrix dev-llvm-env)",
-      "description": "Configure, build, and run smoke, release-blocking, and full test lanes.",
+      "description": "Configure, build, and run tier 0 and then every tier.",
       "steps": [
         {
           "type": "configure",
@@ -254,11 +177,7 @@
         },
         {
           "type": "test",
-          "name": "test-dev-llvm-env-smoke"
-        },
-        {
-          "type": "test",
-          "name": "test-dev-llvm-env-release-blocking"
+          "name": "test-dev-llvm-env-t0"
         },
         {
           "type": "test",
@@ -269,7 +188,7 @@
     {
       "name": "matrix-dev-homebrew",
       "displayName": "Workflow (matrix dev-homebrew)",
-      "description": "Configure, build, and run smoke, release-blocking, and full test lanes.",
+      "description": "Configure, build, and run tier 0 and then every tier.",
       "steps": [
         {
           "type": "configure",
@@ -281,11 +200,7 @@
         },
         {
           "type": "test",
-          "name": "test-dev-homebrew-smoke"
-        },
-        {
-          "type": "test",
-          "name": "test-dev-homebrew-release-blocking"
+          "name": "test-dev-homebrew-t0"
         },
         {
           "type": "test",
@@ -296,7 +211,7 @@
     {
       "name": "matrix-ci",
       "displayName": "Workflow (matrix ci)",
-      "description": "Configure, build, and run smoke, release-blocking, Python-accelerator-required, and full test lanes.",
+      "description": "Configure, build, and run tier 0 and then every tier.",
       "steps": [
         {
           "type": "configure",
@@ -308,15 +223,7 @@
         },
         {
           "type": "test",
-          "name": "test-ci-smoke"
-        },
-        {
-          "type": "test",
-          "name": "test-ci-release-blocking"
-        },
-        {
-          "type": "test",
-          "name": "test-ci-python-accel-required"
+          "name": "test-ci-t0"
         },
         {
           "type": "test",

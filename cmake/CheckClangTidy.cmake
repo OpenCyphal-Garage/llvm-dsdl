@@ -44,9 +44,7 @@ string(REGEX REPLACE "([][+.*()^$?{}|\\\\])" "\\\\\\1"
   _llvmdsdl_source_dir_regex "${LLVMDSDL_SOURCE_DIR}")
 
 set(_llvmdsdl_tidy_files)
-set(_llvmdsdl_tidy_excluded_files
-  "${LLVMDSDL_SOURCE_DIR}/lib/IR/DSDLDialect.cpp"
-)
+set(_llvmdsdl_tidy_excluded_files)
 foreach(_index RANGE 0 ${_llvmdsdl_last_index})
   string(JSON _file GET "${_llvmdsdl_compile_db}" ${_index} file)
   if(_file STREQUAL "")

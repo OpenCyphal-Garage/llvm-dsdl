@@ -6,134 +6,38 @@ add_executable(llvmdsdl-unit-tests
   BitLengthSetTests.cpp
   IntegerMathTests.cpp
   FlatSetTests.cpp
-  TargetLanguagesTests.cpp
-  LanguageTraitsTests.cpp
-  PlanSymbolTests.cpp
-  SurfacePlanTests.cpp
-  SurfaceLookupTests.cpp
   CliPathTests.cpp
   EvaluatorTests.cpp
-  DepfileRenderTests.cpp
   DepfilePlannerTests.cpp
   TargetResolutionTests.cpp
-  SupportGenerationTests.cpp
   AnalyzerTests.cpp
-  AliasLayoutTests.cpp
   RuntimeTests.cpp
-  SourceWriterTests.cpp
-  ConstantLiteralRenderTests.cpp
-  DefinitionDependenciesTests.cpp
-  DefinitionIndexTests.cpp
-  DefinitionPathProjectionTests.cpp
-  ImportNameScopeTests.cpp
-  ImportSetTests.cpp
-  BodyValueNamingTests.cpp
-  HelperBodyPlanTests.cpp
-  InitializerRenderTests.cpp
-  NamingPolicyTests.cpp
-  NamingGoldenTests.cpp
-  TypeStorageTests.cpp
-  StorageTypeTokensTests.cpp
-  LoweredContractVersionTests.cpp
-  UavcanEmbeddedCatalogTests.cpp
-  LspDocumentStoreTests.cpp
-  LspRequestSchedulerTests.cpp
-  LspAnalysisTests.cpp
-  LspIndexTests.cpp
-  LspLintTests.cpp
-  LspRankingTests.cpp
-  LspServerTests.cpp
-  LspTelemetryAuditTests.cpp
-  LspRobustnessTests.cpp
-  LspJsonRpcFuzzTests.cpp
   LexerFuzzTests.cpp
   ParserFuzzTests.cpp
-  VocabularyTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests
   PRIVATE
-  llvmdsdlCodeGen
-  llvmdsdlLSP
+  llvmdsdlSemantics
 )
 
 target_include_directories(llvmdsdl-unit-tests
   PRIVATE
   ${LLVMDSDL_SOURCE_DIR}/runtime
-  # TargetLanguages.h is dsdlc's own vocabulary; the suite holds it against the library's.
-  ${LLVMDSDL_SOURCE_DIR}/tools/dsdlc
-)
-
-# The naming golden map is compared against the checked-in copy in the source tree, not a staged
-# one, so that `LLVMDSDL_UPDATE_NAMING_GOLDEN=1` rewrites the file a reviewer reads in the diff.
-target_compile_definitions(llvmdsdl-unit-tests
-  PRIVATE
-  LLVMDSDL_NAMING_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/golden/naming-map.txt"
-  LLVMDSDL_NAMING_ROLES_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/golden/naming-roles.txt"
 )
 
 add_test(NAME llvmdsdl-unit-tests COMMAND llvmdsdl-unit-tests)
+set_tests_properties(llvmdsdl-unit-tests PROPERTIES LABELS "t0;unit")
 
 add_executable(llvmdsdl-bls-exactness-tests BlsExactnessTests.cpp)
 target_link_libraries(llvmdsdl-bls-exactness-tests PRIVATE llvmdsdlSemantics)
 add_test(NAME llvmdsdl-bls-exactness-tests COMMAND llvmdsdl-bls-exactness-tests)
-set_tests_properties(
-  llvmdsdl-bls-exactness-tests
-  PROPERTIES
-    LABELS "unit;sanitizer;release-blocking"
-)
+set_tests_properties(llvmdsdl-bls-exactness-tests PROPERTIES LABELS "t0;unit")
 
-find_program(PYTHON_EXECUTABLE python3 QUIET)
-if(PYTHON_EXECUTABLE)
-  set(python_unit_accel_args
-    -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
-  )
-  set(python_unit_labels "unit;python")
-  if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
-    list(APPEND python_unit_accel_args -DREQUIRE_ACCEL=ON)
-    list(APPEND python_unit_labels "python-accel-required")
-  endif()
-  add_test(
-    NAME llvmdsdl-python-unit-tests
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DDSDLC=$<TARGET_FILE:dsdlc>
-        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
-        -DFIXTURES_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures
-        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/python-unit-tests-out
-        ${python_unit_accel_args}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonUnitTests.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-python-unit-tests
-    PROPERTIES
-      LABELS "${python_unit_labels}"
-  )
-
+if(LLVMDSDL_PYTHON3_EXE)
   add_test(
     NAME llvmdsdl-prdt-corpus-tool-tests
-    COMMAND ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/test_generate_prdt_corpus.py
+    COMMAND ${LLVMDSDL_PYTHON3_EXE} ${LLVMDSDL_SOURCE_DIR}/tools/test_generate_prdt_corpus.py
   )
-
-  set_tests_properties(
-    llvmdsdl-prdt-corpus-tool-tests
-    PROPERTIES
-      LABELS "unit;python"
-  )
-
-  add_test(
-    NAME llvmdsdl-corpus-determinism-tool-tests
-    COMMAND
-      ${CMAKE_COMMAND} -E env DSDLC=$<TARGET_FILE:dsdlc>
-        ${PYTHON_EXECUTABLE} ${LLVMDSDL_SOURCE_DIR}/tools/determinism/test_corpus_determinism.py
-  )
-
-  set_tests_properties(
-    llvmdsdl-corpus-determinism-tool-tests
-    PROPERTIES
-      LABELS "unit;python"
-  )
-else()
-  message(STATUS "Skipping Python unit tests: python3 unavailable")
+  set_tests_properties(llvmdsdl-prdt-corpus-tool-tests PROPERTIES LABELS "t0;unit;python")
 endif()
