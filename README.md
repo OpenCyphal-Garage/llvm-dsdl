@@ -4,235 +4,28 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/OpenCyphal-Garage/llvm-dsdl/ci.yml?branch=main&label=CI)](https://github.com/OpenCyphal-Garage/llvm-dsdl/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-user%20manual-blue)](https://opencyphal-garage.github.io/llvm-dsdl/)
-[![Release](https://img.shields.io/github/v/release/OpenCyphal-Garage/llvm-dsdl?display_name=tag&include_prereleases)](https://github.com/OpenCyphal-Garage/llvm-dsdl/releases)
 
-`llvm-dsdl` provides command-line tooling for Cyphal DSDL:
+`llvm-dsdl` compiles [Cyphal DSDL](https://github.com/OpenCyphal/specification/tree/master/specification/dsdl)
+into serialisation code, through an MLIR dialect that admits other interface languages later.
 
-- `dsdlc`: DSDL compiler and multi-language code generator
-- `dsdld`: DSDL language server (LSP over stdio JSON-RPC)
+The compiler is being rebuilt on the `reset/hourglass` branch. In the tree: the DSDL frontend
+(discovery, lexer, parser), the semantic analysis (constant evaluation, bit-length sets, layout),
+their unit tests, the Dafny models of the serialisation under `spec/dafny`, and the build, CI,
+packaging and documentation infrastructure. The dialects, the code generators and the tools
+follow, each to a golden its own ecosystem defines. [RESET.md](./RESET.md) is the plan;
+[DESIGN.md](./DESIGN.md) is the architecture; [AGENTS.md](./AGENTS.md) governs every line of
+prose and holds the rule that generated output takes its shape from approved goldens.
 
-If you are contributing to the project itself (build system, internals, tests,
-release process), use [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-## Install
-
-### Option 1: Download a Release
-
-Download the latest release artifacts from:
-
-- <https://github.com/OpenCyphal-Garage/llvm-dsdl/releases>
-
-Then place the binaries you need on your `PATH` (`dsdlc`, `dsdld`).
-
-### Option 2: Build and install binaries from source
+## Build
 
 ```bash
 git clone https://github.com/OpenCyphal-Garage/llvm-dsdl.git
 cd llvm-dsdl
 git submodule update --init --recursive
-
-cmake --workflow --preset install-bin-release-ci
+cmake --preset ci
+cmake --build --preset build-ci
+ctest --preset test-ci-t0
 ```
 
-Installed binaries are placed under:
-
-- `build/matrix/ci/install/bin`
-
-## `dsdlc` Quick Start
-
-Show help:
-
-```bash
-dsdlc --help
-```
-
-Show version:
-
-```bash
-dsdlc --version
-```
-
-### Common usage pattern
-
-```bash
-dsdlc --target-language <lang> [options] <root_namespace_or_files...>
-```
-
-`<lang>` can be:
-
-- `ast`
-- `mlir`
-- `c`
-- `obj`
-
-These languages are experimental and generate only with `--experimental-languages`:
-
-- `cpp`
-- `rust`
-- `go`
-- `ts`
-- `python`
-
-### See what it generates
-
-[`examples/showroom`](examples/showroom) is a namespace of plausible vendor-specific drone datatypes
-— sealed types packed into a classic-CAN frame, delimited types that grow across minor versions,
-unions, services, and a mission plan sized for a UDP datagram — generated into every language and
-profile:
-
-```bash
-cmake --build <build-dir> --target showroom
-```
-
-The rendered pages, pairing each definition with its wire-layout facts and the generated declaration
-in each language, are published at
-[the Showroom section of the user manual](https://opencyphal-garage.github.io/llvm-dsdl/showroom/). They
-are generated from the compiler's own output rather than committed; `showroom-docs` produces them
-locally, into `docs/showroom/`.
-
-### Practical examples
-
-AST output:
-
-```bash
-dsdlc --target-language ast path/to/root_namespace
-```
-
-MLIR output:
-
-```bash
-dsdlc --target-language mlir path/to/root_namespace
-```
-
-Generate C output:
-
-```bash
-dsdlc --target-language c path/to/root_namespace --outdir out/c
-```
-
-Generate C++ output (`std`, `pmr`, `autosar`, or `both` where `both` means `std` + `pmr`); `std` and
-`pmr` are C++20:
-
-```bash
-dsdlc --target-language cpp --experimental-languages path/to/root_namespace --cpp-profile both --outdir out/cpp
-```
-
-Generate AUTOSAR-oriented C++14 output, binding its span to [CETL](https://github.com/OpenCyphal/CETL)'s:
-
-```bash
-dsdlc --target-language cpp --experimental-languages path/to/root_namespace --cpp-profile autosar --vocabulary examples/vocabulary/cpp-autosar-cetl.yaml --outdir out/cpp-autosar
-```
-
-Generate Rust output:
-
-```bash
-dsdlc --target-language rust --experimental-languages path/to/root_namespace \
-  --rust-crate-name my_dsdl_types \
-  --rust-profile std \
-  --outdir out/rust
-```
-
-Generate Go output:
-
-```bash
-dsdlc --target-language go --experimental-languages path/to/root_namespace \
-  --go-module example.com/my/dsdl \
-  --outdir out/go
-```
-
-Generate TypeScript output:
-
-```bash
-dsdlc --target-language ts --experimental-languages path/to/root_namespace \
-  --ts-module my_dsdl_types \
-  --outdir out/ts
-```
-
-Generate Python output:
-
-```bash
-dsdlc --target-language python --experimental-languages path/to/root_namespace \
-  --py-package my_dsdl_types \
-  --outdir out/python
-```
-
-Generate objects, assembled inside `dsdlc` for the host or for a named target, with the C headers
-beside them:
-
-```bash
-dsdlc --target-language obj path/to/root_namespace \
-  --target-triple riscv32-unknown-elf \
-  --outdir out/obj
-```
-
-### Dependency lookup
-
-Use `--lookup-dir` (repeatable) when your definitions import other namespaces:
-
-```bash
-dsdlc --target-language c path/to/root_namespace \
-  --lookup-dir path/to/lookup_a \
-  --lookup-dir path/to/lookup_b \
-  --outdir out/c
-```
-
-`dsdlc` also reads `DSDL_INCLUDE_PATH` and `CYPHAL_PATH`.
-
-For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalogue for
-`mlir` and codegen targets (`c`, `cpp`, `rust`, `go`, `ts`, `python`, `obj`). Types
-that reference core `uavcan` definitions resolve without needing external
-`uavcan` source roots. Use `--no-embedded-uavcan` to disable this behaviour.
-
-A `+` target names that catalogue directly, generating standard types without a
-`public_regulated_data_types` checkout:
-
-```bash
-dsdlc --target-language c --outdir out/c +uavcan.node.Heartbeat.1.0
-```
-
-Run `dsdlc --help` for the full option set.
-
-## `dsdld` Quick Start
-
-`dsdld` is an LSP server over stdio. The editor or client drives configuration
-through LSP settings.
-
-Run it directly:
-
-```bash
-dsdld
-```
-
-### Neovim (`nvim-lspconfig`) example
-
-```lua
-local lspconfig = require("lspconfig")
-
-lspconfig.dsdld.setup({
-  cmd = { "/absolute/path/to/dsdld" },
-  filetypes = { "dsdl" },
-  settings = {
-    roots = { "/absolute/path/to/root_namespace" },
-    lookupDirs = { "/absolute/path/to/lookup_namespace" },
-    lint = { enabled = true },
-    ai = { enabled = false, mode = "off" },
-    trace = "basic",
-  },
-})
-```
-
-## Troubleshooting
-
-`dsdlc: unknown argument`:
-
-- run `dsdlc --help` and verify spelling/order of options
-
-Import resolution failures:
-
-- add `--lookup-dir` entries
-- verify namespace roots and file naming follow DSDL conventions
-
-`dsdld` not responding in editor:
-
-- verify editor points to the correct `dsdld` binary path
-- verify workspace `roots`/`lookupDirs` settings
+The `ci` preset finds LLVM and MLIR 22 through `LLVM_DIR` and `MLIR_DIR`; `dev-homebrew` uses
+Homebrew's on macOS. [CONTRIBUTING.md](./CONTRIBUTING.md) has the rest.

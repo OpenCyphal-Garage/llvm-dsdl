@@ -13,22 +13,7 @@ Both follow the [llms.txt](https://llmstxt.org/) convention.
 
 `tools/docs/build_llms_index.py` reads the navigation in `mkdocs.yml`, resolves each entry to its
 published URL, and takes the summary from the page's own first paragraph, so neither file can
-describe a page that does not exist or miss one that does.
-
-The generator runs as part of the documentation build, after the showroom pages and the guarantee
-matrices have been generated, so the compiler's own output is included rather than skipped.
-
-## Coverage
-
-`llms.txt` lists every page in the navigation **plus** the [showroom](../showroom/index.md) type
-gallery. Those per-type pages are deliberately absent from the human navigation — two dozen entries
-in a dropdown help nobody — but they are among the most useful pages here for a machine reader, so
-each is listed with its own URL.
-
-`llms-full.txt` carries the manual only. The type gallery holds the full generated code for every
-type in eight language/profile variants, which is roughly four times the size of the manual; folding
-it in would make one fetch expensive for every reader who wanted the prose. Fetch the type pages you
-need from the URLs in `llms.txt`.
+describe a page that does not exist or miss one that does. The `docs-generate` target runs it.
 
 ## Guarantees on the content
 
