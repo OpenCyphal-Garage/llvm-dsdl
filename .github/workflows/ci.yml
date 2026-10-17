@@ -201,8 +201,8 @@ jobs:
   macos:
     name: Tier 0 (macOS / Homebrew LLVM)
     if: github.event.action != 'labeled'
-    # GitHub-hosted: macOS cannot run the toolshed container. Homebrew's llvm formula carries the
-    # locked major; the configure step fails loudly if it does not.
+    # GitHub-hosted: macOS cannot run the toolshed container. The versioned Homebrew formula is
+    # the locked major; the configure step fails loudly if the two ever disagree.
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -211,12 +211,12 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install LLVM and Ninja
-        run: brew install llvm ninja
+      - name: Install LLVM 22 and Ninja
+        run: brew install llvm@22 ninja
 
       - name: Configure (ci preset)
         run: |
-          prefix="$(brew --prefix llvm)"
+          prefix="$(brew --prefix llvm@22)"
           cmake --preset ci \
             -DLLVM_DIR="${prefix}/lib/cmake/llvm" \
             -DMLIR_DIR="${prefix}/lib/cmake/mlir"
