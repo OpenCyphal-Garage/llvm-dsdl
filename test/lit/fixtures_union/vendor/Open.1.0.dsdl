@@ -1,5 +1,0 @@
-# Delimited: a length header precedes the tag, so the tag has no fixed offset.
-@union
-uint32 a
-uint32 b
-@extent 64

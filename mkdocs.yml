@@ -26,48 +26,16 @@ site_dir: site
 nav:
   - Home: index.md
   - Get Started:
-      - Install: start/install.md
-      - Quick Start: start/quickstart.md
+      - Build: start/build.md
   - Reference:
       - Overview: reference/index.md
-      - Commands:
-          - dsdlc: reference/commands/dsdlc.md
-          - dsdlc Options: reference/commands/dsdlc-options.md
-          - dsdl-opt: reference/commands/dsdl-opt.md
-          - dsdld: reference/commands/dsdld.md
-      - Code Generation:
-          - Backends: reference/codegen/backends.md
-          - Identifier Naming: reference/codegen/identifier-naming.md
-          - Object Backend: reference/codegen/object.md
-          - Vocabulary: reference/codegen/vocabulary.md
-      - Language Server:
-          - Lint Rules: reference/lsp/lint-rules.md
-          - Index Schema: reference/lsp/index-schema.md
-          - Ranking Model: reference/lsp/ranking-model.md
-          - Logging: reference/lsp/logging.md
-          - AI Operation: reference/lsp/ai-operation.md
-          - AI Data Flow: reference/lsp/ai-data-flow.md
       - Guarantees:
-          - Layout: reference/guarantees/layout.md
-          - Cross-Language Parity: reference/guarantees/parity-matrix.md
-          - Malformed Input: reference/guarantees/malformed-input.md
-          - Determinism: reference/guarantees/determinism.md
           - Supply Chain: reference/guarantees/supply-chain.md
-      - Showroom:
-          - Types: showroom/index.md
-          - Build Recipes: showroom/recipes/index.md
   - Development:
       - Contributing: development/contributing.md
       - Testing and CI: development/testing.md
-      - Architecture: development/architecture.md
-      - Direct Object Lowering: development/direct-object-lowering.md
-      - Backend Translation: development/backend-translation.md
-      - Generated Surface: development/generated-surface.md
-      - Authoring Lint Rules: development/lint-rule-authoring.md
-      - Project:
-          - Review & Release Roadmap: development/roadmap.md
-          - Release Packaging: development/release-packaging.md
-          - Distribution Channels (backlog): development/distribution-channels.md
+      - Release Packaging: development/release-packaging.md
+      - Distribution Channels (backlog): development/distribution-channels.md
   - For Agents:
       - Agent Guide: agents/index.md
       - Documentation Index: agents/index-format.md
@@ -77,11 +45,6 @@ nav:
 # does not exist and a link to a heading that does not exist. Under `--strict`, which CI and publish
 # build with, each of these is an error.
 #
-# `not_in_nav` is the sanctioned exception, for pages that should stay in the repository without
-# adding density to what readers browse: two dozen generated type pages would drown the dropdown
-# they belong to, so they are reachable from the showroom overview (and, in full, from llms.txt)
-# instead; design notes are rationale records for whoever next changes the code, not reference
-# material.
 validation:
   nav:
     omitted_files: warn
@@ -89,12 +52,6 @@ validation:
   links:
     not_found: warn
     anchors: warn
-
-not_in_nav: |
-  showroom/types/*.md
-  showroom/recipes/*.md
-  development/embedded-catalog-targets.md
-  development/identifier-stropping.md
 
 # MkDocs' own bundled theme. It brings its own syntax highlighting (highlight.js, applied in the
 # browser) and its own light/dark handling, so the configuration below is mostly about not fighting
@@ -109,10 +66,9 @@ theme:
   color_mode: light
   user_color_mode_toggle: true
   highlightjs: true
-  # Every language that appears in a fenced block anywhere under docs/, the generated showroom
-  # pages included. Most of these are in the highlight.js "common" bundle the theme already loads,
-  # so naming them is belt-and-braces against that bundle changing; `cmake` alone is not in it,
-  # and without it the CMake recipes render as unstyled text.
+  # Every language that appears in a fenced block anywhere under docs/. Most of these are in the
+  # highlight.js "common" bundle the theme already loads, so naming them is belt-and-braces against
+  # that bundle changing; `cmake` alone is not in it.
   #
   # These are file names on the CDN (`languages/<name>.min.js`), not fence aliases. The fences say
   # ```console, ```toml and ```text; the packs that back them are `shell`, `ini` and `plaintext`,

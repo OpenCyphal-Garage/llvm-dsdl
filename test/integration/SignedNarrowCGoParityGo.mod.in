@@ -1,7 +1,0 @@
-module signed_narrow_c_go_parity_harness
-
-go 1.22
-
-require signed_narrow_generated v0.0.0
-
-replace signed_narrow_generated => @GO_OUT@

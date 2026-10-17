@@ -1,6 +1,0 @@
-# One of two same-named types in different namespaces.
-
-float32 x
-# Nothing interesting.
-
-@sealed

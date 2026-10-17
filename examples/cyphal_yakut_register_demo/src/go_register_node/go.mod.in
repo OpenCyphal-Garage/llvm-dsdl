@@ -1,7 +1,0 @@
-module cyphal_yakut_register_node
-
-go 1.21
-
-require cyphal_yakut_demo_generated v0.0.0
-
-replace cyphal_yakut_demo_generated => @LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR@

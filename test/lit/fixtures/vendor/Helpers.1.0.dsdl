@@ -1,4 +1,0 @@
-saturated int13 a
-float16 b
-truncated uint8[<=5] c
-@sealed

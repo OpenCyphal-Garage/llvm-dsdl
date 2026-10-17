@@ -1,4 +1,0 @@
-# Two whole-word fields: a byte image in memory, eight bytes.
-uint32 a
-uint32 b
-@sealed

@@ -1,9 +1,7 @@
 name: Coverage
 
-# LLVM source-based coverage for the core tools (dsdlc, dsdl-opt, unit tests),
-# measured while running the full instrumented suite. Runs inside the toolshed
-# image (clang-19 present), so there is no per-run LLVM install. All language
-# toolchains are added so the complete suite runs under instrumentation.
+# LLVM source-based coverage of the libraries, measured while running the instrumented test
+# suite. Runs inside the toolshed image, so there is no per-run LLVM install.
 
 on:
   push:
@@ -37,23 +35,19 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Prepare toolchains
-        uses: ./.github/actions/setup-language-toolchains
-
       - name: Configure (coverage instrumentation)
         run: |
           cmake -S . -B build/coverage -G "Ninja Multi-Config" \
             -DCMAKE_CONFIGURATION_TYPES="Debug;RelWithDebInfo;Release" \
             -DLLVM_DIR="${LLVM_DIR}" \
             -DMLIR_DIR="${MLIR_DIR}" \
-            -DLLVMDSDL_ENABLE_LLVM_COVERAGE=ON \
-            -DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON
+            -DLLVMDSDL_ENABLE_LLVM_COVERAGE=ON
 
-      - name: Build tools, test binaries + accelerator (RelWithDebInfo)
-        # coverage-prerequisites is every executable under tools/ and test/ plus the
-        # accelerator, collected by the build system (see LLVMDSDL_ENABLE_LLVM_COVERAGE in
-        # the top-level CMakeLists) so this step cannot go stale when a test binary lands.
-        # It is a build step of its own only for parallelism: the report run below is -j1.
+      - name: Build the test binaries (RelWithDebInfo)
+        # coverage-prerequisites is every executable under test/, collected by the build system
+        # (see LLVMDSDL_ENABLE_LLVM_COVERAGE in the top-level CMakeLists) so this step cannot go
+        # stale when a test binary lands. It is a build step of its own only for parallelism: the
+        # report run below is -j1.
         run: |
           cmake --build build/coverage --config RelWithDebInfo \
             --target coverage-prerequisites

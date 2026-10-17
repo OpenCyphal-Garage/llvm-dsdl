@@ -1,3 +1,0 @@
-# 2**32: narrowing this to the port-ID field would make it zero.
-uint8 v
-@sealed

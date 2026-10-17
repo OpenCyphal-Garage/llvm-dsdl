@@ -192,3 +192,19 @@ There is no antecedent in the previous sentence. It might be in a title but we p
 > ✅ There is no affordance for the menu item.
 
 In this version, the real subject survives delineation. Prefer this.
+
+# Output shape is decided by goldens, never by the agent
+
+The shape of everything the compiler generates is fixed by golden files under `test/golden/`. A
+golden is produced by a pinned peer generator (Nunavut, pycyphal, canadensis, pydsdl) or written
+by hand and approved by the project owner. Generated output is held to its golden by CI.
+
+An agent does not decide what generated code looks like. It does not rename, reorder, reshape,
+simplify or improve generated output on its own judgement, and it does not change a golden to make
+a gate pass. A change to any file under `test/golden/` is proposed as a pull request whose
+description shows the before and after of the generated code; it merges only with the
+`shape-approved` label, which only the project owner applies. CI fails a pull request that changes
+a golden without the label.
+
+Where no golden exists for a question of shape, the agent writes the candidate golden by hand, in
+the target language, and asks. It does not generate first and ask afterwards.

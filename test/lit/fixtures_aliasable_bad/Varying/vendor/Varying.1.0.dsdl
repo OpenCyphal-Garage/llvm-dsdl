@@ -1,4 +1,0 @@
-@aliasable
-uint8 head
-uint8[<=8] tail
-@sealed

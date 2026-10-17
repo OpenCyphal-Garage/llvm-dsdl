@@ -1,3 +1,0 @@
-# A variable-length array is a design decision rather than an oversight, so nothing is said.
-uint8[<=64] payload
-@extent 1024

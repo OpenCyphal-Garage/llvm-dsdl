@@ -1,7 +1,0 @@
-module c_go_parity_harness
-
-go 1.22
-
-require uavcan_dsdl_generated v0.0.0
-
-replace uavcan_dsdl_generated => @GO_OUT@
