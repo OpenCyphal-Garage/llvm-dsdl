@@ -15,6 +15,11 @@ paths a generator writes into its output are the same everywhere.
 
 Nunavut is the peer for C and Python. Its parallel type lookup cannot pickle under Python 3.14,
 so it runs with one job, over the `<root>:<path>` target form the CI parity lane used.
+
+canadensis_codegen_rust is the peer for Rust. It writes one file for every definition under the
+input directories, so the harvest gives it a scratch root holding the definitions named on the
+command line and nothing else; a definition's dependencies are named beside it. The output is
+formatted with rustfmt, as the generator's documentation recommends.
 """
 
 from __future__ import annotations
@@ -30,7 +35,11 @@ PYDSDL_SHA = "a1506ce424589cc049b3fe4fece1e52626b55529"  # pydsdl 1.23.0-dev
 MOUNT = "/w"
 UAVCAN_ROOT = "submodules/public_regulated_data_types/uavcan"
 
-LANGUAGES = {"c": "c", "python": "py"}
+CANADENSIS_VERSION = "0.6.3"
+SCRATCH = "build/golden"
+
+NUNAVUT_LANGUAGES = {"c": "c", "python": "py"}
+LANGUAGES = sorted([*NUNAVUT_LANGUAGES, "rust"])
 
 
 def nunavut_script(language: str, out_dir: str, definitions: list[str]) -> str:
@@ -46,7 +55,7 @@ def nunavut_script(language: str, out_dir: str, definitions: list[str]) -> str:
             " ".join(
                 [
                     "/tmp/peer/bin/python -m nunavut --jobs 1",
-                    f"--target-language {LANGUAGES[language]}",
+                    f"--target-language {NUNAVUT_LANGUAGES[language]}",
                     f"--outdir {MOUNT}/{out_dir}",
                     f"--lookup-dir {MOUNT}/{UAVCAN_ROOT}",
                     targets,
@@ -56,9 +65,31 @@ def nunavut_script(language: str, out_dir: str, definitions: list[str]) -> str:
     )
 
 
+def canadensis_script(out_dir: str, definitions: list[str]) -> str:
+    """The shell the container runs: the pinned generator, over a scratch root of the definitions."""
+    root = f"{MOUNT}/{SCRATCH}/rust-input"
+    copies = "\n".join(
+        f"mkdir -p {root}/uavcan/$(dirname {d}) && cp {MOUNT}/{UAVCAN_ROOT}/{d} {root}/uavcan/{d}" for d in definitions
+    )
+    stem = ".".join(pathlib.PurePosixPath(definitions[0]).name.split(".")[:-1]).split(".", 1)
+    name = f"uavcan.{pathlib.PurePosixPath(definitions[0]).parent.as_posix().replace('/', '.')}.{stem[-1]}"
+    return "\n".join(
+        [
+            "set -euo pipefail",
+            f"rm -rf {root} && mkdir -p {root}",
+            copies,
+            f"export CARGO_INSTALL_ROOT={MOUNT}/{SCRATCH}/cargo",
+            f"cargo install --quiet --locked canadensis_codegen_rust --version {CANADENSIS_VERSION}",
+            f"$CARGO_INSTALL_ROOT/bin/canadensis_codegen_rust --version",
+            f"mkdir -p {MOUNT}/{out_dir}",
+            f"$CARGO_INSTALL_ROOT/bin/canadensis_codegen_rust compile --rustfmt -o {MOUNT}/{out_dir}/{name}.rs {root}",
+        ]
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--language", choices=sorted(LANGUAGES), required=True)
+    parser.add_argument("--language", choices=LANGUAGES, required=True)
     parser.add_argument(
         "--definition",
         action="append",
@@ -73,8 +104,14 @@ def main() -> int:
     args = parser.parse_args()
 
     repo = pathlib.Path(__file__).resolve().parents[2]
-    out_dir = args.out or f"test/golden/nunavut/{args.language}"
+    peer = "canadensis" if args.language == "rust" else "nunavut"
+    out_dir = args.out or f"test/golden/{peer}/{args.language}"
     (repo / out_dir).mkdir(parents=True, exist_ok=True)
+    script = (
+        canadensis_script(out_dir, args.definition)
+        if args.language == "rust"
+        else nunavut_script(args.language, out_dir, args.definition)
+    )
 
     command = [
         "docker",
@@ -87,7 +124,7 @@ def main() -> int:
         IMAGE,
         "bash",
         "-c",
-        nunavut_script(args.language, out_dir, args.definition),
+        script,
     ]
     print("harvest:", args.language, *args.definition, "->", out_dir, file=sys.stderr)
     return subprocess.run(command, check=False).returncode
