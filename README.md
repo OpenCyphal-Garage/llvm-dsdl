@@ -6,6 +6,9 @@
 [![Docs](https://img.shields.io/badge/docs-user%20manual-blue)](https://opencyphal-garage.github.io/llvm-dsdl/)
 [![Release](https://img.shields.io/github/v/release/OpenCyphal-Garage/llvm-dsdl?display_name=tag&include_prereleases)](https://github.com/OpenCyphal-Garage/llvm-dsdl/releases)
 
+**THIS IS AN EXPERIMENTAL PROJECT**
+>  Do not rely on this project to generate your types. The codebase is provided as an experiment to demonstrate a proposal that is a way to generate code from DSDL IDL files in a way that is more structured and rigorous than the current solution [Nunavut](https://github.com/OpenCyphal/nunavut) which uses templated, textual expansion from an AST. Nunavut is the production-facing product. This project provides no claims to correctness. It provides only the sketch of an idea.
+
 `llvm-dsdl` provides command-line tooling for Cyphal DSDL:
 
 - `dsdlc`: DSDL compiler and multi-language code generator
