@@ -8,21 +8,11 @@
 #===----------------------------------------------------------------------===#
 
 add_library(llvmdsdlSupport
-  BodyNaming.cpp
   CliPath.cpp
-  DefinitionNaming.cpp
-  ImportNameScope.cpp
   Diagnostics.cpp
-  LanguageTraits.cpp
-  NameCanonicalization.cpp
-  NamingPolicy.cpp
-  PlanSymbol.cpp
-  ScalarStorage.cpp
-  SectionScopes.cpp
-  SurfaceLookup.cpp
-  SurfacePlan.cpp
   Rational.cpp
   ReservedIdentifiers.cpp
+  ScalarStorage.cpp
   SourceLocation.cpp
 )
 

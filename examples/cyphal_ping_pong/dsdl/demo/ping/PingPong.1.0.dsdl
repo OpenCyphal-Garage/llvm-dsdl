@@ -1,8 +1,0 @@
-uint64 sequence
-uint64 sent_usec
-@sealed
----
-uint64 sequence
-uint64 echoed_sent_usec
-uint64 responder_usec
-@sealed

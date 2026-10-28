@@ -1,5 +1,0 @@
-@aliasable
-@union
-uint32 a
-uint32 b
-@sealed

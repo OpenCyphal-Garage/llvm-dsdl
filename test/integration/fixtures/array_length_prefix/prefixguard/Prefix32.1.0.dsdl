@@ -1,3 +1,0 @@
-# A variable-length array whose length prefix is 32 bits wide.
-uint8[<=65536] payload
-@sealed

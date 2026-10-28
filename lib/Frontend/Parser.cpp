@@ -20,10 +20,8 @@
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
-#include "llvmdsdl/Support/DefinitionNaming.h"
 #include "llvmdsdl/Support/Diagnostics.h"
 #include "llvmdsdl/Support/Rational.h"
-#include "llvmdsdl/Support/LanguageTraits.h"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
@@ -34,7 +32,6 @@
 #include <initializer_list>
 #include <iterator>
 #include <limits>
-#include <llvm/ADT/ArrayRef.h>
 #include <memory>
 #include <optional>
 #include <regex>
@@ -1518,14 +1515,12 @@ std::optional<BinaryOp> Parser::toBinaryOp(TokenKind kind)
     }
 }
 
-llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      rootNamespaceDirs,
-                                           const std::vector<std::string>&      lookupDirs,
-                                           DiagnosticEngine&                    diagnostics,
-                                           const llvm::ArrayRef<LanguageTraits> outputLanguages,
-                                           const TypeNameVersioning             typeNameVersioning)
+llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>& rootNamespaceDirs,
+                                           const std::vector<std::string>& lookupDirs,
+                                           DiagnosticEngine&               diagnostics)
 {
     ASTModule module;
-    auto      defs = discoverDefinitions(rootNamespaceDirs, lookupDirs, diagnostics, outputLanguages);
+    auto      defs = discoverDefinitions(rootNamespaceDirs, lookupDirs, diagnostics);
 
     for (const auto& def : defs)
     {
@@ -1544,14 +1539,6 @@ llvm::Expected<ASTModule> parseDefinitions(const std::vector<std::string>&      
             continue;
         }
         module.definitions.push_back(ParsedDefinition{def, *parsed});
-    }
-
-    // Runs here rather than in discovery because it needs to know which definitions are services,
-    // which is a parse result. Skipped when parsing already failed: a definition that did not parse
-    // is missing from the set, so the check would be reporting on a partial picture.
-    if (!diagnostics.hasErrors())
-    {
-        checkScopedTypeNameCollisions(module.definitions, outputLanguages, typeNameVersioning, diagnostics);
     }
 
     if (diagnostics.hasErrors())

@@ -1,43 +1,26 @@
 name: CI
 
-# Full, unabridged test + report run for the core tools (dsdlc, dsdl-opt, dsdld)
-# across every supported host platform and every generated-output language.
+# Lint, tier 0 on Linux and macOS, the docs build, and the golden-label check.
 #
 # The container jobs run INSIDE the project's own toolshed image
-# (ghcr.io/opencyphal/toolshed — the same image .devcontainer uses), which
-# supplies clang, cmake, ninja, the generated-output language toolchains, and
-# Dafny with its solver.
+# (ghcr.io/opencyphal/toolshed, the same image .devcontainer uses), which
+# supplies clang, cmake, ninja, python and Dafny with its solver.
 #
 # LLVM/MLIR does NOT come from that image. Every job that links it first
 # restores the prefix pinned by packaging/toolchain/llvm.pin, so CI links the
 # same LLVM the release ships rather than whichever one the image happened to
-# carry. A tarball rather than an image baking the two together: a job's
-# container is resolved before any step could compose one, and republishing a
-# 13 GB image whenever the pin moved bought nothing — the prefix is 172 MB and
-# the toolshed is pulled either way. The Dafny job restores nothing; it proves a
-# model and never touches LLVM.
-#
-# Nothing is installed per run; the setup action asserts the toolchains are
-# present and fails loudly if one is missing, because the integration suite
-# registers a language's tests only when its toolchain is found at configure
-# time — so a silently incomplete image sheds whole lanes while still reporting
-# green.
+# carry. The Dafny job restores nothing; it proves a model and never touches LLVM.
 
 on:
   push:
     branches: ["main"]
   pull_request:
-    # `labeled` so that applying `release-ci` or `surface` starts a run then and
-    # there. A re-run replays the original event payload, which does not carry
-    # the new label, so without this the lane the label opts into would wait for
-    # the next push. Naming any type replaces the default set, so the other three
-    # are restated.
+    # `labeled` so that applying `shape-approved` re-evaluates the golden check then and there. A
+    # re-run replays the original event payload, which does not carry the new label. Naming any
+    # type replaces the default set, so the other three are restated.
     #
-    # A label event says nothing about the code, so every lane below it is
-    # guarded with `github.event.action != 'labeled'` and only the lane the label
-    # opts into runs. Without that guard any label at all -- `bug`, `docs`,
-    # anything -- replayed the whole suite, the two-hour lane included, over a
-    # commit that had already passed it.
+    # A label event says nothing about the code, so every lane but the golden check is guarded
+    # with `github.event.action != 'labeled'`.
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
   schedule:
@@ -49,23 +32,18 @@ permissions:
   pull-requests: write
 
 concurrency:
-  # Label runs and code runs are different work on the same ref: a label run
-  # exists only to start the lane its label opts into, a code run proves the commit. In one
-  # shared group they would cancel each other -- opening a labelled pull request
-  # fires `opened` then `labeled`, and the first run would die seconds in, which
-  # reads as a failure on the pull request. Each kind supersedes only its own, so
-  # a second push cancels a stale build and a label cancels nothing else.
+  # Label runs and code runs are different work on the same ref: a label run exists only to
+  # re-evaluate the golden check, a code run proves the commit. Each kind supersedes only its own.
   group: "ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'labeled' && 'label' || 'code' }}"
   cancel-in-progress: true
 
 jobs:
   repo-hygiene:
     name: Repository hygiene (identity + committed paths)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
     # Deliberately not in the toolshed container and deliberately first: this needs nothing but
     # python3 and a checkout, finishes in seconds, and tells a contributor that a URL or a home
-    # directory is wrong long before the full suite has finished pulling its image.
+    # directory is wrong long before the suite has finished pulling its image.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -74,21 +52,52 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Check that every mention of where this project lives is current
-        # The repository has moved before and moves again at v1.0. Everything that names the owner is
-        # derived from project-identity.json.
-        # It also fails on a committed /Users/<somebody>/ path, which is wrong for every other reader.
+        # Everything that names the owner is derived from project-identity.json. It also fails on
+        # a committed /Users/<somebody>/ path, which is wrong for every other reader.
         run: python3 tools/repo_identity.py
+
+  golden-label:
+    name: Golden changes carry the shape-approved label
+    # Runs on label events too: applying the label is how the check turns green.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (with history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check
+        # AGENTS.md: a change to any file under test/golden/ merges only with the `shape-approved`
+        # label, which only the project owner applies.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'shape-approved') }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${BASE_REF}"
+          changed="$(git diff --name-only "origin/${BASE_REF}...HEAD" -- test/golden)"
+          if [ -z "${changed}" ]; then
+            echo "no golden changed"
+            exit 0
+          fi
+          echo "goldens changed:"
+          echo "${changed}"
+          if [ "${APPROVED}" != "true" ]; then
+            echo "::error::goldens changed without the shape-approved label"
+            exit 1
+          fi
+          echo "shape-approved"
 
   lint:
     name: Lint (clang-format + clang-tidy)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
     runs-on: ubuntu-26.04
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    # clang-tidy needs the generated headers -- TableGen output and the configured Version.h --
-    # so this lane configures and builds before it can analyse anything. The walk itself is a
-    # couple of minutes across the pool.
+    # clang-tidy needs the configured Version.h, so this lane configures and builds before it can
+    # analyse anything.
     timeout-minutes: 60
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
@@ -105,26 +114,19 @@ jobs:
 
       - name: Report the tool versions this run is pinned to
         # The ruleset is written against a major version: check names, their options, and what
-        # clang-format does with a line all move between majors. Printing them means a lane that
-        # goes red after an image bump says so in its own log.
+        # clang-format does with a line all move between majors.
         run: |
           clang-format --version
           clang-tidy --version
 
-      - name: Check that each clang-tidy ruleset says what it appears to say
+      - name: Check that the clang-tidy ruleset says what it appears to say
         # clang-tidy globs the Checks scalar and silently drops whatever fails to match, so a
-        # mistyped check name disables nothing and a comment containing a comma can re-enable a
-        # whole family. Neither is an error to clang-tidy. This makes both an error here.
-        run: >-
-          python3 tools/check_clang_tidy_config.py --config
-          .clang-tidy
-          test/integration/judge-rulesets/c.clang-tidy
-          test/integration/judge-rulesets/cpp.clang-tidy
+        # mistyped check name disables nothing. This makes it an error here.
+        run: python3 tools/check_clang_tidy_config.py --config .clang-tidy
 
       - name: Check formatting
-        # Runs before the configure: this is the same script the check-format target drives, and it
-        # needs only the source tree, so a misformatted patch fails in seconds rather than after the
-        # build below.
+        # Runs before the configure: the script needs only the source tree, so a misformatted
+        # patch fails in seconds rather than after the build below.
         run: |
           cmake -DCLANG_FORMAT="$(command -v clang-format)" \
                 -DLLVMDSDL_SOURCE_DIR="${GITHUB_WORKSPACE}" \
@@ -134,21 +136,18 @@ jobs:
         run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
 
       - name: Build (Debug)
-        # clang-tidy parses each translation unit itself, but only after TableGen and configure_file
-        # have produced the headers those units include.
         run: cmake --build --preset build-ci
 
       - name: Check source diagnostics
         run: cmake --build build/matrix/ci --config Debug --target check-clang-tidy
 
   linux:
-    name: Full suite (linux / toolshed)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+    name: Tier 0 (linux / toolshed)
     if: github.event.action != 'labeled'
     runs-on: ubuntu-26.04
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    timeout-minutes: 120
+    timeout-minutes: 60
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
       MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
@@ -162,93 +161,25 @@ jobs:
       - name: Restore the LLVM toolchain
         uses: ./.github/actions/restore-llvm-toolchain
 
-      - name: Prepare toolchains
-        uses: ./.github/actions/setup-language-toolchains
-
-      - name: Provision peer DSDL compiler for corroboration (nunavut + pydsdl)
-        # The pins and the reasoning live in the action, which the benchmarks job
-        # uses too so that both lanes look at the same peer.
-        id: peer-dsdl
-        uses: ./.github/actions/provision-peer-dsdl-compiler
-
       - name: Configure (ci preset)
-        # LLVMDSDL_REPORT_GATE_JUNIT makes the parity/malformed/determinism report gates
-        # BEHAVIOURAL: a matrix cell is covered only if a matching test executed and passed
-        # (consumed from the suite's --output-junit below), not merely registered by name.
-        # LLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON turns a missing nunavut/pydsdl into a hard
-        # configure error, so a green CI run can never mean the reference-parity lane was
-        # silently skipped.
-        run: |
-          cmake --preset ci \
-            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
-            -DLLVMDSDL_REPORT_GATE_JUNIT="${GITHUB_WORKSPACE}/test-results/junit-linux.xml" \
-            -DLLVMDSDL_NUNAVUT_REPO="${{ steps.peer-dsdl.outputs.nunavut-path }}" \
-            -DLLVMDSDL_PYDSDL_REPO="${{ steps.peer-dsdl.outputs.pydsdl-path }}" \
-            -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
 
       - name: Build (Debug)
         run: cmake --build --preset build-ci
 
-      - name: Build Python runtime accelerator
-        run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
-
-      - name: Run full unabridged test suite
+      - name: Run tier 0
         run: |
           mkdir -p "${GITHUB_WORKSPACE}/test-results"
-          ctest --preset test-ci-full \
+          ctest --preset test-ci-t0 \
             --output-junit "${GITHUB_WORKSPACE}/test-results/junit-linux.xml"
 
       - name: Every test ran
-        # ctest counts a test that skipped as passed, so a gate that skips where it was meant to gate
-        # leaves the job green. A test that must skip in this job is allowed by name with the reason,
-        # through `--allow NAME=REASON`.
+        # ctest counts a test that skipped as passed. A test that must skip in this job is allowed
+        # by name with the reason, through `--allow NAME=REASON`.
         if: always()
         run: python3 tools/check_test_skips.py test-results/junit-linux.xml
 
-      - name: Behavioural report gates (parity/malformed/determinism pass-fail)
-        # Runs after the suite so it can consume the executed JUnit results. `if: always()`
-        # ensures the gate still runs (and can fail the job) even if an earlier test failed.
-        if: always()
-        run: cmake --build build/matrix/ci --config Debug --target release-blocking-report-gates
-
-      - name: Generated docs (build the target the Docs workflow depends on)
-        # Nothing under docs/ that is generated gets committed, so there is no staleness to police
-        # here. What this step buys is a fast signal: the site is only publishable if this target
-        # succeeds, and its checks -- the showroom's comment-width and DSDL-discovery rules, and the
-        # llms.txt coverage rule that every page is either in the nav or declared unlisted -- are
-        # cheap enough to be worth failing a PR on rather than a push to main.
-        #
-        # The report generators run twice on this job: once above as the behavioural release gate,
-        # once here as page generation. They are python over an existing test tree, the second run
-        # costs seconds, and it is what puts the gate's own numbers on the page.
-        if: always()
-        run: cmake --build build/matrix/ci --config Debug --target docs-generate
-
-      - name: Build the docs site (strict)
-        # The nav is the page map, and `--strict` is what makes that true: an unfiled page, a broken
-        # cross-reference, or a nav entry with no page behind it fails here, on the PR, instead of
-        # surfacing as a hole in the published site. A virtual environment because the image ships
-        # its own mkdocs at distro versions and its Python is PEP 668 externally-managed.
-        if: always()
-        #
-        # The mermaid check is separate because `--strict` cannot see that failure: the markdown is
-        # valid and the page builds, but the diagram becomes a red error card in the reader's
-        # browser. It asserts the diagram reaches the page in the shape vanilla mermaid can read.
-        run: |
-          python3 -m venv .venv-docs
-          .venv-docs/bin/pip install --quiet --upgrade pip
-          .venv-docs/bin/pip install --quiet -r docs/requirements.txt
-          .venv-docs/bin/mkdocs build --strict
-          python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
-
-      - name: Collect reports
-        if: always()
-        run: |
-          mkdir -p "${GITHUB_WORKSPACE}/reports"
-          [ -d build/matrix/ci/convergence ] && cp -R build/matrix/ci/convergence "${GITHUB_WORKSPACE}/reports/" || true
-
-      # GitHub-only reporting: skipped under `act` (which sets ACT=true) so local
-      # runs don't hit the GitHub API or need an artifact server.
+      # GitHub-only reporting: skipped under `act` (which sets ACT=true).
       - name: Publish test results
         if: ${{ always() && !env.ACT }}
         uses: mikepenz/action-junit-report@v6
@@ -267,41 +198,61 @@ jobs:
           path: test-results/junit-linux.xml
           if-no-files-found: warn
 
-      - name: Upload reports
+  macos:
+    name: Tier 0 (macOS / Homebrew LLVM)
+    if: github.event.action != 'labeled'
+    # GitHub-hosted: macOS cannot run the toolshed container. The versioned Homebrew formula is
+    # the locked major; the configure step fails loudly if the two ever disagree.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install LLVM 22 and Ninja
+        run: brew install llvm@22 ninja
+
+      - name: Configure (ci preset)
+        run: |
+          prefix="$(brew --prefix llvm@22)"
+          cmake --preset ci \
+            -DLLVM_DIR="${prefix}/lib/cmake/llvm" \
+            -DMLIR_DIR="${prefix}/lib/cmake/mlir"
+
+      - name: Build (Debug)
+        run: cmake --build --preset build-ci
+
+      - name: Run tier 0
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/test-results"
+          ctest --preset test-ci-t0 \
+            --output-junit "${GITHUB_WORKSPACE}/test-results/junit-macos.xml"
+
+      - name: Every test ran
+        if: always()
+        run: python3 tools/check_test_skips.py test-results/junit-macos.xml
+
+      - name: Upload JUnit results
         if: ${{ always() && !env.ACT }}
         uses: actions/upload-artifact@v7
         with:
-          name: reports-linux
-          path: reports/
+          name: junit-macos
+          path: test-results/junit-macos.xml
           if-no-files-found: warn
 
-  sanitizers:
-    name: Native decoder sanitizers + fuzzing (linux / toolshed)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
+  docs:
+    name: Docs build (strict)
     if: github.event.action != 'labeled'
-    # ASan/UBSan over the generated C/C++/Go decoders plus a coverage-guided
-    # libFuzzer lane over the native deserialisers on the real UAVCAN corpus.
-    # Linux-only: threading the ASan runtime into a Go external link is only
-    # reliable here, and macOS Apple-Silicon ASan startup is flaky. The lane is
-    # bounded on PRs (short -runs) and runs deep on the weekly schedule cron.
     runs-on: ubuntu-26.04
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    timeout-minutes: 120
+    timeout-minutes: 30
     env:
       LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
       MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
       CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
-      # The sanitizer + fuzz harnesses require Clang (-fsanitize=address,undefined
-      # and compiler-rt libFuzzer); force it so the Clang-gated tests register and
-      # the generated decoders are compiled with the sanitizer toolchain.
-      #
-      # Still the image's own Clang, not ours: our toolchain builds MLIR alone and
-      # ships no compiler, and a compiler is not what this project stopped taking
-      # from a distribution. LLVM_DIR above is what decides which LLVM is linked;
-      # this decides only what does the compiling.
-      CC: /usr/lib/llvm-22/bin/clang
-      CXX: /usr/lib/llvm-22/bin/clang++
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v7
@@ -311,84 +262,35 @@ jobs:
       - name: Restore the LLVM toolchain
         uses: ./.github/actions/restore-llvm-toolchain
 
-      - name: Prepare toolchains
-        # Go is needed for the C/Go sanitized parity variant; the MLIR dev libs
-        # are needed to build dsdlc.
-        uses: ./.github/actions/setup-language-toolchains
+      - name: Configure (ci preset)
+        run: cmake --preset ci -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
 
-      - name: Configure (ci-asan preset)
-        # A short fuzz budget on PRs keeps the lane fast; the weekly schedule cron
-        # runs a deep budget. libFuzzer support is auto-probed by the harness,
-        # which falls back to an ASan/UBSan corpus replay if it is absent.
+      - name: Generate the pages that are produced rather than written
+        run: cmake --build build/matrix/ci --config Debug --target docs-generate
+
+      - name: Build the docs site (strict)
+        # The nav is the page map, and `--strict` is what makes that true: an unfiled page, a broken
+        # cross-reference, or a nav entry with no page behind it fails here. A virtual environment
+        # because the image ships its own mkdocs at distro versions and its Python is PEP 668
+        # externally-managed.
+        #
+        # The mermaid check is separate because `--strict` cannot see that failure: the markdown is
+        # valid and the page builds, but the diagram becomes a red error card in the reader's
+        # browser.
         run: |
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
-            FUZZ_RUNS=4000000
-          else
-            FUZZ_RUNS=40000
-          fi
-          cmake --preset ci-asan \
-            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
-            -DLLVMDSDL_ENABLE_SANITIZERS="undefined" \
-            -DLLVMDSDL_NATIVE_DECODER_FUZZ_RUNS="${FUZZ_RUNS}"
-
-      - name: Build sanitizer targets
-        # dsdlc and the focused BLS target use UBSan. The generated decoder harnesses use
-        # ASan+UBSan from the ci-asan preset. Instrumenting dsdlc with ASan is incompatible with
-        # the prebuilt LLVM allocator's intentional ASan poisoning.
-        run: cmake --build build/matrix/ci-asan --config Debug --target dsdlc llvmdsdl-bls-exactness-tests
-
-      - name: Run sanitizer + native-decoder fuzz lane
-        run: |
-          mkdir -p "${GITHUB_WORKSPACE}/test-results"
-          ctest --preset test-ci-asan-sanitizer \
-            --output-junit "${GITHUB_WORKSPACE}/test-results/junit-sanitizers.xml"
-
-      - name: Every test ran
-        # ctest counts a test that skipped as passed, so a gate that skips where it was meant to gate
-        # leaves the job green. A test that must skip in this job is allowed by name with the reason,
-        # through `--allow NAME=REASON`.
-        if: always()
-        run: python3 tools/check_test_skips.py test-results/junit-sanitizers.xml
-
-      - name: Collect fuzz reproducers
-        # Any crash/leak/timeout reproducer libFuzzer saved becomes a CI artifact
-        # so a maintainer can add it to test/fuzz/corpus/native_decoder/.
-        if: always()
-        run: |
-          mkdir -p "${GITHUB_WORKSPACE}/fuzz-artifacts"
-          find build/matrix/ci-asan -type d -name artifacts -path '*native-decoder-fuzz*' \
-            -exec cp -R {}/. "${GITHUB_WORKSPACE}/fuzz-artifacts/" \; 2>/dev/null || true
-
-      - name: Publish test results
-        if: ${{ always() && !env.ACT }}
-        uses: mikepenz/action-junit-report@v6
-        with:
-          report_paths: "test-results/junit-sanitizers.xml"
-          check_name: "Test results (sanitizers)"
-          include_passed: true
-          detailed_summary: true
-          fail_on_failure: false
-
-      - name: Upload fuzz reproducers
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: fuzz-reproducers
-          path: fuzz-artifacts/
-          if-no-files-found: ignore
+          python3 -m venv .venv-docs
+          .venv-docs/bin/pip install --quiet --upgrade pip
+          .venv-docs/bin/pip install --quiet -r docs/requirements.txt
+          .venv-docs/bin/mkdocs build --strict
+          python3 tools/docs/check_rendered_mermaid.py --docs-dir docs --site-dir site
 
   formal-model:
     name: Formal model check (Dafny)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
     if: github.event.action != 'labeled'
-    # spec/dafny/CyphalSerdes.dfy PROVES (unbounded, by induction) that serialise and
-    # deserialise round-trip and that the read path is bounds-safe by construction.
-    # Re-verified on every change so the model can't rot. Needs only the Dafny toolchain — independent of the
-    # LLVM/MLIR build matrix, so it is fast and cannot be skipped by a toolchain gap in
-    # the heavy lanes.
+    # spec/dafny proves, unbounded and by induction, that serialise and deserialise round-trip and
+    # that the read path is bounds-safe by construction. Re-verified on every change so the model
+    # cannot rot. Needs only the Dafny toolchain.
     runs-on: ubuntu-26.04
-    # Dafny and its solver come from the toolshed image rather than being fetched
-    # per run.
     container:
       image: ghcr.io/opencyphal/toolshed:ts26.4.5
     timeout-minutes: 15
@@ -397,13 +299,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Assert the Dafny toolchain
-        # Deliberately not the shared toolchain action: this lane is independent of
-        # the LLVM/MLIR build matrix and must not be taken down by a Go or
-        # TypeScript gap. It needs exactly two things, and Dafny's NuGet package
-        # ships no solver, so a `dafny` that launches proves nothing on its own.
-        #
-        # `shell: bash` is required, not decorative: a container job without it
-        # runs steps under sh, where the array syntax below is a syntax error.
+        # Dafny's NuGet package ships no solver, so a `dafny` that launches proves nothing on its
+        # own. `shell: bash` is required: a container job without it runs steps under sh, where the
+        # array syntax below is a syntax error.
         shell: bash
         run: |
           set -uo pipefail
@@ -412,499 +310,17 @@ jobs:
             command -v "${tool}" >/dev/null 2>&1 || missing+=("${tool}")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::toolshed image is missing: ${missing[*]} — these belong in the image"
+            echo "::error::toolshed image is missing: ${missing[*]}"
             exit 1
           fi
           dafny --version
           z3 --version
 
       - name: Verify CyphalSerdes
-        # `dafny verify` exits non-zero on any failed proof obligation, so a broken model
-        # (or a regression to the accepted op-orderings) fails the job.
         run: dafny verify spec/dafny/CyphalSerdes.dfy
 
       - name: Verify BitLengthSet model
-        # The bit-length-set algebra model: denotational semantics + interval-evaluator
-        # exactness proofs (stage 1 of the staged plan in the file header).
         run: dafny verify spec/dafny/BitLengthSet.dfy
 
       - name: Verify BitLengthSet bridge
-        # The length-semantics bridge theorem: the algebra expression the analyser builds for
-        # each type denotes EXACTLY the achievable serialised bit lengths of conforming values
-        # — Sem stops being an axiom and becomes a theorem about serialisation.
         run: dafny verify spec/dafny/BitLengthBridge.dfy
-
-  corpus:
-    name: Corpus hash (${{ matrix.arch }})
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
-    if: github.event.action != 'labeled'
-    # One half of the cross-architecture determinism gate. Identical source and
-    # identical toolchain, differing only in the architecture the compiler runs
-    # on, so a difference in the emitted corpus can only come from the build.
-    #
-    # This covers something the project ships: two architectures of the same release. Word size,
-    # alignment and floating-point formatting reaching emitted text are what it
-    # would catch, none of which same-host perturbation (locale/TZ/hash seed,
-    # gated elsewhere) can expose.
-    #
-    # The same image and the same restored prefix as every other job: this
-    # builds dsdlc and nothing else, but using a different environment for it
-    # would weaken the comparison: only the architecture may differ between the
-    # two halves.
-    runs-on: ${{ matrix.runner }}
-    container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    env:
-      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
-      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
-    steps:
-      - name: Checkout (with submodules)
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Restore the LLVM toolchain
-        uses: ./.github/actions/restore-llvm-toolchain
-        with:
-          arch: ${{ matrix.arch }}
-
-      - name: Build dsdlc
-        # LLVM_DIR/MLIR_DIR name the restored prefix explicitly, exactly as the
-        # other jobs do. Leaving it to a search would let a distro LLVM in the
-        # image satisfy find_package instead. The two halves must differ in
-        # architecture and in nothing else, and an implicit LLVM is free to
-        # differ per runner.
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
-          cmake --build build --target dsdlc
-
-      - name: Hash generated corpus
-        # The version comes from the prefix rather than llvm-config, which
-        # LLVM_BUILD_TOOLS=OFF does not install. The prefix is named by the
-        # restore action rather than repeated here, so the path is stated once.
-        # Stripped of the tag prefix so the comparator's major extraction still
-        # sees a version number.
-        run: |
-          set -euo pipefail
-          ref="$(cat "${LLVM_TOOLCHAIN_PREFIX}/LLVM_REF")"
-          python3 tools/determinism/corpus_determinism.py \
-            --dsdlc build/tools/dsdlc/dsdlc \
-            --dsdl-root submodules/public_regulated_data_types/uavcan \
-            --out "corpus-hash-${{ matrix.arch }}.json" \
-            --label "${{ matrix.arch }}" \
-            --meta "llvm=${ref#llvmorg-}"
-
-      - name: Upload corpus hash
-        if: ${{ !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: corpus-hash-${{ matrix.arch }}
-          path: corpus-hash-${{ matrix.arch }}.json
-
-  cross-arch-determinism:
-    name: Cross-architecture determinism gate (amd64 vs arm64)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger. Stated
-    # rather than left to `needs: corpus` so a future reader does not read its absence as intent.
-    if: github.event.action != 'labeled'
-    # Compares the two manifests byte-for-byte, all six backends strictly.
-    needs: corpus
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        if: ${{ !env.ACT }}
-        uses: actions/checkout@v7
-
-      - name: Download corpus hashes
-        if: ${{ !env.ACT }}
-        uses: actions/download-artifact@v8
-        with:
-          pattern: corpus-hash-*
-          merge-multiple: true
-
-      - name: Compare
-        if: ${{ !env.ACT }}
-        run: |
-          python3 tools/determinism/corpus_determinism.py \
-            --compare corpus-hash-amd64.json corpus-hash-arm64.json
-
-  output-oracle:
-    name: Output oracle (merge base against head)
-    # Opt-in, on the `surface` label, which a pull request carries when it
-    # claims to move no generated byte. The lane builds dsdlc at the merge base
-    # and at the head, runs every target over every corpus the project gates on
-    # with each, and fails on any byte, file or exit code that differs. A pull
-    # request meant to change output fails it, so it runs only where the claim
-    # is made; CONTRIBUTING.md §13 names when a reviewer asks for it.
-    #
-    # The three clauses are the release lane's, for the reasons given there.
-    if: >-
-      github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.labels.*.name, 'surface') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'surface')
-    runs-on: ubuntu-26.04
-    container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    timeout-minutes: 60
-    env:
-      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
-      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
-    steps:
-      - name: Checkout (with submodules and history)
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Restore the LLVM toolchain
-        # The head's pin builds both sides, so the source is the only
-        # difference between the two builds.
-        uses: ./.github/actions/restore-llvm-toolchain
-
-      - name: Check out the merge base
-        # The checkout of a pull request is its head merged into the base
-        # branch, so the merge base is the base branch as that merge saw it, and
-        # the comparison measures the pull request's own change. The workspace
-        # belongs to the runner's user rather than the container's, which git
-        # refuses to work in until it is named safe.
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-          base="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
-          echo "merge base: ${base}"
-          git worktree add --detach "${RUNNER_TEMP}/merge-base" "${base}"
-          git -C "${RUNNER_TEMP}/merge-base" submodule update --init --recursive
-
-      - name: Build dsdlc at the merge base and at the head
-        run: |
-          set -euo pipefail
-          for side in merge-base head; do
-            source=.
-            if [ "${side}" = merge-base ]; then source="${RUNNER_TEMP}/merge-base"; fi
-            cmake -S "${source}" -B "build-${side}" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-              -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}"
-            cmake --build "build-${side}" --target dsdlc
-          done
-
-      - name: Compare the two builds' output
-        # Both builds run the head's script over the head's corpora and write
-        # the adversarial corpus to one directory, so the two read the same
-        # bytes at the same paths.
-        run: |
-          set -euo pipefail
-          for side in merge-base head; do
-            python3 tools/determinism/corpus_determinism.py --matrix oracle \
-              --dsdlc "build-${side}/tools/dsdlc/dsdlc" \
-              --work-dir "${RUNNER_TEMP}/oracle-corpora" \
-              --out "oracle-${side}.json" --label "${side}"
-          done
-          python3 tools/determinism/corpus_determinism.py \
-            --compare oracle-merge-base.json oracle-head.json
-
-      - name: Upload the manifests
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: output-oracle
-          path: oracle-*.json
-
-  showroom-recipes:
-    name: Showroom build recipes (linux / toolshed)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
-    if: github.event.action != 'labeled'
-    # One (language, build system) pair per recipe: generate with dsdlc, compile the output, run a
-    # round-trip program. This lane is not about codegen correctness -- test/lit and the integration
-    # suite own that -- it is about whether the recipes published in the manual still work.
-    #
-    # Deliberately independent of the `linux` job rather than needing it: it builds dsdlc alone,
-    # which is a fraction of the full suite, so a broken integration recipe is reported in minutes
-    # instead of after the two-hour lane. It carries its own checkout for the same reason.
-    #
-    # A recipe whose toolchain is absent SKIPS. That is correct for a developer machine and dangerous
-    # here, because an image that quietly lost a toolchain would shed recipes while still reporting
-    # green -- so --require names the recipes that must never skip, and a skip among them fails the
-    # job. Keep that list growing as recipes land.
-    runs-on: ubuntu-26.04
-    container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    timeout-minutes: 60
-    env:
-      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
-      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
-    steps:
-      - name: Checkout (with submodules)
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Restore the LLVM toolchain
-        uses: ./.github/actions/restore-llvm-toolchain
-
-      - name: Check the recipe invariant (build wiring only)
-        # Needs no toolchain and no compiler, so it runs first and fails fast: a recipe that grew its
-        # own round-trip source has stopped being comparable with its neighbours, which is the whole
-        # point of the matrix.
-        run: python3 examples/showroom/run_recipe.py --check-invariant
-
-      - name: Configure (ci preset)
-        # The install prefix is fixed at configure time because the install happens through the
-        # project's own `install-bin` target below, which takes no --prefix.
-        run: |
-          cmake --preset ci \
-            -DLLVM_DIR="${LLVM_DIR}" \
-            -DMLIR_DIR="${MLIR_DIR}" \
-            -DCMAKE_INSTALL_PREFIX="${RUNNER_TEMP}/llvm-dsdl-prefix"
-
-      - name: Install llvm-dsdl to a private prefix
-        # Recipes that call find_package(llvm-dsdl) need an install tree, not a build tree: the package
-        # config locates dsdlc relative to its own installed location, so configuring against the
-        # build directory would exercise a path no user ever takes. This step is therefore also the
-        # selftest for the CMake package -- if the config is broken for a user, c-cmake fails here.
-        #
-        # `install-bin` rather than `--target dsdlc` and a hand-written `cmake --install`: neither
-        # half of that fails until here. The `bin`
-        # component installs every tool in LLVMDSDL_INSTALLABLE_TOOLS, not just dsdlc, so building
-        # dsdlc alone leaves the install looking for a dsdl-opt nobody built; and `ci` is a Ninja
-        # Multi-Config preset, so an install with no --config silently resolves to
-        # CMAKE_DEFAULT_BUILD_TYPE (RelWithDebInfo, from `base`) while `build-ci` only ever builds
-        # Debug. The target settles both: it depends on the tool list, so it cannot drift as tools
-        # are added, and it passes --config $<CONFIG> itself.
-        run: |
-          cmake --build --preset build-ci --target install-bin
-          test -x "${RUNNER_TEMP}/llvm-dsdl-prefix/bin/dsdlc"
-          test -f "${RUNNER_TEMP}/llvm-dsdl-prefix/lib/cmake/llvm-dsdl/llvm-dsdlConfig.cmake"
-          test -f "${RUNNER_TEMP}/llvm-dsdl-prefix/share/rules_dsdl/repositories.bzl"
-
-      - name: Install pnpm
-        # pnpm is the one toolchain in the matrix the image does not ship, so the job provisions it.
-        #
-        # Not `corepack enable pnpm`, which is the obvious way and is worse than failing: the image's
-        # corepack is 0.24.0 against node 22, old enough that the shim it installs dies on startup
-        # with ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING. That still puts a `pnpm` on PATH, so the
-        # recipe's toolchain probe is satisfied and the recipe runs and fails, rather than skipping.
-        # Installing the real package sidesteps corepack entirely.
-        run: npm install -g pnpm
-
-      - name: Run the recipes
-        # --require names the recipes that must never skip. Everything in it is backed by a toolchain
-        # the toolshed image ships, so a skip there means the image lost something and the matrix is
-        # quietly shedding coverage -- which must fail rather than report green. Extend the list as
-        # each remaining core recipe lands: py-setuptools.
-        #
-        # c-bazel joined the list in ts26.4.3, which carries bazel; the recipe pins the same 9.2.0 the
-        # image pre-warms, so it neither downloads a compiler nor drifts off it. ts-pnpm is in the
-        # list too: the step above installs pnpm outright, so a skip is a real loss of coverage like
-        # any other.
-        #
-        # The installed dsdlc, not one fished out of the build tree. Under a multi-config generator
-        # the build tree can hold several, and `find | head -1` would pick between them by accident;
-        # the prefix holds exactly one, and it is the same binary find_package(llvm-dsdl) resolves
-        # for the recipes that go through the package config -- so both flags below name one build.
-        run: |
-          python3 examples/showroom/run_recipe.py \
-            --dsdlc "${RUNNER_TEMP}/llvm-dsdl-prefix/bin/dsdlc" \
-            --prefix "${RUNNER_TEMP}/llvm-dsdl-prefix" \
-            --work "${RUNNER_TEMP}/showroom-recipes" \
-            --json "${GITHUB_WORKSPACE}/showroom-recipe-results.json" \
-            --markdown "${GITHUB_STEP_SUMMARY}" \
-            --require "c-bazel,c-cmake,c-cmake-ninja-multi,c-make,rust-cargo,go-modules,ts-npm,ts-pnpm,py-setuptools,py-hatchling,py-uv-build,py-poetry,py-flit"
-
-      - name: Upload results
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: showroom-recipe-results
-          path: showroom-recipe-results.json
-          if-no-files-found: ignore
-
-      - name: Regenerate the documentation pages
-        # Cheap, needs no compiler, and proves the generator still runs against the recipes as they
-        # are -- a recipe.json the renderer chokes on should fail here, not at publish time.
-        run: python3 tools/showroom/recipes_index.py
-
-  benchmarks:
-    name: Runtime benchmarks (linux / toolshed)
-    # A label change proves nothing about the code; see the `labeled` note on the trigger.
-    if: github.event.action != 'labeled'
-    # The runtime benchmarks measure generated Rust, generated Python and generated C doing real
-    # work. No other lane runs the generated code for speed rather than for correctness:
-    # `test-ci-full` filters
-    # `-LE bench`, so the `test-ci-bench` preset runs here and nowhere else, and a benchmark that
-    # stops compiling fails here.
-    #
-    # So the first thing this lane buys is that the harnesses are exercised. The numbers are the
-    # second thing, and they are REPORTED, NOT ENFORCED, on purpose:
-    #
-    #   The Rust benchmark's threshold file holds absolute wall-clock seconds calibrated on one
-    #   developer machine (macOS/arm64). Nothing about those numbers describes an ubuntu-26.04
-    #   container, so enforcing them here would gate on a measurement that was never taken on this
-    #   hardware.
-    #
-    # Turning them on takes three things, in order. Run this lane enough times to have a spread
-    # (the job summary prints every observation in `max_elapsed_sec` shape, so this is a copy);
-    # write those maxima plus a budget into a runner-specific threshold file and point
-    # LLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON at it; then drop the `=OFF` flag below. Do not
-    # skip the first step -- a hosted runner's variance is the thing being measured, and a budget
-    # guessed rather than observed either flakes or is too wide to catch anything.
-    #
-    # The regression gates are not here. `llvmdsdl-fixtures-rust-runtime-instructions` and
-    # `llvmdsdl-uavcan-python-runtime-instructions` count instructions under cachegrind rather than
-    # seconds, carry no `bench` label, and gate in the `linux` job. A count measures the work the
-    # generated code does; a change in its locality or in its instructions' latency passes it. It is
-    # deterministic -- repeated runs, idle and oversubscribed, agree to the instruction -- so it needs
-    # no calibration beyond a baseline per architecture and toolchain. Where valgrind or that baseline
-    # is missing, each gate skips off CI and fails on CI.
-    #
-    # The C comparison against Nunavut counts instructions too, and is here rather than in `linux`
-    # for a different reason: it is a ratio against a peer implementation. Nunavut is corroboration
-    # and not an oracle, for speed as much as for bytes, so the ratio is published and read rather
-    # than enforced. Its report carries the raw counts, which is what a threshold on OUR side would
-    # be built from.
-    #
-    # Independent of the `linux` job rather than needing it, like showroom-recipes: it builds dsdlc
-    # and the Python accelerator and nothing else, so a broken benchmark reports in minutes rather
-    # than behind the two-hour lane.
-    runs-on: ubuntu-26.04
-    container:
-      image: ghcr.io/opencyphal/toolshed:ts26.4.5
-    timeout-minutes: 45
-    env:
-      LLVM_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/llvm
-      MLIR_DIR: /opt/llvm-dsdl-toolchain/lib/cmake/mlir
-      CMAKE_PREFIX_PATH: /opt/llvm-dsdl-toolchain
-    steps:
-      - name: Checkout (with submodules)
-        # The Python benchmark reads the uavcan corpus, which is a submodule.
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Restore the LLVM toolchain
-        uses: ./.github/actions/restore-llvm-toolchain
-
-      - name: Prepare toolchains
-        # cargo for the Rust benchmark. The action fails loudly on a missing toolchain, which
-        # matters more here than elsewhere: a benchmark whose language toolchain is absent is not
-        # registered at configure time, so without this the lane would report green having measured
-        # nothing at all.
-        uses: ./.github/actions/setup-language-toolchains
-
-      - name: Provision peer DSDL compiler (nunavut + pydsdl)
-        # The C comparison generates with both compilers, and is likewise not registered at
-        # configure time without them.
-        id: peer-dsdl
-        uses: ./.github/actions/provision-peer-dsdl-compiler
-
-      - name: Configure (ci preset, thresholds reporting-only)
-        # See the note at the top of this job for why the Rust thresholds are off and what turning
-        # them on requires. They are disabled here rather than deleted from the tree because the
-        # values are still correct for the machine they were calibrated on, where the suite does
-        # enforce them.
-        run: |
-          cmake --preset ci \
-            -DLLVM_DIR="${LLVM_DIR}" -DMLIR_DIR="${MLIR_DIR}" \
-            -DLLVMDSDL_NUNAVUT_REPO="${{ steps.peer-dsdl.outputs.nunavut-path }}" \
-            -DLLVMDSDL_PYDSDL_REPO="${{ steps.peer-dsdl.outputs.pydsdl-path }}" \
-            -DLLVMDSDL_REQUIRE_DIFFERENTIAL_PARITY=ON \
-            -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=OFF
-
-      - name: Build (Debug)
-        run: cmake --build --preset build-ci
-
-      - name: Build Python runtime accelerator
-        # The Python benchmark's `accel` runtime mode needs it. Without it that mode reports
-        # unavailable and the lane silently measures two of three backends.
-        run: cmake --build build/matrix/ci --config Debug --target build-python-runtime-accelerator
-
-      - name: Run the benchmarks
-        # The preset selects the `bench` label and inherits no `jobs`, so ctest runs serially. Both
-        # tests also carry RUN_SERIAL; a wall-clock measurement never shares the machine with a
-        # compile.
-        run: |
-          mkdir -p "${GITHUB_WORKSPACE}/test-results"
-          ctest --preset test-ci-bench --output-junit "${GITHUB_WORKSPACE}/test-results/junit-bench.xml"
-
-      - name: Every test ran
-        # ctest counts a test that skipped as passed, so a gate that skips where it was meant to gate
-        # leaves the job green. A test that must skip in this job is allowed by name with the reason,
-        # through `--allow NAME=REASON`.
-        if: always()
-        run: python3 tools/check_test_skips.py test-results/junit-bench.xml
-
-      - name: Summarise
-        # `always()` because the numbers from a failed run are the interesting ones. The renderer
-        # exits non-zero when a report is missing, so a benchmark that did not run cannot be
-        # summarised into silence.
-        if: always()
-        run: |
-          python3 tools/benchmark/render_bench_report.py \
-            --rust-report build/matrix/ci/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json \
-            --python-report build/matrix/ci/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json \
-            --serdes-report build/matrix/ci/test/integration/serdes-instruction-comparison-out/serdes-instruction-comparison.json \
-            --serdes-report build/matrix/ci/test/integration/serdes-instruction-comparison-optimized-out/serdes-instruction-comparison.json \
-            --markdown "${GITHUB_STEP_SUMMARY}"
-
-      - name: Upload reports
-        # The calibration input. Keep them long enough to gather a spread across runs.
-        if: ${{ always() && !env.ACT }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: runtime-bench-reports
-          path: |
-            build/matrix/ci/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json
-            build/matrix/ci/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json
-            build/matrix/ci/test/integration/serdes-instruction-comparison-out/serdes-instruction-comparison.json
-            build/matrix/ci/test/integration/serdes-instruction-comparison-optimized-out/serdes-instruction-comparison.json
-          if-no-files-found: warn
-          retention-days: 90
-
-  release-artifacts:
-    name: Release artifacts
-    # Opt-in, on the `release-ci` label. The packages are what this
-    # project ships and no other job here builds one -- every other lane is
-    # Linux-only and runs no packaging step -- so a pull request that touches
-    # packaging, the toolchain pin, install rules or the version needs this to
-    # mean anything. Most pull requests do not, and paying six minutes of .deb
-    # and macOS builds for a lint fix buys nothing.
-    #
-    # GitHub cannot require a label, so requiring it is the reviewer's job. The
-    # pull request checklist in CONTRIBUTING.md §13 names when to ask for it.
-    #
-    # `labeled` is in the trigger list because otherwise applying the label does
-    # nothing until the next push.
-    #
-    # Pull requests only. This workflow also runs on push-to-main, dispatch and
-    # a weekly cron, and none of those should pay for a packaging build. The
-    # event is checked first so the label lookup is never reached on an event
-    # that has no pull request to read labels from.
-    #
-    # The label event is narrowed to the label that means something here. The
-    # first clause alone rebuilt the packages every time any label was added to
-    # a pull request that already carried `release-ci`, which is six minutes of
-    # .deb and macOS builds bought by typing `docs`.
-    if: >-
-      github.event_name == 'pull_request' &&
-      contains(github.event.pull_request.labels.*.name, 'release-ci') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'release-ci')
-    # Calls the same workflow a tag does rather than restating it, so the .deb
-    # legs, the pristine-container install, the macOS tarballs and their linkage
-    # assertions cannot drift from what a release runs. Publishing is
-    # not part of it -- that lives in release.yml, which owns the write token --
-    # so this lane builds and verifies and creates nothing.
-    uses: ./.github/workflows/release-build.yml
-    permissions:
-      contents: read
-      packages: read        # pull the published toolchain image

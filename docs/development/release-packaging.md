@@ -1,13 +1,13 @@
 # Release packaging and distribution
 
-How `dsdlc` / `dsdl-opt` / `dsdld` get from a git tag to a user's machine. This documents the
-pipeline **as it is built today**; channels and targets that do not exist yet (Homebrew, an apt
-repository, other architectures) are backlog and live in
-[distribution-channels.md](distribution-channels.md).
+How the tools get from a git tag to a user's machine. This documents the pipeline as built;
+channels and targets that do not exist yet (Homebrew, an apt repository, other architectures) are
+backlog and live in [distribution-channels.md](distribution-channels.md).
 
-**Today:** a tag pushes packages to a draft GitHub release — `.deb` for Ubuntu on amd64 and
-arm64, and a tarball for macOS on each of Apple silicon and Intel. Each embeds the LLVM it needs,
-so nothing has to be added to the user's machine first.
+A tag pushes packages to a draft GitHub release: `.deb` for Ubuntu on amd64 and arm64, and a
+tarball for macOS on each of Apple silicon and Intel. Each embeds the LLVM it needs, so nothing has
+to be added to the user's machine first. The `reset/hourglass` branch carries the pipeline and no
+tools to package; the `bin` component, the man pages and the SBOM return with the tools.
 
 ---
 
@@ -15,17 +15,11 @@ so nothing has to be added to the user's machine first.
 
 | Component | Contents | Debian package | macOS |
 |---|---|---|---|
-| `bin` | `dsdlc`, `dsdl-opt`, `dsdld`, SBOM, licences | `llvm-dsdl` | `bin/` in the tarball |
-| `dev` | 8 static libraries, `include/llvmdsdl`, generated dialect headers, `Version.h` | `llvm-dsdl-dev` | included in the tarball |
+| `bin` | the tools, SBOM, licences | `llvm-dsdl` | `bin/` in the tarball |
+| `dev` | the static libraries, `include/llvmdsdl`, `Version.h`, licences, the changelog | `llvm-dsdl-dev` | included in the tarball |
 
 `llvm-dsdl-dev` pins `llvm-dsdl (= <version>)`: the static libraries and headers are only
 coherent against the exact build they shipped with, and dpkg refuses the pairing otherwise.
-
-The generated output is self-sufficient. Each backend writes its own runtime support scaffold
-into the output tree, and those scaffolds are compiled into the binary
-([tools/generate_embedded_sources.py](https://github.com/OpenCyphal-Garage/llvm-dsdl/blob/main/tools/generate_embedded_sources.py)),
-so a packaged `dsdlc` emits code that compiles on a machine which has never seen this source
-tree.
 
 ---
 

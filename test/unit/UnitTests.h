@@ -19,10 +19,6 @@
 #ifndef LLVMDSDL_TEST_UNIT_TESTS_H
 #define LLVMDSDL_TEST_UNIT_TESTS_H
 
-/// @brief Runs the InitializerRenderTests suite.
-/// @return True when every case in the suite passed.
-bool runInitializerRenderTests();
-
 /// @brief Runs the LexerTests suite.
 /// @return True when every case in the suite passed.
 bool runLexerTests();
@@ -43,17 +39,6 @@ bool runBitLengthSetTests();
 /// @return True when every case in the suite passed.
 bool runIntegerMathTests();
 
-/// @brief Runs the TargetLanguagesTests suite.
-/// @return True when every case in the suite passed.
-bool runTargetLanguagesTests();
-
-/// @brief Runs the LanguageTraitsTests suite.
-/// @return True when every case in the suite passed.
-bool runLanguageTraitsTests();
-bool runPlanSymbolTests();
-bool runSurfacePlanTests();
-bool runSurfaceLookupTests();
-
 /// @brief Runs the CliPathTests suite.
 /// @return True when every case in the suite passed.
 bool runCliPathTests();
@@ -66,10 +51,6 @@ bool runFlatSetTests();
 /// @return True when every case in the suite passed.
 bool runEvaluatorTests();
 
-/// @brief Runs the DepfileRenderTests suite.
-/// @return True when every case in the suite passed.
-bool runDepfileRenderTests();
-
 /// @brief Runs the DepfilePlannerTests suite.
 /// @return True when every case in the suite passed.
 bool runDepfilePlannerTests();
@@ -78,137 +59,13 @@ bool runDepfilePlannerTests();
 /// @return True when every case in the suite passed.
 bool runTargetResolutionTests();
 
-/// @brief Runs the SupportGenerationTests suite.
-/// @return True when every case in the suite passed.
-bool runSupportGenerationTests();
-
 /// @brief Runs the AnalyzerTests suite.
 /// @return True when every case in the suite passed.
 bool runAnalyzerTests();
 
-/// @brief Runs the layout-verdict tests.
-/// @return True when all cases pass.
-bool runAliasLayoutTests();
-
 /// @brief Runs the RuntimeTests suite.
 /// @return True when every case in the suite passed.
 bool runRuntimeTests();
-
-/// @brief Runs the SourceWriterTests suite.
-/// @return True when every case in the suite passed.
-bool runSourceWriterTests();
-
-/// @brief Runs the ConstantLiteralRenderTests suite.
-/// @return True when every case in the suite passed.
-bool runConstantLiteralRenderTests();
-
-/// @brief Runs the DefinitionDependenciesTests suite.
-/// @return True when every case in the suite passed.
-bool runDefinitionDependenciesTests();
-
-/// @brief Runs the DefinitionIndexTests suite.
-/// @return True when every case in the suite passed.
-bool runDefinitionIndexTests();
-
-/// @brief Runs the ImportNameScopeTests suite.
-/// @return True when every case in the suite passed.
-bool runImportNameScopeTests();
-
-/// @brief Runs the ImportSetTests suite.
-/// @return True when every case in the suite passed.
-bool runImportSetTests();
-
-/// @brief Runs the DefinitionPathProjectionTests suite.
-/// @return True when every case in the suite passed.
-bool runDefinitionPathProjectionTests();
-
-/// @brief Runs the HelperBodyPlanTests suite.
-/// @return True when every case in the suite passed.
-bool runHelperBodyPlanTests();
-
-/// @brief Runs the BodyValueNamingTests suite.
-/// @return True when every case in the suite passed.
-bool runBodyValueNamingTests();
-
-/// @brief Runs the NamingPolicyTests suite.
-/// @return True when every case in the suite passed.
-bool runNamingPolicyTests();
-
-/// @brief Runs the NamingGoldenTests suite.
-/// @return True when every case in the suite passed.
-bool runNamingGoldenTests();
-
-/// @brief Runs the TypeStorageTests suite.
-/// @return True when every case in the suite passed.
-bool runTypeStorageTests();
-
-/// @brief Runs the StorageTypeTokensTests suite.
-/// @return True when every case in the suite passed.
-bool runStorageTypeTokensTests();
-
-/// @brief Runs the VocabularyTests suite.
-/// @return True when every case in the suite passed.
-bool runVocabularyTests();
-
-/// @brief Runs the LoweredContractVersionTests suite.
-/// @return True when every case in the suite passed.
-bool runLoweredContractVersionTests();
-
-/// @brief Runs the UavcanEmbeddedCatalogTests suite.
-/// @return True when every case in the suite passed.
-bool runUavcanEmbeddedCatalogTests();
-
-/// @brief Runs the LspDocumentStoreTests suite.
-/// @return True when every case in the suite passed.
-bool runLspDocumentStoreTests();
-
-/// @brief Runs the LspRequestSchedulerTests suite.
-/// @return True when every case in the suite passed.
-bool runLspRequestSchedulerTests();
-
-/// @brief Runs the LspAnalysisTests suite.
-/// @return True when every case in the suite passed.
-bool runLspAnalysisTests();
-
-/// @brief Runs the LspIndexTests suite.
-/// @return True when every case in the suite passed.
-bool runLspIndexTests();
-
-/// @brief Runs the LspLintTests suite.
-/// @return True when every case in the suite passed.
-bool runLspLintTests();
-
-/// @brief Runs the LspRankingTests suite.
-/// @return True when every case in the suite passed.
-bool runLspRankingTests();
-
-/// @brief Runs the LspServerTests suite.
-/// @return True when every case in the suite passed.
-bool runLspServerTests();
-
-/// @brief Runs the LspTelemetryAuditTests suite.
-/// @return True when every case in the suite passed.
-bool runLspTelemetryAuditTests();
-
-/// @brief Runs the LspRobustnessTests suite.
-/// @return True when every case in the suite passed.
-bool runLspRobustnessTests();
-
-/// @brief Runs the LspPositionEncodingTests suite.
-/// @return True when every case in the suite passed.
-bool runLspPositionEncodingTests();
-
-/// @brief Runs the LspStructuredLoggingTests suite.
-/// @return True when every case in the suite passed.
-bool runLspStructuredLoggingTests();
-
-/// @brief Runs the LspAdversarialRequestTests suite.
-/// @return True when every case in the suite passed.
-bool runLspAdversarialRequestTests();
-
-/// @brief Runs the LspJsonRpcFuzzTests suite.
-/// @return True when every case in the suite passed.
-bool runLspJsonRpcFuzzTests();
 
 /// @brief Runs the LexerFuzzTests suite.
 /// @return True when every case in the suite passed.
